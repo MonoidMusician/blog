@@ -1,0 +1,29 @@
+{
+  "name": "blog-purescript",
+  "version": "0.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "build": "spago build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikesol/blog-purescript.git"
+  },
+  "keywords": [],
+  "author": "Mike Solomon",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mikesol/blog-purescript/issues"
+  },
+  "homepage": "https://github.com/mikesol/blog-purescript#readme",
+  "devDependencies": {
+    "purescript": "^0.15.2",
+    "purs-tidy": "^0.9.0",
+    "spago": "^0.20.9"
+  }
+}
