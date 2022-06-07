@@ -12,15 +12,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mikesol/blog-purescript.git"
+    "url": "git+https://github.com/monoidmusician/blog-purescript.git"
   },
   "keywords": [],
-  "author": "Verity Scheel (and, for avoidance of doubt, definitely not Mike Solomon)",
+  "author": "Verity Scheel",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/mikesol/blog-purescript/issues"
+    "url": "https://github.com/monoidmusician/blog-purescript/issues"
   },
-  "homepage": "https://github.com/mikesol/blog-purescript#readme",
+  "homepage": "https://github.com/monoidmusician/blog-purescript#readme",
   "devDependencies": {
     "purescript": "^0.15.2",
     "purs-tidy": "^0.9.0",
