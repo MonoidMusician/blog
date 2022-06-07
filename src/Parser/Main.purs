@@ -14,13 +14,15 @@ import Deku.Attribute (cb, (:=))
 import Deku.Control (switcher, text_)
 import Deku.Core (class Korok, Node, dyn, sendToTop)
 import Deku.DOM as D
+import Deku.Pursx ((~~))
 import Deku.Toplevel (runInBody1)
 import Effect (Effect)
 import FRP.Event (bang, bus, keepLatest, mapAccum)
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps)
-import Partial.Unsafe (unsafePartial)
 import Parser.ProtoG8 (Parsed, State, g8FromString, g8ParseResult, g8Table)
 import Parser.ProtoG8 as G8
+import Partial.Unsafe (unsafePartial)
+import Type.Proxy (Proxy(..))
 import Web.Event.Event (target)
 import Web.HTML.HTMLInputElement (fromEventTarget, value)
 import Web.UIEvent.KeyboardEvent (code, fromEvent)
@@ -99,13 +101,42 @@ main = runInBody1
               [ text_ "Add" ]
           ]
       D.div_
-        [ D.table_ $ pure $ D.tbody_ $
-          D.tr_ <<< map D.td_ <$>
-            [ [ [ text_ "E" ], [ text_ "::=" ], [ text_ "(", text_ "L", text_ ")" ], [ text_ "data E" ], [ text_ "=" ], [ text_ "E1", text_ " ", text_ "L" ] ]
-            , [ [           ], [ text_ "|"   ], [ text_ "x" ], [], [ text_ "|" ], [ text_ "E2" ] ]
-            , [ [ text_ "L" ], [ text_ "::=" ], [ text_ "E" ], [ text_ "data L" ], [ text_ "=" ], [ text_ "L1", text_ " ", text_ "E" ] ]
-            , [ [           ], [ text_ "|"   ], [ text_ "L", text_ ",", text_ "E" ], [], [ text_ "|" ], [ text_ "L2", text_ " ", text_ "L", text_ " ", text_ "E" ] ]
-            ]
+        [ (Proxy :: _ """<table>
+   <tbody>
+      <tr>
+         <td>E</td>
+         <td>::=</td>
+         <td>(L)</td>
+         <td>data E</td>
+         <td>=</td>
+         <td>E1 L</td>
+      </tr>
+      <tr>
+         <td></td>
+         <td>|</td>
+         <td>x</td>
+         <td></td>
+         <td>|</td>
+         <td>E2</td>
+      </tr>
+      <tr>
+         <td>L</td>
+         <td>::=</td>
+         <td>E</td>
+         <td>data L</td>
+         <td>=</td>
+         <td>L1 E</td>
+      </tr>
+      <tr>
+         <td></td>
+         <td>|</td>
+         <td>L,E</td>
+         <td></td>
+         <td>|</td>
+         <td>L2 L E</td>
+      </tr>
+   </tbody>
+</table>""") ~~ {}
         , D.div_ top
         , D.div_ $ pure $ currentValue `flip switcher` \v ->
             D.div_ $ showMaybeParseSteps $ parseSteps (unsafePartial g8Table) <$> g8FromString v <@> G8.S1
