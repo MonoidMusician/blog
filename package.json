@@ -8,6 +8,8 @@
   },
   "scripts": {
     "build": "spago build",
+    "livedev": "echo \"import { main } from '../output/Main/index.js'; main();\" > docs/index.js",
+    "bundle": "spago bundle-app --main Main --to docs/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
