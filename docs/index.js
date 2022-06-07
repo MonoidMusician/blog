@@ -2967,13 +2967,13 @@
   };
   var fold4 = /* @__PURE__ */ _foldM(applyFlipped);
   var foldMap2 = function(dictMonoid) {
-    var append12 = append(dictMonoid.Semigroup0());
+    var append13 = append(dictMonoid.Semigroup0());
     var mempty3 = mempty(dictMonoid);
     return function(f) {
       return fold4(function(acc) {
         return function(k) {
           return function(v) {
-            return append12(acc)(f(k)(v));
+            return append13(acc)(f(k)(v));
           };
         };
       })(mempty3);
@@ -4749,6 +4749,18 @@
       return val;
     };
   };
+  var genericShowConstructor2 = /* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments);
+  var L1IsSymbol = {
+    reflectSymbol: function() {
+      return "L1";
+    }
+  };
+  var L2IsSymbol = {
+    reflectSymbol: function() {
+      return "L2";
+    }
+  };
+  var append12 = /* @__PURE__ */ append(semigroupArray);
   var LParen = /* @__PURE__ */ function() {
     function LParen2() {
     }
@@ -5035,28 +5047,29 @@
     }
   };
   var showTok = {
-    show: /* @__PURE__ */ genericShow(genericTok)(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments)({
+    show: /* @__PURE__ */ genericShow(genericTok)(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor2({
       reflectSymbol: function() {
         return "LParen";
       }
-    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments)({
+    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor2({
       reflectSymbol: function() {
         return "RParen";
       }
-    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments)({
+    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor2({
       reflectSymbol: function() {
         return "Comma";
       }
-    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments)({
+    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor2({
       reflectSymbol: function() {
         return "X";
       }
-    }))(/* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments)({
+    }))(/* @__PURE__ */ genericShowConstructor2({
       reflectSymbol: function() {
         return "EOF";
       }
     }))))))
   };
+  var genericShowConstructor1 = /* @__PURE__ */ genericShowConstructor(/* @__PURE__ */ genericShowArgsArgument(showTok));
   var genericState = {
     to: function(x) {
       if (x instanceof Inl) {
@@ -5146,43 +5159,43 @@
     }
   };
   var showState = {
-    show: /* @__PURE__ */ genericShow(genericState)(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments)({
+    show: /* @__PURE__ */ genericShow(genericState)(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor2({
       reflectSymbol: function() {
         return "S0";
       }
-    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments)({
+    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor2({
       reflectSymbol: function() {
         return "SA";
       }
-    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments)({
+    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor2({
       reflectSymbol: function() {
         return "S1";
       }
-    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments)({
+    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor2({
       reflectSymbol: function() {
         return "S2";
       }
-    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments)({
+    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor2({
       reflectSymbol: function() {
         return "S3";
       }
-    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments)({
+    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor2({
       reflectSymbol: function() {
         return "S4";
       }
-    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments)({
+    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor2({
       reflectSymbol: function() {
         return "S5";
       }
-    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments)({
+    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor2({
       reflectSymbol: function() {
         return "S6";
       }
-    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments)({
+    }))(/* @__PURE__ */ genericShowSum(/* @__PURE__ */ genericShowConstructor2({
       reflectSymbol: function() {
         return "S7";
       }
-    }))(/* @__PURE__ */ genericShowConstructor(genericShowArgsNoArguments)({
+    }))(/* @__PURE__ */ genericShowConstructor2({
       reflectSymbol: function() {
         return "S8";
       }
@@ -5244,6 +5257,7 @@
       throw new Error("Failed pattern match at Parser.ProtoG8 (line 138, column 1 - line 138, column 40): " + [x.constructor.name]);
     }
   };
+  var genericShow2 = /* @__PURE__ */ genericShow(genericL);
   var genericE = {
     to: function(x) {
       if (x instanceof Inl) {
@@ -5270,15 +5284,7 @@
   };
   var showL = {
     show: function(x) {
-      return genericShow(genericL)(genericShowSum(genericShowConstructor(genericShowArgsArgument($lazy_showE(0)))({
-        reflectSymbol: function() {
-          return "L1";
-        }
-      }))(genericShowConstructor(genericShowArgsProduct(genericShowArgsArgument(showL))(genericShowArgsArgument($lazy_showE(0))))({
-        reflectSymbol: function() {
-          return "L2";
-        }
-      })))(x);
+      return genericShow2(genericShowSum(genericShowConstructor(genericShowArgsArgument($lazy_showE(0)))(L1IsSymbol))(genericShowConstructor(genericShowArgsProduct(genericShowArgsArgument(showL))(genericShowArgsArgument($lazy_showE(0))))(L2IsSymbol)))(x);
     }
   };
   var $lazy_showE = /* @__PURE__ */ $runtime_lazy2("showE", "Parser.ProtoG8", function() {
@@ -5287,7 +5293,7 @@
         reflectSymbol: function() {
           return "E1";
         }
-      }))(genericShowConstructor(genericShowArgsNoArguments)({
+      }))(genericShowConstructor2({
         reflectSymbol: function() {
           return "E2";
         }
@@ -5304,7 +5310,7 @@
       reflectSymbol: function() {
         return "L";
       }
-    }))(/* @__PURE__ */ genericShowConstructor(/* @__PURE__ */ genericShowArgsArgument(showTok))({
+    }))(/* @__PURE__ */ genericShowConstructor1({
       reflectSymbol: function() {
         return "Tok";
       }
@@ -5436,20 +5442,20 @@
           var v4 = function(v5) {
             var v6 = function(v7) {
               if (v instanceof RL2 && (v1 instanceof Snoc && (v1.value0 instanceof Snoc && (v1.value0.value0 instanceof Snoc && (v1.value0.value0.value1 instanceof L && (v1.value0.value1 instanceof Tok && (v1.value0.value1.value0 instanceof Comma && v1.value1 instanceof E))))))) {
-                var $227 = g8Goto(RL.value)(topOf(v1.value0.value0.value0));
-                if ($227 instanceof Just) {
-                  return new Just(new Snoc(v1.value0.value0.value0, new L(new L2(v1.value0.value0.value1.value0, v1.value1.value0)), $227.value0));
+                var $509 = g8Goto(RL.value)(topOf(v1.value0.value0.value0));
+                if ($509 instanceof Just) {
+                  return new Just(new Snoc(v1.value0.value0.value0, new L(new L2(v1.value0.value0.value1.value0, v1.value1.value0)), $509.value0));
                 }
                 ;
-                throw new Error("Failed pattern match at Parser.ProtoG8 (line 142, column 1 - line 142, column 50): " + [$227.constructor.name]);
+                throw new Error("Failed pattern match at Parser.ProtoG8 (line 142, column 1 - line 142, column 50): " + [$509.constructor.name]);
               }
               ;
               throw new Error("Failed pattern match at Parser.ProtoG8 (line 142, column 1 - line 142, column 50): " + [v.constructor.name, v1.constructor.name]);
             };
             if (v instanceof RL1 && (v1 instanceof Snoc && v1.value1 instanceof E)) {
-              var $243 = g8Goto(RL.value)(topOf(v1.value0));
-              if ($243 instanceof Just) {
-                return new Just(new Snoc(v1.value0, new L(new L1(v1.value1.value0)), $243.value0));
+              var $525 = g8Goto(RL.value)(topOf(v1.value0));
+              if ($525 instanceof Just) {
+                return new Just(new Snoc(v1.value0, new L(new L1(v1.value1.value0)), $525.value0));
               }
               ;
               return v6(true);
@@ -5458,9 +5464,9 @@
             return v6(true);
           };
           if (v instanceof RE2 && (v1 instanceof Snoc && (v1.value1 instanceof Tok && v1.value1.value0 instanceof X))) {
-            var $251 = g8Goto(RE.value)(topOf(v1.value0));
-            if ($251 instanceof Just) {
-              return new Just(new Snoc(v1.value0, new E(E2.value), $251.value0));
+            var $533 = g8Goto(RE.value)(topOf(v1.value0));
+            if ($533 instanceof Just) {
+              return new Just(new Snoc(v1.value0, new E(E2.value), $533.value0));
             }
             ;
             return v4(true);
@@ -5469,9 +5475,9 @@
           return v4(true);
         };
         if (v instanceof RE1 && (v1 instanceof Snoc && (v1.value0 instanceof Snoc && (v1.value0.value0 instanceof Snoc && (v1.value0.value0.value1 instanceof Tok && (v1.value0.value0.value1.value0 instanceof LParen && (v1.value0.value1 instanceof L && (v1.value1 instanceof Tok && v1.value1.value0 instanceof RParen)))))))) {
-          var $259 = g8Goto(RE.value)(topOf(v1.value0.value0.value0));
-          if ($259 instanceof Just) {
-            return new Just(new Snoc(v1.value0.value0.value0, new E(new E1(v1.value0.value1.value0)), $259.value0));
+          var $541 = g8Goto(RE.value)(topOf(v1.value0.value0.value0));
+          if ($541 instanceof Just) {
+            return new Just(new Snoc(v1.value0.value0.value0, new E(new E1(v1.value0.value1.value0)), $541.value0));
           }
           ;
           return v2(true);
@@ -5499,18 +5505,18 @@
       return toks;
     }
     ;
-    return append(semigroupArray)(toks)([EOF.value]);
+    return append12(toks)([EOF.value]);
   };
   var g8FromString = /* @__PURE__ */ function() {
-    var $364 = map(functorMaybe)(function() {
-      var $367 = toUnfoldable(unfoldableList);
-      return function($368) {
-        return $367(ensureEOF(catMaybes($368)));
+    var $646 = map(functorMaybe)(function() {
+      var $649 = toUnfoldable(unfoldableList);
+      return function($650) {
+        return $649(ensureEOF(catMaybes($650)));
       };
     }());
-    var $365 = traverse(traversableArray)(applicativeMaybe)(flip(lookup(ordCodePoint))(g8Toks));
-    return function($366) {
-      return $364($365(toCodePointArray($366)));
+    var $647 = traverse(traversableArray)(applicativeMaybe)(flip(lookup(ordCodePoint))(g8Toks));
+    return function($648) {
+      return $646($647(toCodePointArray($648)));
     };
   }();
 
@@ -5557,86 +5563,88 @@
     };
     return ChangeText2;
   }();
-  var showStack = function(dictKorok) {
-    return function(dictShow) {
-      return function(dictShow1) {
-        return function(v) {
-          if (v instanceof Zero) {
-            return [sub_(dictKorok)([text_(dictKorok.MonadST5().Monad0())(show(dictShow1)(v.value0))])];
-          }
-          ;
-          if (v instanceof Snoc) {
-            return append(semigroupArray)(showStack(dictKorok)(dictShow)(dictShow1)(v.value0))(append(semigroupArray)([text_(dictKorok.MonadST5().Monad0())(show(dictShow)(v.value1))])([sub_(dictKorok)([text_(dictKorok.MonadST5().Monad0())(show(dictShow1)(v.value2))])]));
-          }
-          ;
-          throw new Error("Failed pattern match at Parser.Main (line 35, column 1 - line 35, column 174): " + [v.constructor.name]);
+  var showStack = function(dictShow) {
+    return function(dictShow1) {
+      return function(i) {
+        return function(dictKorok) {
+          var go2 = function(v) {
+            if (v instanceof Zero) {
+              return [sub_(dictKorok)([text_(dictKorok.MonadST5().Monad0())(show(dictShow)(v.value0))])];
+            }
+            ;
+            if (v instanceof Snoc) {
+              return append(semigroupArray)(go2(v.value0))(append(semigroupArray)([text_(dictKorok.MonadST5().Monad0())(show(dictShow1)(v.value1))])([sub_(dictKorok)([text_(dictKorok.MonadST5().Monad0())(show(dictShow)(v.value2))])]));
+            }
+            ;
+            throw new Error("Failed pattern match at Parser.Main (line 38, column 3 - line 38, column 54): " + [v.constructor.name]);
+          };
+          return fixed(go2(i));
         };
       };
     };
   };
-  var showParseStep = function(dictMonad) {
-    return function(dictKorok) {
-      return function(dictShow) {
-        return function(dictShow1) {
-          return function(dictShow2) {
-            return function(v) {
-              if (v instanceof Left && v.value0 instanceof Nothing) {
-                return text_(dictKorok.MonadST5().Monad0())("Parse error");
-              }
-              ;
-              if (v instanceof Left && v.value0 instanceof Just) {
-                return div_(dictKorok)([text_(dictKorok.MonadST5().Monad0())(show(showMaybe(showE))(g8ParseResult(v.value0.value0)))]);
-              }
-              ;
-              if (v instanceof Right) {
-                return div2(dictKorok)(bang2(dictKorok.MonadST5().Monad0().Applicative0())(attr(attrDiv_StyleString)(Style.value)("display: flex; justify-content: space-between")))([div_(dictKorok)(showStack(dictKorok)(dictShow)(dictShow1)(v.value0.stack)), div_(dictKorok)([text_(dictKorok.MonadST5().Monad0())(show(dictShow2)(v.value0.inputs))])]);
-              }
-              ;
-              throw new Error("Failed pattern match at Parser.Main (line 48, column 1 - line 54, column 127): " + [v.constructor.name]);
-            };
+  var showParseStep = function(dictShow) {
+    return function(dictShow1) {
+      return function(dictShow2) {
+        return function(v) {
+          return function(dictKorok) {
+            if (v instanceof Left && v.value0 instanceof Nothing) {
+              return text_(dictKorok.MonadST5().Monad0())("Parse error");
+            }
+            ;
+            if (v instanceof Left && v.value0 instanceof Just) {
+              return div_(dictKorok)([text_(dictKorok.MonadST5().Monad0())(show(showMaybe(showE))(g8ParseResult(v.value0.value0)))]);
+            }
+            ;
+            if (v instanceof Right) {
+              return div2(dictKorok)(bang2(dictKorok.MonadST5().Monad0().Applicative0())(attr(attrDiv_StyleString)(Style.value)("display: flex; justify-content: space-between")))([div_(dictKorok)([showStack(dictShow1)(dictShow)(v.value0.stack)(dictKorok)]), div_(dictKorok)([text_(dictKorok.MonadST5().Monad0())(show(dictShow2)(v.value0.inputs))])]);
+            }
+            ;
+            throw new Error("Failed pattern match at Parser.Main (line 51, column 1 - line 61, column 9): " + [v.constructor.name]);
           };
         };
       };
     };
   };
-  var showParseSteps = function(dictMonad) {
-    return function(dictKorok) {
-      return function(dictShow) {
-        var s = function(v) {
-          return showParseStep(dictKorok.MonadST5().Monad0())(dictKorok)(showParsed)(showState)(showList(dictShow))(v);
-        };
-        return function(v) {
-          if (v instanceof $$Error) {
-            return [s(new Left(Nothing.value))];
-          }
-          ;
-          if (v instanceof Complete) {
-            return [s(new Left(new Just(v.value0)))];
-          }
-          ;
-          if (v instanceof Step) {
-            return append(semigroupArray)([s(new Right(v.value0))])(showParseSteps(dictKorok.MonadST5().Monad0())(dictKorok)(dictShow)(v.value1));
-          }
-          ;
-          throw new Error("Failed pattern match at Parser.Main (line 65, column 3 - line 68, column 66): " + [v.constructor.name]);
-        };
+  var showParseSteps = function(dictShow) {
+    return function(i) {
+      return function(dictKorok) {
+        var go2 = function() {
+          var s = function(v) {
+            return showParseStep(showParsed)(showState)(showList(dictShow))(v)(dictKorok);
+          };
+          return function(v) {
+            if (v instanceof $$Error) {
+              return [s(new Left(Nothing.value))];
+            }
+            ;
+            if (v instanceof Complete) {
+              return [s(new Left(new Just(v.value0)))];
+            }
+            ;
+            if (v instanceof Step) {
+              return append(semigroupArray)([s(new Right(v.value0))])(go2(v.value1));
+            }
+            ;
+            throw new Error("Failed pattern match at Parser.Main (line 75, column 7 - line 78, column 58): " + [v.constructor.name]);
+          };
+        }();
+        return fixed(go2(i));
       };
     };
   };
-  var showMaybeParseSteps = function(dictMonad) {
-    return function(dictKorok) {
-      return function(dictShow) {
-        return function(v) {
-          if (v instanceof Nothing) {
-            return [text_(dictKorok.MonadST5().Monad0())("Parse error")];
-          }
-          ;
-          if (v instanceof Just) {
-            return showParseSteps(dictKorok.MonadST5().Monad0())(dictKorok)(dictShow)(v.value0);
-          }
-          ;
-          throw new Error("Failed pattern match at Parser.Main (line 44, column 1 - line 44, column 254): " + [v.constructor.name]);
-        };
+  var showMaybeParseSteps = function(dictShow) {
+    return function(v) {
+      return function(dictKorok) {
+        if (v instanceof Nothing) {
+          return text_(dictKorok.MonadST5().Monad0())("Parse error");
+        }
+        ;
+        if (v instanceof Just) {
+          return showParseSteps(dictShow)(v.value0)(dictKorok);
+        }
+        ;
+        throw new Error("Failed pattern match at Parser.Main (line 47, column 1 - line 47, column 122): " + [v.constructor.name]);
       };
     };
   };
@@ -5652,8 +5660,8 @@
         return Nothing.value;
       }));
       var top4 = [input(korokGlobalEffect)(oneOfMap(foldableArray)(plusEvent(applicativeEffect))(bang2(applicativeEffect))([attr(attrOnInputCb)(OnInput.value)(cb(function(e) {
-        return for_(applicativeEffect)(foldableMaybe)(bind(bindMaybe)(target5(e))(fromEventTarget))(composeKleisli(bindEffect)(value3)(function($54) {
-          return push2(ChangeText.create($54));
+        return for_(applicativeEffect)(foldableMaybe)(bind(bindMaybe)(target5(e))(fromEventTarget))(composeKleisli(bindEffect)(value3)(function($50) {
+          return push2(ChangeText.create($50));
         }));
       })), attr(attrOnKeyupCb)(OnKeyup.value)(cb(function(e) {
         return for_(applicativeEffect)(foldableMaybe)(fromEvent(e))(function(evt) {
@@ -5661,13 +5669,13 @@
         });
       }))]))([]), button(korokGlobalEffect)(bang2(applicativeEffect)(attr(attrOnClickEffectUnit)(OnClick.value)(push2(AddTodo.value))))([text_(monadEffect)("Add")])];
       return div_(korokGlobalEffect)([table_(korokGlobalEffect)(pure(applicativeArray)(tbody_(korokGlobalEffect)(map(functorArray)(function() {
-        var $55 = tr_(korokGlobalEffect);
-        var $56 = map(functorArray)(td_(korokGlobalEffect));
-        return function($57) {
-          return $55($56($57));
+        var $51 = tr_(korokGlobalEffect);
+        var $52 = map(functorArray)(td_(korokGlobalEffect));
+        return function($53) {
+          return $51($52($53));
         };
       }())([[[text_(monadEffect)("E")], [text_(monadEffect)("::=")], [text_(monadEffect)("("), text_(monadEffect)("L"), text_(monadEffect)(")")], [text_(monadEffect)("data E")], [text_(monadEffect)("=")], [text_(monadEffect)("E1"), text_(monadEffect)(" "), text_(monadEffect)("L")]], [[], [text_(monadEffect)("|")], [text_(monadEffect)("x")], [], [text_(monadEffect)("|")], [text_(monadEffect)("E2")]], [[text_(monadEffect)("L")], [text_(monadEffect)("::=")], [text_(monadEffect)("E")], [text_(monadEffect)("data L")], [text_(monadEffect)("=")], [text_(monadEffect)("L1"), text_(monadEffect)(" "), text_(monadEffect)("E")]], [[], [text_(monadEffect)("|")], [text_(monadEffect)("L"), text_(monadEffect)(","), text_(monadEffect)("E")], [], [text_(monadEffect)("|")], [text_(monadEffect)("L2"), text_(monadEffect)(" "), text_(monadEffect)("L"), text_(monadEffect)(" "), text_(monadEffect)("E")]]])))), div_(korokGlobalEffect)(top4), div_(korokGlobalEffect)(pure(applicativeArray)(flip(switcher(monadSTEffect))(currentValue)(function(v) {
-        return div_(korokGlobalEffect)(showMaybeParseSteps(monadEffect)(korokGlobalEffect)(showTok)(flap(functorMaybe)(map(functorMaybe)(parseSteps(g8Table()))(g8FromString(v)))(S1.value)));
+        return div_(korokGlobalEffect)([showMaybeParseSteps(showTok)(flap(functorMaybe)(map(functorMaybe)(parseSteps(g8Table()))(g8FromString(v)))(S1.value))(korokGlobalEffect)]);
       }))), div_(korokGlobalEffect)([dyn(map(functorEvent)(function(txt) {
         return keepLatest(eventIsEvent(monadSTEffect))(bus(monadSTEffect)(function(p$prime) {
           return function(e$prime) {
