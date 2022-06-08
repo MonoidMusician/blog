@@ -376,8 +376,10 @@ getVisibilityAndIncrement' s = do
   n <- get
   put (n + 1)
   pure
-    (n /\ (toggle true (f n) <#> \v ->
-        D.Style := (s <> "display:" <> if v then "block" else "none" <> ";"))
+    ( n /\
+        ( toggle true (f n) <#> \v ->
+            D.Style := (s <> "display:" <> if v then "block" else "none" <> ";")
+        )
     )
 
 showParseStep
@@ -400,7 +402,7 @@ showParseStep (Left (Just v)) = do
   pure $ D.div vi [ text_ $ ("Step " <> show n <> ":") <> (show (g8ParseResult v)) ]
 showParseStep (Right { stack, inputs }) = do
   n /\ vi <- getVisibilityAndIncrement' "display: flex; justify-content: space-between;"
-  pure $ D.div vi [ D.div_ [text_ ("Step " <> show n <> ":") ], D.div_ [ showStack stack ], D.div_ [ text_ (show inputs) ] ]
+  pure $ D.div vi [ D.div_ [ text_ ("Step " <> show n <> ":") ], D.div_ [ showStack stack ], D.div_ [ text_ (show inputs) ] ]
 
 type SuperStack m a = ReaderT
   (Int -> AnEvent m Unit)
@@ -458,12 +460,14 @@ counter event = mapAccum f event 0
   where
   f a b = (b + 1) /\ (a /\ b)
 
-dedup :: forall s m a. Eq a => Applicative m => MonadST s m => AnEvent m a -> AnEvent m a
-dedup e = compact $
-  mapAccum (\a b -> let ja = Just a in ja /\ (if b == ja then Nothing else Just a)) e Nothing
-
 toggle :: forall s m a b. HeytingAlgebra b => MonadST s m => b -> AnEvent m a → AnEvent m b
 toggle start event = fold (\_ x -> not x) event start
+
+data Bounds x = OOBL | OOBR | Val x
+
+oob2m :: Bounds ~> Maybe
+oob2m (Val x) = Just x
+oob2m _ = Nothing
 
 main :: Effect Unit
 main = runInBody
@@ -499,21 +503,27 @@ main = runInBody
         , D.div_ $ pure $ currentValue `flip switcher` \(v /\ count) ->
             vbussed (Proxy :: _ ParsedUIAction) \pPush pEvent ->
               let
-                currentIndex = dedup $ compact $ mapAccum
-                  ( \(lr /\ myRun /\ myMax) (run /\ ix) ->
+                currentIndex = compact $ map oob2m $ mapAccum
+                  ( \(lr /\ myRun /\ myMax) (plr /\ run /\ ix') ->
                       let
-                        curIx = min (myMax - 1) <$> max 0 <$>
-                          ( if myRun /= run
+                        curIx = case ix' of
+                          OOBR -> if lr then OOBR else Val (myMax - 1)
+                          OOBL -> if not lr then OOBL else Val 0
+                          Val ix ->
+                            if myRun /= run
                             -- new run, so we show all steps
-                            then if lr then Nothing else Just $ myMax - 1
+                            then if lr then OOBR else Val (myMax - 1)
                             -- not a new run, so we can use the previous index
-                            else Just $ (if lr then add else sub) ix 1
-                          )
+                            else
+                              let
+                                n = (if lr /= plr then const else if lr then add else sub) ix 1
+                              in
+                                if n < 0 then OOBL else if n >= myMax then OOBR else Val n
                       in
-                        (myRun /\ (fromMaybe ix curIx)) /\ curIx
+                        (lr /\ myRun /\ curIx) /\ curIx
                   )
                   (((false /\ _) <$> pEvent.toggleLeft) <|> ((true /\ _) <$> pEvent.toggleRight))
-                  (-1 /\ 0)
+                  (false /\ -1 /\ OOBR)
               in
                 envy $ keepLatest $ memoize currentIndex \stackIndex -> sweep stackIndex \sweeper ->
                   let
