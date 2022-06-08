@@ -16,7 +16,7 @@ import Data.Foldable (for_, oneOfMap)
 import Data.Generic.Rep (class Generic)
 import Data.Map (SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Show.Generic (genericShow)
 import Data.String (CodePoint)
 import Data.Traversable (mapAccumL)
@@ -362,7 +362,7 @@ getVisibilityAndIncrement
   :: forall m s element
    . MonadST s m
   => Attr element D.Style String
-  => SuperStack m (AnEvent m (Attribute element))
+  => SuperStack m (Int /\ AnEvent m (Attribute element))
 getVisibilityAndIncrement = getVisibilityAndIncrement' ""
 
 getVisibilityAndIncrement'
@@ -370,14 +370,14 @@ getVisibilityAndIncrement'
    . MonadST s m
   => Attr element D.Style String
   => String
-  -> SuperStack m (AnEvent m (Attribute element))
+  -> SuperStack m (Int /\ AnEvent m (Attribute element))
 getVisibilityAndIncrement' s = do
   f <- ask
   n <- get
   put (n + 1)
   pure
-    ( toggle true (f n) <#> \v ->
-        D.Style := (s <> "display:" <> if v then "block" else "none" <> ";")
+    (n /\ (toggle true (f n) <#> \v ->
+        D.Style := (s <> "display:" <> if v then "block" else "none" <> ";"))
     )
 
 showParseStep
@@ -393,14 +393,14 @@ showParseStep
        }
   -> SuperStack m (Domable m lock payload)
 showParseStep (Left Nothing) = do
-  vi <- getVisibilityAndIncrement
-  pure $ D.div vi [ (text_ "Parse error") ]
+  n /\ vi <- getVisibilityAndIncrement
+  pure $ D.div vi [ (text_ $ ("Step " <> show n <> ":") <> "Parse error") ]
 showParseStep (Left (Just v)) = do
-  vi <- getVisibilityAndIncrement
-  pure $ D.div vi [ text_ (show (g8ParseResult v)) ]
+  n /\ vi <- getVisibilityAndIncrement
+  pure $ D.div vi [ text_ $ ("Step " <> show n <> ":") <> (show (g8ParseResult v)) ]
 showParseStep (Right { stack, inputs }) = do
-  vi <- getVisibilityAndIncrement' "display: flex; justify-content: space-between;"
-  pure $ D.div vi [ D.div_ [ showStack stack ], D.div_ [ text_ (show inputs) ] ]
+  n /\ vi <- getVisibilityAndIncrement' "display: flex; justify-content: space-between;"
+  pure $ D.div vi [ D.div_ [text_ ("Step " <> show n <> ":") ], D.div_ [ showStack stack ], D.div_ [ text_ (show inputs) ] ]
 
 type SuperStack m a = ReaderT
   (Int -> AnEvent m Unit)
@@ -499,18 +499,18 @@ main = runInBody
         , D.div_ $ pure $ currentValue `flip switcher` \(v /\ count) ->
             vbussed (Proxy :: _ ParsedUIAction) \pPush pEvent ->
               let
-                currentIndex = dedup $ mapAccum
+                currentIndex = dedup $ compact $ mapAccum
                   ( \(lr /\ myRun /\ myMax) (run /\ ix) ->
                       let
-                        curIx = min (myMax - 1) $ max 0
+                        curIx = min (myMax - 1) <$> max 0 <$>
                           ( if myRun /= run
                             -- new run, so we show all steps
-                            then if lr then myMax - 1 else myMax - 2
+                            then if lr then Nothing else Just $ myMax - 1
                             -- not a new run, so we can use the previous index
-                            else (if lr then add else sub) ix 1
+                            else Just $ (if lr then add else sub) ix 1
                           )
                       in
-                        (myRun /\ curIx) /\ curIx
+                        (myRun /\ (fromMaybe ix curIx)) /\ curIx
                   )
                   (((false /\ _) <$> pEvent.toggleLeft) <|> ((true /\ _) <$> pEvent.toggleRight))
                   (-1 /\ 0)

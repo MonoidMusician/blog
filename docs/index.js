@@ -4956,47 +4956,6 @@
     };
   };
 
-  // output/Debug/foreign.js
-  var req = typeof module === "undefined" ? void 0 : module.require;
-  var util = function() {
-    try {
-      return req === void 0 ? void 0 : req("util");
-    } catch (e) {
-      return void 0;
-    }
-  }();
-  function _spy(tag, x) {
-    if (util !== void 0) {
-      console.log(tag + ":", util.inspect(x, { depth: null, colors: true }));
-    } else {
-      console.log(tag + ":", x);
-    }
-    return x;
-  }
-  var now = function() {
-    var perf;
-    if (typeof performance !== "undefined") {
-      perf = performance;
-    } else if (req) {
-      try {
-        perf = req("perf_hooks").performance;
-      } catch (e) {
-      }
-    }
-    return function() {
-      return (perf || Date).now();
-    };
-  }();
-
-  // output/Debug/index.js
-  var spy = function() {
-    return function(tag) {
-      return function(a) {
-        return _spy(tag, a);
-      };
-    };
-  };
-
   // output/Deku.Attribute/index.js
   var Cb = function(x) {
     return x;
@@ -7475,7 +7434,7 @@
               return append(semigroupArray)(go2(v.value0))(append(semigroupArray)([text_(dictKorok.MonadST5().Monad0())(show(dictShow1)(v.value1))])([sub_(dictKorok)([text_(dictKorok.MonadST5().Monad0())(show(dictShow)(v.value2))])]));
             }
             ;
-            throw new Error("Failed pattern match at Parser.Main (line 349, column 3 - line 349, column 54): " + [v.constructor.name]);
+            throw new Error("Failed pattern match at Parser.Main (line 348, column 3 - line 348, column 54): " + [v.constructor.name]);
           };
           return fixed(go2(i));
         };
@@ -7496,7 +7455,7 @@
       return empty2;
     }
     ;
-    throw new Error("Failed pattern match at Parser.Main (line 287, column 47 - line 293, column 38): " + [v1.constructor.name]);
+    throw new Error("Failed pattern match at Parser.Main (line 286, column 47 - line 292, column 38): " + [v1.constructor.name]);
   };
   var isNonTerminal = function(v) {
     if (v instanceof NonTerminal) {
@@ -7520,11 +7479,7 @@
         return bind(bindReaderT(bindStateT(freeMonad)))(ask(monadAskReaderT(monadStateT(freeMonad))))(function(f) {
           return bind(bindReaderT(bindStateT(freeMonad)))(get(monadStateReaderT(monadStateStateT(freeMonad))))(function(n) {
             return discard(discardUnit)(bindReaderT(bindStateT(freeMonad)))(put(monadStateReaderT(monadStateStateT(freeMonad)))(n + 1 | 0))(function() {
-              return pure(applicativeReaderT(applicativeStateT(freeMonad)))(mapFlipped(functorEvent)(toggle(heytingAlgebraBoolean)(dictMonadST)(true)(f(n)))(function(v) {
-                var ____ = spy()("showing")({
-                  n,
-                  v
-                });
+              return pure(applicativeReaderT(applicativeStateT(freeMonad)))(new Tuple(n, mapFlipped(functorEvent)(toggle(heytingAlgebraBoolean)(dictMonadST)(true)(f(n)))(function(v) {
                 return attr(dictAttr)(Style.value)(s + ("display:" + function() {
                   if (v) {
                     return "block";
@@ -7532,7 +7487,7 @@
                   ;
                   return "none;";
                 }()));
-              }));
+              })));
             });
           });
         });
@@ -7550,24 +7505,24 @@
         return function(dictKorok) {
           return function(v) {
             if (v instanceof Left && v.value0 instanceof Nothing) {
-              return bind(bindReaderT(bindStateT(freeMonad)))(getVisibilityAndIncrement(dictKorok.MonadST5())(attrDiv_StyleString))(function(vi) {
-                return pure(applicativeReaderT(applicativeStateT(freeMonad)))(div2(dictKorok)(vi)([text_(dictKorok.MonadST5().Monad0())("Parse error")]));
+              return bind(bindReaderT(bindStateT(freeMonad)))(getVisibilityAndIncrement(dictKorok.MonadST5())(attrDiv_StyleString))(function(v1) {
+                return pure(applicativeReaderT(applicativeStateT(freeMonad)))(div2(dictKorok)(v1.value1)([text_(dictKorok.MonadST5().Monad0())("Step " + (show(showInt)(v1.value0) + ":") + "Parse error")]));
               });
             }
             ;
             if (v instanceof Left && v.value0 instanceof Just) {
-              return bind(bindReaderT(bindStateT(freeMonad)))(getVisibilityAndIncrement(dictKorok.MonadST5())(attrDiv_StyleString))(function(vi) {
-                return pure(applicativeReaderT(applicativeStateT(freeMonad)))(div2(dictKorok)(vi)([text_(dictKorok.MonadST5().Monad0())(show(showMaybe(showE))(g8ParseResult(v.value0.value0)))]));
+              return bind(bindReaderT(bindStateT(freeMonad)))(getVisibilityAndIncrement(dictKorok.MonadST5())(attrDiv_StyleString))(function(v2) {
+                return pure(applicativeReaderT(applicativeStateT(freeMonad)))(div2(dictKorok)(v2.value1)([text_(dictKorok.MonadST5().Monad0())("Step " + (show(showInt)(v2.value0) + ":") + show(showMaybe(showE))(g8ParseResult(v.value0.value0)))]));
               });
             }
             ;
             if (v instanceof Right) {
-              return bind(bindReaderT(bindStateT(freeMonad)))(getVisibilityAndIncrement$prime(dictKorok.MonadST5())(attrDiv_StyleString)("display: flex; justify-content: space-between;"))(function(vi) {
-                return pure(applicativeReaderT(applicativeStateT(freeMonad)))(div2(dictKorok)(vi)([div_(dictKorok)([showStack(dictShow1)(dictShow)(v.value0.stack)(dictKorok)]), div_(dictKorok)([text_(dictKorok.MonadST5().Monad0())(show(dictShow2)(v.value0.inputs))])]));
+              return bind(bindReaderT(bindStateT(freeMonad)))(getVisibilityAndIncrement$prime(dictKorok.MonadST5())(attrDiv_StyleString)("display: flex; justify-content: space-between;"))(function(v1) {
+                return pure(applicativeReaderT(applicativeStateT(freeMonad)))(div2(dictKorok)(v1.value1)([div_(dictKorok)([text_(dictKorok.MonadST5().Monad0())("Step " + (show(showInt)(v1.value0) + ":"))]), div_(dictKorok)([showStack(dictShow1)(dictShow)(v.value0.stack)(dictKorok)]), div_(dictKorok)([text_(dictKorok.MonadST5().Monad0())(show(dictShow2)(v.value0.inputs))])]));
               });
             }
             ;
-            throw new Error("Failed pattern match at Parser.Main (line 384, column 1 - line 395, column 43): " + [v.constructor.name]);
+            throw new Error("Failed pattern match at Parser.Main (line 383, column 1 - line 394, column 43): " + [v.constructor.name]);
           };
         };
       };
@@ -7601,7 +7556,7 @@
               });
             }
             ;
-            throw new Error("Failed pattern match at Parser.Main (line 423, column 7 - line 433, column 28): " + [v.constructor.name]);
+            throw new Error("Failed pattern match at Parser.Main (line 422, column 7 - line 432, column 28): " + [v.constructor.name]);
           };
         }();
         return map(functorReaderT(functorStateT(freeFunctor)))(fixed)(go2(i));
@@ -7619,7 +7574,7 @@
           return showParseSteps(dictShow)(dictKorok)(v.value0);
         }
         ;
-        throw new Error("Failed pattern match at Parser.Main (line 358, column 1 - line 358, column 171): " + [v.constructor.name]);
+        throw new Error("Failed pattern match at Parser.Main (line 357, column 1 - line 357, column 171): " + [v.constructor.name]);
       };
     };
   };
@@ -7633,7 +7588,7 @@
         return new Terminal(x.value0);
       }
       ;
-      throw new Error("Failed pattern match at Parser.Main (line 111, column 1 - line 111, column 58): " + [x.constructor.name]);
+      throw new Error("Failed pattern match at Parser.Main (line 110, column 1 - line 110, column 58): " + [x.constructor.name]);
     },
     from: function(x) {
       if (x instanceof NonTerminal) {
@@ -7644,7 +7599,7 @@
         return new Inr(x.value0);
       }
       ;
-      throw new Error("Failed pattern match at Parser.Main (line 111, column 1 - line 111, column 58): " + [x.constructor.name]);
+      throw new Error("Failed pattern match at Parser.Main (line 110, column 1 - line 110, column 58): " + [x.constructor.name]);
     }
   };
   var showPart = function(dictShow) {
@@ -7669,16 +7624,16 @@
       return function(v) {
         return function(dictKorok) {
           return span2(dictKorok)(bang2(dictKorok.MonadST5().Monad0().Applicative0())(attr(attrSpan_ClassString)(Class.value)("zipper")))([span2(dictKorok)(bang2(dictKorok.MonadST5().Monad0().Applicative0())(attr(attrSpan_ClassString)(Class.value)("before")))(map(functorArray)(function() {
-            var $367 = text_(dictKorok.MonadST5().Monad0());
-            var $368 = show(showPart(dictShow)(dictShow1));
-            return function($369) {
-              return $367($368($369));
+            var $379 = text_(dictKorok.MonadST5().Monad0());
+            var $380 = show(showPart(dictShow)(dictShow1));
+            return function($381) {
+              return $379($380($381));
             };
           }())(v.value0)), span2(dictKorok)(bang2(dictKorok.MonadST5().Monad0().Applicative0())(attr(attrSpan_ClassString)(Class.value)("after")))(map(functorArray)(function() {
-            var $370 = text_(dictKorok.MonadST5().Monad0());
-            var $371 = show(showPart(dictShow)(dictShow1));
-            return function($372) {
-              return $370($371($372));
+            var $382 = text_(dictKorok.MonadST5().Monad0());
+            var $383 = show(showPart(dictShow)(dictShow1));
+            return function($384) {
+              return $382($383($384));
             };
           }())(v.value1))]);
         };
@@ -7702,11 +7657,11 @@
         return function(v) {
           return function(dictKorok) {
             return ul_(dictKorok)(map(functorArray)(function() {
-              var $373 = li_(dictKorok);
-              return function($374) {
-                return $373(function(v1) {
+              var $385 = li_(dictKorok);
+              return function($386) {
+                return $385(function(v1) {
                   return renderItem(dictShow)(dictShow1)(dictShow2)(v1)(dictKorok);
-                }($374));
+                }($386));
               };
             }())(v));
           };
@@ -7756,7 +7711,7 @@
                   var v1 = partition(function(v2) {
                     return eq(dictEq)(v2.pName)(p);
                   })(rules);
-                  return bind(bindArray)(v1.yes)(function($375) {
+                  return bind(bindArray)(v1.yes)(function($387) {
                     return function(v2) {
                       if (v2["continue"] instanceof Just) {
                         return readyset(v1.no)(v2.following)([v2["continue"].value0]);
@@ -7766,10 +7721,10 @@
                         return readyset(v1.no)(append(semigroupArray)(v2.following)(ps))(lookahead);
                       }
                       ;
-                      throw new Error("Failed pattern match at Parser.Main (line 279, column 9 - line 281, column 65): " + [v2["continue"].constructor.name]);
+                      throw new Error("Failed pattern match at Parser.Main (line 278, column 9 - line 280, column 65): " + [v2["continue"].constructor.name]);
                     }(preview(function(v2) {
                       return v2.rule;
-                    }($375)));
+                    }($387)));
                   });
                 };
               };
@@ -7827,12 +7782,12 @@
   var minimizeState = function(dictEq) {
     return function(dictEq1) {
       return function(dictEq2) {
-        var $376 = foldl2(function(items) {
+        var $388 = foldl2(function(items) {
           return function(newItem) {
             var accumulate = function(alreadyFound) {
               return function(item) {
-                var $292 = eq(dictEq1)(item.rName)(newItem.rName) && eq(eqZipper(dictEq)(dictEq2))(item.rule)(newItem.rule);
-                if ($292) {
+                var $304 = eq(dictEq1)(item.rName)(newItem.rName) && eq(eqZipper(dictEq)(dictEq2))(item.rule)(newItem.rule);
+                if ($304) {
                   return {
                     accum: true,
                     value: {
@@ -7857,8 +7812,8 @@
             return append(semigroupArray)(v.value)([newItem]);
           };
         })([]);
-        return function($377) {
-          return State($376($377));
+        return function($389) {
+          return State($388($389));
         };
       };
     };
@@ -7962,8 +7917,8 @@
             return function(b) {
               var ja = new Just(a);
               return new Tuple(ja, function() {
-                var $323 = eq(eqMaybe(dictEq))(b)(ja);
-                if ($323) {
+                var $335 = eq(eqMaybe(dictEq))(b)(ja);
+                if ($335) {
                   return Nothing.value;
                 }
                 ;
@@ -7995,7 +7950,7 @@
         return lookahead;
       }
       ;
-      throw new Error("Failed pattern match at Parser.Main (line 227, column 33 - line 229, column 23): " + [$$continue.constructor.name]);
+      throw new Error("Failed pattern match at Parser.Main (line 226, column 33 - line 228, column 23): " + [$$continue.constructor.name]);
     };
   };
   var closeItem = function(dictEq) {
@@ -8010,7 +7965,7 @@
           return startRules(dictEq)(grammar)(v.value0.nonterminal)(firsts(dictEq)(grammar)(v.value0.following)(continueOn(v["value0"]["continue"])(item.lookahead)));
         }
         ;
-        throw new Error("Failed pattern match at Parser.Main (line 239, column 26 - line 243, column 68): " + [v.constructor.name]);
+        throw new Error("Failed pattern match at Parser.Main (line 238, column 26 - line 242, column 68): " + [v.constructor.name]);
       };
     };
   };
@@ -8034,15 +7989,15 @@
             var $tco_result;
             function $tco_loop(dictEq, dictEq1, dictEq2, grammar, state0) {
               var state$prime = close1(dictEq1)(grammar)(state0);
-              var $333 = $$null(state$prime);
-              if ($333) {
+              var $345 = $$null(state$prime);
+              if ($345) {
                 $tco_done = true;
                 return state0;
               }
               ;
               var state3 = append(semigroupState(dictEq1)(dictEq)(dictEq2))(state0)(state$prime);
-              var $334 = eq(eqState(dictEq1)(dictEq)(dictEq2))(state3)(state0);
-              if ($334) {
+              var $346 = eq(eqState(dictEq1)(dictEq)(dictEq2))(state3)(state0);
+              if ($346) {
                 $tco_done = true;
                 return state0;
               }
@@ -8071,10 +8026,10 @@
         return function(grammar) {
           return function(state3) {
             return nubEq(eqState(dictOrd.Eq0())(dictEq)(dictOrd1.Eq0()))(fromFoldable(foldableSemigroupMap)(map(functorSemigroupMap)(function() {
-              var $381 = close(dictEq)(dictOrd.Eq0())(dictOrd1.Eq0())(grammar);
-              var $382 = minimizeState(dictOrd.Eq0())(dictEq)(dictOrd1.Eq0());
-              return function($383) {
-                return $381($382($383));
+              var $393 = close(dictEq)(dictOrd.Eq0())(dictOrd1.Eq0())(grammar);
+              var $394 = minimizeState(dictOrd.Eq0())(dictEq)(dictOrd1.Eq0());
+              return function($395) {
+                return $393($394($395));
               };
             }())(nextSteps(dictOrd)(dictOrd1)(state3))));
           };
@@ -8106,8 +8061,8 @@
             var $tco_result;
             function $tco_loop(dictOrd, dictEq, dictOrd1, grammar, states) {
               var states$prime = closeStates1(dictOrd)(dictEq)(dictOrd1)(grammar)(states);
-              var $335 = eq(eqArray(eqState(dictOrd.Eq0())(dictEq)(dictOrd1.Eq0())))(states$prime)(states);
-              if ($335) {
+              var $347 = eq(eqArray(eqState(dictOrd.Eq0())(dictEq)(dictOrd1.Eq0())))(states$prime)(states);
+              if ($347) {
                 $tco_done = true;
                 return states;
               }
@@ -8142,7 +8097,7 @@
             return new Terminal(v1(v2.value0));
           }
           ;
-          throw new Error("Failed pattern match at Parser.Main (line 116, column 1 - line 118, column 46): " + [v.constructor.name, v1.constructor.name, v2.constructor.name]);
+          throw new Error("Failed pattern match at Parser.Main (line 115, column 1 - line 117, column 46): " + [v.constructor.name, v1.constructor.name, v2.constructor.name]);
         };
       };
     }
@@ -8198,18 +8153,18 @@
         }))]))([])];
         var currentValue = counter(monadSTEffect)(alt(altEvent(applicativeEffect))(bang2(applicativeEffect)(""))(event.changeText));
         return div_(korokGlobalEffect)([style_(korokGlobalEffect)(pure(applicativeArray)(text_(monadEffect)("\n            .before { color: lightgray; }\n          "))), table_(korokGlobalEffect)(pure(applicativeArray)(tbody_(korokGlobalEffect)(map(functorArray)(function() {
-          var $384 = tr_(korokGlobalEffect);
-          var $385 = map(functorArray)(td_(korokGlobalEffect));
-          return function($386) {
-            return $384($385($386));
+          var $396 = tr_(korokGlobalEffect);
+          var $397 = map(functorArray)(td_(korokGlobalEffect));
+          return function($398) {
+            return $396($397($398));
           };
         }())([[[text_(monadEffect)("E")], [text_(monadEffect)("::=")], [text_(monadEffect)("("), text_(monadEffect)("L"), text_(monadEffect)(")")], [text_(monadEffect)("data E")], [text_(monadEffect)("=")], [text_(monadEffect)("E1"), text_(monadEffect)(" "), text_(monadEffect)("L")]], [[], [text_(monadEffect)("|")], [text_(monadEffect)("x")], [], [text_(monadEffect)("|")], [text_(monadEffect)("E2")]], [[text_(monadEffect)("L")], [text_(monadEffect)("::=")], [text_(monadEffect)("E")], [text_(monadEffect)("data L")], [text_(monadEffect)("=")], [text_(monadEffect)("L1"), text_(monadEffect)(" "), text_(monadEffect)("E")]], [[], [text_(monadEffect)("|")], [text_(monadEffect)("L"), text_(monadEffect)(","), text_(monadEffect)("E")], [], [text_(monadEffect)("|")], [text_(monadEffect)("L2"), text_(monadEffect)(" "), text_(monadEffect)("L"), text_(monadEffect)(" "), text_(monadEffect)("E")]]])))), div_(korokGlobalEffect)(pure(applicativeArray)(ol_(korokGlobalEffect)(map(functorArray)(function() {
-          var $387 = li_(korokGlobalEffect);
-          var $388 = pure(applicativeArray);
-          return function($389) {
-            return $387($388(function(v) {
+          var $399 = li_(korokGlobalEffect);
+          var $400 = pure(applicativeArray);
+          return function($401) {
+            return $399($400(function(v) {
               return renderState(showMaybe(showSorts))(showMaybe(showRule))(showMaybe(showTok))(v)(korokGlobalEffect);
-            }($389)));
+            }($401)));
           };
         }())(g8Generated(unit))))), div_(korokGlobalEffect)(top2), div_(korokGlobalEffect)(pure(applicativeArray)(flip(switcher(monadSTEffect))(currentValue)(function(v) {
           return vbussed()(monadSTEffect)(vbusCons2({
@@ -8222,34 +8177,34 @@
             }
           })()()(vbusNil)()()()())()()()())($$Proxy.value)(function(pPush) {
             return function(pEvent) {
-              var currentIndex = dedup(eqInt)(applicativeEffect)(monadSTEffect)(mapAccum(eventIsEvent(monadSTEffect))(function(v2) {
+              var currentIndex = dedup(eqInt)(applicativeEffect)(monadSTEffect)(compact(compactableEvent(applicativeEffect))(mapAccum(eventIsEvent(monadSTEffect))(function(v2) {
                 return function(v3) {
-                  var curIx = min(ordInt)(v2.value1.value1 - 1 | 0)(max(ordInt)(0)(function() {
-                    var $353 = v2.value1.value0 !== v3.value0;
-                    if ($353) {
+                  var curIx = map(functorMaybe)(map(functorFn)(min(ordInt)(v2.value1.value1 - 1 | 0))(max(ordInt)(0)))(function() {
+                    var $365 = v2.value1.value0 !== v3.value0;
+                    if ($365) {
                       if (v2.value0) {
-                        return v2.value1.value1 - 1 | 0;
+                        return Nothing.value;
                       }
                       ;
-                      return v2.value1.value1 - 2 | 0;
+                      return new Just(v2.value1.value1 - 1 | 0);
                     }
                     ;
-                    return function() {
+                    return new Just(function() {
                       if (v2.value0) {
                         return add(semiringInt);
                       }
                       ;
                       return sub(ringInt);
-                    }()(v3.value1)(1);
-                  }()));
-                  return new Tuple(new Tuple(v2.value1.value0, curIx), curIx);
+                    }()(v3.value1)(1));
+                  }());
+                  return new Tuple(new Tuple(v2.value1.value0, fromMaybe(v3.value1)(curIx)), curIx);
                 };
               })(alt(altEvent(applicativeEffect))(map(functorEvent)(function(v2) {
                 return new Tuple(false, v2);
               })(pEvent.toggleLeft))(map(functorEvent)(function(v2) {
                 return new Tuple(true, v2);
-              })(pEvent.toggleRight)))(new Tuple(-1 | 0, 0)));
-              return envy(keepLatest(eventIsEvent(monadSTEffect))(memoize(monadSTEffect)(map(functorEvent)(spy()("val"))(currentIndex))(function(stackIndex) {
+              })(pEvent.toggleRight)))(new Tuple(-1 | 0, 0))));
+              return envy(keepLatest(eventIsEvent(monadSTEffect))(memoize(monadSTEffect)(currentIndex)(function(stackIndex) {
                 return sweep(ordInt)(monadSTEffect)(stackIndex)(function(sweeper) {
                   var contentAsMonad = showMaybeParseSteps(korokGlobalEffect)(showTok)(flap(functorMaybe)(map(functorMaybe)(parseSteps(g8Table()))(g8FromString(v.value0)))(S1.value));
                   var v2 = runTrampoline(runStateT(runReaderT(contentAsMonad)(sweeper))(0));
