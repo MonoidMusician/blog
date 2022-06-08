@@ -23,6 +23,7 @@ to generate this file without the comments in this block.
   , "event"
   , "filterable"
   , "foldable-traversable"
+  , "free"
   , "lists"
   , "maybe"
   , "ordered-collections"
