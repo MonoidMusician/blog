@@ -378,7 +378,7 @@ getVisibilityAndIncrement' s = do
   pure
     ( n /\
         ( toggle true (f n) <#> \v ->
-            D.Style := (s <> "display:" <> if v then "block" else "none" <> ";")
+            D.Style := (s <> if v then "" else "display:none;")
         )
     )
 
@@ -396,13 +396,13 @@ showParseStep
   -> SuperStack m (Domable m lock payload)
 showParseStep (Left Nothing) = do
   n /\ vi <- getVisibilityAndIncrement
-  pure $ D.div vi [ (text_ $ ("Step " <> show n <> ":") <> "Parse error") ]
+  pure $ D.div vi [ (text_ $ ("Step " <> show n <> ": ") <> "Parse error") ]
 showParseStep (Left (Just v)) = do
   n /\ vi <- getVisibilityAndIncrement
-  pure $ D.div vi [ text_ $ ("Step " <> show n <> ":") <> (show (g8ParseResult v)) ]
+  pure $ D.div vi [ text_ $ ("Step " <> show n <> ": ") <> (show (g8ParseResult v)) ]
 showParseStep (Right { stack, inputs }) = do
   n /\ vi <- getVisibilityAndIncrement' "display: flex; justify-content: space-between;"
-  pure $ D.div vi [ D.div_ [ text_ ("Step " <> show n <> ":") ], D.div_ [ showStack stack ], D.div_ [ text_ (show inputs) ] ]
+  pure $ D.div vi [ D.div_ [ text_ ("Step " <> show n <> ": "), showStack stack ], D.div_ [ text_ (show inputs) ] ]
 
 type SuperStack m a = ReaderT
   (Int -> AnEvent m Unit)
@@ -461,7 +461,7 @@ counter event = mapAccum f event 0
   f a b = (b + 1) /\ (a /\ b)
 
 toggle :: forall s m a b. HeytingAlgebra b => MonadST s m => b -> AnEvent m a → AnEvent m b
-toggle start event = fold (\_ x -> not x) event start
+toggle start event = bang start <|> fold (\_ x -> not x) event start
 
 data Bounds x = OOBL | OOBR | Val x
 
