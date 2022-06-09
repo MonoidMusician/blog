@@ -28,6 +28,8 @@ import Deku.Core as DC
 import Deku.DOM as D
 import Deku.Toplevel (runInBody)
 import Effect (Effect)
+import Effect.Class.Console (logShow)
+import Effect.Unsafe (unsafePerformEffect)
 import FRP.Event (AnEvent, bang, fold, keepLatest, mapAccum, memoize, sweep)
 import FRP.Event.VBus (V)
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps)
@@ -335,7 +337,7 @@ closeStates grammar states =
     if states' == states then states else closeStates grammar states'
 
 -- what run are we are and how many steps are in the run
-type RunAndSteps = Int /\ Int
+type RunAndSteps = Int
 
 type TopLevelUIAction = V (changeText :: String)
 type ParsedUIAction = V (toggleLeft :: RunAndSteps, toggleRight :: RunAndSteps)
@@ -453,7 +455,7 @@ renderZipper (Zipper before after) =
     ]
 
 -- the current run and the current index
-type RunAndIndex = Int /\ Int
+type RunAndIndex = Int
 
 counter :: forall s m a. MonadST s m => AnEvent m a → AnEvent m (a /\ Int)
 counter event = mapAccum f event 0
@@ -504,26 +506,21 @@ main = runInBody
             vbussed (Proxy :: _ ParsedUIAction) \pPush pEvent ->
               let
                 currentIndex = compact $ map oob2m $ mapAccum
-                  ( \(lr /\ myRun /\ myMax) (plr /\ run /\ ix') ->
+                  ( \(lr /\ myMax) (plr /\ ix') ->
                       let
                         curIx = case ix' of
                           OOBR -> if lr then OOBR else Val (myMax - 1)
                           OOBL -> if not lr then OOBL else Val 0
                           Val ix ->
-                            if myRun /= run
-                            -- new run, so we show all steps
-                            then if lr then OOBR else Val (myMax - 1)
-                            -- not a new run, so we can use the previous index
-                            else
-                              let
-                                n = (if lr /= plr then const else if lr then add else sub) ix 1
-                              in
-                                if n < 0 then OOBL else if n >= myMax then OOBR else Val n
+                            let
+                              n = (if lr /= plr then const else if lr then add else sub) ix 1
+                            in
+                              if n < 0 then OOBL else if n >= myMax then OOBR else Val n
                       in
-                        (lr /\ myRun /\ curIx) /\ curIx
+                        (lr /\ curIx) /\ curIx
                   )
                   (((false /\ _) <$> pEvent.toggleLeft) <|> ((true /\ _) <$> pEvent.toggleRight))
-                  (false /\ -1 /\ OOBR)
+                  (false /\ OOBR)
               in
                 envy $ keepLatest $ memoize currentIndex \stackIndex -> sweep stackIndex \sweeper ->
                   let
@@ -532,8 +529,8 @@ main = runInBody
                   in
                     D.div_
                       [ D.div_
-                          [ D.button (bang $ D.OnClick := pPush.toggleLeft (count /\ nEntities)) [ text_ "<" ]
-                          , D.button (bang $ D.OnClick := pPush.toggleRight (count /\ nEntities)) [ text_ ">" ]
+                          [ D.button (bang $ D.OnClick := pPush.toggleLeft (nEntities)) [ text_ "<" ]
+                          , D.button (bang $ D.OnClick := pPush.toggleRight (nEntities)) [ text_ ">" ]
                           ]
                       , D.div_ [ content ]
                       ]
