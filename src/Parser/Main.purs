@@ -4,10 +4,11 @@ import Prelude
 
 import Bolson.Core (envy, fixed, vbussed)
 import Control.Alt ((<|>))
-import Control.Monad.Reader (ReaderT, ask, runReaderT)
+import Control.Apply (lift2)
 import Control.Monad.ST.Class (class MonadST)
 import Control.Monad.State (StateT, get, put, runStateT)
 import Control.Monad.Trampoline (Trampoline, runTrampoline)
+import Data.Array ((..))
 import Data.Array as Array
 import Data.Bifunctor (class Bifunctor, bimap)
 import Data.Compactable (compact)
@@ -16,7 +17,7 @@ import Data.Foldable (for_, oneOfMap)
 import Data.Generic.Rep (class Generic)
 import Data.Map (SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..))
 import Data.Show.Generic (genericShow)
 import Data.String (CodePoint)
 import Data.Traversable (mapAccumL)
@@ -28,9 +29,7 @@ import Deku.Core as DC
 import Deku.DOM as D
 import Deku.Toplevel (runInBody)
 import Effect (Effect)
-import Effect.Class.Console (logShow)
-import Effect.Unsafe (unsafePerformEffect)
-import FRP.Event (AnEvent, bang, fold, keepLatest, mapAccum, memoize, sweep)
+import FRP.Event (class IsEvent, AnEvent, bang, filterMap, fold, keepLatest, mapAccum, memoize, sweep, withLast)
 import FRP.Event.VBus (V)
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps)
 import Parser.ProtoG8 (Parsed, g8FromString, g8ParseResult, g8Table)
@@ -337,10 +336,8 @@ closeStates grammar states =
     if states' == states then states else closeStates grammar states'
 
 -- what run are we are and how many steps are in the run
-type RunAndSteps = Int
-
 type TopLevelUIAction = V (changeText :: String)
-type ParsedUIAction = V (toggleLeft :: RunAndSteps, toggleRight :: RunAndSteps)
+type ParsedUIAction = V (toggleLeft :: Unit, toggleRight :: Unit)
 
 data TodoAction = Prioritize | Delete
 
@@ -357,7 +354,7 @@ showMaybeStack Nothing = text_ "Parse error"
 showMaybeStack (Just stack) = showStack stack
 
 showMaybeParseSteps :: forall input s m lock payload. Korok s m => Show input => Maybe (ParseSteps input (Stack G8.State Parsed)) -> SuperStack m (Domable m lock payload)
-showMaybeParseSteps Nothing = pure (text_ "Parse error")
+showMaybeParseSteps Nothing = pure (pure (text_ "Parse error"))
 showMaybeParseSteps (Just stack) = showParseSteps stack
 
 getVisibilityAndIncrement
@@ -374,12 +371,11 @@ getVisibilityAndIncrement'
   => String
   -> SuperStack m (Int /\ AnEvent m (Attribute element))
 getVisibilityAndIncrement' s = do
-  f <- ask
   n <- get
   put (n + 1)
   pure
-    ( n /\
-        ( toggle true (f n) <#> \v ->
+    ( \f -> n /\
+        ( f n <#> \v ->
             D.Style := (s <> if v then "" else "display:none;")
         )
     )
@@ -397,19 +393,16 @@ showParseStep
        }
   -> SuperStack m (Domable m lock payload)
 showParseStep (Left Nothing) = do
-  n /\ vi <- getVisibilityAndIncrement
-  pure $ D.div vi [ (text_ $ ("Step " <> show n <> ": ") <> "Parse error") ]
+  getVisibilityAndIncrement <#> map \(n /\ vi) ->
+    D.div vi [ (text_ $ ("Step " <> show n <> ": ") <> "Parse error") ]
 showParseStep (Left (Just v)) = do
-  n /\ vi <- getVisibilityAndIncrement
-  pure $ D.div vi [ text_ $ ("Step " <> show n <> ": ") <> (show (g8ParseResult v)) ]
+  getVisibilityAndIncrement <#> map \(n /\ vi) ->
+    D.div vi [ text_ $ ("Step " <> show n <> ": ") <> (show (g8ParseResult v)) ]
 showParseStep (Right { stack, inputs }) = do
-  n /\ vi <- getVisibilityAndIncrement' "display: flex; justify-content: space-between;"
-  pure $ D.div vi [ D.div_ [ text_ ("Step " <> show n <> ": "), showStack stack ], D.div_ [ text_ (show inputs) ] ]
+  getVisibilityAndIncrement' "display: flex; justify-content: space-between;" <#> map \(n /\ vi) ->
+    D.div vi [ D.div_ [ text_ ("Step " <> show n <> ": "), showStack stack ], D.div_ [ text_ (show inputs) ] ]
 
-type SuperStack m a = ReaderT
-  (Int -> AnEvent m Unit)
-  (StateT Int Trampoline)
-  a
+type SuperStack m a = StateT Int Trampoline ((Int -> AnEvent m Boolean) -> a)
 
 showParseSteps
   :: forall input s m lock payload
@@ -417,7 +410,7 @@ showParseSteps
   => Korok s m
   => ParseSteps input (Stack G8.State Parsed)
   -> SuperStack m (Domable m lock payload)
-showParseSteps i = fixed <$> (go i)
+showParseSteps i = map fixed <$> (go i)
   where
   go =
     let
@@ -425,15 +418,11 @@ showParseSteps i = fixed <$> (go i)
     in
       case _ of
         Error -> do
-          o <- s (Left Nothing)
-          pure [ o ]
+          s (Left Nothing) <#> map \o -> [ o ]
         (Complete v) -> do
-          o <- s (Left (Just v))
-          pure [ o ]
+          s (Left (Just v)) <#> map \o -> [ o ]
         (Step step more) -> do
-          o <- s (Right step)
-          r <- go more
-          pure ([ o ] <> r)
+          lift2 (\o r -> [ o ] <> r) <$> s (Right step) <*> go more
 
 renderState :: forall nt r tok. Show nt => Show r => Show tok => State nt r tok -> Nut
 renderState (State items) = D.ul_ $ D.li_ <<< (\v -> renderItem v) <$> items
@@ -454,9 +443,6 @@ renderZipper (Zipper before after) =
     , D.span (bang (D.Class := "after")) $ text_ <<< show <$> after
     ]
 
--- the current run and the current index
-type RunAndIndex = Int
-
 counter :: forall s m a. MonadST s m => AnEvent m a → AnEvent m (a /\ Int)
 counter event = mapAccum f event 0
   where
@@ -465,17 +451,36 @@ counter event = mapAccum f event 0
 toggle :: forall s m a b. HeytingAlgebra b => MonadST s m => b -> AnEvent m a → AnEvent m b
 toggle start event = bang start <|> fold (\_ x -> not x) event start
 
-data Bounds x = OOBL | OOBR | Val x
+withLast' :: forall event a. IsEvent event => event a -> event { last :: a, now :: a }
+withLast' = filterMap (\{ last, now } -> last <#> { last: _, now }) <<< withLast
 
-oob2m :: Bounds ~> Maybe
-oob2m (Val x) = Just x
-oob2m _ = Nothing
+dedup :: forall s m a. Eq a => Applicative m => MonadST s m => AnEvent m a -> AnEvent m a
+dedup e = compact $
+  mapAccum (\a b -> let ja = Just a in ja /\ (if b == ja then Nothing else Just a)) e Nothing
+
+interpolate :: Int -> Int -> Array Int
+interpolate i j | i > j = j .. (i - 1)
+interpolate i j | i < j = i .. (j - 1)
+interpolate _ _ = []
+
+stepByStep :: forall s m r. MonadST s m => Boolean -> AnEvent m Int -> ((Int -> AnEvent m Boolean) -> r) -> AnEvent m r
+stepByStep start index cb =
+  let
+    state = withLast' index
+    swept = keepLatest $ map (oneOfMap bang) $
+      state <#> \{ last, now } -> interpolate last now
+  in
+    sweep swept \sweeper ->
+      let
+        sweeper' = toggle start <<< sweeper
+      in
+        cb sweeper'
 
 main :: Effect Unit
 main = runInBody
   ( vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
       let
-        currentValue = counter (bang "" <|> event.changeText)
+        currentValue = bang "" <|> event.changeText
         top =
           [ D.input
               ( oneOfMap bang
@@ -491,8 +496,8 @@ main = runInBody
       D.div_
         [ D.style_ $ pure $ text_
             """
-            .before { color: lightgray; }
-          """
+              .before { color: lightgray; }
+            """
         , D.table_ $ pure $ D.tbody_ $
             D.tr_ <<< map D.td_ <$>
               [ [ [ text_ "E" ], [ text_ "::=" ], [ text_ "(", text_ "L", text_ ")" ], [ text_ "data E" ], [ text_ "=" ], [ text_ "E1", text_ " ", text_ "L" ] ]
@@ -502,37 +507,36 @@ main = runInBody
               ]
         , D.div_ $ pure $ D.ol_ $ D.li_ <<< pure <<< (\v -> renderState v) <$> g8Generated unit
         , D.div_ top
-        , D.div_ $ pure $ currentValue `flip switcher` \(v /\ count) ->
-            vbussed (Proxy :: _ ParsedUIAction) \pPush pEvent ->
-              let
-                currentIndex = compact $ map oob2m $ mapAccum
-                  ( \(lr /\ myMax) (plr /\ ix') ->
+        , D.div_ $ pure $ currentValue `flip switcher` \v ->
+            let
+              contentAsMonad = showMaybeParseSteps $ parseSteps (unsafePartial g8Table) <$> g8FromString v <@> G8.S1
+              -- Run the first layer of the monad, to get the number of items being rendered up-front
+              contentAsMonad2 /\ nEntities = runTrampoline (runStateT contentAsMonad 0)
+            in
+              vbussed (Proxy :: _ ParsedUIAction) \pPush pEvent ->
+                let
+                  -- Maintain the current index, clamped between 0 and nEntitities
+                  -- (Note: it is automatically reset, since `switcher` resubscribes,
+                  -- creating new state for it)
+                  currentIndex = dedup $ bang nEntities <|>
+                    fold
+                      (\f x -> clamp 0 nEntities (f x))
+                      (((_ - 1) <$ pEvent.toggleLeft) <|> ((_ + 1) <$ pEvent.toggleRight))
+                      nEntities
+                in
+                  -- Memoize it and run it through `stepByStep` to toggle each
+                  -- item individually
+                  envy $ keepLatest $ memoize currentIndex \stackIndex ->
+                    stepByStep true stackIndex \sweeper ->
                       let
-                        curIx = case ix' of
-                          OOBR -> if lr then OOBR else Val (myMax - 1)
-                          OOBL -> if not lr then OOBL else Val 0
-                          Val ix ->
-                            let
-                              n = (if lr /= plr then const else if lr then add else sub) ix 1
-                            in
-                              if n < 0 then OOBL else if n >= myMax then OOBR else Val n
+                        content = contentAsMonad2 sweeper
                       in
-                        (lr /\ curIx) /\ curIx
-                  )
-                  (((false /\ _) <$> pEvent.toggleLeft) <|> ((true /\ _) <$> pEvent.toggleRight))
-                  (false /\ OOBR)
-              in
-                envy $ keepLatest $ memoize currentIndex \stackIndex -> sweep stackIndex \sweeper ->
-                  let
-                    contentAsMonad = showMaybeParseSteps $ parseSteps (unsafePartial g8Table) <$> g8FromString v <@> G8.S1
-                    content /\ nEntities = runTrampoline (runStateT (runReaderT contentAsMonad sweeper) 0)
-                  in
-                    D.div_
-                      [ D.div_
-                          [ D.button (bang $ D.OnClick := pPush.toggleLeft (nEntities)) [ text_ "<" ]
-                          , D.button (bang $ D.OnClick := pPush.toggleRight (nEntities)) [ text_ ">" ]
+                        D.div_
+                          [ D.div_
+                              [ D.button (bang $ D.OnClick := pPush.toggleLeft unit) [ text_ "<" ]
+                              , D.button (bang $ D.OnClick := pPush.toggleRight unit) [ text_ ">" ]
+                              ]
+                          , D.div_ [ content ]
                           ]
-                      , D.div_ [ content ]
-                      ]
         ]
   )
