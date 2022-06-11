@@ -12,6 +12,7 @@ import Data.Array ((..))
 import Data.Array as Array
 import Data.Bifunctor (class Bifunctor, bimap)
 import Data.Compactable (compact)
+import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..))
 import Data.Foldable (for_, oneOf, oneOfMap)
 import Data.Function (on)
@@ -20,21 +21,28 @@ import Data.Int (floor)
 import Data.Map (SemigroupMap(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
+import Data.Newtype (unwrap)
 import Data.Show.Generic (genericShow)
 import Data.String (CodePoint)
+import Data.Time.Duration (Seconds(..))
 import Data.Traversable (mapAccumL)
 import Data.Tuple (fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import Deku.Attribute (class Attr, Attribute, cb, (:=))
-import Deku.Control (switcher, text_)
+import Deku.Control (switcher, text, text_)
 import Deku.Core (class Korok, Domable, Nut)
 import Deku.Core as DC
 import Deku.DOM as D
-import Deku.Listeners (slider)
+import Deku.Listeners (click, slider)
 import Deku.Toplevel (runInBody)
 import Effect (Effect)
-import FRP.Event (class IsEvent, AnEvent, bang, filterMap, fold, keepLatest, mapAccum, memoize, sweep, withLast)
+import Effect.Now (now)
+import Effect.Ref (new, read, write)
+import FRP.Event (class IsEvent, AnEvent, bang, filterMap, fold, keepLatest, mapAccum, memoize, sampleOn, subscribe, sweep, withLast)
+import FRP.Event.AnimationFrame (animationFrame)
+import FRP.Event.Time (withTime)
 import FRP.Event.VBus (V)
+import FRP.Rate (Beats(..), RateInfo, timeFromRate)
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps)
 import Parser.ProtoG8 (Parsed, g8FromString, g8ParseResult, g8Table)
 import Parser.ProtoG8 as G8
@@ -343,7 +351,16 @@ closeStates grammar states =
 
 -- what run are we are and how many steps are in the run
 type TopLevelUIAction = V (changeText :: String)
-type ParsedUIAction = V (toggleLeft :: Unit, toggleRight :: Unit, slider :: Number)
+
+type StartingTick = Boolean
+
+type ParsedUIAction = V
+  ( toggleLeft :: Unit
+  , toggleRight :: Unit
+  , slider :: Number
+  , startState :: Maybe (Effect Unit)
+  , animationTick :: StartingTick /\ RateInfo
+  )
 
 data TodoAction = Prioritize | Delete
 
@@ -527,12 +544,25 @@ main = runInBody
                   -- Maintain the current index, clamped between 0 and nEntitities
                   -- (Note: it is automatically reset, since `switcher` resubscribes,
                   -- creating new state for it)
+                  startState = pEvent.startState <|> bang Nothing
+                  animationTick = compact $ mapAccum
+                    ( \i@(tf /\ { beats: Beats beats }) { target: Beats target' } ->
+                        let
+                          target = if tf then 0.0 else target'
+                        in
+                          if target > beats then ({ target: Beats target } /\ Nothing)
+                          else ({ target: Beats (target + 1.0) } /\ Just i)
+                    )
+                    pEvent.animationTick
+                    { target: Beats 0.0 }
                   currentIndex = dedupOn (eq `on` fst) $ bang (nEntities /\ Initial) <|>
                     mapAccum
                       (\(f /\ a) x -> let fx = clamp 0 nEntities (f x) in fx /\ fx /\ a)
                       ( oneOf
                           [ ((_ - 1) /\ Toggle) <$ pEvent.toggleLeft
                           , ((_ + 1) /\ Toggle) <$ pEvent.toggleRight
+                          -- if we're starting and at the end of a play, loop back to the beginning
+                          , (\(tf /\ _) -> if tf then ((\n -> if n == nEntities then 0 else n + 1) /\ Play) else ((_ + 1) /\ Play)) <$> animationTick
                           , (floor >>> const >>> (_ /\ Slider)) <$> pEvent.slider
                           ]
                       )
@@ -547,29 +577,82 @@ main = runInBody
                       in
                         D.div_
                           [ D.div_
-                              [ D.div_
-                                  [ D.div_
-                                      [ D.input
-                                          ( oneOf
-                                              [ bang $ D.Xtype := "range"
-                                              , bang $ D.Min := "0"
-                                              , bang $ D.Max := show nEntities
-                                              , stackIndex
-                                                  # filterMap case _ of
-                                                      _ /\ Slider -> Nothing
-                                                      x /\ _ -> Just x
-                                                  <#> (\si -> D.Value := show si)
-                                              , slider $ bang pPush.slider
-                                              ]
-                                          )
-                                          []
+                              [ D.button
+                                  ( oneOf
+                                      [ startState <#> \s -> D.OnClick := do
+                                          case s of
+                                            Just unsub -> do
+                                              unsub
+                                              pPush.startState Nothing
+                                            Nothing -> do
+                                              let toSeconds = unInstant >>> unwrap >>> (_ / 1000.0)
+                                              t <- toSeconds <$> now
+                                              subRef <- new (pure unit)
+                                              startRef <- new true
+                                              sub <- subscribe
+                                                (sampleOn currentIndex ((/\) <$>
+                                                    ( timeFromRate (pure 1.0)
+                                                        ( _.time
+                                                            >>> toSeconds
+                                                            >>> (_ - t)
+                                                            >>> Seconds <$> withTime animationFrame
+                                                        )
+                                                    )
+                                                ))
+                                                \(info /\ ci) -> do
+                                                  isStart <- read startRef
+                                                  pPush.animationTick (isStart /\ info)
+                                                  when (fst ci == nEntities && not isStart) do
+                                                    pPush.startState Nothing
+                                                    join $ read subRef
+                                                  write false startRef
+                                              write sub subRef
+                                              pPush.startState (Just sub)
                                       ]
+                                  )
+                                  [ text
+                                      ( startState <#> case _ of
+                                          Just _ -> "Pause"
+                                          Nothing -> "Play"
+                                      )
                                   ]
                               ]
                           , D.div_
-                              [ D.button (bang $ D.OnClick := pPush.toggleLeft unit) [ text_ "<" ]
-                              , D.button (bang $ D.OnClick := pPush.toggleRight unit) [ text_ ">" ]
+                              [ D.input
+                                  ( oneOf
+                                      [ bang $ D.Xtype := "range"
+                                      , bang $ D.Min := "0"
+                                      , bang $ D.Max := show nEntities
+                                      , stackIndex
+                                          # filterMap case _ of
+                                              _ /\ Slider -> Nothing
+                                              x /\ _ -> Just x
+                                          <#> (\si -> D.Value := show si)
+                                      , slider $ startState <#> case _ of
+                                          Nothing -> pPush.slider
+                                          Just unsub -> \n -> pPush.slider n
+                                            *> unsub
+                                            *> pPush.startState Nothing
+                                      ]
+                                  )
+                                  []
                               ]
+                          , let
+                              clickF f = click $
+                                startState <#>
+                                  ( case _ of
+                                      Nothing -> f unit
+                                      Just unsub -> f unit
+                                        *> unsub
+                                        *> pPush.startState Nothing
+                                  )
+                            in
+                              D.div_
+                                [ D.button
+                                    (clickF $ pPush.toggleLeft)
+                                    [ text_ "<" ]
+                                , D.button (clickF $ pPush.toggleRight) [ text_ ">" ]
+                                ]
                           , D.div_ [ content ]
                           ]
         ]
