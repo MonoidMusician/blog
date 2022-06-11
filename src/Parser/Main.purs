@@ -2,7 +2,7 @@ module Parser.Main where
 
 import Prelude
 
-import Bolson.Core (envy, fixed, vbussed)
+import Bolson.Core (envy, fixed)
 import Control.Alt ((<|>))
 import Control.Apply (lift2)
 import Control.Monad.ST.Class (class MonadST)
@@ -31,15 +31,14 @@ import Data.Tuple (fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import Deku.Attribute (class Attr, Attribute, cb, (:=))
 import Deku.Control (switcher, text, text_)
-import Deku.Core (class Korok, Domable, Nut)
+import Deku.Core (class Korok, Domable, Nut, vbussed)
 import Deku.Core as DC
 import Deku.DOM as D
 import Deku.Listeners (click, slider)
-import Deku.Toplevel (runInBody)
 import Effect (Effect)
 import Effect.Now (now)
 import FRP.Behavior (step)
-import FRP.Event (class IsEvent, AnEvent, bang, filterMap, fold, keepLatest, mapAccum, memoize, sampleOn, subscribe, sweep, withLast)
+import FRP.Event (class IsEvent, AnEvent, bang, filterMap, fold, keepLatest, mapAccum, memoize, sampleOn, subscribe, sweep, toEvent, withLast)
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Class (biSampleOn)
 import FRP.Event.Time (withTime)
@@ -506,8 +505,8 @@ stepByStep start index cb =
       in
         cb sweeper'
 
-main :: Effect Unit
-main = runInBody
+main :: Nut
+main =
   ( vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
       let
         currentValue = bang "" <|> event.changeText
@@ -594,13 +593,13 @@ main = runInBody
                                               t <- toSeconds <$> now
                                               sub <- subscribe
                                                 ( selfDestruct (\((isStart /\ _) /\ ci) -> (fst ci == nEntities && not isStart)) (pPush.startState Nothing)
-                                                    ( sampleOn currentIndex
+                                                    ( sampleOn (toEvent currentIndex)
                                                         ( (/\) <$> mapAccum (\i tf -> false /\ tf /\ i)
-                                                            ( timeFromRate (step rt pEvent.rate)
+                                                            ( timeFromRate (step rt $ toEvent pEvent.rate)
                                                                 ( _.time
                                                                     >>> toSeconds
                                                                     >>> (_ - t)
-                                                                    >>> Seconds <$> withTime animationFrame
+                                                                    >>> Seconds <$> withTime (animationFrame)
                                                                 )
                                                             )
                                                             true

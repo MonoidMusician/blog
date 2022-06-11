@@ -1,6 +1,7 @@
 const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const webpack = require("webpack");
+const ssr = require("./ssr");
 module.exports = {
 	mode: "development",
 	entry: "./src/index.js",
@@ -10,7 +11,7 @@ module.exports = {
 	},
 	plugins: [
 		new HtmlWebpackPlugin({
-			template: "index.html",
+			templateContent: ssr.ssr(),
 		}),
 		new webpack.EnvironmentPlugin({
 			LIL_GUI: "true",
