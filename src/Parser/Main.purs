@@ -22,6 +22,7 @@ import Data.Map (SemigroupMap(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
+import Data.Number (e, pi)
 import Data.Show.Generic (genericShow)
 import Data.String (CodePoint)
 import Data.Time.Duration (Seconds(..))
@@ -37,8 +38,10 @@ import Deku.Listeners (click, slider)
 import Deku.Toplevel (runInBody)
 import Effect (Effect)
 import Effect.Now (now)
+import FRP.Behavior (step)
 import FRP.Event (class IsEvent, AnEvent, bang, filterMap, fold, keepLatest, mapAccum, memoize, sampleOn, subscribe, sweep, withLast)
 import FRP.Event.AnimationFrame (animationFrame)
+import FRP.Event.Class (biSampleOn)
 import FRP.Event.Time (withTime)
 import FRP.Event.VBus (V)
 import FRP.Rate (Beats(..), RateInfo, timeFromRate)
@@ -358,6 +361,7 @@ type ParsedUIAction = V
   ( toggleLeft :: Unit
   , toggleRight :: Unit
   , slider :: Number
+  , rate :: Number
   , startState :: Maybe (Effect Unit)
   , animationTick :: StartingTick /\ RateInfo
   )
@@ -545,6 +549,7 @@ main = runInBody
                   -- (Note: it is automatically reset, since `switcher` resubscribes,
                   -- creating new state for it)
                   startState = pEvent.startState <|> bang Nothing
+                  rate = pEvent.rate <|> bang 1.0
                   animationTick = compact $ mapAccum
                     ( \i@(tf /\ { beats: Beats beats }) { target: Beats target' } ->
                         let
@@ -579,7 +584,7 @@ main = runInBody
                           [ D.div_
                               [ D.button
                                   ( oneOf
-                                      [ startState <#> \s -> D.OnClick := do
+                                      [ (biSampleOn rate ((/\) <$> startState)) <#> \(s /\ rt) -> D.OnClick := do
                                           case s of
                                             Just unsub -> do
                                               unsub
@@ -591,7 +596,7 @@ main = runInBody
                                                 ( selfDestruct (\((isStart /\ _) /\ ci) -> (fst ci == nEntities && not isStart)) (pPush.startState Nothing)
                                                     ( sampleOn currentIndex
                                                         ( (/\) <$> mapAccum (\i tf -> false /\ tf /\ i)
-                                                            ( timeFromRate (pure 1.0)
+                                                            ( timeFromRate (step rt pEvent.rate)
                                                                 ( _.time
                                                                     >>> toSeconds
                                                                     >>> (_ - t)
@@ -612,6 +617,25 @@ main = runInBody
                                           Nothing -> "Play"
                                       )
                                   ]
+                              ]
+                          , D.div_
+                              [ text_ "Speed"
+                              , D.span_ $ join $ map
+                                  ( \(n /\ l) ->
+                                      [ D.input
+                                          ( oneOfMap bang
+                                              [ D.Xtype := "radio"
+                                              , D.Checked := show (l == "1x")
+                                              , D.Name := "speed"
+                                              , D.Value := show n
+                                              , D.OnClick := cb \_ -> pPush.rate n
+                                              ]
+                                          )
+                                          []
+                                      , D.label_ [ text_ l ]
+                                      ]
+                                  )
+                                  [ 1.0 /\ "1x", (1.0 / e) /\ "ex", (1.0 / pi) /\ "pix" ]
                               ]
                           , D.div_
                               [ D.input
