@@ -13,20 +13,24 @@ import Data.Array as Array
 import Data.Bifunctor (class Bifunctor, bimap)
 import Data.Compactable (compact)
 import Data.Either (Either(..))
-import Data.Foldable (for_, oneOfMap)
+import Data.Foldable (for_, oneOf, oneOfMap)
+import Data.Function (on)
 import Data.Generic.Rep (class Generic)
+import Data.Int (floor)
 import Data.Map (SemigroupMap(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Show.Generic (genericShow)
 import Data.String (CodePoint)
 import Data.Traversable (mapAccumL)
+import Data.Tuple (fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import Deku.Attribute (class Attr, Attribute, cb, (:=))
 import Deku.Control (switcher, text_)
 import Deku.Core (class Korok, Domable, Nut)
 import Deku.Core as DC
 import Deku.DOM as D
+import Deku.Listeners (slider)
 import Deku.Toplevel (runInBody)
 import Effect (Effect)
 import FRP.Event (class IsEvent, AnEvent, bang, filterMap, fold, keepLatest, mapAccum, memoize, sweep, withLast)
@@ -38,6 +42,8 @@ import Partial.Unsafe (unsafePartial)
 import Type.Proxy (Proxy(..))
 import Web.Event.Event (target)
 import Web.HTML.HTMLInputElement (fromEventTarget, value)
+
+data StepAction = Initial | Toggle | Slider | Play
 
 type Nuts =
   forall s m lock payload
@@ -337,7 +343,7 @@ closeStates grammar states =
 
 -- what run are we are and how many steps are in the run
 type TopLevelUIAction = V (changeText :: String)
-type ParsedUIAction = V (toggleLeft :: Unit, toggleRight :: Unit)
+type ParsedUIAction = V (toggleLeft :: Unit, toggleRight :: Unit, slider :: Number)
 
 data TodoAction = Prioritize | Delete
 
@@ -455,8 +461,11 @@ withLast' :: forall event a. IsEvent event => event a -> event { last :: a, now 
 withLast' = filterMap (\{ last, now } -> last <#> { last: _, now }) <<< withLast
 
 dedup :: forall s m a. Eq a => Applicative m => MonadST s m => AnEvent m a -> AnEvent m a
-dedup e = compact $
-  mapAccum (\a b -> let ja = Just a in ja /\ (if b == ja then Nothing else Just a)) e Nothing
+dedup = dedupOn eq
+
+dedupOn :: forall s m a. (a -> a -> Boolean) -> Applicative m => MonadST s m => AnEvent m a -> AnEvent m a
+dedupOn feq e = compact $
+  mapAccum (\a b -> let ja = Just a in ja /\ (if (feq <$> b <*> ja) == Just true then Nothing else Just a)) e Nothing
 
 interpolate :: Int -> Int -> Array Int
 interpolate i j | i > j = j .. (i - 1)
@@ -518,21 +527,46 @@ main = runInBody
                   -- Maintain the current index, clamped between 0 and nEntitities
                   -- (Note: it is automatically reset, since `switcher` resubscribes,
                   -- creating new state for it)
-                  currentIndex = dedup $ bang nEntities <|>
-                    fold
-                      (\f x -> clamp 0 nEntities (f x))
-                      (((_ - 1) <$ pEvent.toggleLeft) <|> ((_ + 1) <$ pEvent.toggleRight))
+                  currentIndex = dedupOn (eq `on` fst) $ bang (nEntities /\ Initial) <|>
+                    mapAccum
+                      (\(f /\ a) x -> let fx = clamp 0 nEntities (f x) in fx /\ fx /\ a)
+                      ( oneOf
+                          [ ((_ - 1) /\ Toggle) <$ pEvent.toggleLeft
+                          , ((_ + 1) /\ Toggle) <$ pEvent.toggleRight
+                          , (floor >>> const >>> (_ /\ Slider)) <$> pEvent.slider
+                          ]
+                      )
                       nEntities
                 in
                   -- Memoize it and run it through `stepByStep` to toggle each
                   -- item individually
                   envy $ keepLatest $ memoize currentIndex \stackIndex ->
-                    stepByStep true stackIndex \sweeper ->
+                    stepByStep true (map fst stackIndex) \sweeper ->
                       let
                         content = contentAsMonad2 sweeper
                       in
                         D.div_
                           [ D.div_
+                              [ D.div_
+                                  [ D.div_
+                                      [ D.input
+                                          ( oneOf
+                                              [ bang $ D.Xtype := "range"
+                                              , bang $ D.Min := "0"
+                                              , bang $ D.Max := show nEntities
+                                              , stackIndex
+                                                  # filterMap case _ of
+                                                      _ /\ Slider -> Nothing
+                                                      x /\ _ -> Just x
+                                                  <#> (\si -> D.Value := show si)
+                                              , slider $ bang pPush.slider
+                                              ]
+                                          )
+                                          []
+                                      ]
+                                  ]
+                              ]
+                          , D.div_
                               [ D.button (bang $ D.OnClick := pPush.toggleLeft unit) [ text_ "<" ]
                               , D.button (bang $ D.OnClick := pPush.toggleRight unit) [ text_ ">" ]
                               ]
