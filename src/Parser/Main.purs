@@ -37,12 +37,12 @@ import Deku.Listeners (click, slider)
 import Deku.Toplevel (runInBody)
 import Effect (Effect)
 import Effect.Now (now)
-import Effect.Ref (new, read, write)
 import FRP.Event (class IsEvent, AnEvent, bang, filterMap, fold, keepLatest, mapAccum, memoize, sampleOn, subscribe, sweep, withLast)
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Time (withTime)
 import FRP.Event.VBus (V)
 import FRP.Rate (Beats(..), RateInfo, timeFromRate)
+import FRP.SelfDestruct (selfDestruct)
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps)
 import Parser.ProtoG8 (Parsed, g8FromString, g8ParseResult, g8Table)
 import Parser.ProtoG8 as G8
@@ -587,26 +587,22 @@ main = runInBody
                                             Nothing -> do
                                               let toSeconds = unInstant >>> unwrap >>> (_ / 1000.0)
                                               t <- toSeconds <$> now
-                                              subRef <- new (pure unit)
-                                              startRef <- new true
                                               sub <- subscribe
-                                                (sampleOn currentIndex ((/\) <$>
-                                                    ( timeFromRate (pure 1.0)
-                                                        ( _.time
-                                                            >>> toSeconds
-                                                            >>> (_ - t)
-                                                            >>> Seconds <$> withTime animationFrame
+                                                ( selfDestruct (\((isStart /\ _) /\ ci) -> (fst ci == nEntities && not isStart)) (pPush.startState Nothing)
+                                                    ( sampleOn currentIndex
+                                                        ( (/\) <$> mapAccum (\i tf -> false /\ tf /\ i)
+                                                            ( timeFromRate (pure 1.0)
+                                                                ( _.time
+                                                                    >>> toSeconds
+                                                                    >>> (_ - t)
+                                                                    >>> Seconds <$> withTime animationFrame
+                                                                )
+                                                            )
+                                                            true
                                                         )
                                                     )
-                                                ))
-                                                \(info /\ ci) -> do
-                                                  isStart <- read startRef
-                                                  pPush.animationTick (isStart /\ info)
-                                                  when (fst ci == nEntities && not isStart) do
-                                                    pPush.startState Nothing
-                                                    join $ read subRef
-                                                  write false startRef
-                                              write sub subRef
+                                                )
+                                                \(info /\ _) -> pPush.animationTick info
                                               pPush.startState (Just sub)
                                       ]
                                   )
