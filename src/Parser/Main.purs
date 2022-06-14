@@ -2,7 +2,7 @@ module Parser.Main where
 
 import Prelude
 
-import Bolson.Core (envy, fixed, vbussed)
+import Bolson.Core (Child(..), dyn, envy, fixed, vbussed)
 import Control.Alt ((<|>))
 import Control.Apply (lift2)
 import Control.Monad.ST.Class (class MonadST)
@@ -29,6 +29,9 @@ import Data.Newtype (unwrap)
 import Data.Number (e, pi)
 import Data.Show.Generic (genericShow)
 import Data.String (CodePoint)
+import Data.String as String
+import Data.String.NonEmpty as NES
+import Data.String.NonEmpty.Internal (NonEmptyString)
 import Data.Time.Duration (Seconds(..))
 import Data.Traversable (mapAccumL, traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
@@ -36,13 +39,18 @@ import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Deku.Attribute (class Attr, Attribute, cb, (:=))
 import Deku.Control (switcher, text, text_)
-import Deku.Core (class Korok, Domable, Nut)
+import Deku.Core (class Korok, Domable, Nut, bus)
 import Deku.Core as DC
 import Deku.DOM as D
 import Deku.Listeners (click, slider)
 import Deku.Toplevel (runInBody)
 import Effect (Effect)
+import Effect.Aff (launchAff_)
+import Effect.Aff.AVar as AVar
+import Effect.Class (liftEffect)
+import Effect.Class.Console (logShow)
 import Effect.Now (now)
+import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior (step)
 import FRP.Event (class IsEvent, AnEvent, bang, filterMap, fold, keepLatest, mapAccum, memoize, sampleOn, subscribe, sweep, withLast)
 import FRP.Event.AnimationFrame (animationFrame)
@@ -50,12 +58,12 @@ import FRP.Event.Class (biSampleOn)
 import FRP.Event.Time (withTime)
 import FRP.Event.VBus (V)
 import FRP.Rate (Beats(..), RateInfo, timeFromRate)
+import FRP.SampleJIT (sampleJIT)
 import FRP.SelfDestruct (selfDestruct)
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps, topOf)
 import Parser.Proto as Proto
-import Parser.ProtoG8 (Parsed, g8ParseResult)
 import Parser.ProtoG8 as G8
-import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Partial.Unsafe (unsafeCrashWith)
 import Type.Proxy (Proxy(..))
 import Web.Event.Event (target)
 import Web.HTML.HTMLInputElement (fromEventTarget, value)
@@ -108,6 +116,10 @@ generate initial entry =
     { augmented: grammar, start } = fromSeed initial entry
   in
     closeStates grammar [ close grammar (minimizeState [ start ]) ]
+
+getResult :: forall x y z. Stack x (Either y z) -> Maybe z
+getResult (Snoc (Snoc (Zero _) (Right result) _) (Left _) _) = Just result
+getResult _ = Nothing
 
 g8Grammar :: Grammar G8.Sorts G8.Rule G8.Tok
 g8Grammar = MkGrammar
@@ -539,6 +551,22 @@ decide (Shift s) = Just (Left s)
 decide (ShiftReduces s _) = Just (Left s)
 decide (Reduces r) = if NEA.length r == 1 then Just (Right (NEA.head r)) else Nothing
 
+longestFirst :: Array NonEmptyString -> Array NonEmptyString
+longestFirst = Array.sortBy (compare `on` NES.length)
+
+parseDefinition :: Array NonEmptyString -> String -> Fragment NonEmptyString CodePoint
+parseDefinition nts s = case String.uncons s of
+  Just { head: c, tail: s' } ->
+    case recognize nts s of
+      Just nt -> [NonTerminal nt]
+      Nothing -> [Terminal c] <> parseDefinition nts s'
+  Nothing -> []
+
+recognize :: Array NonEmptyString -> String -> Maybe NonEmptyString
+recognize nts s = nts # Array.find \nt ->
+  String.take (NES.length nt) s == NES.toString nt
+
+
 type Header nt tok = Array tok /\ Array nt
 getHeader :: forall s nt r tok. Ord nt => Ord tok => States s nt r tok -> Header nt tok
 getHeader (States states) = bimap Array.nub Array.nub $
@@ -576,9 +604,6 @@ renderStateTable (States states) =
   in D.table_ $ pure $ D.tbody_ $ [header] <> rows
 
 
--- what run are we are and how many steps are in the run
-type TopLevelUIAction = V (changeText :: String)
-
 type StartingTick = Boolean
 
 type ParsedUIAction = V
@@ -604,7 +629,7 @@ showMaybeStack :: forall tok state. Show tok => Show state => Maybe (Stack state
 showMaybeStack Nothing = text_ "Parse error"
 showMaybeStack (Just stack) = showStack stack
 
-showMaybeParseSteps :: forall input s m lock payload x y. Show x => Show y => Korok s m => Show input => Maybe (ParseSteps input (Stack x y)) -> SuperStack m (Domable m lock payload)
+showMaybeParseSteps :: forall input s m lock payload x y z. Show x => Show y => Show z => Korok s m => Show input => Maybe (ParseSteps input (Stack x (Either y (AST z)))) -> SuperStack m (Domable m lock payload)
 showMaybeParseSteps Nothing = pure (pure (text_ "Parse error"))
 showMaybeParseSteps (Just stack) = showParseSteps stack
 
@@ -632,12 +657,13 @@ getVisibilityAndIncrement' s = do
     )
 
 showParseStep
-  :: forall r tok state inputs s m lock payload x y
+  :: forall r tok state inputs s m lock payload x y z
    . Show tok
+  => Show z
   => Show state
   => Show inputs
   => Korok s m
-  => Either (Maybe (Stack x y))
+  => Either (Maybe (Stack x (Either y (AST z))))
        { inputs :: inputs
        , stack :: Stack state tok
        | r
@@ -648,7 +674,11 @@ showParseStep (Left Nothing) = do
     D.div vi [ (text_ $ ("Step " <> show n <> ": ") <> "Parse error") ]
 showParseStep (Left (Just v)) = do
   getVisibilityAndIncrement <#> map \(n /\ vi) ->
-    D.div vi [ text_ $ ("Step " <> show n <> ": ") <> "TODO FIXME" ]
+    case getResult v of
+      Just r ->
+        D.div vi [ text_ $ ("Step " <> show n <> ": ") <> show r ]
+      _ ->
+        D.div vi [ text_ $ ("Step " <> show n <> ": ") <> "Something went wrong" ]
 showParseStep (Right { stack, inputs }) = do
   getVisibilityAndIncrement' "display: flex; justify-content: space-between;" <#> map \(n /\ vi) ->
     D.div vi [ D.div_ [ text_ ("Step " <> show n <> ": "), showStack stack ], D.div_ [ text_ (show inputs) ] ]
@@ -656,10 +686,10 @@ showParseStep (Right { stack, inputs }) = do
 type SuperStack m a = StateT Int Trampoline ((Int -> AnEvent m Boolean) -> a)
 
 showParseSteps
-  :: forall input s m lock payload x y
-   . Show input => Show x => Show y
+  :: forall input s m lock payload x y z
+   . Show input => Show x => Show y => Show z
   => Korok s m
-  => ParseSteps input (Stack x y)
+  => ParseSteps input (Stack x (Either y (AST z)))
   -> SuperStack m (Domable m lock payload)
 showParseSteps i = map fixed <$> (go i)
   where
@@ -730,11 +760,31 @@ stepByStep start index cb =
       in
         cb sweeper'
 
+
+type TopLevelUIAction = V
+  ( changeText :: String
+  , changeRules :: Array (Int /\ String /\ String)
+  , addRule :: Int /\ String /\ String
+  , removeRule :: Int
+  )
+
+debug :: forall m a. Show a => AnEvent m a -> AnEvent m a
+debug = map \a -> unsafePerformEffect (a <$ logShow a)
+
 main :: Effect Unit
 main = runInBody
   ( vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
       let
         currentValue = bang "" <|> event.changeText
+        currentRules = bang [] <|> fold
+          (\change rules ->
+            case change of
+              Left new -> Array.snoc rules new
+              Right remove -> Array.filter (fst >>> not eq remove) rules
+          )
+          (Left <$> event.addRule <|> Right <$> event.removeRule)
+          []
+        _ = unsafePerformEffect $ subscribe currentRules logShow
         top =
           [ D.input
               ( oneOfMap bang
@@ -752,11 +802,69 @@ main = runInBody
             """
               .before { color: lightgray; }
             """
+        , envy $ bus \lpush -> \levent ->
+            let
+              currentText =
+                bang ("" /\ "") <|> fold
+                  (\(x /\ s) b -> if x then (fst b /\ s) else (s /\ snd b))
+                  levent
+                  ("" /\ "")
+              counted = bang 0 <|> (add 1 <$> fst <$> event.addRule)
+              top' =
+                [ D.input
+                    ( oneOfMap bang
+                        [ D.OnInput := cb \e -> for_
+                            ( target e
+                                >>= fromEventTarget
+                            )
+                            ( value
+                                >=> lpush <<< (/\) false
+                            )
+                        ]
+                    )
+                    []
+                , D.input
+                    ( oneOfMap bang
+                        [ D.OnInput := cb \e -> for_
+                            ( target e
+                                >>= fromEventTarget
+                            )
+                            ( value
+                                >=> lpush <<< (/\) true
+                            )
+                        ]
+                    )
+                    []
+                , D.button
+                    (sampleJIT currentText $ sampleJIT counted $
+                      bang $ \iR textR -> D.OnClick := launchAff_ do
+                        i <- AVar.read iR
+                        text <- AVar.read textR
+                        liftEffect $ push.addRule (i /\ text)
+                    )
+                    [ text_ "Add" ]
+                ]
+            in D.div_ $ append top' <<< pure $ dyn $ map
+              ( \(i /\ txt) -> keepLatest $ bus \p' e' ->
+                  ( bang $ Insert $ D.div_
+                      [ text_ (fst txt)
+                      , text_ " : "
+                      , text_ (snd txt)
+                      , text_ " "
+                      , D.button
+                          ( bang
+                              $ D.OnClick := (p' Remove *> push.removeRule i)
+                          )
+                          [ text_ "Delete" ]
+                      ]
+                  ) <|> e'
+              )
+              event.addRule
         , D.table_ $ pure $ D.tbody_ $
             D.tr_ <<< map D.td_ <$>
-              [ [ [ text_ "E" ], [ text_ "::=" ], [ text_ "(", text_ "L", text_ ")" ], [ text_ "data E" ], [ text_ "=" ], [ text_ "E1", text_ " ", text_ "L" ] ]
+              [ [ [ text_ "E" ], [ text_ ":" ], [ text_ "(", text_ "L", text_ ")" ], [ text_ "data E" ], [ text_ "=" ], [ text_ "E1", text_ " ", text_ "L" ] ]
               , [ [], [ text_ "|" ], [ text_ "x" ], [], [ text_ "|" ], [ text_ "E2" ] ]
-              , [ [ text_ "L" ], [ text_ "::=" ], [ text_ "E" ], [ text_ "data L" ], [ text_ "=" ], [ text_ "L1", text_ " ", text_ "E" ] ]
+              , [ [ text_ "L" ], [ text_ ":" ], [ text_ "E" ], [ text_ "data L" ], [ text_ "=" ], [ text_ "L1", text_ " ", text_ "E" ] ]
               , [ [], [ text_ "|" ], [ text_ "L", text_ ",", text_ "E" ], [], [ text_ "|" ], [ text_ "L2", text_ " ", text_ "L", text_ " ", text_ "E" ] ]
               ]
         , D.div_ $ pure $ D.ol_ $ D.li_ <<< pure <<< (\v -> renderState v) <$> g8Generated unit
