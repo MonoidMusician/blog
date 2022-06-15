@@ -2,53 +2,70 @@ module Parser.Main where
 
 import Prelude
 
-import Bolson.Core (envy, fixed)
+import Bolson.Core (Child(..), dyn, envy, fixed)
+import Deku.Core (vbussed)
 import Control.Alt ((<|>))
 import Control.Apply (lift2)
 import Control.Monad.ST.Class (class MonadST)
 import Control.Monad.State (StateT, get, put, runStateT)
 import Control.Monad.Trampoline (Trampoline, runTrampoline)
+import Control.Plus (empty)
 import Data.Array ((..))
 import Data.Array as Array
-import Data.Bifunctor (class Bifunctor, bimap)
+import Data.Array.NonEmpty as NEA
+import Data.Array.NonEmpty.Internal (NonEmptyArray)
+import Data.Bifunctor (class Bifunctor, bimap, lmap)
 import Data.Compactable (compact)
 import Data.DateTime.Instant (unInstant)
-import Data.Either (Either(..))
-import Data.Foldable (for_, oneOf, oneOfMap)
+import Data.Either (Either(..), fromRight', hush, note)
+import Data.Foldable (foldMap, for_, oneOf, oneOfMap)
 import Data.Function (on)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.Int (floor)
-import Data.Map (SemigroupMap(..))
+import Data.List (List)
+import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
 import Data.Number (e, pi)
 import Data.Show.Generic (genericShow)
 import Data.String (CodePoint)
+import Data.String as String
+import Data.String.NonEmpty (fromString, toString)
+import Data.String.NonEmpty as NES
+import Data.String.NonEmpty.Internal (NonEmptyString)
 import Data.Time.Duration (Seconds(..))
-import Data.Traversable (mapAccumL)
-import Data.Tuple (fst)
+import Data.Traversable (mapAccumL, traverse)
+import Data.TraversableWithIndex (traverseWithIndex)
+import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Deku.Attribute (class Attr, Attribute, cb, (:=))
 import Deku.Control (switcher, text, text_)
-import Deku.Core (class Korok, Domable, Nut, vbussed)
+import Deku.Core (class Korok, Domable, Nut, bus)
 import Deku.Core as DC
 import Deku.DOM as D
 import Deku.Listeners (click, slider)
 import Effect (Effect)
+import Effect.Aff (launchAff_)
+import Effect.Aff.AVar as AVar
+import Effect.Class (liftEffect)
+import Effect.Class.Console (logShow)
 import Effect.Now (now)
+import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior (step)
-import FRP.Event (class IsEvent, AnEvent, bang, filterMap, fold, keepLatest, mapAccum, memoize, sampleOn, subscribe, sweep, toEvent, withLast)
+import FRP.Event (class IsEvent, AnEvent, bang, filterMap, fold, fromEvent, keepLatest, mapAccum, memoize, sampleOn, subscribe, sweep, toEvent, withLast)
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Class (biSampleOn)
 import FRP.Event.Time (withTime)
 import FRP.Event.VBus (V)
 import FRP.Rate (Beats(..), RateInfo, timeFromRate)
+import FRP.SampleJIT (sampleJIT)
 import FRP.SelfDestruct (selfDestruct)
-import Parser.Proto (ParseSteps(..), Stack(..), parseSteps)
-import Parser.ProtoG8 (Parsed, g8FromString, g8ParseResult, g8Table)
+import Parser.Proto (ParseSteps(..), Stack(..), parseSteps, topOf)
+import Parser.Proto as Proto
 import Parser.ProtoG8 as G8
-import Partial.Unsafe (unsafePartial)
+import Partial.Unsafe (unsafeCrashWith)
 import Type.Proxy (Proxy(..))
 import Web.Event.Event (target)
 import Web.HTML.HTMLInputElement (fromEventTarget, value)
@@ -68,14 +85,14 @@ newtype Grammar nt r tok = MkGrammar
       }
   )
 
-seed
+fromSeed
   :: forall nt r tok
    . Grammar nt r tok
   -> nt
   -> { augmented :: Grammar (Maybe nt) (Maybe r) (Maybe tok)
      , start :: StateItem (Maybe nt) (Maybe r) (Maybe tok)
      }
-seed (MkGrammar rules) entry =
+fromSeed (MkGrammar rules) entry =
   let
     rule0 = { pName: Nothing, rName: Nothing, rule: [ NonTerminal (Just entry), Terminal Nothing ] }
     rules' = rules <#> \{ pName, rName, rule } ->
@@ -85,7 +102,7 @@ seed (MkGrammar rules) entry =
       }
   in
     { augmented: MkGrammar ([ rule0 ] <> rules')
-    , start: { rName: Nothing, rule: Zipper [] rule0.rule, lookahead: [] }
+    , start: { pName: Nothing, rName: Nothing, rule: Zipper [] rule0.rule, lookahead: [] }
     }
 
 generate
@@ -98,9 +115,13 @@ generate
   -> Array (State (Maybe nt) (Maybe r) (Maybe tok))
 generate initial entry =
   let
-    { augmented: grammar, start } = seed initial entry
+    { augmented: grammar, start } = fromSeed initial entry
   in
     closeStates grammar [ close grammar (minimizeState [ start ]) ]
+
+getResult :: forall x y z. Stack x (Either y z) -> Maybe z
+getResult (Snoc (Snoc (Zero _) (Right result) _) (Left _) _) = Just result
+getResult _ = Nothing
 
 g8Grammar :: Grammar G8.Sorts G8.Rule G8.Tok
 g8Grammar = MkGrammar
@@ -114,10 +135,25 @@ g8Seed
   :: { augmented :: Grammar (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
      , start :: StateItem (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
      }
-g8Seed = seed g8Grammar G8.RE
+g8Seed = fromSeed g8Grammar G8.RE
 
 g8Generated :: forall a. a -> Array (State (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok))
 g8Generated _ = generate g8Grammar G8.RE
+
+g8States :: forall a. a -> States Int (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
+g8States a = fromRight' (\_ -> unsafeCrashWith "state generation did not work")
+  (numberStates (add 1) g8Seed.augmented (g8Generated a))
+
+g8Table :: forall a. a -> Proto.Table Int (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok) (CST (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok))
+g8Table = toTable <<< g8States
+
+g8Table' :: forall a. a -> Proto.Table Int (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok) (Either (Maybe G8.Tok) (AST (Maybe G8.Sorts /\ Maybe G8.Rule)))
+g8Table' = toTable' <<< g8States
+
+g8FromString :: String -> Maybe (List (Maybe G8.Tok))
+g8FromString = G8.g8FromString >>> map map map case _ of
+  G8.EOF -> Nothing
+  t -> Just t
 
 type SGrammar = Grammar String String CodePoint
 data Part nt tok = NonTerminal nt | Terminal tok
@@ -149,20 +185,14 @@ type SZipper = Zipper String CodePoint
 newtype State nt r tok = State (Array (StateItem nt r tok))
 
 instance eqState :: (Eq nt, Eq r, Eq tok) => Eq (State nt r tok) where
-  eq (State s1) (State s2) =
+  eq (State s1) (State s2) = s1 == s2 ||
     let
       State s1' = minimizeState s1
+      State s2' = minimizeState s2
+      State s12 = minimizeState (s1' <> s2')
+      State s21 = minimizeState (s2' <> s1')
     in
-      let
-        State s2' = minimizeState s2
-      in
-        let
-          State s12 = minimizeState (s1' <> s2')
-        in
-          let
-            State s21 = minimizeState (s2' <> s1')
-          in
-            s1' == s12 && s2' == s21
+      s1' == s12 && s2' == s21
 
 instance ordState :: (Ord nt, Ord r, Ord tok) => Ord (State nt r tok) where
   compare (State s1) (State s2) = compare (deepSort s1) (deepSort s2)
@@ -193,12 +223,74 @@ type SState = State String String CodePoint
 type Lookahead tok = Array tok
 type StateItem nt r tok =
   { rName :: r
+  , pName :: nt
   , rule :: Zipper nt tok
   , lookahead :: Lookahead tok
   }
 
+data ShiftReduce s r
+  = Shift s
+  | Reduces (NonEmptyArray r)
+  | ShiftReduces s (NonEmptyArray r)
+
+derive instance functorShiftReduce :: Functor (ShiftReduce s)
+instance semigroupShiftReduce :: Semigroup (ShiftReduce s r) where
+  -- We don't expect to see two shifts
+  append (Shift s) (Shift _) = Shift s
+  append (Shift s) (ShiftReduces _ rs) = ShiftReduces s rs
+  append (ShiftReduces s rs) (Shift _) = ShiftReduces s rs
+  append (ShiftReduces s rs) (ShiftReduces _ rs') = ShiftReduces s (rs <> rs')
+  append (Shift s) (Reduces rs) = ShiftReduces s rs
+  append (Reduces rs) (Shift s) = ShiftReduces s rs
+  append (Reduces rs) (Reduces rs') = Reduces (rs <> rs')
+  append (ShiftReduces s rs) (Reduces rs') = ShiftReduces s (rs <> rs')
+  append (Reduces rs) (ShiftReduces s rs') = ShiftReduces s (rs <> rs')
+
+type StateInfo s nt r tok =
+  { sName :: s
+  , items :: State nt r tok
+  , advance :: SemigroupMap tok (ShiftReduce s (nt /\ r))
+  , receive :: Map nt s
+  }
+
 newtype States s nt r tok = States
-  (Array { sName :: s, state :: State nt r tok })
+  (Array (StateInfo s nt r tok))
+
+numberStates
+  :: forall s nt r tok
+   . Ord nt
+  => Eq r
+  => Ord tok
+  => (Int -> s)
+  -> Grammar nt r tok
+  -> Array (State nt r tok)
+  -> Either (Array (StateItem nt r tok)) (States s nt r tok)
+numberStates ix grammar states = map States $ states #
+  traverseWithIndex \i items ->
+    let
+      findState seed = note seed $ map ix $
+        Array.findIndex (eq (close grammar (minimizeState seed))) states
+      next = nextSteps items
+      reductions = Reduces <$> getReductions items
+    in
+      ado
+        shifts <- traverse (map Shift <<< findState) $ next.terminal
+        receive <- traverse findState $ unwrap $ next.nonTerminal
+        in
+          { sName: ix i
+          , items
+          , advance: shifts <> reductions
+          , receive
+          }
+
+getReduction :: forall nt r tok. Ord tok => StateItem nt r tok -> SemigroupMap tok (nt /\ r)
+getReduction { pName, rName, rule: Zipper _ [], lookahead } =
+  SemigroupMap $ Map.fromFoldable $ (/\) <$> lookahead <@> (pName /\ rName)
+getReduction _ = SemigroupMap $ Map.empty
+
+getReductions :: forall nt r tok. Ord tok => State nt r tok -> SemigroupMap tok (NonEmptyArray (nt /\ r))
+getReductions (State items) = items # foldMap \item ->
+  NEA.singleton <$> getReduction item
 
 isNonTerminal :: forall nt tok. Part nt tok -> Boolean
 isNonTerminal (NonTerminal _) = true
@@ -249,7 +341,7 @@ startRules (MkGrammar rules) p =
   let
     filtered = Array.filter (\{ pName } -> pName == p) rules
   in
-    \lookahead -> filtered <#> \{ rName, rule } -> { rName, rule: Zipper [] rule, lookahead }
+    \lookahead -> filtered <#> \{ pName, rName, rule } -> { pName, rName, rule: Zipper [] rule, lookahead }
 
 closeItem :: forall nt r tok. Eq nt => Grammar nt r tok -> StateItem nt r tok -> Array (StateItem nt r tok)
 closeItem grammar item = case findNT item.rule of
@@ -299,22 +391,55 @@ firsts (MkGrammar rules0) ps0 lookahead0 = readyset rules0 ps0 lookahead0
 nextStep
   :: forall nt r tok
    . StateItem nt r tok
-  -> SemigroupMap (Part nt tok) (Array (StateItem nt r tok))
+  -> { nonTerminal :: SemigroupMap nt (Array (StateItem nt r tok))
+     , terminal :: SemigroupMap tok (Array (StateItem nt r tok))
+     }
 nextStep item@{ rule: Zipper before after } = case Array.uncons after of
-  Just { head, tail } -> SemigroupMap $ Map.singleton head $ pure
-    { rName: item.rName
-    , rule: Zipper (before <> [ head ]) tail
-    , lookahead: item.lookahead
+  Nothing ->
+    { nonTerminal: SemigroupMap Map.empty
+    , terminal: SemigroupMap Map.empty
     }
-  Nothing -> SemigroupMap $ Map.empty
+  Just { head, tail } ->
+    let
+      nextStateSeed = pure
+        { pName: item.pName
+        , rName: item.rName
+        , rule: Zipper (before <> [ head ]) tail
+        , lookahead: item.lookahead
+        }
+    in
+      case head of
+        NonTerminal nt ->
+          { nonTerminal: SemigroupMap (Map.singleton nt nextStateSeed)
+          , terminal: SemigroupMap Map.empty
+          }
+        Terminal tok ->
+          { nonTerminal: SemigroupMap Map.empty
+          , terminal: SemigroupMap (Map.singleton tok nextStateSeed)
+          }
 
 nextSteps
   :: forall nt r tok
    . Ord nt
   => Ord tok
   => State nt r tok
-  -> SemigroupMap (Part nt tok) (Array (StateItem nt r tok))
+  -> { nonTerminal :: SemigroupMap nt (Array (StateItem nt r tok))
+     , terminal :: SemigroupMap tok (Array (StateItem nt r tok))
+     }
 nextSteps (State items) = Array.foldMap nextStep items
+
+-- Meant to handle nondeterminacy of shifts, but not reduces
+nextSteps'
+  :: forall nt r tok
+   . Ord nt
+  => Ord tok
+  => State nt r tok
+  -> Array (Part nt tok /\ Array (StateItem nt r tok))
+nextSteps' state =
+  let
+    { nonTerminal: SemigroupMap nts, terminal: SemigroupMap toks } = nextSteps state
+  in
+    lmap Terminal <$> Map.toUnfoldable toks <|> lmap NonTerminal <$> Map.toUnfoldable nts
 
 newStates
   :: forall nt r tok
@@ -325,7 +450,7 @@ newStates
   -> State nt r tok
   -> Array (State nt r tok)
 newStates grammar state =
-  Array.nubEq (Array.fromFoldable (close grammar <<< minimizeState <$> nextSteps state))
+  Array.nubEq (close grammar <<< minimizeState <<< snd <$> nextSteps' state)
 
 closeStates1
   :: forall nt r tok
@@ -351,8 +476,173 @@ closeStates grammar states =
   in
     if states' == states then states else closeStates grammar states'
 
--- what run are we are and how many steps are in the run
-type TopLevelUIAction = V (changeText :: String)
+data CST r tok
+  = Leaf tok
+  | Branch r (Array (CST r tok))
+
+derive instance genericCST :: Generic (CST r tok) _
+instance showCST :: (Show r, Show tok) => Show (CST r tok) where
+  show x = genericShow x
+
+data AST r = Layer r (Array (AST r))
+
+derive instance functorAST :: Functor AST
+derive instance genericAST :: Generic (AST r) _
+instance showAST :: (Show r) => Show (AST r) where
+  show x = genericShow x
+
+prune :: forall r tok. CST r tok -> Either tok (AST r)
+prune (Leaf tok) = Left tok
+prune (Branch r rec) = Right (Layer r (Array.mapMaybe (hush <<< prune) rec))
+
+toTable
+  :: forall s nt r tok
+   . Ord s
+  => Ord nt
+  => Eq r
+  => Ord tok
+  => States s nt r tok
+  -> Proto.Table s (nt /\ r) tok (CST (nt /\ r) tok)
+toTable (States states) =
+  let
+    tabulated = Map.fromFoldable $ mapWithIndex (\i { sName } -> sName /\ i) states
+    lookupState s = Map.lookup s tabulated >>= Array.index states
+    lookupAction tok { advance: SemigroupMap m } = Map.lookup tok m
+    lookupReduction (p /\ r) { items: State items } = items # oneOfMap case _ of
+      { rule: Zipper parsed [], pName, rName } | pName == p && rName == r ->
+        Just parsed
+      _ -> Nothing
+    takeStack r stack0 parsed =
+      let
+        take1 (taken /\ stack) = case _ of
+          Terminal tok -> case stack of
+            Snoc stack' v@(Leaf tok') _ | tok == tok' ->
+              Just $ (taken <> [ v ]) /\ stack'
+            _ -> unsafeCrashWith "expected token on stack"
+          NonTerminal nt -> case stack of
+            Snoc stack' v@(Branch (p /\ _) _) _ | p == nt ->
+              Just $ (taken <> [ v ]) /\ stack'
+            _ -> unsafeCrashWith "expected terminal on stack"
+      in
+        Array.foldM take1 ([] /\ stack0) (Array.reverse parsed) >>= \(taken /\ stack) ->
+          Snoc stack (Branch r taken) <$> goto r (topOf stack)
+    goto (p /\ _) s' = lookupState s' >>= _.receive >>> Map.lookup p
+  in
+    Proto.Table
+      { promote: Leaf
+      , step: \s tok -> lookupState s >>= lookupAction tok >>= decide
+      , goto: \r stack ->
+          lookupState (topOf stack) >>= \state -> do
+            lookupReduction r state >>= takeStack r stack
+      }
+
+toTable'
+  :: forall s nt r tok
+   . Ord s
+  => Ord nt
+  => Eq r
+  => Ord tok
+  => States s nt r tok
+  -> Proto.Table s (nt /\ r) tok (Either tok (AST (nt /\ r)))
+toTable' (States states) =
+  let
+    tabulated = Map.fromFoldable $ mapWithIndex (\i { sName } -> sName /\ i) states
+    lookupState s = Map.lookup s tabulated >>= Array.index states
+    lookupAction tok { advance: SemigroupMap m } = Map.lookup tok m
+    lookupReduction (p /\ r) { items: State items } = items # oneOfMap case _ of
+      { rule: Zipper parsed [], pName, rName } | pName == p && rName == r ->
+        Just parsed
+      _ -> Nothing
+    takeStack r stack0 parsed =
+      let
+        take1 (taken /\ stack) = case _ of
+          Terminal tok -> case stack of
+            Snoc stack' v@(Left tok') _ | tok == tok' ->
+              Just $ (taken <> [ v ]) /\ stack'
+            _ -> unsafeCrashWith "expected token on stack"
+          NonTerminal nt -> case stack of
+            Snoc stack' v@(Right (Layer (p /\ _) _)) _ | p == nt ->
+              Just $ (taken <> [ v ]) /\ stack'
+            _ -> unsafeCrashWith "expected terminal on stack"
+      in
+        Array.foldM take1 ([] /\ stack0) (Array.reverse parsed) >>= \(taken /\ stack) ->
+          Snoc stack (Right (Layer r (Array.mapMaybe hush taken))) <$> goto r (topOf stack)
+    goto (p /\ _) s' = lookupState s' >>= _.receive >>> Map.lookup p
+  in
+    Proto.Table
+      { promote: Left
+      , step: \s tok -> lookupState s >>= lookupAction tok >>= decide
+      , goto: \r stack ->
+          lookupState (topOf stack) >>= \state -> do
+            lookupReduction r state >>= takeStack r stack
+      }
+
+-- Prefer shifts because they are unique
+decide :: forall s r. ShiftReduce s r -> Maybe (Either s r)
+decide (Shift s) = Just (Left s)
+decide (ShiftReduces s _) = Just (Left s)
+decide (Reduces r) = if NEA.length r == 1 then Just (Right (NEA.head r)) else Nothing
+
+longestFirst :: Array NonEmptyString -> Array NonEmptyString
+longestFirst = Array.sortBy (compare `on` NES.length)
+
+parseDefinition :: Array NonEmptyString -> String -> Fragment NonEmptyString CodePoint
+parseDefinition nts s = case String.uncons s of
+  Just { head: c, tail: s' } ->
+    case recognize nts s of
+      Just nt -> [ NonTerminal nt ]
+      Nothing -> [ Terminal c ] <> parseDefinition nts s'
+  Nothing -> []
+
+recognize :: Array NonEmptyString -> String -> Maybe NonEmptyString
+recognize nts s = nts # Array.find \nt ->
+  String.take (NES.length nt) s == NES.toString nt
+
+type Header nt tok = Array tok /\ Array nt
+
+getHeader :: forall s nt r tok. Ord nt => Ord tok => States s nt r tok -> Header nt tok
+getHeader (States states) = bimap Array.nub Array.nub $
+  states # foldMap \{ items: State items } -> items # foldMap \item ->
+    ([] /\ [ item.pName ]) <> foldZipper fromPart item.rule
+  where
+  foldZipper f (Zipper l r) = foldMap f l <> foldMap f r
+  fromPart (NonTerminal nt) = [] /\ [ nt ]
+  fromPart (Terminal tok) = [ tok ] /\ []
+
+renderStateTable
+  :: forall s nt r tok
+   . Show s
+  => Show r
+  => Show nt
+  => Show tok
+  => Ord nt
+  => Ord tok
+  => States s nt r tok
+  -> Nut
+renderStateTable (States states) =
+  let
+    terminals /\ nonTerminals = getHeader (States states)
+    renderTerminals = text_ <<< show
+    renderNonTerminals = text_ <<< show
+    renderShiftReduce Nothing = text_ ""
+    renderShiftReduce (Just (Shift s)) = text_ $ "s" <> show s
+    renderShiftReduce (Just (Reduces rs)) = text_ $ rs # foldMap \r -> "r" <> show r
+    renderShiftReduce (Just (ShiftReduces s rs)) = text_ $
+      ("s" <> show s) <> (rs # foldMap \r -> "r" <> show r)
+    cols state =
+      let
+        forTerminal tok = map snd <$> Map.lookup tok (unwrap state.advance)
+        forNonTerminal nt = Shift <$> Map.lookup nt state.receive
+      in
+        map forTerminal terminals <> map forNonTerminal nonTerminals
+    header = D.tr_ $ map (D.th_ <<< pure) $
+      [ text_ "" ] <> map renderTerminals terminals <> map renderNonTerminals nonTerminals
+    rows = states <#> \state -> D.tr_
+      $ Array.cons (D.th_ [ text_ (show state.sName) ])
+      $
+        map (D.td_ <<< pure <<< renderShiftReduce) (cols state)
+  in
+    D.table_ $ pure $ D.tbody_ $ [ header ] <> rows
 
 type StartingTick = Boolean
 
@@ -379,7 +669,7 @@ showMaybeStack :: forall tok state. Show tok => Show state => Maybe (Stack state
 showMaybeStack Nothing = text_ "Parse error"
 showMaybeStack (Just stack) = showStack stack
 
-showMaybeParseSteps :: forall input s m lock payload. Korok s m => Show input => Maybe (ParseSteps input (Stack G8.State Parsed)) -> SuperStack m (Domable m lock payload)
+showMaybeParseSteps :: forall input s m lock payload x y z. Show x => Show y => Show z => Korok s m => Show input => Maybe (ParseSteps input (Stack x (Either y (AST z)))) -> SuperStack m (Domable m lock payload)
 showMaybeParseSteps Nothing = pure (pure (text_ "Parse error"))
 showMaybeParseSteps (Just stack) = showParseSteps stack
 
@@ -407,12 +697,13 @@ getVisibilityAndIncrement' s = do
     )
 
 showParseStep
-  :: forall r tok state inputs s m lock payload
+  :: forall r tok state inputs s m lock payload x y z
    . Show tok
+  => Show z
   => Show state
   => Show inputs
   => Korok s m
-  => Either (Maybe (Stack G8.State Parsed))
+  => Either (Maybe (Stack x (Either y (AST z))))
        { inputs :: inputs
        , stack :: Stack state tok
        | r
@@ -423,7 +714,11 @@ showParseStep (Left Nothing) = do
     D.div vi [ (text_ $ ("Step " <> show n <> ": ") <> "Parse error") ]
 showParseStep (Left (Just v)) = do
   getVisibilityAndIncrement <#> map \(n /\ vi) ->
-    D.div vi [ text_ $ ("Step " <> show n <> ": ") <> (show (g8ParseResult v)) ]
+    case getResult v of
+      Just r ->
+        D.div vi [ text_ $ ("Step " <> show n <> ": ") <> show r ]
+      _ ->
+        D.div vi [ text_ $ ("Step " <> show n <> ": ") <> "Something went wrong" ]
 showParseStep (Right { stack, inputs }) = do
   getVisibilityAndIncrement' "display: flex; justify-content: space-between;" <#> map \(n /\ vi) ->
     D.div vi [ D.div_ [ text_ ("Step " <> show n <> ": "), showStack stack ], D.div_ [ text_ (show inputs) ] ]
@@ -431,10 +726,13 @@ showParseStep (Right { stack, inputs }) = do
 type SuperStack m a = StateT Int Trampoline ((Int -> AnEvent m Boolean) -> a)
 
 showParseSteps
-  :: forall input s m lock payload
+  :: forall input s m lock payload x y z
    . Show input
+  => Show x
+  => Show y
+  => Show z
   => Korok s m
-  => ParseSteps input (Stack G8.State Parsed)
+  => ParseSteps input (Stack x (Either y (AST z)))
   -> SuperStack m (Domable m lock payload)
 showParseSteps i = map fixed <$> (go i)
   where
@@ -505,11 +803,30 @@ stepByStep start index cb =
       in
         cb sweeper'
 
+type TopLevelUIAction = V
+  ( changeText :: String
+  , errorMessage :: Maybe String
+  , addRule :: Int /\ NonEmptyString /\ String
+  , removeRule :: Int
+  )
+
+debug :: forall m a. Show a => AnEvent m a -> AnEvent m a
+debug = map \a -> unsafePerformEffect (a <$ logShow a)
+
 main :: Nut
 main =
   ( vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
       let
         currentValue = bang "" <|> event.changeText
+        currentRules = bang [] <|> fold
+          ( \change rules ->
+              case change of
+                Left new -> Array.snoc rules new
+                Right remove -> Array.filter (fst >>> not eq remove) rules
+          )
+          (Left <$> event.addRule <|> Right <$> event.removeRule)
+          []
+        -- _ = unsafePerformEffect $ subscribe currentRules logShow
         top =
           [ D.input
               ( oneOfMap bang
@@ -527,18 +844,85 @@ main =
             """
               .before { color: lightgray; }
             """
+        , D.div_ [event.errorMessage # switcher \et -> case et of
+            Nothing -> envy empty
+            Just e -> D.div_ [ D.span (bang $ D.Style := "color:red;") [ text_ e ] ]]
+        , envy $ bus \lpush -> \levent ->
+            let
+              currentText =
+                bang (Nothing /\ "") <|> fold
+                  (\(x /\ s) b -> if x then (fst b /\ s) else (fromString s /\ snd b))
+                  levent
+                  (Nothing /\ "")
+              counted = bang 0 <|> (add 1 <$> fst <$> event.addRule)
+              top' =
+                [ D.input
+                    ( oneOfMap bang
+                        [ D.OnInput := cb \e -> for_
+                            ( target e
+                                >>= fromEventTarget
+                            )
+                            ( value
+                                >=> lpush <<< (/\) false
+                            )
+                        ]
+                    )
+                    []
+                , D.input
+                    ( oneOfMap bang
+                        [ D.OnInput := cb \e -> for_
+                            ( target e
+                                >>= fromEventTarget
+                            )
+                            ( value
+                                >=> lpush <<< (/\) true
+                            )
+                        ]
+                    )
+                    []
+                , D.button
+                    ( fromEvent $ sampleJIT (toEvent currentText) $ sampleJIT (toEvent counted)
+                        $ bang
+                        $ \iR textR -> D.OnClick := launchAff_ do
+                            liftEffect $ push.errorMessage Nothing
+                            i <- AVar.read iR
+                            text <- AVar.read textR
+                            case fst text of
+                              Nothing -> liftEffect $ push.errorMessage (Just "The first field in a rule can't be empty.")
+                              Just nes -> liftEffect $ push.addRule (i /\ nes /\ snd text)
+                    )
+                    [ text_ "Add" ]
+                ]
+            in
+              D.div_ $ append top' <<< pure $ dyn $ map
+                ( \(i /\ txt) -> keepLatest $ bus \p' e' ->
+                    ( bang $ Insert $ D.div_
+                        [ text_ (toString (fst txt))
+                        , text_ " : "
+                        , text_ (snd txt)
+                        , text_ " "
+                        , D.button
+                            ( bang
+                                $ D.OnClick := (p' Remove *> push.removeRule i)
+                            )
+                            [ text_ "Delete" ]
+                        ]
+                    ) <|> e'
+                )
+                event.addRule
         , D.table_ $ pure $ D.tbody_ $
             D.tr_ <<< map D.td_ <$>
-              [ [ [ text_ "E" ], [ text_ "::=" ], [ text_ "(", text_ "L", text_ ")" ], [ text_ "data E" ], [ text_ "=" ], [ text_ "E1", text_ " ", text_ "L" ] ]
+              [ [ [ text_ "E" ], [ text_ ":" ], [ text_ "(", text_ "L", text_ ")" ], [ text_ "data E" ], [ text_ "=" ], [ text_ "E1", text_ " ", text_ "L" ] ]
               , [ [], [ text_ "|" ], [ text_ "x" ], [], [ text_ "|" ], [ text_ "E2" ] ]
-              , [ [ text_ "L" ], [ text_ "::=" ], [ text_ "E" ], [ text_ "data L" ], [ text_ "=" ], [ text_ "L1", text_ " ", text_ "E" ] ]
+              , [ [ text_ "L" ], [ text_ ":" ], [ text_ "E" ], [ text_ "data L" ], [ text_ "=" ], [ text_ "L1", text_ " ", text_ "E" ] ]
               , [ [], [ text_ "|" ], [ text_ "L", text_ ",", text_ "E" ], [], [ text_ "|" ], [ text_ "L2", text_ " ", text_ "L", text_ " ", text_ "E" ] ]
               ]
         , D.div_ $ pure $ D.ol_ $ D.li_ <<< pure <<< (\v -> renderState v) <$> g8Generated unit
+        , D.div_ $ pure $ renderStateTable (g8States unit)
         , D.div_ top
         , D.div_ $ pure $ currentValue `flip switcher` \v ->
             let
-              contentAsMonad = showMaybeParseSteps $ parseSteps (unsafePartial g8Table) <$> g8FromString v <@> G8.S1
+              contentAsMonad = showMaybeParseSteps $ map (map (map (map (map snd)))) $ parseSteps (g8Table' unit) <$> g8FromString v <@> 1
               -- Run the first layer of the monad, to get the number of items being rendered up-front
               contentAsMonad2 /\ nEntities = runTrampoline (runStateT contentAsMonad 0)
             in

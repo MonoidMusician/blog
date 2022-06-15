@@ -12,6 +12,7 @@ data Stack state tok
   = Zero state
   | Snoc (Stack state tok) tok state
 
+derive instance functorStack :: Functor (Stack state)
 derive instance eqStack :: (Eq state, Eq tok) => Eq (Stack state tok)
 derive instance ordStack :: (Ord state, Ord tok) => Ord (Stack state tok)
 derive instance genericStack :: Generic (Stack state tok) _
@@ -43,6 +44,7 @@ data ParseSteps input stack
   = Error
   | Complete stack
   | Step (ParseStep input stack) (ParseSteps input stack)
+derive instance functorParseSteps :: Functor (ParseSteps input)
 
 startParse :: forall state i o. List i -> state -> ParseStep i (Stack state o)
 startParse inputs initialState = { stack: Zero initialState, inputs: inputs }
