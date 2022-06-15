@@ -153,7 +153,7 @@ let additions =
           , "web-events"
           ]
         , repo = "https://github.com/mikesol/purescript-deku.git"
-        , version = "v0.4.9"
+        , version = "v0.4.10"
         }
       , wags =
         { dependencies =
