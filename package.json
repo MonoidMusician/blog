@@ -4,9 +4,9 @@
 	"description": "",
 	"main": "index.js",
 	"scripts": {
-		"start": "spago build && webpack serve --open",
-		"start:no-gui": "spago build && LIL_GUI=false webpack serve --open",
-		"build": "npm run build-ps && rm -rf dist && mkdir dist && webpack --mode=production",
+		"make-ssr": "esbuild ./output/SSR/index.js --bundle --format=cjs --outfile=ssr.js",
+		"start": "spago build && npm run make-ssr && webpack serve --open",
+		"build": "npm run build-ps && rm -rf dist && mkdir dist && npm run make-ssr && webpack --mode=production",
 		"build-ps": "spago build"
 	},
 	"keywords": [],
@@ -17,6 +17,7 @@
 		"@babel/preset-env": "^7.17.10",
 		"babel-loader": "^8.2.5",
 		"css-loader": "^6.7.1",
+		"esbuild": "^0.14.43",
 		"html-webpack-plugin": "^5.5.0",
 		"postcss": "^8.4.13",
 		"postcss-loader": "^6.2.1",

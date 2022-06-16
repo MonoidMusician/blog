@@ -2,7 +2,8 @@ module Parser.Main where
 
 import Prelude
 
-import Bolson.Core (Child(..), dyn, envy, fixed, vbussed)
+import Bolson.Core (Child(..), dyn, envy, fixed)
+import Deku.Core (vbussed)
 import Control.Alt ((<|>))
 import Control.Apply (lift2)
 import Control.Monad.ST.Class (class MonadST)
@@ -45,7 +46,6 @@ import Deku.Core (class Korok, Domable, Nut, bus)
 import Deku.Core as DC
 import Deku.DOM as D
 import Deku.Listeners (click, slider)
-import Deku.Toplevel (runInBody)
 import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Aff.AVar as AVar
@@ -54,7 +54,7 @@ import Effect.Class.Console (logShow)
 import Effect.Now (now)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior (step)
-import FRP.Event (class IsEvent, AnEvent, bang, filterMap, fold, keepLatest, mapAccum, memoize, sampleOn, subscribe, sweep, withLast)
+import FRP.Event (class IsEvent, AnEvent, bang, filterMap, fold, fromEvent, keepLatest, mapAccum, memoize, sampleOn, subscribe, sweep, toEvent, withLast)
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Class (biSampleOn)
 import FRP.Event.Time (withTime)
@@ -806,7 +806,6 @@ stepByStep start index cb =
 type TopLevelUIAction = V
   ( changeText :: String
   , errorMessage :: Maybe String
-  , changeRules :: Array (Int /\ NonEmptyString /\ String)
   , addRule :: Int /\ NonEmptyString /\ String
   , removeRule :: Int
   )
@@ -814,8 +813,8 @@ type TopLevelUIAction = V
 debug :: forall m a. Show a => AnEvent m a -> AnEvent m a
 debug = map \a -> unsafePerformEffect (a <$ logShow a)
 
-main :: Effect Unit
-main = runInBody
+main :: Nut
+main =
   ( vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
       let
         currentValue = bang "" <|> event.changeText
@@ -827,7 +826,7 @@ main = runInBody
           )
           (Left <$> event.addRule <|> Right <$> event.removeRule)
           []
-        _ = unsafePerformEffect $ subscribe currentRules logShow
+        -- _ = unsafePerformEffect $ subscribe currentRules logShow
         top =
           [ D.input
               ( oneOfMap bang
@@ -841,11 +840,7 @@ main = runInBody
               []
           ]
       D.div_
-        [ D.style_ $ pure $ text_
-            """
-              .before { color: lightgray; }
-            """
-        , D.div_ [event.errorMessage # switcher \et -> case et of
+        [ D.div_ [event.errorMessage # switcher \et -> case et of
             Nothing -> envy empty
             Just e -> D.div_ [ D.span (bang $ D.Style := "color:red;") [ text_ e ] ]]
         , envy $ bus \lpush -> \levent ->
@@ -882,7 +877,7 @@ main = runInBody
                     )
                     []
                 , D.button
-                    ( sampleJIT currentText $ sampleJIT counted
+                    ( fromEvent $ sampleJIT (toEvent currentText) $ sampleJIT (toEvent counted)
                         $ bang
                         $ \iR textR -> D.OnClick := launchAff_ do
                             liftEffect $ push.errorMessage Nothing
@@ -978,13 +973,13 @@ main = runInBody
                                               t <- toSeconds <$> now
                                               sub <- subscribe
                                                 ( selfDestruct (\((isStart /\ _) /\ ci) -> (fst ci == nEntities && not isStart)) (pPush.startState Nothing)
-                                                    ( sampleOn currentIndex
+                                                    ( sampleOn (toEvent currentIndex)
                                                         ( (/\) <$> mapAccum (\i tf -> false /\ tf /\ i)
-                                                            ( timeFromRate (step rt pEvent.rate)
+                                                            ( timeFromRate (step rt $ toEvent pEvent.rate)
                                                                 ( _.time
                                                                     >>> toSeconds
                                                                     >>> (_ - t)
-                                                                    >>> Seconds <$> withTime animationFrame
+                                                                    >>> Seconds <$> withTime (animationFrame)
                                                                 )
                                                             )
                                                             true
