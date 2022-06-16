@@ -598,6 +598,9 @@ recognize :: Array NonEmptyString -> String -> Maybe NonEmptyString
 recognize nts s = nts # Array.find \nt ->
   String.take (NES.length nt) s == NES.toString nt
 
+buttonClass = bang $ D.Class := "bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+arrowClass = bang $ D.Class := "bg-green-500 hover:bg-green-700 text-white font-bold"
+inputClass = bang $ D.Class := "shadow appearance-none border rounded py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
 type Header nt tok = Array tok /\ Array nt
 
 getHeader :: forall s nt r tok. Ord nt => Ord tok => States s nt r tok -> Header nt tok
@@ -676,14 +679,14 @@ showMaybeParseSteps (Just stack) = showParseSteps stack
 getVisibilityAndIncrement
   :: forall m s element
    . MonadST s m
-  => Attr element D.Style String
+  => Attr element D.Class String
   => SuperStack m (Int /\ AnEvent m (Attribute element))
 getVisibilityAndIncrement = getVisibilityAndIncrement' ""
 
 getVisibilityAndIncrement'
   :: forall m s element
    . MonadST s m
-  => Attr element D.Style String
+  => Attr element D.Class String
   => String
   -> SuperStack m (Int /\ AnEvent m (Attribute element))
 getVisibilityAndIncrement' s = do
@@ -692,7 +695,7 @@ getVisibilityAndIncrement' s = do
   pure
     ( \f -> n /\
         ( f n <#> \v ->
-            D.Style := (s <> if v then "" else "display:none;")
+            D.Class := (s <> if v then "" else " hidden")
         )
     )
 
@@ -720,7 +723,7 @@ showParseStep (Left (Just v)) = do
       _ ->
         D.div vi [ text_ $ ("Step " <> show n <> ": ") <> "Something went wrong" ]
 showParseStep (Right { stack, inputs }) = do
-  getVisibilityAndIncrement' "display: flex; justify-content: space-between;" <#> map \(n /\ vi) ->
+  getVisibilityAndIncrement' "flex justify-between" <#> map \(n /\ vi) ->
     D.div vi [ D.div_ [ text_ ("Step " <> show n <> ": "), showStack stack ], D.div_ [ text_ (show inputs) ] ]
 
 type SuperStack m a = StateT Int Trampoline ((Int -> AnEvent m Boolean) -> a)
@@ -763,8 +766,8 @@ renderItem { rName, rule, lookahead } =
 renderZipper :: forall nt tok. Show nt => Show tok => Zipper nt tok -> Nut
 renderZipper (Zipper before after) =
   D.span (bang (D.Class := "zipper"))
-    [ D.span (bang (D.Class := "before")) $ text_ <<< show <$> before
-    , D.span (bang (D.Class := "after")) $ text_ <<< show <$> after
+    [ D.span (bang (D.Class := "text-gray-500")) $ text_ <<< show <$> before
+    , D.span empty $ text_ <<< show <$> after
     ]
 
 counter :: forall s m a. MonadST s m => AnEvent m a → AnEvent m (a /\ Int)
@@ -829,8 +832,9 @@ main =
         -- _ = unsafePerformEffect $ subscribe currentRules logShow
         top =
           [ D.input
-              ( oneOfMap bang
-                  [ D.OnInput := cb \e -> for_
+              ( oneOf
+                  [ inputClass
+                  , bang $ D.OnInput := cb \e -> for_
                       ( target e
                           >>= fromEventTarget
                       )
@@ -840,9 +844,11 @@ main =
               []
           ]
       D.div_
-        [ D.div_ [event.errorMessage # switcher \et -> case et of
-            Nothing -> envy empty
-            Just e -> D.div_ [ D.span (bang $ D.Style := "color:red;") [ text_ e ] ]]
+        [ D.div_
+            [ event.errorMessage # switcher \et -> case et of
+                Nothing -> envy empty
+                Just e -> D.div_ [ D.span (bang $ D.Class := "text-red-300") [ text_ e ] ]
+            ]
         , envy $ bus \lpush -> \levent ->
             let
               currentText =
@@ -853,8 +859,9 @@ main =
               counted = bang 0 <|> (add 1 <$> fst <$> event.addRule)
               top' =
                 [ D.input
-                    ( oneOfMap bang
-                        [ D.OnInput := cb \e -> for_
+                    ( oneOf
+                        [ inputClass
+                        , bang $ D.OnInput := cb \e -> for_
                             ( target e
                                 >>= fromEventTarget
                             )
@@ -865,8 +872,9 @@ main =
                     )
                     []
                 , D.input
-                    ( oneOfMap bang
-                        [ D.OnInput := cb \e -> for_
+                    ( oneOf
+                        [ inputClass
+                        , bang $ D.OnInput := cb \e -> for_
                             ( target e
                                 >>= fromEventTarget
                             )
@@ -877,15 +885,18 @@ main =
                     )
                     []
                 , D.button
-                    ( fromEvent $ sampleJIT (toEvent currentText) $ sampleJIT (toEvent counted)
-                        $ bang
-                        $ \iR textR -> D.OnClick := launchAff_ do
-                            liftEffect $ push.errorMessage Nothing
-                            i <- AVar.read iR
-                            text <- AVar.read textR
-                            case fst text of
-                              Nothing -> liftEffect $ push.errorMessage (Just "The first field in a rule can't be empty.")
-                              Just nes -> liftEffect $ push.addRule (i /\ nes /\ snd text)
+                    ( oneOf
+                        [ buttonClass
+                        , fromEvent $ sampleJIT (toEvent currentText) $ sampleJIT (toEvent counted)
+                            $ bang
+                            $ \iR textR -> D.OnClick := launchAff_ do
+                                liftEffect $ push.errorMessage Nothing
+                                i <- AVar.read iR
+                                text <- AVar.read textR
+                                case fst text of
+                                  Nothing -> liftEffect $ push.errorMessage (Just "The first field in a rule can't be empty.")
+                                  Just nes -> liftEffect $ push.addRule (i /\ nes /\ snd text)
+                        ]
                     )
                     [ text_ "Add" ]
                 ]
@@ -898,8 +909,10 @@ main =
                         , text_ (snd txt)
                         , text_ " "
                         , D.button
-                            ( bang
-                                $ D.OnClick := (p' Remove *> push.removeRule i)
+                            ( oneOf
+                                [ buttonClass
+                                , bang $ D.OnClick := (p' Remove *> push.removeRule i)
+                                ]
                             )
                             [ text_ "Delete" ]
                         ]
@@ -963,7 +976,8 @@ main =
                           [ D.div_
                               [ D.button
                                   ( oneOf
-                                      [ (biSampleOn rate ((/\) <$> startState)) <#> \(s /\ rt) -> D.OnClick := do
+                                      [ buttonClass
+                                      , (biSampleOn rate ((/\) <$> startState)) <#> \(s /\ rt) -> D.OnClick := do
                                           case s of
                                             Just unsub -> do
                                               unsub
@@ -1048,9 +1062,10 @@ main =
                             in
                               D.div_
                                 [ D.button
-                                    (clickF $ pPush.toggleLeft)
+                                    (oneOf [ arrowClass, clickF $ pPush.toggleLeft ])
                                     [ text_ "<" ]
-                                , D.button (clickF $ pPush.toggleRight) [ text_ ">" ]
+                                , D.button (oneOf [ arrowClass, clickF $ pPush.toggleRight ])
+                                    [ text_ ">" ]
                                 ]
                           , D.div_ [ content ]
                           ]
