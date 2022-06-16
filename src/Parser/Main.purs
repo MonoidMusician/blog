@@ -840,11 +840,7 @@ main =
               []
           ]
       D.div_
-        [ D.style_ $ pure $ text_
-            """
-              .before { color: lightgray; }
-            """
-        , D.div_ [event.errorMessage # switcher \et -> case et of
+        [ D.div_ [event.errorMessage # switcher \et -> case et of
             Nothing -> envy empty
             Just e -> D.div_ [ D.span (bang $ D.Style := "color:red;") [ text_ e ] ]]
         , envy $ bus \lpush -> \levent ->
