@@ -57,6 +57,7 @@ import Effect.Aff (launchAff_)
 import Effect.Aff.AVar as AVar
 import Effect.Class (liftEffect)
 import Effect.Class.Console (logShow)
+import Effect.Class.Console as Log
 import Effect.Now (now)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior (step)
@@ -902,8 +903,8 @@ type TopLevelUIAction = V
   , removeRule :: Int
   )
 
-debug :: forall m a. Show a => AnEvent m a -> AnEvent m a
-debug = map \a -> unsafePerformEffect (a <$ logShow a)
+debug :: forall m a. Show a => String -> AnEvent m a -> AnEvent m a
+debug tag = map \a -> unsafePerformEffect (a <$ (Log.info (tag <> show a)))
 
 type ListicleEvent a = Variant ( add :: a, remove :: Int )
 
@@ -976,7 +977,7 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
         renderedItems = items <#> renderOne
       in
         intro <> join (Array.intercalate [sep] renderedItems) <> extro <> fin
-  in { element: switcher renderAtOnce (debug currentValue), value: map snd <$> debug currentValue }
+  in { element: switcher renderAtOnce (debug "element" currentValue), value: map snd <$> debug "value" currentValue }
 
 
 stateComponent :: forall s m lock payload. Korok s m =>
@@ -996,7 +997,7 @@ stateComponent = bussed \addNew addEvent ->
       }
     element = envy (component <#> _.element)
     value = keepLatest (component <#> _.value)
-    length = debug (map Array.length (debug value))
+    length = debug "length outer" (map Array.length (debug "length inner" value))
   in D.div_
       -- Without this div, it comes after the button upon update
       [ D.div_ [ element ]
