@@ -1,5 +1,6 @@
 const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
+const HtmlWebpackHarddiskPlugin = require("html-webpack-harddisk-plugin");
 const webpack = require("webpack");
 const ssr = require("./ssr");
 module.exports = {
@@ -11,8 +12,10 @@ module.exports = {
 	},
 	plugins: [
 		new HtmlWebpackPlugin({
-			templateContent: ssr.ssr(),
+			alwaysWriteToDisk: true,
+			templateContent: ssr.ssr,
 		}),
+		new HtmlWebpackHarddiskPlugin(),
 		new webpack.EnvironmentPlugin({
 			LIL_GUI: "true",
 		}),
