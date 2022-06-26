@@ -1,7 +1,7 @@
 const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const webpack = require("webpack");
-//const ssr = require("./ssr");
+const ssr = require("./ssr");
 module.exports = {
 	mode: "development",
 	entry: "./src/index.js",
@@ -11,15 +11,7 @@ module.exports = {
 	},
 	plugins: [
 		new HtmlWebpackPlugin({
-			templateContent: `<!DOCTYPE html>
-<html>
-	<head>
-		<meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width">
-		<title>PureScript Blog</title>
-	</head>
-  <body></body>
-</html>`, //ssr.ssr(),
+			templateContent: ssr.ssr(),
 		}),
 		new webpack.EnvironmentPlugin({
 			LIL_GUI: "true",
