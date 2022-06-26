@@ -3,7 +3,6 @@ module Parser.Main where
 import Prelude
 
 import Bolson.Core (Child(..), dyn, envy, fixed)
-import Deku.Core (vbussed)
 import Control.Alt ((<|>))
 import Control.Apply (lift2)
 import Control.Monad.ST.Class (class MonadST)
@@ -24,13 +23,16 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.Int (floor)
 import Data.List (List)
+import Data.List as List
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
-import Data.Newtype (unwrap)
+import Data.Maybe (Maybe(..), fromJust, fromMaybe)
+import Data.Newtype (class Newtype, unwrap)
 import Data.Number (e, pi)
+import Data.Set (Set)
+import Data.Set as Set
 import Data.Show.Generic (genericShow)
-import Data.String (CodePoint)
+import Data.String (CodePoint, codePointFromChar)
 import Data.String as String
 import Data.String.NonEmpty (fromString, toString)
 import Data.String.NonEmpty as NES
@@ -40,9 +42,13 @@ import Data.Traversable (mapAccumL, traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
+import Data.Variant (Variant)
+import Data.Variant as V
+import Data.Variant as Variant
 import Deku.Attribute (class Attr, Attribute, cb, (:=))
 import Deku.Control (switcher, text, text_)
-import Deku.Core (class Korok, Domable, Nut, bus)
+import Deku.Core (class Korok, Domable, Nut, bus, bussed)
+import Deku.Core (vbussed)
 import Deku.Core as DC
 import Deku.DOM as D
 import Deku.Listeners (click, slider)
@@ -65,7 +71,7 @@ import FRP.SelfDestruct (selfDestruct)
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps, topOf)
 import Parser.Proto as Proto
 import Parser.ProtoG8 as G8
-import Partial.Unsafe (unsafeCrashWith)
+import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Type.Proxy (Proxy(..))
 import Web.Event.Event (target)
 import Web.HTML.HTMLInputElement (fromEventTarget, value)
@@ -84,6 +90,7 @@ newtype Grammar nt r tok = MkGrammar
       , rule :: Fragment nt tok
       }
   )
+derive instance newtypeGrammar :: Newtype (Grammar nt r tok) _
 
 fromSeed
   :: forall nt r tok
@@ -105,6 +112,24 @@ fromSeed (MkGrammar rules) entry =
     , start: { pName: Nothing, rName: Nothing, rule: Zipper [] rule0.rule, lookahead: [] }
     }
 
+fromSeed'
+  :: forall nt r tok
+   . nt
+  -> r
+  -> tok
+  -> Grammar nt r tok
+  -> nt
+  -> { augmented :: Grammar nt r tok
+     , start :: StateItem nt r tok
+     }
+fromSeed' nt0 r0 tok0 (MkGrammar rules) entry =
+  let
+    rule0 = { pName: nt0, rName: r0, rule: [ NonTerminal entry, Terminal tok0 ] }
+  in
+    { augmented: MkGrammar ([ rule0 ] <> rules)
+    , start: { pName: nt0, rName: r0, rule: Zipper [] rule0.rule, lookahead: [] }
+    }
+
 generate
   :: forall nt r tok
    . Ord nt
@@ -116,6 +141,23 @@ generate
 generate initial entry =
   let
     { augmented: grammar, start } = fromSeed initial entry
+  in
+    closeStates grammar [ close grammar (minimizeState [ start ]) ]
+
+generate'
+  :: forall nt r tok
+   . Ord nt
+  => Eq r
+  => Ord tok
+  => nt
+  -> r
+  -> tok
+  -> Grammar nt r tok
+  -> nt
+  -> Array (State nt r tok)
+generate' nt0 r0 tok0 initial entry =
+  let
+    { augmented: grammar, start } = fromSeed' nt0 r0 tok0 initial entry
   in
     closeStates grammar [ close grammar (minimizeState [ start ]) ]
 
@@ -131,31 +173,76 @@ g8Grammar = MkGrammar
   , { pName: G8.RL, rName: G8.RL2, rule: [ NonTerminal G8.RL, Terminal G8.Comma, NonTerminal G8.RE ] }
   ]
 
+parseIntoGrammar = compose MkGrammar $
+  Array.mapMaybe (\r -> NES.fromString r.pName <#> \p -> r { pName = p })
+  >>> \grammar ->
+    let
+      nts = longestFirst (grammar <#> _.pName)
+      p = parseDefinition nts
+    in grammar <#> \r -> r { rule = p r.rule }
+
+exGrammar :: SGrammar
+exGrammar = parseIntoGrammar
+  [ { pName: "E", rName: "E1", rule: "(L)" }
+  , { pName: "E", rName: "E2", rule: "x" }
+  , { pName: "L", rName: "L1", rule: "E" }
+  , { pName: "L", rName: "L2", rule: "L,E" }
+  ]
+
 g8Seed
   :: { augmented :: Grammar (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
      , start :: StateItem (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
      }
 g8Seed = fromSeed g8Grammar G8.RE
 
+exSeed ::
+  { augmented :: SGrammar
+  , start :: SStateItem
+  }
+exSeed = fromSeed' (unsafePartial (fromJust (NES.fromString "T"))) "T0" (codePointFromChar '$') exGrammar (unsafePartial (fromJust (NES.fromString "E")))
+
 g8Generated :: forall a. a -> Array (State (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok))
 g8Generated _ = generate g8Grammar G8.RE
+
+exGenerated _ = generate' (unsafePartial (fromJust (NES.fromString "T"))) "T0" (codePointFromChar '$') exGrammar (unsafePartial (fromJust (NES.fromString "E")))
 
 g8States :: forall a. a -> States Int (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
 g8States a = fromRight' (\_ -> unsafeCrashWith "state generation did not work")
   (numberStates (add 1) g8Seed.augmented (g8Generated a))
 
+exStates a = fromRight' (\_ -> unsafeCrashWith "state generation did not work")
+  (numberStates (add 1) exSeed.augmented (exGenerated a))
+
 g8Table :: forall a. a -> Proto.Table Int (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok) (CST (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok))
 g8Table = toTable <<< g8States
 
+exTable = toTable <<< exStates
+
 g8Table' :: forall a. a -> Proto.Table Int (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok) (Either (Maybe G8.Tok) (AST (Maybe G8.Sorts /\ Maybe G8.Rule)))
 g8Table' = toTable' <<< g8States
+
+exTable' = toTable' <<< exStates
 
 g8FromString :: String -> Maybe (List (Maybe G8.Tok))
 g8FromString = G8.g8FromString >>> map map map case _ of
   G8.EOF -> Nothing
   t -> Just t
 
-type SGrammar = Grammar String String CodePoint
+verifyTokens :: forall nt r tok. Ord tok => Grammar nt r tok -> List tok -> Maybe (List tok)
+verifyTokens = traverse <<< verifyToken
+
+verifyToken :: forall nt r tok. Ord tok => Grammar nt r tok -> tok -> Maybe tok
+verifyToken = gatherTokens >>> \toks tok ->
+  if Set.member tok toks then Just tok else Nothing
+
+gatherTokens :: forall nt r tok. Ord tok => Grammar nt r tok -> Set tok
+gatherTokens (MkGrammar rules) = rules # Array.foldMap \{ rule } ->
+  Array.mapMaybe unTerminal rule # Set.fromFoldable
+
+exFromString :: String -> Maybe (List CodePoint)
+exFromString = flip append "$" >>> String.toCodePointArray >>> Array.toUnfoldable >>> verifyTokens exSeed.augmented
+
+type SGrammar = Grammar NonEmptyString String CodePoint
 data Part nt tok = NonTerminal nt | Terminal tok
 
 derive instance eqPart :: (Eq nt, Eq tok) => Eq (Part nt tok)
@@ -169,7 +256,7 @@ instance bifunctorPart :: Bifunctor Part where
   bimap f _ (NonTerminal nt) = NonTerminal (f nt)
   bimap _ g (Terminal tok) = Terminal (g tok)
 
-type SPart = Part String CodePoint
+type SPart = Part NonEmptyString CodePoint
 type Fragment nt tok = Array (Part nt tok)
 type SFragment = Fragment String CodePoint
 
@@ -219,7 +306,7 @@ minimizeState = compose State $ [] # Array.foldl \items newItem ->
   in
     if found then items' else items' <> [ newItem ]
 
-type SState = State String String CodePoint
+type SState = State NonEmptyString String CodePoint
 type Lookahead tok = Array tok
 type StateItem nt r tok =
   { rName :: r
@@ -227,6 +314,7 @@ type StateItem nt r tok =
   , rule :: Zipper nt tok
   , lookahead :: Lookahead tok
   }
+type SStateItem = StateItem NonEmptyString String CodePoint
 
 data ShiftReduce s r
   = Shift s
@@ -255,6 +343,7 @@ type StateInfo s nt r tok =
 
 newtype States s nt r tok = States
   (Array (StateInfo s nt r tok))
+type SStates = States String NonEmptyString String CodePoint
 
 numberStates
   :: forall s nt r tok
@@ -590,7 +679,7 @@ parseDefinition :: Array NonEmptyString -> String -> Fragment NonEmptyString Cod
 parseDefinition nts s = case String.uncons s of
   Just { head: c, tail: s' } ->
     case recognize nts s of
-      Just nt -> [ NonTerminal nt ]
+      Just nt -> [ NonTerminal nt ] <> parseDefinition nts (String.drop (NES.length nt) s)
       Nothing -> [ Terminal c ] <> parseDefinition nts s'
   Nothing -> []
 
@@ -766,7 +855,7 @@ renderItem { rName, rule, lookahead } =
 renderZipper :: forall nt tok. Show nt => Show tok => Zipper nt tok -> Nut
 renderZipper (Zipper before after) =
   D.span (bang (D.Class := "zipper"))
-    [ D.span (bang (D.Class := "text-gray-500")) $ text_ <<< show <$> before
+    [ D.span (bang (D.Class := "text-gray-400 line-through")) $ text_ <<< show <$> before
     , D.span empty $ text_ <<< show <$> after
     ]
 
@@ -816,6 +905,91 @@ type TopLevelUIAction = V
 debug :: forall m a. Show a => AnEvent m a -> AnEvent m a
 debug = map \a -> unsafePerformEffect (a <$ logShow a)
 
+type ListicleEvent a = Variant ( add :: a, remove :: Int )
+
+-- | Render a list of items, with begin, end, separator elements and finalize button
+-- | and remove buttons on each item. (All of those are optional, except for the items.)
+-- |
+-- | [ begin, ...[ item, remove, separator ]..., end, finalize ]
+-- |
+-- | Start from an initial value, listen for external add events, internal remove events,
+-- | raise messages on change, and return the current value on finalize.
+listicle :: forall s m lock payload a. Korok s m => Show a =>
+  { initial :: Array a -- initial value
+  , onChange :: Array a -> Effect Unit -- on change callback
+  , addEvent :: AnEvent m a -- external add events
+
+  , remove :: Maybe (Effect Unit -> Nut) -- remove button
+  , finalize :: Maybe (AnEvent m (Array a) -> Nut) -- finalize button
+
+  , renderItem :: a -> Domable m lock payload
+  , begin :: Maybe (Domable m lock payload)
+  , end :: Maybe (Domable m lock payload)
+  , separator :: Maybe (Domable m lock payload)
+  } ->
+  Domable m lock payload
+listicle desc = bussed \pushRemove removesEvent ->
+  let
+    initialValue :: Array (Int /\ a)
+    initialValue = mapWithIndex (/\) desc.initial
+    performChange :: ListicleEvent a -> Array (Int /\ a) -> Array (Int /\ a)
+    performChange = V.match
+      -- FIXME the index arithmetic is wrong/inconsistent
+      { add: \v vs -> Array.snoc vs (Array.length vs /\ v)
+      , remove: \i vs -> fromMaybe vs (Array.deleteAt i vs)
+      }
+    changesEvent =
+      Variant.inj (Proxy :: Proxy "add") <$> debug desc.addEvent
+      <|> Variant.inj (Proxy :: Proxy "remove") <$> debug removesEvent
+    currentValue :: AnEvent m (Array (Int /\ a))
+    currentValue = bang initialValue <|> fold performChange changesEvent initialValue
+
+    intro = case desc.begin of
+      Nothing -> []
+      Just x -> [x]
+    extro = case desc.end of
+      Nothing -> []
+      Just x -> [x]
+    fin = case desc.finalize of
+      Nothing -> []
+      Just thingy ->
+        [ thingy (currentValue <#> map snd) ]
+    sep = case desc.separator of
+      Nothing -> []
+      Just v -> [v]
+
+    withRemover :: Domable m lock payload -> Int -> Array (Domable m lock payload)
+    withRemover item idx = case desc.remove of
+      Nothing -> [item]
+      Just remover ->
+        [ item, remover (pushRemove idx) ]
+
+    renderOne :: Int /\ a -> Array (Domable m lock payload)
+    renderOne (idx /\ item) = withRemover (desc.renderItem item) idx
+
+    renderAtOnce :: Array (Int /\ a) -> Domable m lock payload
+    renderAtOnce items = D.div_ $
+      let
+        renderedItems = items <#> renderOne
+      in
+        intro <> Array.intercalate sep renderedItems <> extro <> fin
+  in switcher renderAtOnce (debug currentValue)
+
+
+stateComponent :: forall s m lock payload. Korok s m =>
+  AnEvent m String -> Domable m lock payload
+stateComponent addEvent = listicle
+  { begin: Just $ text_ "{ "
+  , end: Just $ text_ " }"
+  , separator: Just $ text_ ", "
+  , renderItem: text_
+  , remove: Nothing
+  , finalize: Nothing
+  , addEvent: addEvent
+  , onChange: mempty
+  , initial: ["a", "b"]
+  }
+
 main :: Nut
 main =
   ( vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
@@ -844,7 +1018,13 @@ main =
               []
           ]
       D.div_
-        [ D.div_
+        [ bussed \addNew addEvent ->
+            D.div_
+              -- Without this div, it comes after the button upon update
+              [ D.div_ [ stateComponent addEvent ]
+              , D.button (bang (D.OnClick := addNew "x") <|> buttonClass) [ text_ "Add" ]
+              ]
+        , D.div_
             [ event.errorMessage # switcher \et -> case et of
                 Nothing -> envy empty
                 Just e -> D.div_ [ D.span (bang $ D.Class := "text-red-300") [ text_ e ] ]
@@ -926,12 +1106,14 @@ main =
               , [ [ text_ "L" ], [ text_ ":" ], [ text_ "E" ], [ text_ "data L" ], [ text_ "=" ], [ text_ "L1", text_ " ", text_ "E" ] ]
               , [ [], [ text_ "|" ], [ text_ "L", text_ ",", text_ "E" ], [], [ text_ "|" ], [ text_ "L2", text_ " ", text_ "L", text_ " ", text_ "E" ] ]
               ]
-        , D.div_ $ pure $ D.ol_ $ D.li_ <<< pure <<< (\v -> renderState v) <$> g8Generated unit
-        , D.div_ $ pure $ renderStateTable (g8States unit)
+        , D.ul (bang $ D.Class := "pl-14 list-disc list-outside") $ map (D.li_) $ unwrap exSeed.augmented <#> \{ pName, rule } ->
+            append [ text_ (NES.toString pName), text_ ":" ] $ rule <#> text_ <<< show
+        , D.div_ $ pure $ D.ol (bang $ D.Class := "pl-14 list-decimal list-outside") $ D.li_ <<< pure <<< (\v -> renderState v) <$> exGenerated unit
+        , D.div_ $ pure $ renderStateTable (exStates unit)
         , D.div_ top
         , D.div_ $ pure $ currentValue `flip switcher` \v ->
             let
-              contentAsMonad = showMaybeParseSteps $ map (map (map (map (map snd)))) $ parseSteps (g8Table' unit) <$> g8FromString v <@> 1
+              contentAsMonad = showMaybeParseSteps $ map (map (map (map (map snd)))) $ parseSteps (exTable' unit) <$> exFromString v <@> 1
               -- Run the first layer of the monad, to get the number of items being rendered up-front
               contentAsMonad2 /\ nEntities = runTrampoline (runStateT contentAsMonad 0)
             in
