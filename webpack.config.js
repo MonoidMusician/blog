@@ -2,20 +2,22 @@ const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const HtmlWebpackHarddiskPlugin = require("html-webpack-harddisk-plugin");
 const webpack = require("webpack");
-const ssr = require("./ssr");
+const { spawn } = require("node:child_process");
+let ssr;
 // A JavaScript class.
 class DekuSSRPlugin {
   apply(compiler) {
     // Specify the event hook to attach to
     compiler.hooks.beforeCompile.tapAsync(
 			"DekuSSRPlugin",
-			(compilation, callback) => {
-				console.log("This is an example plugin!");
-				console.log(
-					"Here’s the `compilation` object which represents a single build of assets:",
-					compilation
-				);
-				callback();
+			(_, callback) => {
+				const makeSSR = spawn("esbuild", ["./output/SSR/index.js", "--bundle", "--format=cjs", "--outfile=ssr.js"]);
+
+				makeSSR.on("close", (code) => {
+					ssr = require("./ssr");
+					console.log(`SSR processed with code: ${code}`);
+					callback();
+				});
 			}
 		);
   }

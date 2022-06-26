@@ -1023,6 +1023,7 @@ main =
               [ D.div_ [ stateComponent addEvent ]
               , D.button (bang (D.OnClick := addNew "x") <|> buttonClass) [ text_ "Add" ]
               ]
+        , D.div_ [D.div_ [D.div_ [D.div_ [D.div_ [D.div_ [text_ "foobar"]]]]]]
         , D.div_
             [ event.errorMessage # switcher \et -> case et of
                 Nothing -> envy empty
