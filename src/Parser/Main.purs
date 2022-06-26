@@ -18,7 +18,7 @@ import Data.Compactable (compact)
 import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..), fromRight', hush, note)
 import Data.Filterable (filter)
-import Data.Foldable (foldMap, for_, oneOf, oneOfMap)
+import Data.Foldable (foldMap, for_, minimum, oneOf, oneOfMap)
 import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
@@ -980,7 +980,8 @@ listicle desc = bus \pushRemove removesEvent ->
         renderItems = sampleOn (Array.length <$> currentValue) $
           (initialEvent <|> addEvent) <#> \(idx /\ item) len ->
             ( bang $ insert $ fixed $ append
-              ( if len > 1 && idx /= 0 then sep else [] )
+              --( if len > 1 && idx /= 0 then sep else [] )
+              [ D.span_ [(dedup (map (map fst >>> minimum) currentValue)) # switcher (\i -> if i /= Just idx then text_ "," else envy empty) ] ]
               ( renderOne (idx /\ item) )
             ) <|> filter (eq idx) removesEvent $> remove
       in
