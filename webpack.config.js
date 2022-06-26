@@ -3,6 +3,23 @@ const HtmlWebpackPlugin = require("html-webpack-plugin");
 const HtmlWebpackHarddiskPlugin = require("html-webpack-harddisk-plugin");
 const webpack = require("webpack");
 const ssr = require("./ssr");
+// A JavaScript class.
+class DekuSSRPlugin {
+  apply(compiler) {
+    // Specify the event hook to attach to
+    compiler.hooks.beforeCompile.tapAsync(
+			"DekuSSRPlugin",
+			(compilation, callback) => {
+				console.log("This is an example plugin!");
+				console.log(
+					"Here’s the `compilation` object which represents a single build of assets:",
+					compilation
+				);
+				callback();
+			}
+		);
+  }
+}
 module.exports = {
 	mode: "development",
 	entry: "./src/index.js",
@@ -11,9 +28,10 @@ module.exports = {
 		filename: "bundle.js",
 	},
 	plugins: [
+		new DekuSSRPlugin(),
 		new HtmlWebpackPlugin({
 			alwaysWriteToDisk: true,
-			templateContent: ssr.ssr,
+			templateContent: () => {console.log('template content created'); return ssr.ssr() },
 		}),
 		new HtmlWebpackHarddiskPlugin(),
 		new webpack.EnvironmentPlugin({
