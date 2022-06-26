@@ -46,6 +46,7 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Data.Variant (Variant)
 import Data.Variant as V
 import Data.Variant as Variant
+import Debug (spy)
 import Deku.Attribute (class Attr, Attribute, cb, (:=))
 import Deku.Control (switcher, text, text_)
 import Deku.Core (class Korok, Domable, Nut, bus, bussed, insert, remove)
@@ -1047,13 +1048,19 @@ main =
           ]
       D.div_
         [ D.div_
-            [ bussed \setNumz numz' ->
+            [ bussed \setRemove rmv -> bussed \setNumz numz' ->
                 let
-                  numz = bang [ ] <|> numz'
+                  numz = fold
+                    ( case _ of
+                        Right x -> const x
+                        Left y -> filter (not <<< eq y)
+                    )
+                    ((Right <$> (bang [] <|> numz')) <|> (Left <$> rmv))
+                    []
                   maxy = fromMaybe 0 <<< maximum
                 in
                   D.div_
-                    [ bussed \setAdd myAdd -> bussed \setRemove rmv -> envy $ sweep rmv \rmvX -> D.div_
+                    [ bussed \setAdd myAdd -> envy $ sweep rmv \rmvX -> D.div_
                         [ dyn
                             ( sampleOn numz
                                 ( myAdd <#> \_ n ->
@@ -1063,7 +1070,7 @@ main =
                                       ( ( bang $ insert
                                             ( D.div_
                                                 [ text_ (show (myN))
-                                                , D.button (click (numz <#> \nn -> (setRemove myN *> setNumz (filter (not <<< eq myN) nn)))) [ text_ "-" ]
+                                                , D.button (click (bang $ (setRemove myN))) [ text_ "-" ]
                                                 ]
                                             )
                                         ) <|> rmvX myN $> remove
