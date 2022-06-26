@@ -17,7 +17,8 @@ import Data.Bifunctor (class Bifunctor, bimap, lmap)
 import Data.Compactable (compact)
 import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..), fromRight', hush, note)
-import Data.Foldable (foldMap, for_, oneOf, oneOfMap)
+import Data.Filterable (filter)
+import Data.Foldable (foldMap, for_, maximum, oneOf, oneOfMap)
 import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
@@ -47,7 +48,7 @@ import Data.Variant as V
 import Data.Variant as Variant
 import Deku.Attribute (class Attr, Attribute, cb, (:=))
 import Deku.Control (switcher, text, text_)
-import Deku.Core (class Korok, Domable, Nut, bus, bussed)
+import Deku.Core (class Korok, Domable, Nut, bus, bussed, insert, remove)
 import Deku.Core (vbussed)
 import Deku.Core as DC
 import Deku.DOM as D
@@ -91,6 +92,7 @@ newtype Grammar nt r tok = MkGrammar
       , rule :: Fragment nt tok
       }
   )
+
 derive instance newtypeGrammar :: Newtype (Grammar nt r tok) _
 
 fromSeed
@@ -176,11 +178,12 @@ g8Grammar = MkGrammar
 
 parseIntoGrammar = compose MkGrammar $
   Array.mapMaybe (\r -> NES.fromString r.pName <#> \p -> r { pName = p })
-  >>> \grammar ->
-    let
-      nts = longestFirst (grammar <#> _.pName)
-      p = parseDefinition nts
-    in grammar <#> \r -> r { rule = p r.rule }
+    >>> \grammar ->
+      let
+        nts = longestFirst (grammar <#> _.pName)
+        p = parseDefinition nts
+      in
+        grammar <#> \r -> r { rule = p r.rule }
 
 exGrammar :: SGrammar
 exGrammar = parseIntoGrammar
@@ -196,10 +199,10 @@ g8Seed
      }
 g8Seed = fromSeed g8Grammar G8.RE
 
-exSeed ::
-  { augmented :: SGrammar
-  , start :: SStateItem
-  }
+exSeed
+  :: { augmented :: SGrammar
+     , start :: SStateItem
+     }
 exSeed = fromSeed' (unsafePartial (fromJust (NES.fromString "T"))) "T0" (codePointFromChar '$') exGrammar (unsafePartial (fromJust (NES.fromString "E")))
 
 g8Generated :: forall a. a -> Array (State (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok))
@@ -315,6 +318,7 @@ type StateItem nt r tok =
   , rule :: Zipper nt tok
   , lookahead :: Lookahead tok
   }
+
 type SStateItem = StateItem NonEmptyString String CodePoint
 
 data ShiftReduce s r
@@ -344,6 +348,7 @@ type StateInfo s nt r tok =
 
 newtype States s nt r tok = States
   (Array (StateInfo s nt r tok))
+
 type SStates = States String NonEmptyString String CodePoint
 
 numberStates
@@ -906,7 +911,7 @@ type TopLevelUIAction = V
 debug :: forall m a. Show a => String -> AnEvent m a -> AnEvent m a
 debug tag = map \a -> unsafePerformEffect (a <$ (Log.info (tag <> show a)))
 
-type ListicleEvent a = Variant ( add :: a, remove :: Int )
+type ListicleEvent a = Variant (add :: a, remove :: Int)
 
 -- | Render a list of items, with begin, end, separator elements and finalize button
 -- | and remove buttons on each item. (All of those are optional, except for the items.)
@@ -915,73 +920,81 @@ type ListicleEvent a = Variant ( add :: a, remove :: Int )
 -- |
 -- | Start from an initial value, listen for external add events, internal remove events,
 -- | raise messages on change, and return the current value on finalize.
-listicle :: forall s m lock payload a. Korok s m => Show a =>
-  { initial :: Array a -- initial value
-  , onChange :: Array a -> Effect Unit -- on change callback
-  , addEvent :: AnEvent m a -- external add events
+listicle
+  :: forall s m lock payload a
+   . Korok s m
+  => Show a
+  => { initial :: Array a -- initial value
+     , onChange :: Array a -> Effect Unit -- on change callback
+     , addEvent :: AnEvent m a -- external add events
 
-  , remove :: Maybe (Effect Unit -> Domable m lock payload) -- remove button
-  , finalize :: Maybe (AnEvent m (Array a) -> Domable m lock payload) -- finalize button
+     , remove :: Maybe (Effect Unit -> Domable m lock payload) -- remove button
+     , finalize :: Maybe (AnEvent m (Array a) -> Domable m lock payload) -- finalize button
 
-  , renderItem :: a -> Domable m lock payload
-  , begin :: Maybe (Domable m lock payload)
-  , end :: Maybe (Domable m lock payload)
-  , separator :: Maybe (Domable m lock payload)
-  } ->
-  AnEvent m
-    { element :: Domable m lock payload
-    , value :: AnEvent m (Array a)
-    }
+     , renderItem :: a -> Domable m lock payload
+     , begin :: Maybe (Domable m lock payload)
+     , end :: Maybe (Domable m lock payload)
+     , separator :: Maybe (Domable m lock payload)
+     }
+  -> AnEvent m
+       { element :: Domable m lock payload
+       , value :: AnEvent m (Array a)
+       }
 listicle desc = keepLatest $ bus \pushRemove removesEvent ->
   let
     initialValue :: Int /\ Array (Int /\ a)
     initialValue = Array.length desc.initial /\ mapWithIndex (/\) desc.initial
+
     performChange :: ListicleEvent a -> (Int /\ Array (Int /\ a)) -> (Int /\ Array (Int /\ a))
     performChange = V.match
-      { add: \v (j /\ vs) -> (j+1) /\ Array.snoc vs (j /\ v)
+      { add: \v (j /\ vs) -> (j + 1) /\ Array.snoc vs (j /\ v)
       , remove: \i -> map (Array.filter \(i' /\ _) -> i' /= i)
       }
     changesEvent =
       Variant.inj (Proxy :: Proxy "add") <$> desc.addEvent
-      <|> Variant.inj (Proxy :: Proxy "remove") <$> removesEvent
+        <|> Variant.inj (Proxy :: Proxy "remove") <$> removesEvent
+
     currentValue_ :: AnEvent m (Array (Int /\ a))
     currentValue_ = map snd $ bang initialValue <|> fold performChange changesEvent initialValue
-  in memoize currentValue_ \currentValue ->
-  let
-    intro = case desc.begin of
-      Nothing -> []
-      Just x -> [x]
-    extro = case desc.end of
-      Nothing -> []
-      Just x -> [x]
-    fin = case desc.finalize of
-      Nothing -> []
-      Just thingy ->
-        [ thingy (currentValue <#> map snd) ]
-    sep = case desc.separator of
-      Nothing -> []
-      Just v -> [v]
-
-    withRemover :: Domable m lock payload -> Int -> Array (Array (Domable m lock payload))
-    withRemover item idx = pure $ case desc.remove of
-      Nothing -> [item]
-      Just remover ->
-        [ item, remover (pushRemove idx) ]
-
-    renderOne :: Int /\ a -> Array (Array (Domable m lock payload))
-    renderOne (idx /\ item) = withRemover (desc.renderItem item) idx
-
-    renderAtOnce :: Array (Int /\ a) -> Domable m lock payload
-    renderAtOnce items = D.div_ $
+  in
+    memoize currentValue_ \currentValue ->
       let
-        renderedItems = items <#> renderOne
+        intro = case desc.begin of
+          Nothing -> []
+          Just x -> [ x ]
+        extro = case desc.end of
+          Nothing -> []
+          Just x -> [ x ]
+        fin = case desc.finalize of
+          Nothing -> []
+          Just thingy ->
+            [ thingy (currentValue <#> map snd) ]
+        sep = case desc.separator of
+          Nothing -> []
+          Just v -> [ v ]
+
+        withRemover :: Domable m lock payload -> Int -> Array (Array (Domable m lock payload))
+        withRemover item idx = pure $ case desc.remove of
+          Nothing -> [ item ]
+          Just remover ->
+            [ item, remover (pushRemove idx) ]
+
+        renderOne :: Int /\ a -> Array (Array (Domable m lock payload))
+        renderOne (idx /\ item) = withRemover (desc.renderItem item) idx
+
+        renderAtOnce :: Array (Int /\ a) -> Domable m lock payload
+        renderAtOnce items = D.div_ $
+          let
+            renderedItems = items <#> renderOne
+          in
+            intro <> join (Array.intercalate [ sep ] renderedItems) <> extro <> fin
       in
-        intro <> join (Array.intercalate [sep] renderedItems) <> extro <> fin
-  in { element: switcher renderAtOnce (debug "element" currentValue), value: map snd <$> debug "value" currentValue }
+        { element: switcher renderAtOnce (debug "element" currentValue), value: map snd <$> debug "value" currentValue }
 
-
-stateComponent :: forall s m lock payload. Korok s m =>
-  Domable m lock payload
+stateComponent
+  :: forall s m lock payload
+   . Korok s m
+  => Domable m lock payload
 stateComponent = bussed \addNew addEvent ->
   let
     component = listicle
@@ -993,12 +1006,13 @@ stateComponent = bussed \addNew addEvent ->
       , finalize: Nothing
       , addEvent: addEvent
       , onChange: mempty
-      , initial: [0, 1]
+      , initial: [ 0, 1 ]
       }
     element = envy (component <#> _.element)
     value = keepLatest (component <#> _.value)
     length = debug "length outer" (map Array.length (debug "length inner" value))
-  in D.div_
+  in
+    D.div_
       -- Without this div, it comes after the button upon update
       [ D.div_ [ element ]
       , D.button ((length <#> \v -> (D.OnClick := addNew v)) <|> buttonClass) [ text_ "Add" ]
@@ -1032,7 +1046,38 @@ main =
               []
           ]
       D.div_
-        [ stateComponent
+        [ D.div_
+            [ bussed \setNumz numz' ->
+                let
+                  numz = bang [ ] <|> numz'
+                  maxy = fromMaybe 0 <<< maximum
+                in
+                  D.div_
+                    [ bussed \setAdd myAdd -> bussed \setRemove rmv -> D.div_
+                        [ dyn
+                            ( sampleOn numz
+                                ( myAdd <#> \_ n ->
+                                    let
+                                      myN = maxy n
+                                    in
+                                      ( ( bang $ insert
+                                            ( D.div_
+                                                [ text_ (show (myN))
+                                                , D.button (click (numz <#> \n -> (setRemove myN *> setNumz (filter (not <<< eq myN) n)))) [ text_ "-" ]
+                                                ]
+                                            )
+                                        ) <|> (filter (eq myN) rmv) $> remove
+                                      )
+                                )
+                            )
+                        , D.button
+                            (click $ numz <#> \n -> (setNumz (n <> [ maxy n + 1 ]) *> setAdd unit))
+                            [ text_ "Add" ]
+                        ]
+                    , D.div_ [ text_ "Current state: ", text (show <$> numz) ]
+                    ]
+            ]
+        , stateComponent
         , D.div_
             [ event.errorMessage # switcher \et -> case et of
                 Nothing -> envy empty
