@@ -1063,7 +1063,7 @@ main =
                                       ( ( bang $ insert
                                             ( D.div_
                                                 [ text_ (show (myN))
-                                                , D.button (click (numz <#> \n -> (setRemove myN *> setNumz (filter (not <<< eq myN) n)))) [ text_ "-" ]
+                                                , D.button (click (numz <#> \nn -> (setRemove myN *> setNumz (filter (not <<< eq myN) nn)))) [ text_ "-" ]
                                                 ]
                                             )
                                         ) <|> rmvX myN $> remove
