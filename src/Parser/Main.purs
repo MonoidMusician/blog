@@ -9,7 +9,7 @@ import Control.Monad.ST.Class (class MonadST)
 import Control.Monad.State (StateT, get, put, runStateT)
 import Control.Monad.Trampoline (Trampoline, runTrampoline)
 import Control.Plus (empty)
-import Data.Array ((..))
+import Data.Array ((..), (!!))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Array.NonEmpty.Internal (NonEmptyArray)
@@ -18,7 +18,7 @@ import Data.Compactable (compact)
 import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..), fromRight', hush, note)
 import Data.Filterable (filter)
-import Data.Foldable (foldMap, for_, minimum, oneOf, oneOfMap)
+import Data.Foldable (foldMap, for_, oneOf, oneOfMap)
 import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
@@ -929,7 +929,7 @@ listicle :: forall s m lock payload a. Korok s m => Show a =>
   , separator :: Maybe (Domable m lock payload)
   } ->
   ComponentSpec m lock payload (Array a)
-listicle desc = bus \pushRemove removesEvent ->
+listicle desc = keepLatest $ bus \pushRemove removesEvent ->
   let
     addEvent = counter desc.addEvent <#> \(v /\ i) -> (i + Array.length desc.initial) /\ v
     initialEvent = oneOfMap bang initialValue
@@ -943,8 +943,11 @@ listicle desc = bus \pushRemove removesEvent ->
     changesEvent =
       Variant.inj (Proxy :: Proxy "add") <$> addEvent
       <|> Variant.inj (Proxy :: Proxy "remove") <$> removesEvent
-    currentValue :: AnEvent m (Array (Int /\ a))
-    currentValue = bang initialValue <|> fold performChange changesEvent initialValue
+    currentValue_ :: AnEvent m (Array (Int /\ a))
+    currentValue_ = fold performChange changesEvent initialValue
+  in memoize currentValue_ \currentValue' ->
+  let
+    currentValue = bang initialValue <|> currentValue'
     intro = case desc.begin of
       Nothing -> []
       Just x -> [x]
@@ -975,13 +978,25 @@ listicle desc = bus \pushRemove removesEvent ->
       in
         intro <> join (Array.intercalate [sep] renderedItems) <> extro <> fin
 
+    dropComma :: Int -> AnEvent m Boolean
+    dropComma idx = filter identity $
+      -- `currentValue` may or may not have updated before this `sampleOn` fires,
+      -- depending on the order of subscriptions to `removesEvent`, so we just
+      -- detect both here.
+      -- (in particular, for elements rendered in the initial view, it seems that
+      -- their subscription beats that of `currentValue` somehow)
+      sampleOn currentValue $ removesEvent <#> \rem vs ->
+        -- let _ = unsafePerformEffect (logShow { idx, rem, vs }) in
+        rem == idx ||
+        ((fst <$> (vs !! 0)) == Just rem && (fst <$> (vs !! 1)) == Just idx) ||
+        ((fst <$> (vs !! 0)) == Just idx)
+
     element = fixed $
       let
         renderItems = sampleOn (Array.length <$> currentValue) $
           (initialEvent <|> addEvent) <#> \(idx /\ item) len ->
             ( bang $ insert $ fixed $ append
-              --( if len > 1 && idx /= 0 then sep else [] )
-              [ D.span_ [(dedup (map (map fst >>> minimum) currentValue)) # switcher (\i -> if i /= Just idx then text_ "," else envy empty) ] ]
+              ( if len > 0 && idx /= 0 then [ switcher (fixed <<< if _ then [] else sep) (bang false <|> dropComma idx) ] else [] )
               ( renderOne (idx /\ item) )
             ) <|> filter (eq idx) removesEvent $> remove
       in
@@ -1027,7 +1042,7 @@ stateComponent = bussed \addNew addEvent ->
       , remove: Just \rem -> D.button (bang (D.OnClick := rem)) [ text_ "-" ]
       , finalize: Nothing
       , addEvent: addEvent
-      , initial: [0, 1]
+      , initial: [0, 1, 2]
       }
   in withInstance component0 \{ element, value } ->
   let
