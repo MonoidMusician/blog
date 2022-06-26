@@ -17,6 +17,7 @@ import Data.Bifunctor (class Bifunctor, bimap, lmap)
 import Data.Compactable (compact)
 import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..), fromRight', hush, note)
+import Data.Filterable (filter)
 import Data.Foldable (foldMap, for_, oneOf, oneOfMap)
 import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
@@ -47,7 +48,7 @@ import Data.Variant as V
 import Data.Variant as Variant
 import Deku.Attribute (class Attr, Attribute, cb, (:=))
 import Deku.Control (switcher, text, text_)
-import Deku.Core (class Korok, Domable, Nut, bus, bussed)
+import Deku.Core (class Korok, Domable, Nut, bus, bussed, insert, remove)
 import Deku.Core (vbussed)
 import Deku.Core as DC
 import Deku.DOM as D
@@ -930,18 +931,20 @@ listicle :: forall s m lock payload a. Korok s m => Show a =>
   ComponentSpec m lock payload (Array a)
 listicle desc = bus \pushRemove removesEvent ->
   let
-    initialValue :: Int /\ Array (Int /\ a)
-    initialValue = Array.length desc.initial /\ mapWithIndex (/\) desc.initial
-    performChange :: ListicleEvent a -> (Int /\ Array (Int /\ a)) -> (Int /\ Array (Int /\ a))
+    addEvent = counter desc.addEvent <#> \(v /\ i) -> (i + Array.length desc.initial) /\ v
+    initialEvent = oneOfMap bang initialValue
+    initialValue :: Array (Int /\ a)
+    initialValue = mapWithIndex (/\) desc.initial
+    performChange :: ListicleEvent (Int /\ a) -> Array (Int /\ a) -> Array (Int /\ a)
     performChange = V.match
-      { add: \v (j /\ vs) -> (j+1) /\ Array.snoc vs (j /\ v)
-      , remove: \i -> map (Array.filter \(i' /\ _) -> i' /= i)
+      { add: \(j /\ v) vs -> Array.snoc vs (j /\ v)
+      , remove: \i -> Array.filter \(i' /\ _) -> i' /= i
       }
     changesEvent =
-      Variant.inj (Proxy :: Proxy "add") <$> desc.addEvent
+      Variant.inj (Proxy :: Proxy "add") <$> addEvent
       <|> Variant.inj (Proxy :: Proxy "remove") <$> removesEvent
     currentValue :: AnEvent m (Array (Int /\ a))
-    currentValue = map snd $ bang initialValue <|> fold performChange changesEvent initialValue
+    currentValue = bang initialValue <|> fold performChange changesEvent initialValue
     intro = case desc.begin of
       Nothing -> []
       Just x -> [x]
@@ -956,22 +959,33 @@ listicle desc = bus \pushRemove removesEvent ->
       Nothing -> []
       Just v -> [v]
 
-    withRemover :: Domable m lock payload -> Int -> Array (Array (Domable m lock payload))
-    withRemover item idx = pure $ case desc.remove of
+    withRemover :: Domable m lock payload -> Int -> Array (Domable m lock payload)
+    withRemover item idx = case desc.remove of
       Nothing -> [item]
       Just remover ->
         [ item, remover (pushRemove idx) ]
 
-    renderOne :: Int /\ a -> Array (Array (Domable m lock payload))
+    renderOne :: Int /\ a -> Array (Domable m lock payload)
     renderOne (idx /\ item) = withRemover (desc.renderItem item) idx
 
     renderAtOnce :: Array (Int /\ a) -> Domable m lock payload
-    renderAtOnce items = D.div_ $
+    renderAtOnce items = fixed $
       let
-        renderedItems = items <#> renderOne
+        renderedItems = items <#> renderOne >>> pure
       in
         intro <> join (Array.intercalate [sep] renderedItems) <> extro <> fin
-  in { element: switcher renderAtOnce (debug "element" currentValue), value: map snd <$> debug "value" currentValue }
+
+    element = fixed $
+      let
+        renderItems = sampleOn (Array.length <$> currentValue) $
+          (initialEvent <|> addEvent) <#> \(idx /\ item) len ->
+            ( bang $ insert $ fixed $ append
+              ( if len > 1 && idx /= 0 then sep else [] )
+              ( renderOne (idx /\ item) )
+            ) <|> filter (eq idx) removesEvent $> remove
+      in
+        intro <> [ D.span_ [ dyn renderItems ] ] <> extro <> fin
+  in { element, value: map snd <$> currentValue }
 
 -- | Abstract component
 type ComponentSpec m lock payload d =
@@ -1014,11 +1028,9 @@ stateComponent = bussed \addNew addEvent ->
       , addEvent: addEvent
       , initial: [0, 1]
       }
-  in envy $ memoize component0 \component ->
+  in withInstance component0 \{ element, value } ->
   let
-    element = envy (component <#> _.element)
-    value = keepLatest (component <#> _.value)
-    length = debug "length outer" (map Array.length (debug "length inner" value))
+    length = map Array.length value
   in D.div_
       -- Without this div, it comes after the button upon update
       [ D.div_ [ element ]
