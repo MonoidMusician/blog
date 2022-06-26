@@ -1048,16 +1048,16 @@ main =
           ]
       D.div_
         [ D.div_
-            [ bussed \setRemove rmv -> bussed \setNumz numz' ->
+            [ bussed \setRemove rmv -> bussed \incrNumz inuz ->
                 let
-                  numz = fold
+                  maxy = fromMaybe 0 <<< maximum
+                  numz = bang [] <|> fold
                     ( case _ of
-                        Right x -> const x
+                        Right _ -> \n -> n <> [ maxy n + 1 ]
                         Left y -> filter (not <<< eq y)
                     )
-                    ((Right <$> (bang [] <|> numz')) <|> (Left <$> rmv))
+                    ((Right <$> inuz) <|> (Left <$> rmv))
                     []
-                  maxy = fromMaybe 0 <<< maximum
                 in
                   D.div_
                     [ bussed \setAdd myAdd -> envy $ sweep rmv \rmvX -> D.div_
@@ -1078,7 +1078,7 @@ main =
                                 )
                             )
                         , D.button
-                            (click $ numz <#> \n -> (setNumz (n <> [ maxy n + 1 ]) *> setAdd unit))
+                            (click $ numz <#> \n -> (incrNumz (n <> [ maxy n + 1 ]) *> setAdd unit))
                             [ text_ "Add" ]
                         ]
                     , D.div_ [ text_ "Current state: ", text (show <$> numz) ]
