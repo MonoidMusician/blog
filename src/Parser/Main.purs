@@ -919,31 +919,34 @@ listicle :: forall s m lock payload a. Korok s m => Show a =>
   , onChange :: Array a -> Effect Unit -- on change callback
   , addEvent :: AnEvent m a -- external add events
 
-  , remove :: Maybe (Effect Unit -> Nut) -- remove button
-  , finalize :: Maybe (AnEvent m (Array a) -> Nut) -- finalize button
+  , remove :: Maybe (Effect Unit -> Domable m lock payload) -- remove button
+  , finalize :: Maybe (AnEvent m (Array a) -> Domable m lock payload) -- finalize button
 
   , renderItem :: a -> Domable m lock payload
   , begin :: Maybe (Domable m lock payload)
   , end :: Maybe (Domable m lock payload)
   , separator :: Maybe (Domable m lock payload)
   } ->
-  Domable m lock payload
-listicle desc = bussed \pushRemove removesEvent ->
+  AnEvent m
+    { element :: Domable m lock payload
+    , value :: AnEvent m (Array a)
+    }
+listicle desc = keepLatest $ bus \pushRemove removesEvent ->
   let
-    initialValue :: Array (Int /\ a)
-    initialValue = mapWithIndex (/\) desc.initial
-    performChange :: ListicleEvent a -> Array (Int /\ a) -> Array (Int /\ a)
+    initialValue :: Int /\ Array (Int /\ a)
+    initialValue = Array.length desc.initial /\ mapWithIndex (/\) desc.initial
+    performChange :: ListicleEvent a -> (Int /\ Array (Int /\ a)) -> (Int /\ Array (Int /\ a))
     performChange = V.match
-      -- FIXME the index arithmetic is wrong/inconsistent
-      { add: \v vs -> Array.snoc vs (Array.length vs /\ v)
-      , remove: \i vs -> fromMaybe vs (Array.deleteAt i vs)
+      { add: \v (j /\ vs) -> (j+1) /\ Array.snoc vs (j /\ v)
+      , remove: \i -> map (Array.filter \(i' /\ _) -> i' /= i)
       }
     changesEvent =
-      Variant.inj (Proxy :: Proxy "add") <$> debug desc.addEvent
-      <|> Variant.inj (Proxy :: Proxy "remove") <$> debug removesEvent
-    currentValue :: AnEvent m (Array (Int /\ a))
-    currentValue = bang initialValue <|> fold performChange changesEvent initialValue
-
+      Variant.inj (Proxy :: Proxy "add") <$> desc.addEvent
+      <|> Variant.inj (Proxy :: Proxy "remove") <$> removesEvent
+    currentValue_ :: AnEvent m (Array (Int /\ a))
+    currentValue_ = map snd $ bang initialValue <|> fold performChange changesEvent initialValue
+  in memoize currentValue_ \currentValue ->
+  let
     intro = case desc.begin of
       Nothing -> []
       Just x -> [x]
@@ -958,13 +961,13 @@ listicle desc = bussed \pushRemove removesEvent ->
       Nothing -> []
       Just v -> [v]
 
-    withRemover :: Domable m lock payload -> Int -> Array (Domable m lock payload)
-    withRemover item idx = case desc.remove of
+    withRemover :: Domable m lock payload -> Int -> Array (Array (Domable m lock payload))
+    withRemover item idx = pure $ case desc.remove of
       Nothing -> [item]
       Just remover ->
         [ item, remover (pushRemove idx) ]
 
-    renderOne :: Int /\ a -> Array (Domable m lock payload)
+    renderOne :: Int /\ a -> Array (Array (Domable m lock payload))
     renderOne (idx /\ item) = withRemover (desc.renderItem item) idx
 
     renderAtOnce :: Array (Int /\ a) -> Domable m lock payload
@@ -972,23 +975,33 @@ listicle desc = bussed \pushRemove removesEvent ->
       let
         renderedItems = items <#> renderOne
       in
-        intro <> Array.intercalate sep renderedItems <> extro <> fin
-  in switcher renderAtOnce (debug currentValue)
+        intro <> join (Array.intercalate [sep] renderedItems) <> extro <> fin
+  in { element: switcher renderAtOnce (debug currentValue), value: map snd <$> debug currentValue }
 
 
 stateComponent :: forall s m lock payload. Korok s m =>
-  AnEvent m String -> Domable m lock payload
-stateComponent addEvent = listicle
-  { begin: Just $ text_ "{ "
-  , end: Just $ text_ " }"
-  , separator: Just $ text_ ", "
-  , renderItem: text_
-  , remove: Nothing
-  , finalize: Nothing
-  , addEvent: addEvent
-  , onChange: mempty
-  , initial: ["a", "b"]
-  }
+  Domable m lock payload
+stateComponent = bussed \addNew addEvent ->
+  let
+    component = listicle
+      { begin: Just $ text_ "{ "
+      , end: Just $ text_ " }"
+      , separator: Just $ text_ ", "
+      , renderItem: text_ <<< show
+      , remove: Just \rem -> D.button (bang (D.OnClick := rem)) [ text_ "-" ]
+      , finalize: Nothing
+      , addEvent: addEvent
+      , onChange: mempty
+      , initial: [0, 1]
+      }
+    element = envy (component <#> _.element)
+    value = keepLatest (component <#> _.value)
+    length = debug (map Array.length (debug value))
+  in D.div_
+      -- Without this div, it comes after the button upon update
+      [ D.div_ [ element ]
+      , D.button ((length <#> \v -> (D.OnClick := addNew v)) <|> buttonClass) [ text_ "Add" ]
+      ]
 
 main :: Nut
 main =
@@ -1018,12 +1031,7 @@ main =
               []
           ]
       D.div_
-        [ bussed \addNew addEvent ->
-            D.div_
-              -- Without this div, it comes after the button upon update
-              [ D.div_ [ stateComponent addEvent ]
-              , D.button (bang (D.OnClick := addNew "x") <|> buttonClass) [ text_ "Add" ]
-              ]
+        [ stateComponent
         , D.div_
             [ event.errorMessage # switcher \et -> case et of
                 Nothing -> envy empty
