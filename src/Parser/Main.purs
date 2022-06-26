@@ -1053,7 +1053,7 @@ main =
                   maxy = fromMaybe 0 <<< maximum
                 in
                   D.div_
-                    [ bussed \setAdd myAdd -> bussed \setRemove rmv -> D.div_
+                    [ bussed \setAdd myAdd -> bussed \setRemove rmv -> envy $ sweep rmv \rmvX -> D.div_
                         [ dyn
                             ( sampleOn numz
                                 ( myAdd <#> \_ n ->
@@ -1066,7 +1066,7 @@ main =
                                                 , D.button (click (numz <#> \n -> (setRemove myN *> setNumz (filter (not <<< eq myN) n)))) [ text_ "-" ]
                                                 ]
                                             )
-                                        ) <|> (filter (eq myN) rmv) $> remove
+                                        ) <|> rmvX myN $> remove
                                       )
                                 )
                             )
