@@ -917,7 +917,6 @@ type ListicleEvent a = Variant ( add :: a, remove :: Int )
 -- | raise messages on change, and return the current value on finalize.
 listicle :: forall s m lock payload a. Korok s m => Show a =>
   { initial :: Array a -- initial value
-  , onChange :: Array a -> Effect Unit -- on change callback
   , addEvent :: AnEvent m a -- external add events
 
   , remove :: Maybe (Effect Unit -> Domable m lock payload) -- remove button
@@ -928,11 +927,8 @@ listicle :: forall s m lock payload a. Korok s m => Show a =>
   , end :: Maybe (Domable m lock payload)
   , separator :: Maybe (Domable m lock payload)
   } ->
-  AnEvent m
-    { element :: Domable m lock payload
-    , value :: AnEvent m (Array a)
-    }
-listicle desc = keepLatest $ bus \pushRemove removesEvent ->
+  ComponentSpec m lock payload (Array a)
+listicle desc = bus \pushRemove removesEvent ->
   let
     initialValue :: Int /\ Array (Int /\ a)
     initialValue = Array.length desc.initial /\ mapWithIndex (/\) desc.initial
@@ -944,10 +940,8 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
     changesEvent =
       Variant.inj (Proxy :: Proxy "add") <$> desc.addEvent
       <|> Variant.inj (Proxy :: Proxy "remove") <$> removesEvent
-    currentValue_ :: AnEvent m (Array (Int /\ a))
-    currentValue_ = map snd $ bang initialValue <|> fold performChange changesEvent initialValue
-  in memoize currentValue_ \currentValue ->
-  let
+    currentValue :: AnEvent m (Array (Int /\ a))
+    currentValue = map snd $ bang initialValue <|> fold performChange changesEvent initialValue
     intro = case desc.begin of
       Nothing -> []
       Just x -> [x]
@@ -979,12 +973,38 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
         intro <> join (Array.intercalate [sep] renderedItems) <> extro <> fin
   in { element: switcher renderAtOnce (debug "element" currentValue), value: map snd <$> debug "value" currentValue }
 
+-- | Abstract component
+type ComponentSpec m lock payload d =
+  AnEvent m (Component m lock payload d)
+-- | Instantiated component
+type Component m lock payload d =
+  { element :: Domable m lock payload
+  , value :: AnEvent m d
+  }
+
+-- | Instantiate a component spec to get an actual component, with its element
+-- | and value-event.
+-- |
+-- | Component specs are eventful so they can maintain state, so they need to
+-- | be memoized in order that the element and value refer to the same instance,
+-- | otherwise the value is attached to a phantom instance that has no DOM
+-- | presence, due to the way busses and subscriptions work.
+withInstance :: forall s d m lock payload. Korok s m =>
+  ComponentSpec m lock payload d ->
+  (Component m lock payload d -> Domable m lock payload) ->
+  Domable m lock payload
+withInstance componentSpec renderer =
+  envy $ memoize componentSpec \component ->
+    renderer
+      { element: envy (component <#> _.element)
+      , value: keepLatest (component <#> _.value)
+      }
 
 stateComponent :: forall s m lock payload. Korok s m =>
   Domable m lock payload
 stateComponent = bussed \addNew addEvent ->
   let
-    component = listicle
+    component0 = listicle
       { begin: Just $ text_ "{ "
       , end: Just $ text_ " }"
       , separator: Just $ text_ ", "
@@ -992,9 +1012,10 @@ stateComponent = bussed \addNew addEvent ->
       , remove: Just \rem -> D.button (bang (D.OnClick := rem)) [ text_ "-" ]
       , finalize: Nothing
       , addEvent: addEvent
-      , onChange: mempty
       , initial: [0, 1]
       }
+  in envy $ memoize component0 \component ->
+  let
     element = envy (component <#> _.element)
     value = keepLatest (component <#> _.value)
     length = debug "length outer" (map Array.length (debug "length inner" value))
