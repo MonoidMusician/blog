@@ -281,7 +281,7 @@ derive instance genericZipper :: Generic (Zipper state tok) _
 instance showZipper :: (Show nt, Show tok) => Show (Zipper nt tok) where
   show x = genericShow x
 
-type SZipper = Zipper String CodePoint
+type SZipper = Zipper NonEmptyString CodePoint
 newtype State nt r tok = State (Array (StateItem nt r tok))
 
 instance eqState :: (Eq nt, Eq r, Eq tok) => Eq (State nt r tok) where
@@ -358,7 +358,7 @@ type StateInfo s nt r tok =
 newtype States s nt r tok = States
   (Array (StateInfo s nt r tok))
 
-type SStates = States String NonEmptyString String CodePoint
+type SStates = States Int NonEmptyString String CodePoint
 
 numberStates
   :: forall s nt r tok
@@ -709,7 +709,7 @@ infix 5 bangAttr as !:=
 
 maybeAttr :: forall m a b e. Applicative m => Attr e a b => a -> Maybe b -> AnEvent m (Attribute e)
 maybeAttr a (Just b) = bang (a := b)
-maybeAttr a Nothing = empty
+maybeAttr _ Nothing = empty
 
 infix 5 maybeAttr as ?:=
 
@@ -740,25 +740,18 @@ getHeader (States states) = bimap Array.nub Array.nub $
   fromPart (Terminal tok) = [ tok ] /\ []
 
 renderStateTable
-  :: forall s nt r tok
-   . Show s
-  => Show r
-  => Show nt
-  => Show tok
-  => Ord nt
-  => Ord tok
-  => States s nt r tok
+  :: SStates
   -> Nut
 renderStateTable (States states) =
   let
     terminals /\ nonTerminals = getHeader (States states)
-    renderTerminals = text_ <<< show
-    renderNonTerminals = text_ <<< show
+    renderTerminals x = renderTok mempty x
+    renderNonTerminals x = renderNT mempty x
     renderShiftReduce Nothing = text_ ""
-    renderShiftReduce (Just (Shift s)) = text_ $ "s" <> show s
-    renderShiftReduce (Just (Reduces rs)) = text_ $ rs # foldMap \r -> "r" <> show r
-    renderShiftReduce (Just (ShiftReduces s rs)) = text_ $
-      ("s" <> show s) <> (rs # foldMap \r -> "r" <> show r)
+    renderShiftReduce (Just (Shift s)) = fixed [ renderCmd mempty "s", renderSt mempty s ]
+    renderShiftReduce (Just (Reduces rs)) = fixed $ rs # foldMap \r -> [renderCmd mempty "r", renderRule mempty r]
+    renderShiftReduce (Just (ShiftReduces s rs)) = fixed $
+      [ renderCmd mempty "s", renderSt mempty s ] <> (rs # foldMap \r -> [renderCmd mempty "r", renderRule mempty r])
     cols state =
       let
         forTerminal tok = map snd <$> Map.lookup tok (unwrap state.advance)
@@ -768,11 +761,19 @@ renderStateTable (States states) =
     header = D.tr_ $ map (D.th_ <<< pure) $
       [ text_ "" ] <> map renderTerminals terminals <> map renderNonTerminals nonTerminals
     rows = states <#> \state -> D.tr_
-      $ Array.cons (D.th_ [ text_ (show state.sName) ])
+      $ Array.cons (D.th_ [ renderSt mempty state.sName ])
       $
         map (D.td_ <<< pure <<< renderShiftReduce) (cols state)
   in
-    D.table_ $ pure $ D.tbody_ $ [ header ] <> rows
+    D.table (D.Class !:= "parse-table")
+      [ fixed
+        [ D.colgroup_ [ D.col_ [] ]
+        , D.colgroup_ $ terminals $> D.col_ []
+        , D.colgroup_ $ nonTerminals $> D.col_ []
+        ]
+      , D.thead_ [ header ]
+      , D.tbody_ rows
+      ]
 
 type StartingTick = Boolean
 
@@ -787,19 +788,36 @@ type ParsedUIAction = V
 
 data TodoAction = Prioritize | Delete
 
-showStack :: forall tok state. Show state => Show tok => Stack state tok -> Nut
+showStack :: SStack -> Nut
 showStack i = fixed (go i)
   where
-  go (Zero state) = [ D.sub_ [ text_ (show state) ] ]
+  go (Zero state) = [ D.sub_ [ renderSt mempty state ] ]
   go (Snoc stack tok state) = go stack
-    <> [ text_ (show tok) ]
-    <> [ D.sub_ [ text_ (show state) ] ]
+    <> [ renderStackItem tok ]
+    <> [ D.sub_ [ renderSt mempty state ] ]
 
-showMaybeStack :: forall tok state. Show tok => Show state => Maybe (Stack state tok) -> Nut
+renderStackItem :: Either CodePoint (AST String) -> Nut
+renderStackItem (Left x) = renderTok mempty x
+renderStackItem (Right x) = renderAST x
+
+renderAST :: AST String -> Nut
+renderAST (Layer r []) = renderRule mempty r
+renderAST (Layer r cs) =
+  D.span (D.Class !:= "layer")
+    [ renderMeta mempty "("
+    , renderRule mempty r
+    , fixed $ cs # foldMap \c -> [ text_ " ", renderAST c ]
+    , renderMeta mempty ")"
+    ]
+
+showMaybeStack :: Maybe (SStack) -> Nut
 showMaybeStack Nothing = text_ "Parse error"
 showMaybeStack (Just stack) = showStack stack
 
-showMaybeParseSteps :: forall input s m lock payload x y z. Show x => Show y => Show z => Korok s m => Show input => Maybe (ParseSteps input (Stack x (Either y (AST z)))) -> SuperStack m (Domable m lock payload)
+type SStack = Stack Int (Either CodePoint (AST String))
+type SParseSteps = ParseSteps CodePoint (Stack Int (Either CodePoint (AST String)))
+
+showMaybeParseSteps :: forall s m lock payload. Korok s m => Maybe SParseSteps -> SuperStack m (Domable m lock payload)
 showMaybeParseSteps Nothing = pure (pure (text_ "Parse error"))
 showMaybeParseSteps (Just stack) = showParseSteps stack
 
@@ -827,15 +845,11 @@ getVisibilityAndIncrement' s = do
     )
 
 showParseStep
-  :: forall r tok state inputs s m lock payload x y z
-   . Show tok
-  => Show z
-  => Show state
-  => Show inputs
-  => Korok s m
-  => Either (Maybe (Stack x (Either y (AST z))))
-       { inputs :: inputs
-       , stack :: Stack state tok
+  :: forall r s m lock payload
+   . Korok s m
+  => Either (Maybe SStack)
+       { inputs :: List CodePoint
+       , stack :: SStack
        | r
        }
   -> SuperStack m (Domable m lock payload)
@@ -846,23 +860,19 @@ showParseStep (Left (Just v)) = do
   getVisibilityAndIncrement <#> map \(n /\ vi) ->
     case getResult v of
       Just r ->
-        D.div vi [ text_ $ ("Step " <> show n <> ": ") <> show r ]
+        D.div vi [ text_ $ ("Step " <> show n <> ": "), renderAST r ]
       _ ->
         D.div vi [ text_ $ ("Step " <> show n <> ": ") <> "Something went wrong" ]
 showParseStep (Right { stack, inputs }) = do
   getVisibilityAndIncrement' "flex justify-between" <#> map \(n /\ vi) ->
-    D.div vi [ D.div_ [ text_ ("Step " <> show n <> ": "), showStack stack ], D.div_ [ text_ (show inputs) ] ]
+    D.div vi [ D.div_ [ text_ ("Step " <> show n <> ": "), showStack stack ], D.div_ (foldMap (\x -> [renderTok mempty x]) inputs) ]
 
 type SuperStack m a = StateT Int Trampoline ((Int -> AnEvent m Boolean) -> a)
 
 showParseSteps
-  :: forall input s m lock payload x y z
-   . Show input
-  => Show x
-  => Show y
-  => Show z
-  => Korok s m
-  => ParseSteps input (Stack x (Either y (AST z)))
+  :: forall s m lock payload
+   . Korok s m
+  => SParseSteps
   -> SuperStack m (Domable m lock payload)
 showParseSteps i = map fixed <$> (go i)
   where
@@ -878,26 +888,30 @@ showParseSteps i = map fixed <$> (go i)
         (Step step more) -> do
           lift2 (\o r -> [ o ] <> r) <$> s (Right step) <*> go more
 
-renderState :: forall nt r tok. Show nt => Show r => Show tok => State nt r tok -> Nut
+renderState :: SState -> Nut
 renderState (State items) = D.ul_ $ D.li_ <<< (\v -> renderItem v) <$> items
 
-renderItem :: forall nt r tok. Show nt => Show r => Show tok => StateItem nt r tok -> Nuts
+renderItem :: SStateItem -> Nuts
 renderItem { rName, rule, lookahead } =
-  [ D.span (D.Class !:= "rule name") [ text_ (show rName) ]
-  , text_ ": "
+  [ renderRule mempty rName
+  , renderMeta mempty ": "
   , renderZipper rule
-  , text_ " "
-  , D.span (D.Class !:= "lookahead") [ text_ (show lookahead) ]
+  , renderMeta mempty " "
+  , renderLookahead lookahead
   ]
 
-renderZipper :: forall nt tok. Show nt => Show tok => Zipper nt tok -> Nut
+renderZipper :: SZipper -> Nut
 renderZipper (Zipper before after) =
   D.span (D.Class !:= "zipper")
-    [ D.span (D.Class !:= "text-gray-400 line-through") $ text_ <<< show <$> before
-    , D.span empty $ text_ <<< show <$> after
+    [ D.span (D.Class !:= "parsed") $ before <#> \x -> renderPart mempty x
+    , D.span empty $ after <#> \x -> renderPart mempty x
     ]
 
-
+renderLookahead :: Array CodePoint -> Nut
+renderLookahead items = D.span (D.Class !:= "lookahead") $
+  [renderMeta mempty "{"]
+  <> Array.intercalate [renderMeta mempty ", "] (items <#> \x -> [renderTok mempty x])
+  <> [renderMeta mempty "}"]
 
 --------------------------------------------------------------------------------
 counter :: forall s m a. MonadST s m => AnEvent m a → AnEvent m (a /\ Int)
@@ -1072,14 +1086,30 @@ withInstance componentSpec renderer =
       , value: keepLatest (component <#> _.value)
       }
 
+renderAs :: String -> String -> Nut
+renderAs c t = D.span (D.Class !:= c) [ text_ t ]
+
 renderTok :: Maybe (Effect Unit) -> CodePoint -> Nut
 renderTok c t = D.span (D.OnClick ?:= c <|> D.Class !:= "terminal") [ text_ (String.singleton t) ]
 
 renderNT :: Maybe (Effect Unit) -> NonEmptyString -> Nut
 renderNT c nt = D.span (D.OnClick ?:= c <|> D.Class !:= "non-terminal") [ text_ (NES.toString nt) ]
 
+renderRule :: Maybe (Effect Unit) -> String -> Nut
+renderRule c r = D.span (D.OnClick ?:= c <|> D.Class !:= "non-terminal rule") [ text_ r ]
+
 renderMeta :: Maybe (Effect Unit) -> String -> Nut
 renderMeta c x = D.span (D.OnClick ?:= c <|> D.Class !:= "meta") [ text_ x ]
+
+renderSt :: Maybe (Effect Unit) -> Int -> Nut
+renderSt c x = D.span (D.OnClick ?:= c <|> D.Class !:= "state") [ text_ (show x) ]
+
+renderPart :: Maybe (Effect Unit) -> Part NonEmptyString CodePoint -> Nut
+renderPart c (NonTerminal nt) = renderNT c nt
+renderPart c (Terminal t) = renderTok c t
+
+renderCmd :: Maybe (Effect Unit) -> String -> Nut
+renderCmd c x = D.span (D.OnClick ?:= c <|> D.Class !:= "meta cmd") [ text_ x ]
 
 stateComponent
   :: forall s m lock payload
@@ -1091,11 +1121,11 @@ stateComponent = bussed \addNew addEvent ->
       { begin: Just $ renderMeta mempty "{ "
       , end: Just $ renderMeta mempty " }"
       , separator: Just $ renderMeta mempty ", "
-      , renderItem: text_ <<< show
-      , remove: Just \rem -> D.button (D.OnClick !:= rem) [ text_ "-" ]
+      , renderItem: \x -> renderTok mempty x
+      , remove: Nothing
       , finalize: Nothing
       , addEvent: addEvent
-      , initial: [ 0, 1, 2 ]
+      , initial: codePointFromChar <$> [ 'x', ',', ')' ]
       }
   in
     withInstance component0 \{ element, value } ->
@@ -1105,7 +1135,7 @@ stateComponent = bussed \addNew addEvent ->
         D.div_
           -- Without this div, it comes after the button upon update
           [ D.div_ [ element ]
-          , D.button ((length <#> \v -> (D.OnClick := addNew v)) <|> buttonClass) [ text_ "Add" ]
+          -- , D.button ((length <#> \v -> (D.OnClick := addNew v)) <|> buttonClass) [ text_ "Add" ]
           ]
 
 type TopLevelUIAction = V
@@ -1220,14 +1250,15 @@ main =
                 )
                 event.addRule
         , D.table_ $ pure $ D.tbody_ $
+            let { m, nt, t, k, r } = { m: renderAs "meta", nt: renderAs "non-terminal", t: renderAs "terminal", k: renderAs "keyword", r: renderAs "non-terminal rule" } in
             D.tr_ <<< map D.td_ <$>
-              [ [ [ text_ "E" ], [ text_ ":" ], [ text_ "(", text_ "L", text_ ")" ], [ text_ "data E" ], [ text_ "=" ], [ text_ "E1", text_ " ", text_ "L" ] ]
-              , [ [], [ text_ "|" ], [ text_ "x" ], [], [ text_ "|" ], [ text_ "E2" ] ]
-              , [ [ text_ "L" ], [ text_ ":" ], [ text_ "E" ], [ text_ "data L" ], [ text_ "=" ], [ text_ "L1", text_ " ", text_ "E" ] ]
-              , [ [], [ text_ "|" ], [ text_ "L", text_ ",", text_ "E" ], [], [ text_ "|" ], [ text_ "L2", text_ " ", text_ "L", text_ " ", text_ "E" ] ]
+              [ [ [ nt "E" ], [ m ":" ], [ t "(", nt "L", t ")" ], [ k "data ", nt "E" ], [ m "=" ], [ r "E1", text_ " ", nt "L" ] ]
+              , [ [], [ m "|" ], [ t "x" ], [], [ m "|" ], [ r "E2" ] ]
+              , [ [ nt "L" ], [ m ":" ], [ nt "E" ], [ k "data ", nt "L" ], [ m "=" ], [ r "L1", text_ " ", nt "E" ] ]
+              , [ [], [ m "|" ], [ nt "L", t ",", nt "E" ], [], [ m "|" ], [ r "L2", text_ " ", nt "L", text_ " ", nt "E" ] ]
               ]
         , D.ul (D.Class !:= "pl-14 list-disc list-outside") $ map (D.li_) $ unwrap exSeed.augmented <#> \{ pName, rule } ->
-            append [ text_ (NES.toString pName), text_ ":" ] $ rule <#> text_ <<< show
+            append [ renderNT mempty pName, renderMeta mempty ":" ] $ rule <#> \x -> renderPart mempty x
         , D.div_ $ pure $ D.ol (D.Class !:= "pl-14 list-decimal list-outside") $ D.li_ <<< pure <<< (\v -> renderState v) <$> exGenerated unit
         , D.div_ $ pure $ renderStateTable (exStates unit)
         , D.div_ top
