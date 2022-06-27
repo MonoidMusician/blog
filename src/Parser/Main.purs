@@ -24,10 +24,9 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.Int (floor)
 import Data.List (List)
-import Data.List as List
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromJust, fromMaybe)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (class Newtype, unwrap)
 import Data.Number (e, pi)
 import Data.Set (Set)
@@ -48,8 +47,7 @@ import Data.Variant as V
 import Data.Variant as Variant
 import Deku.Attribute (class Attr, Attribute, cb, (:=))
 import Deku.Control (switcher, text, text_)
-import Deku.Core (class Korok, Domable, Nut, bus, bussed, insert, remove)
-import Deku.Core (vbussed)
+import Deku.Core (class Korok, Domable, Nut, bus, bussed, insert, remove, vbussed)
 import Deku.Core as DC
 import Deku.DOM as D
 import Deku.Listeners (click, slider)
@@ -57,7 +55,6 @@ import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Aff.AVar as AVar
 import Effect.Class (liftEffect)
-import Effect.Class.Console (logShow)
 import Effect.Class.Console as Log
 import Effect.Now (now)
 import Effect.Unsafe (unsafePerformEffect)
@@ -92,6 +89,7 @@ newtype Grammar nt r tok = MkGrammar
       , rule :: Fragment nt tok
       }
   )
+
 derive instance newtypeGrammar :: Newtype (Grammar nt r tok) _
 
 fromSeed
@@ -175,13 +173,22 @@ g8Grammar = MkGrammar
   , { pName: G8.RL, rName: G8.RL2, rule: [ NonTerminal G8.RL, Terminal G8.Comma, NonTerminal G8.RE ] }
   ]
 
+parseIntoGrammar
+  :: forall t
+   . Array
+       { pName :: String
+       , rName :: t
+       , rule :: String
+       }
+  -> Grammar NonEmptyString t CodePoint
 parseIntoGrammar = compose MkGrammar $
   Array.mapMaybe (\r -> NES.fromString r.pName <#> \p -> r { pName = p })
-  >>> \grammar ->
-    let
-      nts = longestFirst (grammar <#> _.pName)
-      p = parseDefinition nts
-    in grammar <#> \r -> r { rule = p r.rule }
+    >>> \grammar ->
+      let
+        nts = longestFirst (grammar <#> _.pName)
+        p = parseDefinition nts
+      in
+        grammar <#> \r -> r { rule = p r.rule }
 
 exGrammar :: SGrammar
 exGrammar = parseIntoGrammar
@@ -197,32 +204,36 @@ g8Seed
      }
 g8Seed = fromSeed g8Grammar G8.RE
 
-exSeed ::
-  { augmented :: SGrammar
-  , start :: SStateItem
-  }
+exSeed
+  :: { augmented :: SGrammar
+     , start :: SStateItem
+     }
 exSeed = fromSeed' (unsafePartial (fromJust (NES.fromString "T"))) "T0" (codePointFromChar '$') exGrammar (unsafePartial (fromJust (NES.fromString "E")))
 
 g8Generated :: forall a. a -> Array (State (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok))
 g8Generated _ = generate g8Grammar G8.RE
 
+exGenerated :: forall t. t -> Array (State NonEmptyString String CodePoint)
 exGenerated _ = generate' (unsafePartial (fromJust (NES.fromString "T"))) "T0" (codePointFromChar '$') exGrammar (unsafePartial (fromJust (NES.fromString "E")))
 
 g8States :: forall a. a -> States Int (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
 g8States a = fromRight' (\_ -> unsafeCrashWith "state generation did not work")
   (numberStates (add 1) g8Seed.augmented (g8Generated a))
 
+exStates :: forall t. t -> States Int NonEmptyString String CodePoint
 exStates a = fromRight' (\_ -> unsafeCrashWith "state generation did not work")
   (numberStates (add 1) exSeed.augmented (exGenerated a))
 
 g8Table :: forall a. a -> Proto.Table Int (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok) (CST (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok))
 g8Table = toTable <<< g8States
 
+exTable :: forall t. t -> Proto.Table Int (NonEmptyString /\ String) CodePoint (CST (NonEmptyString /\ String) CodePoint)
 exTable = toTable <<< exStates
 
 g8Table' :: forall a. a -> Proto.Table Int (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok) (Either (Maybe G8.Tok) (AST (Maybe G8.Sorts /\ Maybe G8.Rule)))
 g8Table' = toTable' <<< g8States
 
+exTable' :: forall t. t -> Proto.Table Int (NonEmptyString /\ String) CodePoint (Either CodePoint (AST (NonEmptyString /\ String)))
 exTable' = toTable' <<< exStates
 
 g8FromString :: String -> Maybe (List (Maybe G8.Tok))
@@ -316,6 +327,7 @@ type StateItem nt r tok =
   , rule :: Zipper nt tok
   , lookahead :: Lookahead tok
   }
+
 type SStateItem = StateItem NonEmptyString String CodePoint
 
 data ShiftReduce s r
@@ -345,6 +357,7 @@ type StateInfo s nt r tok =
 
 newtype States s nt r tok = States
   (Array (StateInfo s nt r tok))
+
 type SStates = States String NonEmptyString String CodePoint
 
 numberStates
@@ -689,9 +702,26 @@ recognize :: Array NonEmptyString -> String -> Maybe NonEmptyString
 recognize nts s = nts # Array.find \nt ->
   String.take (NES.length nt) s == NES.toString nt
 
-buttonClass = bang $ D.Class := "bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-arrowClass = bang $ D.Class := "bg-green-500 hover:bg-green-700 text-white font-bold"
-inputClass = bang $ D.Class := "shadow appearance-none border rounded py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+bangAttr :: forall m a b e. Applicative m => Attr e a b => a -> b -> AnEvent m (Attribute e)
+bangAttr a b = bang (a := b)
+
+infix 5 bangAttr as !:=
+
+mapAttr :: forall m a b e. Applicative m => Attr e a b => a -> m b -> m (Attribute e)
+mapAttr a b = (a := _) <$> b
+
+infix 5 mapAttr as <:=>
+
+buttonClass :: forall m e. Applicative m => Attr e D.Class String => AnEvent m (Attribute e)
+buttonClass = D.Class !:= "bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+
+arrowClass :: forall m e. Applicative m => Attr e D.Class String => AnEvent m (Attribute e)
+arrowClass = D.Class !:= "bg-green-500 hover:bg-green-700 text-white font-bold"
+
+inputClass :: forall m e. Applicative m => Attr e D.Class String => AnEvent m (Attribute e)
+inputClass = D.Class !:=
+  "shadow appearance-none border rounded py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+
 type Header nt tok = Array tok /\ Array nt
 
 getHeader :: forall s nt r tok. Ord nt => Ord tok => States s nt r tok -> Header nt tok
@@ -847,17 +877,17 @@ renderState (State items) = D.ul_ $ D.li_ <<< (\v -> renderItem v) <$> items
 
 renderItem :: forall nt r tok. Show nt => Show r => Show tok => StateItem nt r tok -> Nuts
 renderItem { rName, rule, lookahead } =
-  [ D.span (bang (D.Class := "rule name")) [ text_ (show rName) ]
+  [ D.span (D.Class !:= "rule name") [ text_ (show rName) ]
   , text_ ": "
   , renderZipper rule
   , text_ " "
-  , D.span (bang (D.Class := "lookahead")) [ text_ (show lookahead) ]
+  , D.span (D.Class !:= "lookahead") [ text_ (show lookahead) ]
   ]
 
 renderZipper :: forall nt tok. Show nt => Show tok => Zipper nt tok -> Nut
 renderZipper (Zipper before after) =
-  D.span (bang (D.Class := "zipper"))
-    [ D.span (bang (D.Class := "text-gray-400 line-through")) $ text_ <<< show <$> before
+  D.span (D.Class !:= "zipper")
+    [ D.span (D.Class !:= "text-gray-400 line-through") $ text_ <<< show <$> before
     , D.span empty $ text_ <<< show <$> after
     ]
 
@@ -907,7 +937,7 @@ type TopLevelUIAction = V
 debug :: forall m a. Show a => String -> AnEvent m a -> AnEvent m a
 debug tag = map \a -> unsafePerformEffect (a <$ (Log.info (tag <> show a)))
 
-type ListicleEvent a = Variant ( add :: a, remove :: Int )
+type ListicleEvent a = Variant (add :: a, remove :: Int)
 
 -- | Render a list of items, with begin, end, separator elements and finalize button
 -- | and remove buttons on each item. (All of those are optional, except for the items.)
@@ -916,25 +946,30 @@ type ListicleEvent a = Variant ( add :: a, remove :: Int )
 -- |
 -- | Start from an initial value, listen for external add events, internal remove events,
 -- | raise messages on change, and return the current value on finalize.
-listicle :: forall s m lock payload a. Korok s m => Show a =>
-  { initial :: Array a -- initial value
-  , addEvent :: AnEvent m a -- external add events
+listicle
+  :: forall s m lock payload a
+   . Korok s m
+  => Show a
+  => { initial :: Array a -- initial value
+     , addEvent :: AnEvent m a -- external add events
 
-  , remove :: Maybe (Effect Unit -> Domable m lock payload) -- remove button
-  , finalize :: Maybe (AnEvent m (Array a) -> Domable m lock payload) -- finalize button
+     , remove :: Maybe (Effect Unit -> Domable m lock payload) -- remove button
+     , finalize :: Maybe (AnEvent m (Array a) -> Domable m lock payload) -- finalize button
 
-  , renderItem :: a -> Domable m lock payload
-  , begin :: Maybe (Domable m lock payload)
-  , end :: Maybe (Domable m lock payload)
-  , separator :: Maybe (Domable m lock payload)
-  } ->
-  ComponentSpec m lock payload (Array a)
+     , renderItem :: a -> Domable m lock payload
+     , begin :: Maybe (Domable m lock payload)
+     , end :: Maybe (Domable m lock payload)
+     , separator :: Maybe (Domable m lock payload)
+     }
+  -> ComponentSpec m lock payload (Array a)
 listicle desc = keepLatest $ bus \pushRemove removesEvent ->
   let
     addEvent = counter desc.addEvent <#> \(v /\ i) -> (i + Array.length desc.initial) /\ v
     initialEvent = oneOfMap bang initialValue
+
     initialValue :: Array (Int /\ a)
     initialValue = mapWithIndex (/\) desc.initial
+
     performChange :: ListicleEvent (Int /\ a) -> Array (Int /\ a) -> Array (Int /\ a)
     performChange = V.match
       { add: \(j /\ v) vs -> Array.snoc vs (j /\ v)
@@ -942,70 +977,70 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
       }
     changesEvent =
       Variant.inj (Proxy :: Proxy "add") <$> addEvent
-      <|> Variant.inj (Proxy :: Proxy "remove") <$> removesEvent
+        <|> Variant.inj (Proxy :: Proxy "remove") <$> removesEvent
+
     currentValue_ :: AnEvent m (Array (Int /\ a))
     currentValue_ = fold performChange changesEvent initialValue
-  in memoize currentValue_ \currentValue' ->
-  let
-    currentValue = bang initialValue <|> currentValue'
-    intro = case desc.begin of
-      Nothing -> []
-      Just x -> [x]
-    extro = case desc.end of
-      Nothing -> []
-      Just x -> [x]
-    fin = case desc.finalize of
-      Nothing -> []
-      Just thingy ->
-        [ thingy (currentValue <#> map snd) ]
-    sep = case desc.separator of
-      Nothing -> []
-      Just v -> [v]
-
-    withRemover :: Domable m lock payload -> Int -> Array (Domable m lock payload)
-    withRemover item idx = case desc.remove of
-      Nothing -> [item]
-      Just remover ->
-        [ item, remover (pushRemove idx) ]
-
-    renderOne :: Int /\ a -> Array (Domable m lock payload)
-    renderOne (idx /\ item) = withRemover (desc.renderItem item) idx
-
-    renderAtOnce :: Array (Int /\ a) -> Domable m lock payload
-    renderAtOnce items = fixed $
+  in
+    memoize currentValue_ \currentValue' ->
       let
-        renderedItems = items <#> renderOne >>> pure
-      in
-        intro <> join (Array.intercalate [sep] renderedItems) <> extro <> fin
+        currentValue = bang initialValue <|> currentValue'
+        intro = case desc.begin of
+          Nothing -> []
+          Just x -> [ x ]
+        extro = case desc.end of
+          Nothing -> []
+          Just x -> [ x ]
+        fin = case desc.finalize of
+          Nothing -> []
+          Just thingy ->
+            [ thingy (currentValue <#> map snd) ]
+        sep = case desc.separator of
+          Nothing -> []
+          Just v -> [ v ]
 
-    dropComma :: Int -> AnEvent m Boolean
-    dropComma idx = filter identity $
-      -- `currentValue` may or may not have updated before this `sampleOn` fires,
-      -- depending on the order of subscriptions to `removesEvent`, so we just
-      -- detect both here.
-      -- (in particular, for elements rendered in the initial view, it seems that
-      -- their subscription beats that of `currentValue` somehow)
-      sampleOn currentValue $ removesEvent <#> \rem vs ->
-        -- let _ = unsafePerformEffect (logShow { idx, rem, vs }) in
-        rem == idx ||
-        ((fst <$> (vs !! 0)) == Just rem && (fst <$> (vs !! 1)) == Just idx) ||
-        ((fst <$> (vs !! 0)) == Just idx)
+        withRemover :: Domable m lock payload -> Int -> Array (Domable m lock payload)
+        withRemover item idx = case desc.remove of
+          Nothing -> [ item ]
+          Just remover ->
+            [ item, remover (pushRemove idx) ]
 
-    element = fixed $
-      let
-        renderItems = sampleOn (Array.length <$> currentValue) $
-          (initialEvent <|> addEvent) <#> \(idx /\ item) len ->
-            ( bang $ insert $ fixed $ append
-              ( if len > 0 && idx /= 0 then [ switcher (fixed <<< if _ then [] else sep) (bang false <|> dropComma idx) ] else [] )
-              ( renderOne (idx /\ item) )
-            ) <|> filter (eq idx) removesEvent $> remove
+        renderOne :: Int /\ a -> Array (Domable m lock payload)
+        renderOne (idx /\ item) = withRemover (desc.renderItem item) idx
+
+        dropComma :: Int -> AnEvent m Boolean
+        dropComma idx = filter identity
+          $
+            -- `currentValue` may or may not have updated before this `sampleOn` fires,
+            -- depending on the order of subscriptions to `removesEvent`, so we just
+            -- detect both here.
+            -- (in particular, for elements rendered in the initial view, it seems that
+            -- their subscription beats that of `currentValue` somehow)
+            sampleOn currentValue
+          $ removesEvent <#> \rem vs ->
+              -- let _ = unsafePerformEffect (logShow { idx, rem, vs }) in
+              rem == idx
+                || ((fst <$> (vs !! 0)) == Just rem && (fst <$> (vs !! 1)) == Just idx)
+                ||
+                  ((fst <$> (vs !! 0)) == Just idx)
+
+        element = fixed $
+          let
+            renderItems = sampleOn (Array.length <$> currentValue) $
+              (initialEvent <|> addEvent) <#> \(idx /\ item) len ->
+                ( bang $ insert $ fixed $ append
+                    (if len > 0 && idx /= 0 then [ switcher (fixed <<< if _ then [] else sep) (bang false <|> dropComma idx) ] else [])
+                    (renderOne (idx /\ item))
+                ) <|> filter (eq idx) removesEvent $> remove
+          in
+            intro <> [ D.span_ [ dyn renderItems ] ] <> extro <> fin
       in
-        intro <> [ D.span_ [ dyn renderItems ] ] <> extro <> fin
-  in { element, value: map snd <$> currentValue }
+        { element, value: map snd <$> currentValue }
 
 -- | Abstract component
 type ComponentSpec m lock payload d =
   AnEvent m (Component m lock payload d)
+
 -- | Instantiated component
 type Component m lock payload d =
   { element :: Domable m lock payload
@@ -1019,10 +1054,12 @@ type Component m lock payload d =
 -- | be memoized in order that the element and value refer to the same instance,
 -- | otherwise the value is attached to a phantom instance that has no DOM
 -- | presence, due to the way busses and subscriptions work.
-withInstance :: forall s d m lock payload. Korok s m =>
-  ComponentSpec m lock payload d ->
-  (Component m lock payload d -> Domable m lock payload) ->
-  Domable m lock payload
+withInstance
+  :: forall s d m lock payload
+   . Korok s m
+  => ComponentSpec m lock payload d
+  -> (Component m lock payload d -> Domable m lock payload)
+  -> Domable m lock payload
 withInstance componentSpec renderer =
   envy $ memoize componentSpec \component ->
     renderer
@@ -1030,8 +1067,10 @@ withInstance componentSpec renderer =
       , value: keepLatest (component <#> _.value)
       }
 
-stateComponent :: forall s m lock payload. Korok s m =>
-  Domable m lock payload
+stateComponent
+  :: forall s m lock payload
+   . Korok s m
+  => Domable m lock payload
 stateComponent = bussed \addNew addEvent ->
   let
     component0 = listicle
@@ -1039,19 +1078,21 @@ stateComponent = bussed \addNew addEvent ->
       , end: Just $ text_ " }"
       , separator: Just $ text_ ", "
       , renderItem: text_ <<< show
-      , remove: Just \rem -> D.button (bang (D.OnClick := rem)) [ text_ "-" ]
+      , remove: Just \rem -> D.button (D.OnClick !:= rem) [ text_ "-" ]
       , finalize: Nothing
       , addEvent: addEvent
-      , initial: [0, 1, 2]
+      , initial: [ 0, 1, 2 ]
       }
-  in withInstance component0 \{ element, value } ->
-  let
-    length = map Array.length value
-  in D.div_
-      -- Without this div, it comes after the button upon update
-      [ D.div_ [ element ]
-      , D.button ((length <#> \v -> (D.OnClick := addNew v)) <|> buttonClass) [ text_ "Add" ]
-      ]
+  in
+    withInstance component0 \{ element, value } ->
+      let
+        length = map Array.length value
+      in
+        D.div_
+          -- Without this div, it comes after the button upon update
+          [ D.div_ [ element ]
+          , D.button ((length <#> \v -> (D.OnClick := addNew v)) <|> buttonClass) [ text_ "Add" ]
+          ]
 
 main :: Nut
 main =
@@ -1071,7 +1112,7 @@ main =
           [ D.input
               ( oneOf
                   [ inputClass
-                  , bang $ D.OnInput := cb \e -> for_
+                  , D.OnInput !:= cb \e -> for_
                       ( target e
                           >>= fromEventTarget
                       )
@@ -1085,7 +1126,7 @@ main =
         , D.div_
             [ event.errorMessage # switcher \et -> case et of
                 Nothing -> envy empty
-                Just e -> D.div_ [ D.span (bang $ D.Class := "text-red-300") [ text_ e ] ]
+                Just e -> D.div_ [ D.span (D.Class !:= "text-red-300") [ text_ e ] ]
             ]
         , envy $ bus \lpush -> \levent ->
             let
@@ -1099,7 +1140,7 @@ main =
                 [ D.input
                     ( oneOf
                         [ inputClass
-                        , bang $ D.OnInput := cb \e -> for_
+                        , D.OnInput !:= cb \e -> for_
                             ( target e
                                 >>= fromEventTarget
                             )
@@ -1112,7 +1153,7 @@ main =
                 , D.input
                     ( oneOf
                         [ inputClass
-                        , bang $ D.OnInput := cb \e -> for_
+                        , D.OnInput !:= cb \e -> for_
                             ( target e
                                 >>= fromEventTarget
                             )
@@ -1149,7 +1190,7 @@ main =
                         , D.button
                             ( oneOf
                                 [ buttonClass
-                                , bang $ D.OnClick := (p' Remove *> push.removeRule i)
+                                , D.OnClick !:= (p' Remove *> push.removeRule i)
                                 ]
                             )
                             [ text_ "Delete" ]
@@ -1164,9 +1205,9 @@ main =
               , [ [ text_ "L" ], [ text_ ":" ], [ text_ "E" ], [ text_ "data L" ], [ text_ "=" ], [ text_ "L1", text_ " ", text_ "E" ] ]
               , [ [], [ text_ "|" ], [ text_ "L", text_ ",", text_ "E" ], [], [ text_ "|" ], [ text_ "L2", text_ " ", text_ "L", text_ " ", text_ "E" ] ]
               ]
-        , D.ul (bang $ D.Class := "pl-14 list-disc list-outside") $ map (D.li_) $ unwrap exSeed.augmented <#> \{ pName, rule } ->
+        , D.ul (D.Class !:= "pl-14 list-disc list-outside") $ map (D.li_) $ unwrap exSeed.augmented <#> \{ pName, rule } ->
             append [ text_ (NES.toString pName), text_ ":" ] $ rule <#> text_ <<< show
-        , D.div_ $ pure $ D.ol (bang $ D.Class := "pl-14 list-decimal list-outside") $ D.li_ <<< pure <<< (\v -> renderState v) <$> exGenerated unit
+        , D.div_ $ pure $ D.ol (D.Class !:= "pl-14 list-decimal list-outside") $ D.li_ <<< pure <<< (\v -> renderState v) <$> exGenerated unit
         , D.div_ $ pure $ renderStateTable (exStates unit)
         , D.div_ top
         , D.div_ $ pure $ currentValue `flip switcher` \v ->
@@ -1273,9 +1314,9 @@ main =
                           , D.div_
                               [ D.input
                                   ( oneOf
-                                      [ bang $ D.Xtype := "range"
-                                      , bang $ D.Min := "0"
-                                      , bang $ D.Max := show nEntities
+                                      [ D.Xtype !:= "range"
+                                      , D.Min !:= "0"
+                                      , D.Max !:= show nEntities
                                       , stackIndex
                                           # filterMap case _ of
                                               _ /\ Slider -> Nothing
