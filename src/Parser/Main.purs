@@ -707,6 +707,12 @@ bangAttr a b = bang (a := b)
 
 infix 5 bangAttr as !:=
 
+maybeAttr :: forall m a b e. Applicative m => Attr e a b => a -> Maybe b -> AnEvent m (Attribute e)
+maybeAttr a (Just b) = bang (a := b)
+maybeAttr a Nothing = empty
+
+infix 5 maybeAttr as ?:=
+
 mapAttr :: forall m a b e. Applicative m => Attr e a b => a -> m b -> m (Attribute e)
 mapAttr a b = (a := _) <$> b
 
@@ -891,13 +897,23 @@ renderZipper (Zipper before after) =
     , D.span empty $ text_ <<< show <$> after
     ]
 
+
+
+--------------------------------------------------------------------------------
 counter :: forall s m a. MonadST s m => AnEvent m a → AnEvent m (a /\ Int)
 counter event = mapAccum f event 0
   where
   f a b = (b + 1) /\ (a /\ b)
 
+bangFold :: forall m a b t. Applicative m => MonadST t m => (a -> b -> b) -> AnEvent m a -> b -> AnEvent m b
+bangFold folder event start = bang start <|> fold folder event start
+
+memoBangFold :: forall m a b t r. Applicative m => MonadST t m => (a -> b -> b) -> AnEvent m a -> b -> (AnEvent m b -> r) -> AnEvent m r
+memoBangFold folder event start doWithIt = memoize (fold folder event start)
+  \folded -> doWithIt (bang start <|> folded)
+
 toggle :: forall s m a b. HeytingAlgebra b => MonadST s m => b -> AnEvent m a → AnEvent m b
-toggle start event = bang start <|> fold (\_ x -> not x) event start
+toggle start event = bangFold (\_ x -> not x) event start
 
 withLast' :: forall event a. IsEvent event => event a -> event { last :: a, now :: a }
 withLast' = filterMap (\{ last, now } -> last <#> { last: _, now }) <<< withLast
@@ -926,13 +942,6 @@ stepByStep start index cb =
         sweeper' = toggle start <<< sweeper
       in
         cb sweeper'
-
-type TopLevelUIAction = V
-  ( changeText :: String
-  , errorMessage :: Maybe String
-  , addRule :: Int /\ NonEmptyString /\ String
-  , removeRule :: Int
-  )
 
 debug :: forall m a. Show a => String -> AnEvent m a -> AnEvent m a
 debug tag = map \a -> unsafePerformEffect (a <$ (Log.info (tag <> show a)))
@@ -978,13 +987,9 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
     changesEvent =
       Variant.inj (Proxy :: Proxy "add") <$> addEvent
         <|> Variant.inj (Proxy :: Proxy "remove") <$> removesEvent
-
-    currentValue_ :: AnEvent m (Array (Int /\ a))
-    currentValue_ = fold performChange changesEvent initialValue
   in
-    memoize currentValue_ \currentValue' ->
+    memoBangFold performChange changesEvent initialValue \currentValue ->
       let
-        currentValue = bang initialValue <|> currentValue'
         intro = case desc.begin of
           Nothing -> []
           Just x -> [ x ]
@@ -1067,6 +1072,15 @@ withInstance componentSpec renderer =
       , value: keepLatest (component <#> _.value)
       }
 
+renderTok :: Maybe (Effect Unit) -> CodePoint -> Nut
+renderTok c t = D.span (D.OnClick ?:= c <|> D.Class !:= "terminal") [ text_ (String.singleton t) ]
+
+renderNT :: Maybe (Effect Unit) -> NonEmptyString -> Nut
+renderNT c nt = D.span (D.OnClick ?:= c <|> D.Class !:= "non-terminal") [ text_ (NES.toString nt) ]
+
+renderMeta :: Maybe (Effect Unit) -> String -> Nut
+renderMeta c x = D.span (D.OnClick ?:= c <|> D.Class !:= "meta") [ text_ x ]
+
 stateComponent
   :: forall s m lock payload
    . Korok s m
@@ -1074,9 +1088,9 @@ stateComponent
 stateComponent = bussed \addNew addEvent ->
   let
     component0 = listicle
-      { begin: Just $ text_ "{ "
-      , end: Just $ text_ " }"
-      , separator: Just $ text_ ", "
+      { begin: Just $ renderMeta mempty "{ "
+      , end: Just $ renderMeta mempty " }"
+      , separator: Just $ renderMeta mempty ", "
       , renderItem: text_ <<< show
       , remove: Just \rem -> D.button (D.OnClick !:= rem) [ text_ "-" ]
       , finalize: Nothing
@@ -1094,12 +1108,19 @@ stateComponent = bussed \addNew addEvent ->
           , D.button ((length <#> \v -> (D.OnClick := addNew v)) <|> buttonClass) [ text_ "Add" ]
           ]
 
+type TopLevelUIAction = V
+  ( changeText :: String
+  , errorMessage :: Maybe String
+  , addRule :: Int /\ NonEmptyString /\ String
+  , removeRule :: Int
+  )
+
 main :: Nut
 main =
   ( vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
       let
         currentValue = bang "" <|> event.changeText
-        currentRules = bang [] <|> fold
+        currentRules = bangFold
           ( \change rules ->
               case change of
                 Left new -> Array.snoc rules new
@@ -1131,7 +1152,7 @@ main =
         , envy $ bus \lpush -> \levent ->
             let
               currentText =
-                bang (Nothing /\ "") <|> fold
+                bangFold
                   (\(x /\ s) b -> if x then (fst b /\ s) else (fromString s /\ snd b))
                   levent
                   (Nothing /\ "")
