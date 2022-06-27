@@ -29,6 +29,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (class Newtype, unwrap)
 import Data.Number (e, pi)
+import Data.Profunctor (lcmap)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Show.Generic (genericShow)
@@ -982,9 +983,8 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
     currentValue_ :: AnEvent m (Array (Int /\ a))
     currentValue_ = fold performChange changesEvent initialValue
   in
-    memoize currentValue_ \currentValue' ->
+    memoize currentValue_ $ lcmap (bang initialValue <|> _) \currentValue ->
       let
-        currentValue = bang initialValue <|> currentValue'
         intro = case desc.begin of
           Nothing -> []
           Just x -> [ x ]
