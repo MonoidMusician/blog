@@ -55,6 +55,7 @@ import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Aff.AVar as AVar
 import Effect.Class (liftEffect)
+import Effect.Class.Console (logShow)
 import Effect.Class.Console as Log
 import Effect.Now (now)
 import Effect.Unsafe (unsafePerformEffect)
@@ -213,13 +214,13 @@ exSeed
   :: { augmented :: SGrammar
      , start :: SStateItem
      }
-exSeed = fromSeed' (unsafePartial (fromJust (NES.fromString "T"))) "T0" (codePointFromChar '␄') exGrammar (unsafePartial (fromJust (NES.fromString "E")))
+exSeed = fromSeed' (unsafePartial (fromJust (NES.fromString "TOP"))) "TOP" (codePointFromChar '␄') exGrammar (unsafePartial (fromJust (NES.fromString "E")))
 
 g8Generated :: forall a. a -> Array (State (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok))
 g8Generated _ = generate g8Grammar G8.RE
 
 exGenerated :: forall t. t -> Array (State NonEmptyString String CodePoint)
-exGenerated _ = generate' (unsafePartial (fromJust (NES.fromString "T"))) "T0" (codePointFromChar '␄') exGrammar (unsafePartial (fromJust (NES.fromString "E")))
+exGenerated _ = generate' (unsafePartial (fromJust (NES.fromString "TOP"))) "TOP" (codePointFromChar '␄') exGrammar (unsafePartial (fromJust (NES.fromString "E")))
 
 g8States :: forall a. a -> States Int (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
 g8States a = fromRight' (\_ -> unsafeCrashWith "state generation did not work")
@@ -693,7 +694,7 @@ decide (ShiftReduces s _) = Just (Left s)
 decide (Reduces r) = if NEA.length r == 1 then Just (Right (NEA.head r)) else Nothing
 
 longestFirst :: Array NonEmptyString -> Array NonEmptyString
-longestFirst = Array.sortBy (compare `on` NES.length)
+longestFirst = Array.nub >>> Array.sortBy (flip compare `on` NES.length <> compare)
 
 parseDefinition :: Array NonEmptyString -> String -> Fragment NonEmptyString CodePoint
 parseDefinition nts s = case String.uncons s of
@@ -1159,31 +1160,34 @@ type TopLevelUIAction = V
 
 main :: Nut
 main =
-  ( vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
+  ( vbussed (Proxy :: _ TopLevelUIAction) \push event -> envy do
+    let
+      currentValue = bang "" <|> event.changeText
+      changeRule =
+        ( \change rules ->
+          case change of
+            Left new -> Array.snoc rules new
+            Right remove -> Array.filter (fst >>> not eq remove) rules
+        )
+      ruleChanges = (Left <$> event.addRule <|> Right <$> event.removeRule)
+      initialRules = []
+      -- _ = unsafePerformEffect $ subscribe currentRules logShow
+      top =
+        [ D.input
+            ( oneOf
+                [ inputClass
+                , D.OnInput !:= cb \e -> for_
+                    ( target e
+                        >>= fromEventTarget
+                    )
+                    (value >=> push.changeText)
+                ]
+            )
+            []
+        ]
+    memoBangFold changeRule ruleChanges initialRules \currentRules -> do
       let
-        currentValue = bang "" <|> event.changeText
-        currentRules = bangFold
-          ( \change rules ->
-              case change of
-                Left new -> Array.snoc rules new
-                Right remove -> Array.filter (fst >>> not eq remove) rules
-          )
-          (Left <$> event.addRule <|> Right <$> event.removeRule)
-          []
-        -- _ = unsafePerformEffect $ subscribe currentRules logShow
-        top =
-          [ D.input
-              ( oneOf
-                  [ inputClass
-                  , D.OnInput !:= cb \e -> for_
-                      ( target e
-                          >>= fromEventTarget
-                      )
-                      (value >=> push.changeText)
-                  ]
-              )
-              []
-          ]
+        currentNTs = dedup $ longestFirst <<< map (fst <<< snd) <$> currentRules
       D.div_
         [ stateComponent
         , D.div_
@@ -1246,9 +1250,16 @@ main =
               D.div_ $ append top' <<< pure $ dyn $ map
                 ( \(i /\ txt) -> keepLatest $ bus \p' e' ->
                     ( bang $ Insert $ D.div_
-                        [ text_ (toString (fst txt))
+                        [ renderNT mempty (fst txt)
                         , text_ " : "
-                        , text_ (snd txt)
+                        , D.span_
+                            [ switcher
+                              (\nts ->
+                                let _ = unsafePerformEffect (logShow { nts, t: snd txt })
+                                in fixed $ map (\x -> renderPart mempty x) (parseDefinition nts (snd txt))
+                              )
+                              currentNTs
+                            ]
                         , text_ " "
                         , D.button
                             ( oneOf
