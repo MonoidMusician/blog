@@ -213,13 +213,13 @@ exSeed
   :: { augmented :: SGrammar
      , start :: SStateItem
      }
-exSeed = fromSeed' (unsafePartial (fromJust (NES.fromString "T"))) "T0" (codePointFromChar '$') exGrammar (unsafePartial (fromJust (NES.fromString "E")))
+exSeed = fromSeed' (unsafePartial (fromJust (NES.fromString "T"))) "T0" (codePointFromChar '␄') exGrammar (unsafePartial (fromJust (NES.fromString "E")))
 
 g8Generated :: forall a. a -> Array (State (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok))
 g8Generated _ = generate g8Grammar G8.RE
 
 exGenerated :: forall t. t -> Array (State NonEmptyString String CodePoint)
-exGenerated _ = generate' (unsafePartial (fromJust (NES.fromString "T"))) "T0" (codePointFromChar '$') exGrammar (unsafePartial (fromJust (NES.fromString "E")))
+exGenerated _ = generate' (unsafePartial (fromJust (NES.fromString "T"))) "T0" (codePointFromChar '␄') exGrammar (unsafePartial (fromJust (NES.fromString "E")))
 
 g8States :: forall a. a -> States Int (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
 g8States a = fromRight' (\_ -> unsafeCrashWith "state generation did not work")
@@ -258,7 +258,7 @@ gatherTokens (MkGrammar rules) = rules # Array.foldMap \{ rule } ->
   Array.mapMaybe unTerminal rule # Set.fromFoldable
 
 exFromString :: String -> Maybe (List CodePoint)
-exFromString = flip append "$" >>> String.toCodePointArray >>> Array.toUnfoldable >>> verifyTokens exSeed.augmented
+exFromString = flip append "␄" >>> String.toCodePointArray >>> Array.toUnfoldable >>> verifyTokens exSeed.augmented
 
 type SGrammar = Grammar NonEmptyString String CodePoint
 data Part nt tok = NonTerminal nt | Terminal tok
@@ -794,7 +794,7 @@ type ParsedUIAction = V
 data TodoAction = Prioritize | Delete
 
 showStack :: SStack -> Nut
-showStack i = fixed (go i)
+showStack i = D.span (D.Class !:= "stack") (go i)
   where
   go (Zero state) = [ D.sub_ [ renderSt mempty state ] ]
   go (Snoc stack tok state) = go stack
@@ -806,7 +806,7 @@ renderStackItem (Left x) = renderTok mempty x
 renderStackItem (Right x) = renderAST x
 
 renderAST :: AST String -> Nut
-renderAST (Layer r []) = renderRule mempty r
+renderAST (Layer r []) = D.span (D.Class !:= "layer") [ renderRule mempty r ]
 renderAST (Layer r cs) =
   D.span (D.Class !:= "layer")
     [ renderMeta mempty "("
@@ -865,9 +865,9 @@ showParseStep (Left (Just v)) = do
   getVisibilityAndIncrement <#> map \(n /\ vi) ->
     case getResult v of
       Just r ->
-        D.div vi [ text_ $ ("Step " <> show n <> ": "), renderAST r ]
+        D.div vi [ text_ $ ("Step the last: "), renderAST r ]
       _ ->
-        D.div vi [ text_ $ ("Step " <> show n <> ": ") <> "Something went wrong" ]
+        D.div vi [ text_ $ ("Step the last: ") <> "Something went wrong" ]
 showParseStep (Right { stack, inputs }) = do
   getVisibilityAndIncrement' "flex justify-between" <#> map \(n /\ vi) ->
     D.div vi [ D.div_ [ text_ ("Step " <> show n <> ": "), showStack stack ], D.div_ (foldMap (\x -> [renderTok mempty x]) inputs) ]

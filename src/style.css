@@ -19,22 +19,24 @@ body {
   font-family: "Sofia";
   color: #918b8e;
 }
+.keyword, .terminal, .meta, .cmd, .non-terminal, .rule, .state {
+  line-height: 1em;
+}
 .terminal {
   font-weight: bolder;
   font-family: "Fira Code";
   color: #c2d3d3;
+}
+.terminal:not(:last-child) {
   letter-spacing: 1.5px;
 }
 .meta {
   font-family: "Oswald";
   font-weight: 300;
   color: #7a6565;
-  font-size: 1.2em;
+  font-size: 1em;
   line-height: 1em;
-  padding: 0 calc(0.1em + 1.5px) 0 0.1em;
-}
-.meta:contains('#') {
-
+  margin: 0 calc(0.1em + 1.5px) 0 0.1em;
 }
 .cmd {
   color: #cc82a9;
@@ -45,8 +47,8 @@ body {
 .non-terminal, .rule {
   font-family: "Oswald";
   font-weight: 200;
-  color: #6eb883;
-  padding: 0 3.5px 0 2px;
+  color: #47cf6e;
+  margin: 0 3.5px 0 2px;
 }
 .rule {
   font-weight: 400;
@@ -58,21 +60,39 @@ body {
   color: #ccb11c;
 }
 
-.layer > .meta {
-  padding: 0;
+.stack .meta, .stack .rule, .stack > .terminal {
+  margin: 0;
+  letter-spacing: normal;
 }
-.zipper .parsed {
-  color: #626262;
-  /*background-image: linear-gradient(transparent calc(1.15ex - 1px),lightgray calc(1.15ex - 1px),lightgray calc(1.15ex + 1px),transparent calc(1.15ex + 1px));
+.stack > sub {
+  margin: 0 1px;
+}
+.layer .rule, .layer .meta {
+  margin: 0;
+}
+.zipper > .parsed {
+  color: #575a5e;
+  --line-height: 1.35ex;
+  --line-height: 2.8ex;
+  --line-color: #404040dd;
+  background-image: linear-gradient(transparent calc(var(--line-height) - 1px),var(--line-color) calc(var(--line-height) - 1px),var(--line-color) calc(var(--line-height) + 1px),transparent calc(var(--line-height) + 1px));
   /**/
 }
-.zipper .parsed::after, .cursor {
+.zipper > :not(.parsed) {
+  --line-height: 2.8ex;
+  --line-color: #80a8a8;
+  background-image: linear-gradient(transparent calc(var(--line-height) - 1px),var(--line-color) calc(var(--line-height) - 1px),var(--line-color) calc(var(--line-height) + 1px),transparent calc(var(--line-height) + 1px));
+}
+/*
+.zipper > .parsed::after, .cursor {
   content: "";
-  border-right: 1px solid #0757b0;
+  border-right: 2px solid #0757b0;
+  border-color: #444;
   margin-left: -1px;
-  /*margin: 0 -1px;/**/
+  margin-right: -1px;
   animation: blink 2s infinite;
 }
+/**/
 @keyframes blink {
   from {
     opacity: 1;
@@ -88,7 +108,7 @@ body {
   }
 }
 .zipper .parsed .terminal, .zipper .parsed .non-terminal {
-  color: #6e7276;
+  color: inherit;
 }
 .lookahead {
   margin-left: 1em;
