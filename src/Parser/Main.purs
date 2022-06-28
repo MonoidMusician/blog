@@ -82,6 +82,11 @@ type Nuts =
    . DC.Korok s m
   => Array (DC.Domable m lock payload)
 
+type Nutss =
+  forall s m lock payload
+   . DC.Korok s m
+  => Array (Array (DC.Domable m lock payload))
+
 newtype Grammar nt r tok = MkGrammar
   ( Array
       { pName :: nt
@@ -739,10 +744,10 @@ getHeader (States states) = bimap Array.nub Array.nub $
   fromPart (NonTerminal nt) = [] /\ [ nt ]
   fromPart (Terminal tok) = [ tok ] /\ []
 
-renderStateTable
+renderParseTable
   :: SStates
   -> Nut
-renderStateTable (States states) =
+renderParseTable (States states) =
   let
     terminals /\ nonTerminals = getHeader (States states)
     renderTerminals x = renderTok mempty x
@@ -888,16 +893,23 @@ showParseSteps i = map fixed <$> (go i)
         (Step step more) -> do
           lift2 (\o r -> [ o ] <> r) <$> s (Right step) <*> go more
 
-renderState :: SState -> Nut
-renderState (State items) = D.ul_ $ D.li_ <<< (\v -> renderItem v) <$> items
+renderState :: Int -> SState -> Nutss
+renderState i (State items) = (\j v -> renderItem i j v) `mapWithIndex` items
 
-renderItem :: SStateItem -> Nuts
-renderItem { rName, rule, lookahead } =
-  [ renderRule mempty rName
+renderStateTable :: Array SState -> Nut
+renderStateTable states =
+  D.table (D.Class !:= "state-table") $
+    map (D.tbody_ <<< map (D.tr_ <<< mapWithIndex (\i -> ((if i == 0 then D.th_ else D.td_) <<< pure)))) $
+      (\i v -> renderState i v) `mapWithIndex` states
+
+renderItem :: Int -> Int -> SStateItem -> Nuts
+renderItem i j { pName, rName, rule, lookahead } =
+  [ if j == 0 then renderSt mempty (i+1) else text_ ""
+  , renderNT mempty pName
   , renderMeta mempty ": "
   , renderZipper rule
-  , renderMeta mempty " "
   , renderLookahead lookahead
+  , fixed [ renderMeta mempty " #", renderRule mempty rName ]
   ]
 
 renderZipper :: SZipper -> Nut
@@ -909,9 +921,9 @@ renderZipper (Zipper before after) =
 
 renderLookahead :: Array CodePoint -> Nut
 renderLookahead items = D.span (D.Class !:= "lookahead") $
-  [renderMeta mempty "{"]
+  [renderMeta mempty "{ "]
   <> Array.intercalate [renderMeta mempty ", "] (items <#> \x -> [renderTok mempty x])
-  <> [renderMeta mempty "}"]
+  <> [renderMeta mempty " }"]
 
 --------------------------------------------------------------------------------
 counter :: forall s m a. MonadST s m => AnEvent m a → AnEvent m (a /\ Int)
@@ -1096,7 +1108,7 @@ renderNT :: Maybe (Effect Unit) -> NonEmptyString -> Nut
 renderNT c nt = D.span (D.OnClick ?:= c <|> D.Class !:= "non-terminal") [ text_ (NES.toString nt) ]
 
 renderRule :: Maybe (Effect Unit) -> String -> Nut
-renderRule c r = D.span (D.OnClick ?:= c <|> D.Class !:= "non-terminal rule") [ text_ r ]
+renderRule c r = D.span (D.OnClick ?:= c <|> D.Class !:= "rule") [ text_ r ]
 
 renderMeta :: Maybe (Effect Unit) -> String -> Nut
 renderMeta c x = D.span (D.OnClick ?:= c <|> D.Class !:= "meta") [ text_ x ]
@@ -1109,7 +1121,7 @@ renderPart c (NonTerminal nt) = renderNT c nt
 renderPart c (Terminal t) = renderTok c t
 
 renderCmd :: Maybe (Effect Unit) -> String -> Nut
-renderCmd c x = D.span (D.OnClick ?:= c <|> D.Class !:= "meta cmd") [ text_ x ]
+renderCmd c x = D.span (D.OnClick ?:= c <|> D.Class !:= "cmd") [ text_ x ]
 
 stateComponent
   :: forall s m lock payload
@@ -1252,15 +1264,15 @@ main =
         , D.table_ $ pure $ D.tbody_ $
             let { m, nt, t, k, r } = { m: renderAs "meta", nt: renderAs "non-terminal", t: renderAs "terminal", k: renderAs "keyword", r: renderAs "non-terminal rule" } in
             D.tr_ <<< map D.td_ <$>
-              [ [ [ nt "E" ], [ m ":" ], [ t "(", nt "L", t ")" ], [ k "data ", nt "E" ], [ m "=" ], [ r "E1", text_ " ", nt "L" ] ]
-              , [ [], [ m "|" ], [ t "x" ], [], [ m "|" ], [ r "E2" ] ]
-              , [ [ nt "L" ], [ m ":" ], [ nt "E" ], [ k "data ", nt "L" ], [ m "=" ], [ r "L1", text_ " ", nt "E" ] ]
-              , [ [], [ m "|" ], [ nt "L", t ",", nt "E" ], [], [ m "|" ], [ r "L2", text_ " ", nt "L", text_ " ", nt "E" ] ]
+              [ [ [ nt "E" ], [ m " : " ], [ t "(", nt "L", t ")" ], [ k "data ", nt "E" ], [ m " = " ], [ r "E1", text_ " ", nt "L" ] ]
+              , [ [], [ m " | " ], [ t "x" ], [], [ m "|" ], [ r "E2" ] ]
+              , [ [ nt "L" ], [ m " : " ], [ nt "E" ], [ k "data ", nt "L" ], [ m " = " ], [ r "L1", text_ " ", nt "E" ] ]
+              , [ [], [ m " | " ], [ nt "L", t ",", nt "E" ], [], [ m " | " ], [ r "L2", text_ " ", nt "L", text_ " ", nt "E" ] ]
               ]
-        , D.ul (D.Class !:= "pl-14 list-disc list-outside") $ map (D.li_) $ unwrap exSeed.augmented <#> \{ pName, rule } ->
-            append [ renderNT mempty pName, renderMeta mempty ":" ] $ rule <#> \x -> renderPart mempty x
-        , D.div_ $ pure $ D.ol (D.Class !:= "pl-14 list-decimal list-outside") $ D.li_ <<< pure <<< (\v -> renderState v) <$> exGenerated unit
-        , D.div_ $ pure $ renderStateTable (exStates unit)
+        , D.table (D.Class !:= "grammar") $ map (D.tr_ <<< map (D.td_ <<< pure)) $ unwrap exSeed.augmented <#> \{ pName, rName, rule } ->
+            [ renderNT mempty pName, renderMeta mempty " : ", fixed (rule <#> \x -> renderPart mempty x), fixed [ renderMeta mempty " #", renderRule mempty rName ] ]
+        , D.div_ $ pure $ renderStateTable (exGenerated unit)
+        , D.div_ $ pure $ renderParseTable (exStates unit)
         , D.div_ top
         , D.div_ $ pure $ currentValue `flip switcher` \v ->
             let
