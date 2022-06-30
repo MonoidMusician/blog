@@ -16,7 +16,7 @@ import Data.Array.NonEmpty.Internal (NonEmptyArray)
 import Data.Bifunctor (class Bifunctor, bimap, lmap)
 import Data.Compactable (compact)
 import Data.DateTime.Instant (unInstant)
-import Data.Either (Either(..), fromRight', hush, note)
+import Data.Either (Either(..), either, fromRight', hush, note)
 import Data.Filterable (filter)
 import Data.Foldable (foldMap, for_, oneOf, oneOfMap)
 import Data.Function (on)
@@ -26,7 +26,7 @@ import Data.Int (floor)
 import Data.List (List)
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (Maybe(..), fromJust, fromMaybe, maybe)
 import Data.Newtype (class Newtype, unwrap)
 import Data.Number (e, pi)
 import Data.Set (Set)
@@ -34,7 +34,6 @@ import Data.Set as Set
 import Data.Show.Generic (genericShow)
 import Data.String (CodePoint, codePointFromChar)
 import Data.String as String
-import Data.String.NonEmpty (fromString, toString)
 import Data.String.NonEmpty as NES
 import Data.String.NonEmpty.Internal (NonEmptyString)
 import Data.Time.Duration (Seconds(..))
@@ -45,34 +44,31 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Data.Variant (Variant)
 import Data.Variant as V
 import Data.Variant as Variant
-import Deku.Attribute (class Attr, Attribute, cb, (:=))
+import Deku.Attribute (class Attr, Attribute, Cb, cb, (:=))
 import Deku.Control (switcher, text, text_)
 import Deku.Core (class Korok, Domable, Nut, bus, bussed, insert, remove, vbussed)
 import Deku.Core as DC
 import Deku.DOM as D
 import Deku.Listeners (click, slider)
 import Effect (Effect)
-import Effect.Aff (launchAff_)
-import Effect.Aff.AVar as AVar
-import Effect.Class (liftEffect)
-import Effect.Class.Console (logShow)
 import Effect.Class.Console as Log
 import Effect.Now (now)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior (step)
-import FRP.Event (class IsEvent, AnEvent, bang, filterMap, fold, fromEvent, keepLatest, mapAccum, memoize, sampleOn, subscribe, sweep, toEvent, withLast)
+import FRP.Event (class IsEvent, AnEvent, bang, filterMap, fold, keepLatest, mapAccum, memoize, sampleOn, subscribe, sweep, toEvent, withLast)
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Class (biSampleOn)
 import FRP.Event.Time (withTime)
 import FRP.Event.VBus (V)
 import FRP.Rate (Beats(..), RateInfo, timeFromRate)
-import FRP.SampleJIT (sampleJIT)
+import FRP.SampleJIT (readersT, sampleJITE)
 import FRP.SelfDestruct (selfDestruct)
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps, topOf)
 import Parser.Proto as Proto
 import Parser.ProtoG8 as G8
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 import Web.Event.Event (target)
 import Web.HTML.HTMLInputElement (fromEventTarget, value)
 
@@ -98,13 +94,19 @@ newtype Grammar nt r tok = MkGrammar
 
 derive instance newtypeGrammar :: Newtype (Grammar nt r tok) _
 
+type Augmented nt r tok =
+  { augmented :: Grammar nt r tok
+  , start :: StateItem nt r tok
+  , eof :: tok
+  }
+
+type SAugmented = Augmented NonEmptyString String CodePoint
+
 fromSeed
   :: forall nt r tok
    . Grammar nt r tok
   -> nt
-  -> { augmented :: Grammar (Maybe nt) (Maybe r) (Maybe tok)
-     , start :: StateItem (Maybe nt) (Maybe r) (Maybe tok)
-     }
+  -> Augmented (Maybe nt) (Maybe r) (Maybe tok)
 fromSeed (MkGrammar rules) entry =
   let
     rule0 = { pName: Nothing, rName: Nothing, rule: [ NonTerminal (Just entry), Terminal Nothing ] }
@@ -116,6 +118,7 @@ fromSeed (MkGrammar rules) entry =
   in
     { augmented: MkGrammar ([ rule0 ] <> rules')
     , start: { pName: Nothing, rName: Nothing, rule: Zipper [] rule0.rule, lookahead: [] }
+    , eof: Nothing
     }
 
 fromSeed'
@@ -125,16 +128,25 @@ fromSeed'
   -> tok
   -> Grammar nt r tok
   -> nt
-  -> { augmented :: Grammar nt r tok
-     , start :: StateItem nt r tok
-     }
+  -> Augmented nt r tok
 fromSeed' nt0 r0 tok0 (MkGrammar rules) entry =
   let
     rule0 = { pName: nt0, rName: r0, rule: [ NonTerminal entry, Terminal tok0 ] }
   in
     { augmented: MkGrammar ([ rule0 ] <> rules)
     , start: { pName: nt0, rName: r0, rule: Zipper [] rule0.rule, lookahead: [] }
+    , eof: tok0
     }
+
+calculateStates
+  :: forall nt r tok
+   . Ord nt
+  => Eq r
+  => Ord tok
+  => Grammar nt r tok
+  -> StateItem nt r tok
+  -> Array (State nt r tok)
+calculateStates grammar start = closeStates grammar [ close grammar (minimizeState [ start ]) ]
 
 generate
   :: forall nt r tok
@@ -148,7 +160,7 @@ generate initial entry =
   let
     { augmented: grammar, start } = fromSeed initial entry
   in
-    closeStates grammar [ close grammar (minimizeState [ start ]) ]
+    calculateStates grammar start
 
 generate'
   :: forall nt r tok
@@ -165,7 +177,7 @@ generate' nt0 r0 tok0 initial entry =
   let
     { augmented: grammar, start } = fromSeed' nt0 r0 tok0 initial entry
   in
-    closeStates grammar [ close grammar (minimizeState [ start ]) ]
+    calculateStates grammar start
 
 getResult :: forall x y z. Stack x (Either y z) -> Maybe z
 getResult (Snoc (Snoc (Zero _) (Right result) _) (Left _) _) = Just result
@@ -204,23 +216,26 @@ exGrammar = parseIntoGrammar
   , { pName: "L", rName: "L2", rule: "L,E" }
   ]
 
-g8Seed
-  :: { augmented :: Grammar (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
-     , start :: StateItem (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
-     }
+g8Seed :: Augmented (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
 g8Seed = fromSeed g8Grammar G8.RE
 
-exSeed
-  :: { augmented :: SGrammar
-     , start :: SStateItem
-     }
-exSeed = fromSeed' (unsafePartial (fromJust (NES.fromString "TOP"))) "TOP" (codePointFromChar '␄') exGrammar (unsafePartial (fromJust (NES.fromString "E")))
+defaultTopName :: NonEmptyString
+defaultTopName = (unsafePartial (fromJust (NES.fromString "TOP")))
+
+defaultTopRName :: String
+defaultTopRName = "TOP"
+
+defaultEOF :: CodePoint
+defaultEOF = (codePointFromChar '␄')
+
+exSeed :: SAugmented
+exSeed = fromSeed' defaultTopName defaultTopRName defaultEOF exGrammar (unsafePartial (fromJust (NES.fromString "E")))
 
 g8Generated :: forall a. a -> Array (State (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok))
 g8Generated _ = generate g8Grammar G8.RE
 
 exGenerated :: forall t. t -> Array (State NonEmptyString String CodePoint)
-exGenerated _ = generate' (unsafePartial (fromJust (NES.fromString "TOP"))) "TOP" (codePointFromChar '␄') exGrammar (unsafePartial (fromJust (NES.fromString "E")))
+exGenerated _ = generate' defaultTopName defaultTopRName defaultEOF exGrammar (unsafePartial (fromJust (NES.fromString "E")))
 
 g8States :: forall a. a -> States Int (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
 g8States a = fromRight' (\_ -> unsafeCrashWith "state generation did not work")
@@ -259,7 +274,12 @@ gatherTokens (MkGrammar rules) = rules # Array.foldMap \{ rule } ->
   Array.mapMaybe unTerminal rule # Set.fromFoldable
 
 exFromString :: String -> Maybe (List CodePoint)
-exFromString = flip append "␄" >>> String.toCodePointArray >>> Array.toUnfoldable >>> verifyTokens exSeed.augmented
+exFromString = String.toCodePointArray >>> flip append [ defaultEOF ] >>> Array.toUnfoldable >>> verifyTokens exSeed.augmented
+
+fromString :: SAugmented -> String -> Maybe (List CodePoint)
+fromString grammar = String.toCodePointArray >>> flip append [ grammar.eof ]
+  >>> Array.toUnfoldable
+  >>> verifyTokens grammar.augmented
 
 type SGrammar = Grammar NonEmptyString String CodePoint
 data Part nt tok = NonTerminal nt | Terminal tok
@@ -364,6 +384,8 @@ type StateInfo s nt r tok =
 newtype States s nt r tok = States
   (Array (StateInfo s nt r tok))
 
+derive instance newtypeStates :: Newtype (States s nt r tok) _
+
 type SStates = States Int NonEmptyString String CodePoint
 
 numberStates
@@ -417,6 +439,13 @@ unNonTerminal _ = Nothing
 unTerminal :: forall nt tok. Part nt tok -> Maybe tok
 unTerminal (Terminal t) = Just t
 unTerminal _ = Nothing
+
+unSPart :: SPart -> String
+unSPart = NES.toString <<< unSPart'
+
+unSPart' :: SPart -> NonEmptyString
+unSPart' (Terminal t) = NES.singleton t
+unSPart' (NonTerminal nt) = nt
 
 findNT
   :: forall nt tok
@@ -719,10 +748,29 @@ maybeAttr _ Nothing = empty
 
 infix 5 maybeAttr as ?:=
 
-mapAttr :: forall m a b e. Applicative m => Attr e a b => a -> m b -> m (Attribute e)
+mapAttr :: forall m a b e. Functor m => Attr e a b => a -> m b -> m (Attribute e)
 mapAttr a b = (a := _) <$> b
 
 infix 5 mapAttr as <:=>
+
+withValue :: (String -> Effect Unit) -> Cb
+withValue fn = cb \e -> for_
+  ( target e
+      >>= fromEventTarget
+  )
+  (value >=> fn)
+
+input :: String -> String -> (String -> Effect Unit) -> Nut
+input placeholder initialValue onInput =
+  D.input
+    ( oneOf
+        [ inputClass
+        , D.Placeholder <:=> if placeholder == "" then empty else bang placeholder
+        , D.Value <:=> if initialValue == "" then empty else bang initialValue
+        , D.OnInput !:= withValue onInput
+        ]
+    )
+    []
 
 buttonClass :: forall m e. Applicative m => Attr e D.Class String => AnEvent m (Attribute e)
 buttonClass = D.Class !:= "bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
@@ -755,9 +803,9 @@ renderParseTable (States states) =
     renderNonTerminals x = renderNT mempty x
     renderShiftReduce Nothing = text_ ""
     renderShiftReduce (Just (Shift s)) = fixed [ renderCmd mempty "s", renderSt mempty s ]
-    renderShiftReduce (Just (Reduces rs)) = fixed $ rs # foldMap \r -> [renderCmd mempty "r", renderRule mempty r]
+    renderShiftReduce (Just (Reduces rs)) = fixed $ rs # foldMap \r -> [ renderCmd mempty "r", renderRule mempty r ]
     renderShiftReduce (Just (ShiftReduces s rs)) = fixed $
-      [ renderCmd mempty "s", renderSt mempty s ] <> (rs # foldMap \r -> [renderCmd mempty "r", renderRule mempty r])
+      [ renderCmd mempty "s", renderSt mempty s ] <> (rs # foldMap \r -> [ renderCmd mempty "r", renderRule mempty r ])
     cols state =
       let
         forTerminal tok = map snd <$> Map.lookup tok (unwrap state.advance)
@@ -773,10 +821,10 @@ renderParseTable (States states) =
   in
     D.table (D.Class !:= "parse-table")
       [ fixed
-        [ D.colgroup_ [ D.col_ [] ]
-        , D.colgroup_ $ terminals $> D.col_ []
-        , D.colgroup_ $ nonTerminals $> D.col_ []
-        ]
+          [ D.colgroup_ [ D.col_ [] ]
+          , D.colgroup_ $ terminals $> D.col_ []
+          , D.colgroup_ $ nonTerminals $> D.col_ []
+          ]
       , D.thead_ [ header ]
       , D.tbody_ rows
       ]
@@ -871,7 +919,7 @@ showParseStep (Left (Just v)) = do
         D.div vi [ text_ $ ("Step the last: ") <> "Something went wrong" ]
 showParseStep (Right { stack, inputs }) = do
   getVisibilityAndIncrement' "flex justify-between" <#> map \(n /\ vi) ->
-    D.div vi [ D.div_ [ text_ ("Step " <> show n <> ": "), showStack stack ], D.div_ (foldMap (\x -> [renderTok mempty x]) inputs) ]
+    D.div vi [ D.div_ [ text_ ("Step " <> show n <> ": "), showStack stack ], D.div_ (foldMap (\x -> [ renderTok mempty x ]) inputs) ]
 
 type SuperStack m a = StateT Int Trampoline ((Int -> AnEvent m Boolean) -> a)
 
@@ -899,13 +947,14 @@ renderState i (State items) = (\j v -> renderItem i j v) `mapWithIndex` items
 
 renderStateTable :: Array SState -> Nut
 renderStateTable states =
-  D.table (D.Class !:= "state-table") $
-    map (D.tbody_ <<< map (D.tr_ <<< mapWithIndex (\i -> ((if i == 0 then D.th_ else D.td_) <<< pure)))) $
+  D.table (D.Class !:= "state-table")
+    $ map (D.tbody_ <<< map (D.tr_ <<< mapWithIndex (\i -> ((if i == 0 then D.th_ else D.td_) <<< pure))))
+    $
       (\i v -> renderState i v) `mapWithIndex` states
 
 renderItem :: Int -> Int -> SStateItem -> Nuts
 renderItem i j { pName, rName, rule, lookahead } =
-  [ if j == 0 then renderSt mempty (i+1) else text_ ""
+  [ if j == 0 then renderSt mempty (i + 1) else text_ ""
   , renderNT mempty pName
   , renderMeta mempty ": "
   , renderZipper rule
@@ -922,9 +971,9 @@ renderZipper (Zipper before after) =
 
 renderLookahead :: Array CodePoint -> Nut
 renderLookahead items = D.span (D.Class !:= "lookahead") $
-  [renderMeta mempty "{ "]
-  <> Array.intercalate [renderMeta mempty ", "] (items <#> \x -> [renderTok mempty x])
-  <> [renderMeta mempty " }"]
+  [ renderMeta mempty "{ " ]
+    <> Array.intercalate [ renderMeta mempty ", " ] (items <#> \x -> [ renderTok mempty x ])
+    <> [ renderMeta mempty " }" ]
 
 --------------------------------------------------------------------------------
 counter :: forall s m a. MonadST s m => AnEvent m a → AnEvent m (a /\ Int)
@@ -972,6 +1021,9 @@ stepByStep start index cb =
 
 debug :: forall m a. Show a => String -> AnEvent m a -> AnEvent m a
 debug tag = map \a -> unsafePerformEffect (a <$ (Log.info (tag <> show a)))
+
+unsafeDebug :: forall m a. String -> AnEvent m a -> AnEvent m a
+unsafeDebug tag = map \a -> unsafePerformEffect (a <$ (Log.info tag <* Log.info (unsafeCoerce a)))
 
 type ListicleEvent a = Variant (add :: a, remove :: Int)
 
@@ -1151,143 +1203,252 @@ stateComponent = bussed \addNew addEvent ->
           -- , D.button ((length <#> \v -> (D.OnClick := addNew v)) <|> buttonClass) [ text_ "Add" ]
           ]
 
-type TopLevelUIAction = V
-  ( changeText :: String
-  , errorMessage :: Maybe String
-  , addRule :: Int /\ NonEmptyString /\ String
+type GrammarInputs =
+  ( pName :: String
+  , rule :: String
+  , rName :: String
+  , top :: String
+  , entry :: String
+  , eof :: String
+  , topName :: String
+  )
+
+type GrammarAction =
+  ( errorMessage :: Maybe String
+  , addRule :: Int /\ { pName :: NonEmptyString, rule :: String, rName :: String }
   , removeRule :: Int
   )
 
+only :: forall a. Array a -> Maybe a
+only [ a ] = Just a
+only _ = Nothing
+
+parseGrammar
+  :: { top :: NonEmptyString
+     , entry :: Maybe NonEmptyString
+     , eof :: CodePoint
+     , topName :: String
+     }
+  -> Array { pName :: NonEmptyString, rule :: String, rName :: String }
+  -> Either String SAugmented
+parseGrammar top rules = do
+  firstRule <- note "Need at least 1 rule in the grammar" $ Array.head rules
+  -- verify rNames unique
+  -- verify entry refers
+  -- verify eof unique
+  let
+    entry = fromMaybe firstRule.pName top.entry
+    nonTerminals = longestFirst $ rules <#> _.pName
+    parse = parseDefinition nonTerminals
+    rules' = rules <#> \r -> r { rule = parse r.rule }
+    topRule = { pName: top.top, rName: top.topName, rule: [ NonTerminal entry, Terminal top.eof ] }
+    start =
+      { pName: topRule.pName
+      , rName: topRule.rName
+      , rule: Zipper [] topRule.rule
+      , lookahead: []
+      }
+  pure $ { augmented: MkGrammar ([ topRule ] <> rules'), start, eof: top.eof }
+
+grammarComponent
+  :: forall s m lock payload
+   . Korok s m
+  => String
+  -> SAugmented
+  -> (SAugmented -> Effect Unit)
+  -> Domable m lock payload
+grammarComponent buttonText initialGrammar sendGrammar =
+  vbussed (Proxy :: Proxy (V GrammarInputs)) \putInput inputs ->
+    vbussed (Proxy :: Proxy (V GrammarAction)) \pushState changeState ->
+      let
+        changeRule =
+          ( \change rules ->
+              case change of
+                Left new -> Array.snoc rules new
+                Right remove -> Array.filter (fst >>> not eq remove) rules
+          )
+        ruleChanges = (Left <$> changeState.addRule <|> Right <$> changeState.removeRule)
+        initialRules = unwrap initialGrammar.augmented # Array.drop 1 # mapWithIndex \i rule ->
+          i /\ rule { rule = rule.rule # foldMap unSPart }
+        initialTop =
+          case Array.head (unwrap initialGrammar.augmented) of
+            Just { pName, rName, rule: [ NonTerminal entry, Terminal eof ] } ->
+              { top: NES.toString pName
+              , entry: NES.toString entry
+              , eof: String.singleton eof
+              , topName: rName
+              }
+            _ ->
+              { top: NES.toString defaultTopName
+              , entry: ""
+              , eof: String.singleton defaultEOF
+              , topName: defaultTopRName
+              }
+        currentText =
+          biSampleOn (bang "" <|> inputs.pName)
+            $ biSampleOn (bang "" <|> inputs.rule)
+            $
+              (bang "" <|> inputs.rName) <#> \rName rule pName ->
+                { rName, rule, pName }
+        currentTop =
+          biSampleOn (bang initialTop.top <|> inputs.top)
+            $ biSampleOn (bang initialTop.entry <|> inputs.entry)
+            $ biSampleOn (bang initialTop.eof <|> inputs.eof)
+            $ biSampleOn (bang initialTop.topName <|> inputs.topName)
+            $ bang { topName: _, eof: _, entry: _, top: _ }
+        counted = add (Array.length initialRules) <$>
+          (bang 0 <|> (add 1 <$> fst <$> changeState.addRule))
+      in
+        envy $ memoBangFold changeRule ruleChanges initialRules \currentRules -> do
+          let
+            currentNTs = dedup $ longestFirst <<< map (_.pName <<< snd) <$> currentRules
+            currentTopParsed = biSampleOn currentRules $ currentTop <#> \r rules ->
+              { top: fromMaybe defaultTopName $ NES.fromString r.top
+              , entry: NES.fromString r.entry <|> (Array.head rules <#> snd >>> _.pName)
+              , eof: fromMaybe defaultEOF $ only $ String.toCodePointArray r.eof
+              , topName: r.topName
+              }
+            currentGrammar = biSampleOn (map snd <$> currentRules) (currentTopParsed <#> parseGrammar)
+          D.div_
+            [ D.div_
+                [ changeState.errorMessage # switcher \et -> case et of
+                    Nothing -> envy empty
+                    Just e -> D.div_ [ D.span (D.Class !:= "text-red-300") [ text_ e ] ]
+                ]
+            , D.div_
+                [ D.span (D.Class !:= "non-terminal") [ join input initialTop.top putInput.top ]
+                , D.span (D.Class !:= "non-terminal") [ input "" initialTop.entry putInput.entry ]
+                , D.span (D.Class !:= "terminal") [ join input initialTop.eof putInput.eof ]
+                , D.span (D.Class !:= "rule") [ join input initialTop.topName putInput.topName ]
+                ]
+            , D.table_
+                [ D.tr_
+                    [ D.td_ [ switcher (\x -> renderNT mempty x) (currentTopParsed <#> _.top) ]
+                    , D.td_ [ renderMeta mempty " : " ]
+                    , D.td_
+                        [ D.span_ [ switcher (maybe (text_ "—") (\x -> renderNT mempty x)) (currentTopParsed <#> _.entry) ]
+                        , D.span_ [ switcher (\x -> renderTok mempty x) (currentTopParsed <#> _.eof) ]
+                        ]
+                    , D.td_
+                        [ renderMeta mempty " #"
+                        , D.span_ [ switcher (\x -> renderRule mempty x) (currentTopParsed <#> _.topName) ]
+                        ]
+                    ]
+                , D.tbody_ $ pure $ dyn $ map
+                    ( \(i /\ txt) -> keepLatest $ bus \p' e' ->
+                        ( bang $ Insert $ D.tr_ $ map (D.td_ <<< pure) $
+                            [ renderNT mempty txt.pName
+                            , renderMeta mempty " : "
+                            , D.span_
+                                [ switcher
+                                    ( \nts ->
+                                        fixed $ map (\x -> renderPart mempty x) (parseDefinition nts txt.rule)
+                                    )
+                                    currentNTs
+                                ]
+                            , D.span_
+                                [ renderMeta mempty " #"
+                                , renderRule mempty txt.rName
+                                ]
+                            , D.span_
+                                [ text_ " "
+                                , D.button
+                                    ( oneOf
+                                        [ buttonClass
+                                        , D.OnClick !:= (p' Remove *> pushState.removeRule i)
+                                        ]
+                                    )
+                                    [ text_ "Delete" ]
+                                ]
+                            ]
+                        ) <|> e'
+                    )
+                    (oneOfMap bang initialRules <|> changeState.addRule)
+                ]
+            , input "" "" putInput.pName
+            , input "" "" putInput.rule
+            , input "" "" putInput.rName
+            , D.button
+                ( oneOf
+                    [ buttonClass
+                    , D.OnClick <:=> do
+                        sampleJITE currentText $ sampleJITE counted
+                          $ map readersT
+                          $ bang \i text -> do
+                              pushState.errorMessage Nothing
+                              case NES.fromString text.pName of
+                                Nothing -> pushState.errorMessage (Just "Need name for the non-terminal.")
+                                Just pName -> pushState.addRule (i /\ text { pName = pName })
+                    ]
+                )
+                [ text_ "Add" ]
+            , if buttonText == "" then fixed []
+              else
+                D.div_ $ pure $ D.button
+                  ( oneOf
+                      [ buttonClass
+                      , currentGrammar <#> \g -> D.OnClick := do
+                          case g of
+                            Left err -> pushState.errorMessage (Just err)
+                            Right g' -> sendGrammar g'
+                      ]
+                  )
+                  [ text_ buttonText ]
+            ]
+
+type TopLevelUIAction = V
+  ( changeText :: String
+  , errorMessage :: Maybe String
+  , grammar :: SAugmented
+  )
+
+sampleGrammar :: SAugmented
+sampleGrammar = exSeed
+
 main :: Nut
 main =
-  ( vbussed (Proxy :: _ TopLevelUIAction) \push event -> envy do
-    let
-      currentValue = bang "" <|> event.changeText
-      changeRule =
-        ( \change rules ->
-          case change of
-            Left new -> Array.snoc rules new
-            Right remove -> Array.filter (fst >>> not eq remove) rules
-        )
-      ruleChanges = (Left <$> event.addRule <|> Right <$> event.removeRule)
-      initialRules = []
-      -- _ = unsafePerformEffect $ subscribe currentRules logShow
-      top =
-        [ D.input
-            ( oneOf
-                [ inputClass
-                , D.OnInput !:= cb \e -> for_
-                    ( target e
-                        >>= fromEventTarget
-                    )
-                    (value >=> push.changeText)
-                ]
-            )
-            []
-        ]
-    memoBangFold changeRule ruleChanges initialRules \currentRules -> do
+  vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
+    envy $ memoBangFold const event.grammar sampleGrammar \currentGrammar -> do
       let
-        currentNTs = dedup $ longestFirst <<< map (fst <<< snd) <$> currentRules
+        currentValue = bang "" <|> event.changeText
+        currentStates = filterMap (either (const Nothing) Just) $ currentGrammar <#> \{ augmented, start } ->
+          numberStates (add 1) augmented (calculateStates augmented start)
+        currentTable = toTable' <$> currentStates
+        currentFromString = fromString <$> currentGrammar
+        currentTokens = biSampleOn currentValue currentFromString
+        currentParseSteps =
+          biSampleOn currentTable
+            $ biSampleOn currentTokens
+            $
+              bang \toks table -> parseSteps table <$> toks <@> 1
       D.div_
-        [ stateComponent
-        , D.div_
+        [ D.div_
             [ event.errorMessage # switcher \et -> case et of
                 Nothing -> envy empty
                 Just e -> D.div_ [ D.span (D.Class !:= "text-red-300") [ text_ e ] ]
             ]
-        , envy $ bus \lpush -> \levent ->
-            let
-              currentText =
-                bangFold
-                  (\(x /\ s) b -> if x then (fst b /\ s) else (fromString s /\ snd b))
-                  levent
-                  (Nothing /\ "")
-              counted = bang 0 <|> (add 1 <$> fst <$> event.addRule)
-              top' =
-                [ D.input
-                    ( oneOf
-                        [ inputClass
-                        , D.OnInput !:= cb \e -> for_
-                            ( target e
-                                >>= fromEventTarget
-                            )
-                            ( value
-                                >=> lpush <<< (/\) false
-                            )
-                        ]
-                    )
-                    []
-                , D.input
-                    ( oneOf
-                        [ inputClass
-                        , D.OnInput !:= cb \e -> for_
-                            ( target e
-                                >>= fromEventTarget
-                            )
-                            ( value
-                                >=> lpush <<< (/\) true
-                            )
-                        ]
-                    )
-                    []
-                , D.button
-                    ( oneOf
-                        [ buttonClass
-                        , fromEvent $ sampleJIT (toEvent currentText) $ sampleJIT (toEvent counted)
-                            $ bang
-                            $ \iR textR -> D.OnClick := launchAff_ do
-                                liftEffect $ push.errorMessage Nothing
-                                i <- AVar.read iR
-                                text <- AVar.read textR
-                                case fst text of
-                                  Nothing -> liftEffect $ push.errorMessage (Just "The first field in a rule can't be empty.")
-                                  Just nes -> liftEffect $ push.addRule (i /\ nes /\ snd text)
-                        ]
-                    )
-                    [ text_ "Add" ]
-                ]
-            in
-              D.div_ $ append top' <<< pure $ dyn $ map
-                ( \(i /\ txt) -> keepLatest $ bus \p' e' ->
-                    ( bang $ Insert $ D.div_
-                        [ renderNT mempty (fst txt)
-                        , text_ " : "
-                        , D.span_
-                            [ switcher
-                              (\nts ->
-                                let _ = unsafePerformEffect (logShow { nts, t: snd txt })
-                                in fixed $ map (\x -> renderPart mempty x) (parseDefinition nts (snd txt))
-                              )
-                              currentNTs
-                            ]
-                        , text_ " "
-                        , D.button
-                            ( oneOf
-                                [ buttonClass
-                                , D.OnClick !:= (p' Remove *> push.removeRule i)
-                                ]
-                            )
-                            [ text_ "Delete" ]
-                        ]
-                    ) <|> e'
-                )
-                event.addRule
+        , grammarComponent "Generate grammar" sampleGrammar push.grammar
+        {-
         , D.table_ $ pure $ D.tbody_ $
-            let { m, nt, t, k, r } = { m: renderAs "meta", nt: renderAs "non-terminal", t: renderAs "terminal", k: renderAs "keyword", r: renderAs "non-terminal rule" } in
-            D.tr_ <<< map D.td_ <$>
-              [ [ [ nt "E" ], [ m " : " ], [ t "(", nt "L", t ")" ], [ k "data ", nt "E" ], [ m " = " ], [ r "E1", text_ " ", nt "L" ] ]
-              , [ [], [ m " | " ], [ t "x" ], [], [ m "|" ], [ r "E2" ] ]
-              , [ [ nt "L" ], [ m " : " ], [ nt "E" ], [ k "data ", nt "L" ], [ m " = " ], [ r "L1", text_ " ", nt "E" ] ]
-              , [ [], [ m " | " ], [ nt "L", t ",", nt "E" ], [], [ m " | " ], [ r "L2", text_ " ", nt "L", text_ " ", nt "E" ] ]
-              ]
-        , D.table (D.Class !:= "grammar") $ map (D.tr_ <<< map (D.td_ <<< pure)) $ unwrap exSeed.augmented <#> \{ pName, rName, rule } ->
-            [ renderNT mempty pName, renderMeta mempty " : ", fixed (rule <#> \x -> renderPart mempty x), fixed [ renderMeta mempty " #", renderRule mempty rName ] ]
-        , D.div_ $ pure $ renderStateTable (exGenerated unit)
-        , D.div_ $ pure $ renderParseTable (exStates unit)
-        , D.div_ top
-        , D.div_ $ pure $ currentValue `flip switcher` \v ->
             let
-              contentAsMonad = showMaybeParseSteps $ map (map (map (map (map snd)))) $ parseSteps (exTable' unit) <$> exFromString v <@> 1
+              { m, nt, t, k, r } = { m: renderAs "meta", nt: renderAs "non-terminal", t: renderAs "terminal", k: renderAs "keyword", r: renderAs "non-terminal rule" }
+            in
+              D.tr_ <<< map D.td_ <$>
+                [ [ [ nt "E" ], [ m " : " ], [ t "(", nt "L", t ")" ], [ k "data ", nt "E" ], [ m " = " ], [ r "E1", text_ " ", nt "L" ] ]
+                , [ [], [ m " | " ], [ t "x" ], [], [ m "|" ], [ r "E2" ] ]
+                , [ [ nt "L" ], [ m " : " ], [ nt "E" ], [ k "data ", nt "L" ], [ m " = " ], [ r "L1", text_ " ", nt "E" ] ]
+                , [ [], [ m " | " ], [ nt "L", t ",", nt "E" ], [], [ m " | " ], [ r "L2", text_ " ", nt "L", text_ " ", nt "E" ] ]
+                ]
+        -}
+        , D.div_ $ pure $ switcher (\x -> renderStateTable (map _.items (unwrap x))) currentStates
+        , D.div_ $ pure $ switcher (\x -> renderParseTable x) currentStates
+        , D.div_ $ pure $
+            switcher (\x -> fixed $ gatherTokens x # foldMap \tok -> [ renderTok mempty tok ]) (_.augmented <$> unsafeDebug "g " currentGrammar)
+        , D.div_
+            [ D.span (D.Class !:= "terminal") [ input "" "" push.changeText ] ]
+        , D.div_ $ pure $ currentParseSteps `flip switcher` \todaysSteps ->
+            let
+              contentAsMonad = showMaybeParseSteps $ map (map (map (map (map snd)))) $ todaysSteps
               -- Run the first layer of the monad, to get the number of items being rendered up-front
               contentAsMonad2 /\ nEntities = runTrampoline (runStateT contentAsMonad 0)
             in
@@ -1426,4 +1587,3 @@ main =
                           , D.div_ [ content ]
                           ]
         ]
-  )

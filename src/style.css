@@ -131,18 +131,18 @@ table.grammar td:last-child {
   font-weight: inherit;
 }
 .parse-table colgroup:last-of-type col:first-child {
-  border-left: 1px solid black;
+  border-left: 1px solid #afafafc2;
 }
 .parse-table thead th:not(:first-child), .parse-table tr:last-child td:not(:first-child) {
-  border-bottom: 1px solid black;
+  border-bottom: 1px solid #afafafc2;
 }
 .parse-table tbody tr th:first-child {
   text-align: right;
   padding: 0 0.5em;
-  border-right: 1px solid black;
+  border-right: 1px solid #afafafc2;
 }
 .parse-table tbody tr td:last-child {
-  border-right: 1px solid black;
+  border-right: 1px solid #afafafc2;
 }
 .parse-table tbody td {
   text-align: left;
