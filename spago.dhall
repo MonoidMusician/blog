@@ -45,6 +45,8 @@ to generate this file without the comments in this block.
   , "strings"
   , "transformers"
   , "tuples"
+  , "type-equality"
+  , "unsafe-coerce"
   , "variant"
   , "web-events"
   , "web-html"
