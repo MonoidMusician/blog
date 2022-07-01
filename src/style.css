@@ -70,18 +70,52 @@ body {
 .layer .rule, .layer .meta {
   margin: 0;
 }
+.zipper > .parsed:not(:last-child) > * {
+  /*color: black;*/
+  opacity: 0.45;
+}
 .zipper > .parsed {
-  color: #575a5e;
   --line-height: 1.35ex;
   --line-height: 2.8ex;
-  --line-color: #404040dd;
+  --line-color: #7a6565;
   background-image: linear-gradient(transparent calc(var(--line-height) - 1px),var(--line-color) calc(var(--line-height) - 1px),var(--line-color) calc(var(--line-height) + 1px),transparent calc(var(--line-height) + 1px));
   /**/
 }
+.zipper > .parsed:last-child {
+  /*color: #575a5e;/**/
+  /*--line-color: #1f4f4c;/**/
+}
 .zipper > :not(.parsed) {
+  /*
   --line-height: 2.8ex;
   --line-color: #80a8a8;
   background-image: linear-gradient(transparent calc(var(--line-height) - 1px),var(--line-color) calc(var(--line-height) - 1px),var(--line-color) calc(var(--line-height) + 1px),transparent calc(var(--line-height) + 1px));
+  /**/
+}
+td > .zipper {
+  width: 100%;
+  display: inline-block;
+}
+.zipper:hover > :not(.parsed) > :first-child {
+  outline: 1px solid cyan;
+}
+.zipper:hover > .parsed:last-child {
+  outline: 1px solid #00a42f;
+}
+.zipper > :not(.parsed)::before {
+  content: "•";
+  font-family: "Fira Code";
+  line-height: 1em;
+  color: cyan;
+}
+.zipper.reducible::after {
+  content: "•";
+  font-family: "Fira Code";
+  line-height: 1em;
+  color: #ce4e7a;
+}
+.reducible > .terminal {
+  color: #ce4e7a;
 }
 /*
 .zipper > .parsed::after, .cursor {
@@ -107,8 +141,8 @@ body {
     opacity: 1;
   }
 }
-.zipper .parsed .terminal, .zipper .parsed .non-terminal {
-  color: inherit;
+.zipper .parsed:not(:last-child) .terminal, .zipper .parsed:not(:last-child) .non-terminal {
+  /*color: inherit;/**/
 }
 .lookahead {
   margin-left: 1em;

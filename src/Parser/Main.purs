@@ -953,24 +953,25 @@ renderStateTable states =
       (\i v -> renderState i v) `mapWithIndex` states
 
 renderItem :: Int -> Int -> SStateItem -> Nuts
-renderItem i j { pName, rName, rule, lookahead } =
+renderItem i j { pName, rName, rule: rule@(Zipper _ after), lookahead } =
   [ if j == 0 then renderSt mempty (i + 1) else text_ ""
   , renderNT mempty pName
   , renderMeta mempty ": "
   , renderZipper rule
-  , renderLookahead lookahead
+  , renderLookahead (if Array.null after then " reducible" else "") lookahead
   , fixed [ renderMeta mempty " #", renderRule mempty rName ]
   ]
 
 renderZipper :: SZipper -> Nut
 renderZipper (Zipper before after) =
-  D.span (D.Class !:= "zipper")
+  D.span (D.Class !:= ("zipper" <> if Array.null after then " reducible" else ""))
     [ D.span (D.Class !:= "parsed") $ before <#> \x -> renderPart mempty x
-    , D.span empty $ after <#> \x -> renderPart mempty x
+    , if Array.null after then fixed empty else
+      D.span empty $ after <#> \x -> renderPart mempty x
     ]
 
-renderLookahead :: Array CodePoint -> Nut
-renderLookahead items = D.span (D.Class !:= "lookahead") $
+renderLookahead :: String -> Array CodePoint -> Nut
+renderLookahead moreClass items = D.span (D.Class !:= append "lookahead" moreClass) $
   [ renderMeta mempty "{ " ]
     <> Array.intercalate [ renderMeta mempty ", " ] (items <#> \x -> [ renderTok mempty x ])
     <> [ renderMeta mempty " }" ]
