@@ -26,7 +26,7 @@ import Data.Int (floor)
 import Data.List (List)
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromJust, fromMaybe, maybe)
+import Data.Maybe (Maybe(..), fromJust, fromMaybe, isJust, maybe)
 import Data.Newtype (class Newtype, unwrap)
 import Data.Number (e, pi)
 import Data.Set (Set)
@@ -1234,9 +1234,6 @@ parseGrammar
   -> Either String SAugmented
 parseGrammar top rules = do
   firstRule <- note "Need at least 1 rule in the grammar" $ Array.head rules
-  -- verify rNames unique
-  -- verify entry refers
-  -- verify eof unique
   let
     entry = fromMaybe firstRule.pName top.entry
     nonTerminals = longestFirst $ rules <#> _.pName
@@ -1249,6 +1246,15 @@ parseGrammar top rules = do
       , rule: Zipper [] topRule.rule
       , lookahead: []
       }
+  if Array.length (Array.nub ((rules <#> _.rName) <> [top.topName])) /= 1 + Array.length rules
+    then Left "Rule names need to be unique"
+    else pure unit
+  if not isJust (Array.find (eq entry <<< _.pName) rules)
+    then Left "Top-level does not refer to nonterminal"
+    else pure unit
+  if Set.member top.eof (gatherTokens (MkGrammar rules'))
+    then Left "EOF symbol not unique"
+    else pure unit
   pure $ { augmented: MkGrammar ([ topRule ] <> rules'), start, eof: top.eof }
 
 grammarComponent
@@ -1389,6 +1395,7 @@ grammarComponent buttonText initialGrammar sendGrammar =
                   ( oneOf
                       [ buttonClass
                       , currentGrammar <#> \g -> D.OnClick := do
+                          pushState.errorMessage Nothing
                           case g of
                             Left err -> pushState.errorMessage (Just err)
                             Right g' -> sendGrammar g'
