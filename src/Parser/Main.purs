@@ -946,9 +946,16 @@ renderState :: Int -> SState -> Nutss
 renderState i (State items) = (\j v -> renderItem i j v) `mapWithIndex` items
 
 renderStateTable :: Array SState -> Nut
-renderStateTable states =
+renderStateTable states = do
+  let
+    mkTH n 0 0 = D.th (D.Rowspan !:= show n)
+    mkTH _ _ 0 = const (fixed [])
+    mkTH _ _ _ = D.td_
+    renderStateHere items =
+      let n = Array.length items
+      in items # mapWithIndex \j -> D.tr_ <<< mapWithIndex (\i -> mkTH n j i <<< pure)
   D.table (D.Class !:= "state-table")
-    $ map (D.tbody_ <<< map (D.tr_ <<< mapWithIndex (\i -> ((if i == 0 then D.th_ else D.td_) <<< pure))))
+    $ map (D.tbody_ <<< renderStateHere)
     $
       (\i v -> renderState i v) `mapWithIndex` states
 
