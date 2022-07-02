@@ -5,6 +5,7 @@ import Prelude
 import Bolson.Core (Child(..), dyn, envy, fixed)
 import Control.Alt ((<|>))
 import Control.Apply (lift2)
+import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.ST.Class (class MonadST)
 import Control.Monad.State (StateT, get, put, runStateT)
 import Control.Monad.Trampoline (Trampoline, runTrampoline)
@@ -277,15 +278,29 @@ gatherTokens :: forall nt r tok. Ord tok => Grammar nt r tok -> Set tok
 gatherTokens (MkGrammar rules) = rules # Array.foldMap \{ rule } ->
   Array.mapMaybe unTerminal rule # Set.fromFoldable
 
+gatherTokens' :: forall nt r tok. Ord tok => Grammar nt r tok -> Array tok
+gatherTokens' (MkGrammar rules) = Array.nub $ rules # Array.foldMap \{ rule } ->
+  Array.mapMaybe unTerminal rule
+
 gatherNonTerminals :: forall nt r tok. Ord nt => Grammar nt r tok -> Set nt
 gatherNonTerminals (MkGrammar rules) = rules # Array.foldMap \{ rule } ->
   Array.mapMaybe unNonTerminal rule # Set.fromFoldable
+
+gatherNonTerminals' :: forall nt r tok. Ord nt => Grammar nt r tok -> Array nt
+gatherNonTerminals' (MkGrammar rules) = Array.nub $ rules # Array.foldMap \{ rule } ->
+  Array.mapMaybe unNonTerminal rule
 
 exFromString :: String -> Maybe (List CodePoint)
 exFromString = String.toCodePointArray >>> flip append [ defaultEOF ] >>> Array.toUnfoldable >>> verifyTokens exSeed.augmented
 
 fromString :: SAugmented -> String -> Maybe (List CodePoint)
-fromString grammar = String.toCodePointArray >>> flip append [ grammar.eof ]
+fromString grammar =
+  (join \e -> if String.contains (String.Pattern (String.singleton grammar.eof)) e
+    then identity else flip append (String.singleton grammar.eof))
+  >>> fromString' grammar
+
+fromString' :: SAugmented -> String -> Maybe (List CodePoint)
+fromString' grammar = String.toCodePointArray
   >>> Array.toUnfoldable
   >>> verifyTokens grammar.augmented
 
@@ -782,6 +797,18 @@ input placeholder initialValue onInput =
     )
     []
 
+input' :: forall s m lock payload. Korok s m => String -> AnEvent m String -> (String -> Effect Unit) -> Domable m lock payload
+input' placeholder initialValue onInput =
+  D.input
+    ( oneOf
+        [ inputClass
+        , D.Placeholder <:=> if placeholder == "" then empty else bang placeholder
+        , D.Value <:=> initialValue
+        , D.OnInput !:= withValue onInput
+        ]
+    )
+    []
+
 buttonClass :: forall m e. Applicative m => Attr e D.Class String => AnEvent m (Attribute e)
 buttonClass = D.Class !:= ""
 
@@ -809,9 +836,11 @@ col j i =
   if i == j then D.Class !:= "first" else empty
 
 renderParseTable
-  :: SStates
-  -> Nut
-renderParseTable (States states) =
+  :: forall s m lock payload r. Korok s m =>
+  { currentState :: AnEvent m Int | r } ->
+  SStates
+  -> Domable m lock payload
+renderParseTable info (States states) =
   let
     terminals /\ nonTerminals = getHeader (States states)
     renderTerminals x = renderTok mempty x
@@ -827,9 +856,10 @@ renderParseTable (States states) =
         forNonTerminal nt = Shift <$> Map.lookup nt state.receive
       in
         map forTerminal terminals <> map forNonTerminal nonTerminals
+
     header = D.tr_ $ mapWithIndex (\i -> D.th (col (Array.length terminals + 1) i) <<< pure) $
       [ text_ "" ] <> map renderTerminals terminals <> map renderNonTerminals nonTerminals
-    rows = states <#> \state -> D.tr_
+    rows = states <#> \state -> D.tr (D.Class <:=> ((if _ then "active" else "") <<< eq state.sName <$> info.currentState))
       $ Array.cons (D.th_ [ renderSt mempty state.sName ])
       $
         mapWithIndex (\i -> D.td (col (Array.length terminals) i) <<< renderShiftReduce) (cols state)
@@ -989,25 +1019,27 @@ showParseSteps i = map fixed <$> (go i)
           lift2 (\o r -> [ o ] <> r) <$> s (Right step) <*> go more
 
 renderState :: Int -> SState -> Nutss
-renderState i (State items) = (\j v -> renderItem i j v) `mapWithIndex` items
+renderState sName (State items) = (\j v -> renderItem sName j v) `mapWithIndex` items
 
-renderStateTable :: Array SState -> Nut
-renderStateTable states = do
+renderStateTable :: forall s m lock payload r. Korok s m => { currentState :: AnEvent m Int | r } -> SStates -> Domable m lock payload
+renderStateTable info (States states) = do
   let
     mkTH n 0 0 = D.th (D.Rowspan !:= show n)
     mkTH _ _ 0 = const (fixed [])
     mkTH _ _ _ = D.td_
+    stateClass sName = (eq sName >>> if _ then "active" else "") <$> info.currentState
     renderStateHere items =
       let n = Array.length items
       in items # mapWithIndex \j -> D.tr_ <<< mapWithIndex (\i -> mkTH n j i <<< pure)
   D.table (D.Class !:= "state-table")
-    $ map (D.tbody_ <<< renderStateHere)
-    $
-      (\i v -> renderState i v) `mapWithIndex` states
+    $ states <#>
+      \{ sName, items } ->
+        D.tbody (D.Class <:=> stateClass sName) $
+          renderStateHere $ renderState sName items
 
 renderItem :: Int -> Int -> SStateItem -> Nuts
-renderItem i j { pName, rName, rule: rule@(Zipper _ after), lookahead } =
-  [ if j == 0 then renderSt mempty (i + 1) else text_ ""
+renderItem sName j { pName, rName, rule: rule@(Zipper _ after), lookahead } =
+  [ if j == 0 then renderSt mempty sName else text_ ""
   , renderNT mempty pName
   , renderMeta mempty ": "
   , renderZipper rule
@@ -1211,6 +1243,9 @@ renderAs c t = D.span (D.Class !:= c) [ text_ t ]
 renderTok :: Maybe (Effect Unit) -> CodePoint -> Nut
 renderTok c t = D.span (D.OnClick ?:= c <|> D.Class !:= "terminal") [ text_ (String.singleton t) ]
 
+renderTok' :: forall s m lock payload. Korok s m => AnEvent m String -> AnEvent m (Maybe (Effect Unit)) -> CodePoint -> Domable m lock payload
+renderTok' cls c t = D.span (D.OnClick <:=> filterMap identity c <|> D.Class <:=> (bang "terminal" <|> (append "terminal " <$> cls))) [ text_ (String.singleton t) ]
+
 renderNT :: Maybe (Effect Unit) -> NonEmptyString -> Nut
 renderNT c nt = D.span (D.OnClick ?:= c <|> D.Class !:= "non-terminal") [ text_ (NES.toString nt) ]
 
@@ -1222,6 +1257,9 @@ renderMeta c x = D.span (D.OnClick ?:= c <|> D.Class !:= "meta") [ text_ x ]
 
 renderSt :: Maybe (Effect Unit) -> Int -> Nut
 renderSt c x = D.span (D.OnClick ?:= c <|> D.Class !:= "state") [ text_ (show x) ]
+
+renderSt' :: forall s m lock payload. Korok s m => AnEvent m String -> Maybe (Effect Unit) -> Int -> Domable m lock payload
+renderSt' cls c x = D.span (D.OnClick ?:= c <|> D.Class <:=> (bang "state" <|> (append "state " <$> cls))) [ text_ (show x) ]
 
 renderPart :: Maybe (Effect Unit) -> Part NonEmptyString CodePoint -> Nut
 renderPart c (NonTerminal nt) = renderNT c nt
@@ -1420,7 +1458,7 @@ grammarComponent buttonText initialGrammar sendGrammar =
                                 [ text_ " "
                                 , D.button
                                     ( oneOf
-                                        [ buttonClass
+                                        [ D.Class !:= "delete"
                                         , D.OnClick !:= (p' Remove *> pushState.removeRule i)
                                         ]
                                     )
@@ -1464,7 +1502,7 @@ grammarComponent buttonText initialGrammar sendGrammar =
             ]
 
 type TopLevelUIAction = V
-  ( changeText :: String
+  ( changeText :: Boolean /\ String
   , errorMessage :: Maybe String
   , grammar :: SAugmented
   )
@@ -1472,22 +1510,52 @@ type TopLevelUIAction = V
 sampleGrammar :: SAugmented
 sampleGrammar = exSeed
 
+lastState :: SCParseSteps -> Int
+lastState Error = 0
+lastState (Step x Error) = topOf x.stack
+lastState (Complete x) = topOf x
+lastState (Step _ s) = lastState s
+
 main :: Nut
 main =
   vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
     envy $ memoBangFold const event.grammar sampleGrammar \currentGrammar -> do
       let
-        currentValue = bang "(x,x)" <|> event.changeText
+        currentValue = bang "(x,x)" <|> map snd event.changeText
+        currentValue' = bang "(x,x)" <|> filterMap (\(keep /\ v) -> if keep then Just v else Nothing) event.changeText
         currentStates = filterMap (either (const Nothing) Just) $ currentGrammar <#> \{ augmented, start } ->
           numberStates (add 1) augmented (calculateStates augmented start)
         currentTable = toTable <$> currentStates
         currentFromString = fromString <$> currentGrammar
+        currentFromString' = fromString' <$> currentGrammar
         currentTokens = biSampleOn currentValue currentFromString
+        currentTokens' = biSampleOn currentValue currentFromString'
         currentParseSteps =
           biSampleOn currentTable
             $ biSampleOn currentTokens
             $
               bang \toks table -> parseSteps table <$> toks <@> 1
+        currentParseSteps' =
+          biSampleOn currentTable
+            $ biSampleOn currentTokens'
+            $
+              bang \toks table -> parseSteps table <$> toks <@> 1
+        currentState = debug "state " $ bang 1 <|> (maybe 0 lastState <$> currentParseSteps')
+        currentGrammarTokens = gatherTokens' <<< _.augmented <$> currentGrammar
+        currentStateItem = biSampleOn currentState
+          $ biSampleOn currentStates
+          $ bang \(States states) st -> Array.find (_.sName >>> eq st) states
+        currentValidTokens =
+          currentStateItem <#> case _ of
+            Nothing -> Map.empty
+            Just { advance: SemigroupMap adv } -> adv
+
+        renderTokenHere tok = do
+          let
+            onClick = sampleJITE currentValue $ bang $ ReaderT \v ->
+              push.changeText $ true /\ (v <> String.singleton tok)
+            valid = currentValidTokens <#> Map.member tok
+          renderTok' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (Just <$> onClick) tok
       D.div_
         [ D.div_
             [ event.errorMessage # switcher \et -> case et of
@@ -1507,12 +1575,12 @@ main =
                 , [ [], [ m " | " ], [ nt "L", t ",", nt "E" ], [], [ m " | " ], [ r "L2", text_ " ", nt "L", text_ " ", nt "E" ] ]
                 ]
         -}
-        , D.div_ $ pure $ switcher (\x -> renderStateTable (map _.items (unwrap x))) currentStates
-        , D.div_ $ pure $ switcher (\x -> renderParseTable x) currentStates
+        , D.div_ $ pure $ switcher (\x -> renderStateTable { currentState } x) currentStates
+        , D.div_ $ pure $ switcher (\x -> renderParseTable { currentState } x) currentStates
         , D.div_ $ pure $
-            switcher (\x -> fixed $ gatherTokens x # foldMap \tok -> [ renderTok mempty tok ]) (_.augmented <$> unsafeDebug "g " currentGrammar)
+            switcher (\x -> fixed $ x <#> renderTokenHere) currentGrammarTokens
         , D.div_
-            [ D.span (D.Class !:= "terminal") [ input "" "(x,x)" push.changeText ] ]
+            [ D.span (D.Class !:= "terminal") [ input' "" (debug "value' " currentValue') (\v -> push.changeText (false /\ v)) ] ]
         , D.div_ $ pure $ currentParseSteps `flip switcher` \todaysSteps ->
             let
               contentAsMonad = showMaybeParseSteps $ todaysSteps

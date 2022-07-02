@@ -18,6 +18,12 @@ body, .parse-table > thead > tr > th:not(:first-child) {
   color: white;
   text-shadow: none;
 }
+.unusable {
+  opacity: 0.45;
+}
+.clickable {
+  cursor: pointer;
+}
 .keyword {
   font-family: "Sofia";
   color: #918b8e;
@@ -109,7 +115,7 @@ body, .parse-table > thead > tr > th:not(:first-child) {
     }
         /* _________ */
         .AST li:before {
-            outline: solid 1px #666;
+            outline: solid 1px #7a6565;
             content: "";
             left: 0;
             position: absolute;
@@ -120,7 +126,7 @@ body, .parse-table > thead > tr > th:not(:first-child) {
         .AST li:last-child:before {right: 50%;}
 
         .AST .node {
-            border: solid .1em #666;
+            border: solid .1em #7a6565;
             border-radius: .2em;
             display: inline-block;
             margin: 0 .2em .5em;
@@ -131,7 +137,7 @@ body, .parse-table > thead > tr > th:not(:first-child) {
             /* | */
             .AST ol:before,
             .AST .node:before {
-                outline: solid 1px #666;
+                outline: solid 1px #7a6565;
                 content: "";
                 height: .45em;
                 left: 50%;
@@ -240,6 +246,9 @@ table.grammar td:last-child {
   border-spacing: 0;
   border-collapse: collapse;
 }
+.state-table tbody.active {
+  background-color: #ffd7003b;
+}
 .state-table tbody tr th {
   text-align: right;
   padding-right: 1em;
@@ -294,6 +303,9 @@ th.first, td.first {
 .parse-table tbody td {
   text-align: left;
 }
+.parse-table tr.active {
+  background-color: #ffd7003b;
+}
 .parse-table td {
   padding: 0 0.75em;
 }
@@ -302,23 +314,52 @@ th.first, td.first {
 
 button {
   font-family: "Amaranth";
-  font-size: calc(0.9em - 4px);
+  font-size: 0.9em;
   border-radius: 1em;
   color: #2372ffbb;
-  border: 2px solid #2372ff44;
-  padding: 1px 0.5em;
+  border: 2px solid #2372ffaa;
+  padding: 0 0.5em;
   margin: 0 0.25em;
-  vertical-align: text-bottom;
-  transition: 0.3s border-color, 0.3s box-shadow, 0.3s color;
+  transition: border-color 0.2s, color 0.2s, box-shadow 0.2s ease-out, transform 0.1s ease-out;
   box-shadow: 1px 1px 1px transparent, inset 1px 1px 1px transparent;
 }
 button:hover {
   color: #2372ffff;
-  border-color: #2372ff88;
   box-shadow: 1px 1px 1px #2372ff44, inset 1px 1px 1px #0002;
+}
+@media (hover: hover) and (pointer: fine) {
+  button:not(:hover) {
+    border-color: #2372ff55;
+  }
 }
 button:active {
   color: #2372ffff;
   border-color: #2372ffff;
   box-shadow: 0px 0px 0px transparent, inset 0px 0px 0px transparent;
+  transform: translate(1.1px, 1.1px);
+}
+button:focus-visible {
+  outline: 1px solid white;
+  color: #2372ffff;
+}
+
+button.delete {
+  color: #ff004dbb;
+  border: 2px solid #ff004daa;
+}
+button.delete:hover {
+  color: #ff004dff;
+  box-shadow: 1px 1px 1px #ff004d44, inset 1px 1px 1px #0002;
+}
+@media (hover: hover) and (pointer: fine) {
+  button.delete:not(:hover) {
+    border-color: #ff004d55;
+  }
+}
+button.delete:active {
+  color: #ff004dff;
+  border-color: #ff004dff;
+}
+button.delete:focus-visible {
+  color: #ff004dff;
 }
