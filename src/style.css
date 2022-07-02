@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,600;1,600&family=Fira+Code:wght@300;400;700&family=Oswald:wght@200..700&family=Sofia&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,600;1,600&family=Fira+Code:wght@300;400;700&family=Oswald:wght@200..700&family=Sofia&family=Amaranth:ital,wght@0,400;0,700;1,400;1,700&display=swap');
 
 body {
   font-size: 18px;
@@ -53,6 +53,9 @@ body, .parse-table > thead > tr > th:not(:first-child) {
   color: #47cf6e;
   margin: 0 3.5px 0 2px;
 }
+.non-terminal:last-child, .rule:last-child {
+  margin: 0 2px 0 2px;
+}
 .rule {
   font-weight: 400;
   color: #2c9f9b;
@@ -73,6 +76,85 @@ body, .parse-table > thead > tr > th:not(:first-child) {
 .layer .rule, .layer .meta {
   margin: 0;
 }
+.AST ol.layer {
+  margin: 0;
+}
+
+
+/* https://www.cssscript.com/clean-tree-diagram/ */
+/* https://codepen.io/ross-angus/pen/jwxMjL */
+
+/* It's supposed to look like a tree diagram */
+.AST, .AST ol, .AST li {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    position: relative;
+}
+
+.AST {
+    margin: 0 0 1em;
+    text-align: center;
+}
+.AST, .AST ol {
+    display: table;
+}
+.AST ol {
+  width: 100%;
+}
+    .AST li {
+        display: table-cell;
+        padding: .5em 0;
+        vertical-align: top;
+    }
+        /* _________ */
+        .AST li:before {
+            outline: solid 1px #666;
+            content: "";
+            left: 0;
+            position: absolute;
+            right: 0;
+            top: 0;
+        }
+        .AST li:first-child:before {left: 50%;}
+        .AST li:last-child:before {right: 50%;}
+
+        .AST .node {
+            border: solid .1em #666;
+            border-radius: .2em;
+            display: inline-block;
+            margin: 0 .2em .5em;
+            padding: .1em .2em 0;
+            position: relative;
+        }
+
+            /* | */
+            .AST ol:before,
+            .AST .node:before {
+                outline: solid 1px #666;
+                content: "";
+                height: .45em;
+                left: 50%;
+                position: absolute;
+            }
+            .AST ol:before {
+                top: -.5em;
+            }
+            .AST .node:before {
+                top: -.55em;
+            }
+
+/* The root node doesn't connect upwards */
+.AST > li {margin-top: 0;}
+    .AST > li:before,
+    .AST > li:after,
+    .AST > li > .node:before {
+      outline: none;
+    }
+
+
+
+
 .zipper > .parsed:not(:last-child) > * {
   /*color: black;*/
   opacity: 0.45;
@@ -154,6 +236,10 @@ td > .zipper {
 table.grammar td:last-child {
   padding-left: 1em;
 }
+.state-table {
+  border-spacing: 0;
+  border-collapse: collapse;
+}
 .state-table tbody tr th {
   text-align: right;
   padding-right: 1em;
@@ -179,7 +265,7 @@ table.grammar td:last-child {
 .parse-table th {
   font-weight: inherit;
 }
-.parse-table colgroup:last-of-type col:first-child {
+th.first, td.first {
   border-left: 1px solid #afafafc2;
 }
 .parse-table > thead {
@@ -198,7 +284,9 @@ table.grammar td:last-child {
 .parse-table tbody tr th:first-child {
   text-align: right;
   padding: 0 0.5em;
-  border-right: 1px solid #afafafc2;
+}
+.parse-table tbody tr td:first-of-type {
+  border-left: 1px solid #afafafc2;
 }
 .parse-table tbody tr td:last-child {
   border-right: 1px solid #afafafc2;
@@ -208,4 +296,29 @@ table.grammar td:last-child {
 }
 .parse-table td {
   padding: 0 0.75em;
+}
+
+
+
+button {
+  font-family: "Amaranth";
+  font-size: calc(0.9em - 4px);
+  border-radius: 1em;
+  color: #2372ffbb;
+  border: 2px solid #2372ff44;
+  padding: 1px 0.5em;
+  margin: 0 0.25em;
+  vertical-align: text-bottom;
+  transition: 0.3s border-color, 0.3s box-shadow, 0.3s color;
+  box-shadow: 1px 1px 1px transparent, inset 1px 1px 1px transparent;
+}
+button:hover {
+  color: #2372ffff;
+  border-color: #2372ff88;
+  box-shadow: 1px 1px 1px #2372ff44, inset 1px 1px 1px #0002;
+}
+button:active {
+  color: #2372ffff;
+  border-color: #2372ffff;
+  box-shadow: 0px 0px 0px transparent, inset 0px 0px 0px transparent;
 }

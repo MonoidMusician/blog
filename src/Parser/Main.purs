@@ -179,9 +179,13 @@ generate' nt0 r0 tok0 initial entry =
   in
     calculateStates grammar start
 
-getResult :: forall x y z. Stack x (Either y z) -> Maybe z
-getResult (Snoc (Snoc (Zero _) (Right result) _) (Left _) _) = Just result
-getResult _ = Nothing
+getResultA :: forall x y z. Stack x (Either y z) -> Maybe z
+getResultA (Snoc (Snoc (Zero _) (Right result) _) (Left _) _) = Just result
+getResultA _ = Nothing
+
+getResultC :: forall x y z. Stack x (CST y z) -> Maybe (CST y z)
+getResultC (Snoc (Snoc (Zero _) result@(Branch _ _) _) (Leaf _) _) = Just result
+getResultC _ = Nothing
 
 g8Grammar :: Grammar G8.Sorts G8.Rule G8.Tok
 g8Grammar = MkGrammar
@@ -272,6 +276,10 @@ verifyToken = gatherTokens >>> \toks tok ->
 gatherTokens :: forall nt r tok. Ord tok => Grammar nt r tok -> Set tok
 gatherTokens (MkGrammar rules) = rules # Array.foldMap \{ rule } ->
   Array.mapMaybe unTerminal rule # Set.fromFoldable
+
+gatherNonTerminals :: forall nt r tok. Ord nt => Grammar nt r tok -> Set nt
+gatherNonTerminals (MkGrammar rules) = rules # Array.foldMap \{ rule } ->
+  Array.mapMaybe unNonTerminal rule # Set.fromFoldable
 
 exFromString :: String -> Maybe (List CodePoint)
 exFromString = String.toCodePointArray >>> flip append [ defaultEOF ] >>> Array.toUnfoldable >>> verifyTokens exSeed.augmented
@@ -618,12 +626,14 @@ closeStates grammar states =
 data CST r tok
   = Leaf tok
   | Branch r (Array (CST r tok))
+type SCST = CST (NonEmptyString /\ String) CodePoint
 
 derive instance genericCST :: Generic (CST r tok) _
 instance showCST :: (Show r, Show tok) => Show (CST r tok) where
   show x = genericShow x
 
 data AST r = Layer r (Array (AST r))
+type SAST = AST String
 
 derive instance functorAST :: Functor AST
 derive instance genericAST :: Generic (AST r) _
@@ -656,11 +666,11 @@ toTable (States states) =
         take1 (taken /\ stack) = case _ of
           Terminal tok -> case stack of
             Snoc stack' v@(Leaf tok') _ | tok == tok' ->
-              Just $ (taken <> [ v ]) /\ stack'
+              Just $ ([ v ] <> taken) /\ stack'
             _ -> unsafeCrashWith "expected token on stack"
           NonTerminal nt -> case stack of
             Snoc stack' v@(Branch (p /\ _) _) _ | p == nt ->
-              Just $ (taken <> [ v ]) /\ stack'
+              Just $ ([ v ] <> taken) /\ stack'
             _ -> unsafeCrashWith "expected terminal on stack"
       in
         Array.foldM take1 ([] /\ stack0) (Array.reverse parsed) >>= \(taken /\ stack) ->
@@ -697,11 +707,11 @@ toTable' (States states) =
         take1 (taken /\ stack) = case _ of
           Terminal tok -> case stack of
             Snoc stack' v@(Left tok') _ | tok == tok' ->
-              Just $ (taken <> [ v ]) /\ stack'
+              Just $ ([ v ] <> taken) /\ stack'
             _ -> unsafeCrashWith "expected token on stack"
           NonTerminal nt -> case stack of
             Snoc stack' v@(Right (Layer (p /\ _) _)) _ | p == nt ->
-              Just $ (taken <> [ v ]) /\ stack'
+              Just $ ([ v ] <> taken) /\ stack'
             _ -> unsafeCrashWith "expected terminal on stack"
       in
         Array.foldM take1 ([] /\ stack0) (Array.reverse parsed) >>= \(taken /\ stack) ->
@@ -773,7 +783,7 @@ input placeholder initialValue onInput =
     []
 
 buttonClass :: forall m e. Applicative m => Attr e D.Class String => AnEvent m (Attribute e)
-buttonClass = D.Class !:= "bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+buttonClass = D.Class !:= ""
 
 arrowClass :: forall m e. Applicative m => Attr e D.Class String => AnEvent m (Attribute e)
 arrowClass = D.Class !:= "bg-green-500 hover:bg-green-700 text-white font-bold"
@@ -793,6 +803,11 @@ getHeader (States states) = bimap Array.nub Array.nub $
   fromPart (NonTerminal nt) = [] /\ [ nt ]
   fromPart (Terminal tok) = [ tok ] /\ []
 
+
+col :: forall a m e. Eq a => Applicative m => Attr e D.Class String => a -> a -> AnEvent m (Attribute e)
+col j i =
+  if i == j then D.Class !:= "first" else empty
+
 renderParseTable
   :: SStates
   -> Nut
@@ -801,10 +816,10 @@ renderParseTable (States states) =
     terminals /\ nonTerminals = getHeader (States states)
     renderTerminals x = renderTok mempty x
     renderNonTerminals x = renderNT mempty x
-    renderShiftReduce Nothing = text_ ""
-    renderShiftReduce (Just (Shift s)) = fixed [ renderCmd mempty "s", renderSt mempty s ]
-    renderShiftReduce (Just (Reduces rs)) = fixed $ rs # foldMap \r -> [ renderCmd mempty "r", renderRule mempty r ]
-    renderShiftReduce (Just (ShiftReduces s rs)) = fixed $
+    renderShiftReduce Nothing = []
+    renderShiftReduce (Just (Shift s)) = [ renderCmd mempty "s", renderSt mempty s ]
+    renderShiftReduce (Just (Reduces rs)) = rs # foldMap \r -> [ renderCmd mempty "r", renderRule mempty r ]
+    renderShiftReduce (Just (ShiftReduces s rs)) =
       [ renderCmd mempty "s", renderSt mempty s ] <> (rs # foldMap \r -> [ renderCmd mempty "r", renderRule mempty r ])
     cols state =
       let
@@ -812,20 +827,15 @@ renderParseTable (States states) =
         forNonTerminal nt = Shift <$> Map.lookup nt state.receive
       in
         map forTerminal terminals <> map forNonTerminal nonTerminals
-    header = D.tr_ $ map (D.th_ <<< pure) $
+    header = D.tr_ $ mapWithIndex (\i -> D.th (col (Array.length terminals + 1) i) <<< pure) $
       [ text_ "" ] <> map renderTerminals terminals <> map renderNonTerminals nonTerminals
     rows = states <#> \state -> D.tr_
       $ Array.cons (D.th_ [ renderSt mempty state.sName ])
       $
-        map (D.td_ <<< pure <<< renderShiftReduce) (cols state)
+        mapWithIndex (\i -> D.td (col (Array.length terminals) i) <<< renderShiftReduce) (cols state)
   in
     D.table (D.Class !:= "parse-table")
-      [ fixed
-          [ D.colgroup_ [ D.col_ [] ]
-          , D.colgroup_ $ terminals $> D.col_ []
-          , D.colgroup_ $ nonTerminals $> D.col_ []
-          ]
-      , D.thead_ [ header ]
+      [ D.thead_ [ header ]
       , D.tbody_ rows
       ]
 
@@ -842,19 +852,19 @@ type ParsedUIAction = V
 
 data TodoAction = Prioritize | Delete
 
-showStack :: SStack -> Nut
+showStack :: SCStack -> Nut
 showStack i = D.span (D.Class !:= "stack") (go i)
   where
   go (Zero state) = [ D.sub_ [ renderSt mempty state ] ]
   go (Snoc stack tok state) = go stack
-    <> [ renderStackItem tok ]
+    <> [ renderStackItem (map snd <$> prune tok) ]
     <> [ D.sub_ [ renderSt mempty state ] ]
 
-renderStackItem :: Either CodePoint (AST String) -> Nut
+renderStackItem :: Either CodePoint SAST -> Nut
 renderStackItem (Left x) = renderTok mempty x
 renderStackItem (Right x) = renderAST x
 
-renderAST :: AST String -> Nut
+renderAST :: SAST -> Nut
 renderAST (Layer r []) = D.span (D.Class !:= "layer") [ renderRule mempty r ]
 renderAST (Layer r cs) =
   D.span (D.Class !:= "layer")
@@ -864,14 +874,50 @@ renderAST (Layer r cs) =
     , renderMeta mempty ")"
     ]
 
-showMaybeStack :: Maybe (SStack) -> Nut
+renderASTTree :: SAST -> Nut
+renderASTTree ast =
+  D.ol (D.Class !:= "AST")
+    [ D.li_ (renderASTChild ast) ]
+
+renderASTChild :: SAST -> Nuts
+renderASTChild (Layer r []) =
+  [ D.span (D.Class !:= "leaf node")
+    [ renderRule mempty r ]
+  ]
+renderASTChild (Layer r cs) =
+  [ D.span (D.Class !:= "node")
+    [ renderRule mempty r ]
+  , D.ol (D.Class !:= "layer") $
+      cs <#> \c -> D.li_ (renderASTChild c)
+  ]
+
+renderCSTTree :: SCST -> Nut
+renderCSTTree ast =
+  D.ol (D.Class !:= "AST CST")
+    [ D.li_ (renderCSTChild ast) ]
+
+renderCSTChild :: SCST -> Nuts
+renderCSTChild (Leaf tok) =
+  [ D.span (D.Class !:= "leaf node")
+    [ renderTok mempty tok ]
+  ]
+renderCSTChild (Branch (_ /\ r) cs) =
+  [ D.span (D.Class !:= "node")
+    [ renderRule mempty r ]
+  , D.ol (D.Class !:= "layer") $
+      cs <#> \c -> D.li_ (renderCSTChild c)
+  ]
+
+showMaybeStack :: Maybe SCStack -> Nut
 showMaybeStack Nothing = text_ "Parse error"
 showMaybeStack (Just stack) = showStack stack
 
-type SStack = Stack Int (Either CodePoint (AST String))
-type SParseSteps = ParseSteps CodePoint (Stack Int (Either CodePoint (AST String)))
+type SAStack = Stack Int (Either CodePoint SAST)
+type SCStack = Stack Int SCST
+type SAParseSteps = ParseSteps CodePoint SAStack
+type SCParseSteps = ParseSteps CodePoint SCStack
 
-showMaybeParseSteps :: forall s m lock payload. Korok s m => Maybe SParseSteps -> SuperStack m (Domable m lock payload)
+showMaybeParseSteps :: forall s m lock payload. Korok s m => Maybe SCParseSteps -> SuperStack m (Domable m lock payload)
 showMaybeParseSteps Nothing = pure (pure (text_ "Parse error"))
 showMaybeParseSteps (Just stack) = showParseSteps stack
 
@@ -901,9 +947,9 @@ getVisibilityAndIncrement' s = do
 showParseStep
   :: forall r s m lock payload
    . Korok s m
-  => Either (Maybe SStack)
+  => Either (Maybe SCStack)
        { inputs :: List CodePoint
-       , stack :: SStack
+       , stack :: SCStack
        | r
        }
   -> SuperStack m (Domable m lock payload)
@@ -912,9 +958,9 @@ showParseStep (Left Nothing) = do
     D.div vi [ (text_ $ ("Step " <> show n <> ": ") <> "Parse error") ]
 showParseStep (Left (Just v)) = do
   getVisibilityAndIncrement <#> map \(n /\ vi) ->
-    case getResult v of
-      Just r ->
-        D.div vi [ text_ $ ("Step the last: "), renderAST r ]
+    case getResultC v of
+      Just r | Right p <- map snd <$> prune r ->
+        D.div vi [ text_ $ ("Step the last: "), renderAST p, renderASTTree p, renderCSTTree r ]
       _ ->
         D.div vi [ text_ $ ("Step the last: ") <> "Something went wrong" ]
 showParseStep (Right { stack, inputs }) = do
@@ -926,7 +972,7 @@ type SuperStack m a = StateT Int Trampoline ((Int -> AnEvent m Boolean) -> a)
 showParseSteps
   :: forall s m lock payload
    . Korok s m
-  => SParseSteps
+  => SCParseSteps
   -> SuperStack m (Domable m lock payload)
 showParseSteps i = map fixed <$> (go i)
   where
@@ -1243,7 +1289,7 @@ parseGrammar top rules = do
   firstRule <- note "Need at least 1 rule in the grammar" $ Array.head rules
   let
     entry = fromMaybe firstRule.pName top.entry
-    nonTerminals = longestFirst $ rules <#> _.pName
+    nonTerminals = longestFirst $ [top.top] <> (rules <#> _.pName)
     parse = parseDefinition nonTerminals
     rules' = rules <#> \r -> r { rule = parse r.rule }
     topRule = { pName: top.top, rName: top.topName, rule: [ NonTerminal entry, Terminal top.eof ] }
@@ -1260,7 +1306,10 @@ parseGrammar top rules = do
     then Left "Top-level does not refer to nonterminal"
     else pure unit
   if Set.member top.eof (gatherTokens (MkGrammar rules'))
-    then Left "EOF symbol not unique"
+    then Left "Grammar references EOF symbol"
+    else pure unit
+  if Set.member top.top (gatherNonTerminals (MkGrammar rules'))
+    then Left "Grammar references top rule"
     else pure unit
   pure $ { augmented: MkGrammar ([ topRule ] <> rules'), start, eof: top.eof }
 
@@ -1315,7 +1364,10 @@ grammarComponent buttonText initialGrammar sendGrammar =
       in
         envy $ memoBangFold changeRule ruleChanges initialRules \currentRules -> do
           let
-            currentNTs = dedup $ longestFirst <<< map (_.pName <<< snd) <$> currentRules
+            currentNTs = dedup $ map longestFirst $
+              biSampleOn
+                (map (_.pName <<< snd) <$> currentRules)
+                (append <<< pure <<< fromMaybe defaultTopName <<< NES.fromString <$> (bang initialTop.top <|> inputs.top))
             currentTopParsed = biSampleOn currentRules $ currentTop <#> \r rules ->
               { top: fromMaybe defaultTopName $ NES.fromString r.top
               , entry: NES.fromString r.entry <|> (Array.head rules <#> snd >>> _.pName)
@@ -1425,10 +1477,10 @@ main =
   vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
     envy $ memoBangFold const event.grammar sampleGrammar \currentGrammar -> do
       let
-        currentValue = bang "" <|> event.changeText
+        currentValue = bang "(x,x)" <|> event.changeText
         currentStates = filterMap (either (const Nothing) Just) $ currentGrammar <#> \{ augmented, start } ->
           numberStates (add 1) augmented (calculateStates augmented start)
-        currentTable = toTable' <$> currentStates
+        currentTable = toTable <$> currentStates
         currentFromString = fromString <$> currentGrammar
         currentTokens = biSampleOn currentValue currentFromString
         currentParseSteps =
@@ -1460,10 +1512,10 @@ main =
         , D.div_ $ pure $
             switcher (\x -> fixed $ gatherTokens x # foldMap \tok -> [ renderTok mempty tok ]) (_.augmented <$> unsafeDebug "g " currentGrammar)
         , D.div_
-            [ D.span (D.Class !:= "terminal") [ input "" "" push.changeText ] ]
+            [ D.span (D.Class !:= "terminal") [ input "" "(x,x)" push.changeText ] ]
         , D.div_ $ pure $ currentParseSteps `flip switcher` \todaysSteps ->
             let
-              contentAsMonad = showMaybeParseSteps $ map (map (map (map (map snd)))) $ todaysSteps
+              contentAsMonad = showMaybeParseSteps $ todaysSteps
               -- Run the first layer of the monad, to get the number of items being rendered up-front
               contentAsMonad2 /\ nEntities = runTrampoline (runStateT contentAsMonad 0)
             in
