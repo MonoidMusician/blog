@@ -39,6 +39,9 @@ body, .parse-table > thead > tr > th:not(:first-child) {
 .terminal:not(:last-child) {
   letter-spacing: 1.5px;
 }
+.terminal.clickable {
+  padding: 0 0.2em;
+}
 .meta {
   font-family: "Oswald";
   font-weight: 300;
@@ -99,7 +102,7 @@ body, .parse-table > thead > tr > th:not(:first-child) {
 }
 
 .AST {
-    margin: 0 0 1em;
+    margin: 0;
     text-align: center;
 }
 .AST, .AST ol {
@@ -110,7 +113,7 @@ body, .parse-table > thead > tr > th:not(:first-child) {
 }
     .AST li {
         display: table-cell;
-        padding: .5em 0;
+        padding: .5em 0 0;
         vertical-align: top;
     }
         /* _________ */
@@ -188,10 +191,12 @@ td > .zipper {
   display: inline-block;
 }
 .zipper:hover > :not(.parsed) > :first-child {
-  outline: 1px solid cyan;
+  outline: 2px solid cyan;
+  outline-offset: 2px;
 }
 .zipper:hover > .parsed:last-child {
-  outline: 1px solid #00a42f;
+  outline: 2px solid #00a42f;
+  outline-offset: 2px;
 }
 .zipper > :not(.parsed)::before {
   content: "•";
@@ -247,7 +252,7 @@ table.grammar td:last-child {
   border-collapse: collapse;
 }
 .state-table tbody.active {
-  background-color: #ffd7003b;
+  background-color: #554803;
 }
 .state-table tbody tr th {
   text-align: right;
@@ -281,12 +286,14 @@ th.first, td.first {
   position: sticky;
   top: -1px;
 }
+/*
 .parse-table > thead > tr > th:nth-child(2) {
   border-left: 1px solid transparent;
 }
 .parse-table > thead > tr > th:last-child {
   border-right: 1px solid transparent;
 }
+/**/
 .parse-table thead th:not(:first-child), .parse-table tr:last-child td:not(:first-child) {
   border-bottom: 1px solid #afafafc2;
 }
@@ -304,7 +311,7 @@ th.first, td.first {
   text-align: left;
 }
 .parse-table tr.active {
-  background-color: #ffd7003b;
+  background-color: #554803;
 }
 .parse-table td {
   padding: 0 0.75em;
@@ -320,12 +327,13 @@ button {
   border: 2px solid #2372ffaa;
   padding: 0 0.5em;
   margin: 0 0.25em;
-  transition: border-color 0.2s, color 0.2s, box-shadow 0.2s ease-out, transform 0.1s ease-out;
-  box-shadow: 1px 1px 1px transparent, inset 1px 1px 1px transparent;
+  transition: border-color 0.2s, color 0.2s, box-shadow 0.1s ease-out, transform 0.1s ease-out;
+  box-shadow: 1px 1px 0.5px 0.5px transparent, inset 1px 1px 0px 1.5px transparent;
 }
 button:hover {
+  transition: border-color 0.1s, color 0.1s, box-shadow 0.1s ease-out, transform 0.1s ease-out;
   color: #2372ffff;
-  box-shadow: 1px 1px 1px #2372ff44, inset 1px 1px 1px #0002;
+  box-shadow: 1px 1px 0.5px 0.5px #2372ff44, inset 1px 1px 0px 1.5px #0002;
 }
 @media (hover: hover) and (pointer: fine) {
   button:not(:hover) {
@@ -335,7 +343,7 @@ button:hover {
 button:active {
   color: #2372ffff;
   border-color: #2372ffff;
-  box-shadow: 0px 0px 0px transparent, inset 0px 0px 0px transparent;
+  box-shadow: 0px 0px 0px 0px transparent, inset 1px 1px 0px 0.5px #0002;
   transform: translate(1.1px, 1.1px);
 }
 button:focus-visible {
@@ -349,7 +357,7 @@ button.delete {
 }
 button.delete:hover {
   color: #ff004dff;
-  box-shadow: 1px 1px 1px #ff004d44, inset 1px 1px 1px #0002;
+  box-shadow: 1px 1px 0.5px 0.5px #ff004d44, inset 1px 1px 0px 1.5px #0002;
 }
 @media (hover: hover) and (pointer: fine) {
   button.delete:not(:hover) {
@@ -359,6 +367,7 @@ button.delete:hover {
 button.delete:active {
   color: #ff004dff;
   border-color: #ff004dff;
+  box-shadow: 0px 0px 0px 0px transparent, inset 1px 1px 0px 0.5px #0002;
 }
 button.delete:focus-visible {
   color: #ff004dff;
