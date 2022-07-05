@@ -4,6 +4,7 @@ import Prelude
 
 import Bolson.Core (Child(..), dyn, envy, fixed)
 import Control.Alt ((<|>))
+import Control.Alternative (guard)
 import Control.Apply (lift2)
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.ST.Class (class MonadST, liftST)
@@ -20,7 +21,8 @@ import Data.Compactable (compact)
 import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..), either, fromRight', hush, note)
 import Data.Filterable (filter)
-import Data.Foldable (foldMap, for_, oneOf, oneOfMap)
+import Data.Foldable (any, foldMap, for_, oneOf, oneOfMap, traverse_)
+import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
@@ -43,6 +45,7 @@ import Data.Traversable (mapAccumL, traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
+import Data.Typelevel.Undefined (undefined)
 import Data.Variant (Variant)
 import Data.Variant as V
 import Data.Variant as Variant
@@ -101,6 +104,7 @@ type Augmented nt r tok =
   { augmented :: Grammar nt r tok
   , start :: StateItem nt r tok
   , eof :: tok
+  , entry :: nt
   }
 
 type SAugmented = Augmented NonEmptyString String CodePoint
@@ -122,6 +126,7 @@ fromSeed (MkGrammar rules) entry =
     { augmented: MkGrammar ([ rule0 ] <> rules')
     , start: { pName: Nothing, rName: Nothing, rule: Zipper [] rule0.rule, lookahead: [] }
     , eof: Nothing
+    , entry: Just entry
     }
 
 fromSeed'
@@ -139,6 +144,7 @@ fromSeed' nt0 r0 tok0 (MkGrammar rules) entry =
     { augmented: MkGrammar ([ rule0 ] <> rules)
     , start: { pName: nt0, rName: r0, rule: Zipper [] rule0.rule, lookahead: [] }
     , eof: tok0
+    , entry
     }
 
 calculateStates
@@ -322,7 +328,7 @@ instance bifunctorPart :: Bifunctor Part where
 
 type SPart = Part NonEmptyString CodePoint
 type Fragment nt tok = Array (Part nt tok)
-type SFragment = Fragment String CodePoint
+type SFragment = Fragment NonEmptyString CodePoint
 
 data Zipper nt tok = Zipper (Fragment nt tok) (Fragment nt tok)
 
@@ -767,7 +773,7 @@ recognize nts s = nts # Array.find \nt ->
 bangAttr :: forall m a b e. Applicative m => Attr e a b => a -> b -> AnEvent m (Attribute e)
 bangAttr a b = bang (a := b)
 
-infix 5 bangAttr as !:=
+infixr 5 bangAttr as !:=
 
 maybeAttr :: forall m a b e. Applicative m => Attr e a b => a -> Maybe b -> AnEvent m (Attribute e)
 maybeAttr a (Just b) = bang (a := b)
@@ -1274,22 +1280,22 @@ renderAs :: String -> String -> Nut
 renderAs c t = D.span (D.Class !:= c) [ text_ t ]
 
 renderTok :: Maybe (Effect Unit) -> CodePoint -> Nut
-renderTok c t = D.span (D.OnClick ?:= c <|> D.Class !:= "terminal") [ text_ (String.singleton t) ]
+renderTok c t = D.span (D.OnClick ?:= c <|> D.Class !:= "terminal" <> if isJust c then " clickable" else "") [ text_ (String.singleton t) ]
 
 renderTok' :: forall s m lock payload. Korok s m => AnEvent m String -> AnEvent m (Maybe (Effect Unit)) -> CodePoint -> Domable m lock payload
 renderTok' cls c t = D.span (D.OnClick <:=> filterMap identity c <|> D.Class <:=> (bang "terminal" <|> (append "terminal " <$> cls))) [ text_ (String.singleton t) ]
 
 renderNT :: Maybe (Effect Unit) -> NonEmptyString -> Nut
-renderNT c nt = D.span (D.OnClick ?:= c <|> D.Class !:= "non-terminal") [ text_ (NES.toString nt) ]
+renderNT c nt = D.span (D.OnClick ?:= c <|> D.Class !:= "non-terminal" <> if isJust c then " clickable" else "") [ text_ (NES.toString nt) ]
 
 renderRule :: Maybe (Effect Unit) -> String -> Nut
-renderRule c r = D.span (D.OnClick ?:= c <|> D.Class !:= "rule") [ text_ r ]
+renderRule c r = D.span (D.OnClick ?:= c <|> D.Class !:= "rule" <> if isJust c then " clickable" else "") [ text_ r ]
 
 renderMeta :: Maybe (Effect Unit) -> String -> Nut
-renderMeta c x = D.span (D.OnClick ?:= c <|> D.Class !:= "meta") [ text_ x ]
+renderMeta c x = D.span (D.OnClick ?:= c <|> D.Class !:= "meta" <> if isJust c then " clickable" else "") [ text_ x ]
 
 renderSt :: Maybe (Effect Unit) -> Int -> Nut
-renderSt c x = D.span (D.OnClick ?:= c <|> D.Class !:= "state") [ text_ (show x) ]
+renderSt c x = D.span (D.OnClick ?:= c <|> D.Class !:= "state" <> if isJust c then " clickable" else "") [ text_ (show x) ]
 
 renderSt' :: forall s m lock payload. Korok s m => AnEvent m String -> Maybe (Effect Unit) -> Int -> Domable m lock payload
 renderSt' cls c x = D.span (D.OnClick ?:= c <|> D.Class <:=> (bang "state" <|> (append "state " <$> cls))) [ text_ (show x) ]
@@ -1299,7 +1305,7 @@ renderPart c (NonTerminal nt) = renderNT c nt
 renderPart c (Terminal t) = renderTok c t
 
 renderCmd :: Maybe (Effect Unit) -> String -> Nut
-renderCmd c x = D.span (D.OnClick ?:= c <|> D.Class !:= "cmd") [ text_ x ]
+renderCmd c x = D.span (D.OnClick ?:= c <|> D.Class !:= "cmd" <> if isJust c then " clickable" else "") [ text_ x ]
 
 stateComponent
   :: forall s m lock payload
@@ -1382,7 +1388,7 @@ parseGrammar top rules = do
   if Set.member top.top (gatherNonTerminals (MkGrammar rules'))
     then Left "Grammar references top rule"
     else pure unit
-  pure $ { augmented: MkGrammar ([ topRule ] <> rules'), start, eof: top.eof }
+  pure $ { augmented: MkGrammar ([ topRule ] <> rules'), start, eof: top.eof, entry }
 
 grammarComponent
   :: forall s m lock payload
@@ -1549,6 +1555,77 @@ lastState (Step x Error) = topOf x.stack
 lastState (Complete x) = topOf x
 lastState (Step _ s) = lastState s
 
+type ExplorerAction =
+  ( focus :: Maybe (Int /\ NonEmptyString)
+  , select :: SFragment
+  )
+
+explorerComponent
+  :: forall s m lock payload
+   . Korok s m
+  => SAugmented
+  -> (Array CodePoint -> Effect Unit)
+  -> Domable m lock payload
+explorerComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp =
+  vbussed (Proxy :: Proxy (V ExplorerAction)) \push event -> do
+    let
+      currentParts = bang [NonTerminal entry] <|> event.select
+      currentFocused = event.focus <|> map uniqueNonTerminal currentParts
+      uniqueNonTerminal = only <<< foldMapWithIndex
+        \i v -> maybe [] (\r -> [i /\ r]) (unNonTerminal v)
+      activity here = here <#> if _ then "active" else "inactive"
+      renderPartHere i (NonTerminal nt) =
+        D.span
+          (D.Class <:=> (currentFocused <#> any (fst >>> eq i) >>> if _ then "selected" else ""))
+          [ renderNT (Just (push.focus (Just (i /\ nt)))) nt ]
+      renderPartHere _ (Terminal tok) = renderTok mempty tok
+      send = currentParts <#> \parts ->
+        case traverse unTerminal parts of
+          Nothing -> pure unit
+          Just toks -> sendUp toks
+    D.div_
+      [ D.span_ [ switcher (fixed <<< mapWithIndex renderPartHere) currentParts ]
+      , D.button
+          ( D.Class !:= ""
+          <|> D.OnClick <:=> send
+          )
+          [ text_ "Send" ]
+      , D.button
+          ( D.Class !:= "delete"
+          <|> D.OnClick !:= push.select [NonTerminal entry]
+          )
+          [ text_ "Reset" ]
+      , D.table (D.Class !:= "explorer-table")
+          [ D.tbody_ $ rules <#> \rule -> do
+              let
+                focusHere = currentFocused # map (any (snd >>> eq rule.pName))
+                replacement = sampleOn currentParts $ currentFocused <#> \mfoc parts -> do
+                  focused /\ nt <- mfoc
+                  guard $ nt == rule.pName
+                  guard $ focused <= Array.length parts
+                  pure $ Array.take focused parts <> rule.rule <> Array.drop (focused + 1) parts
+              D.tr (D.Class <:=> activity focusHere) $ map (D.td_ <<< pure) $
+                [ renderNT mempty rule.pName
+                , renderMeta mempty " : "
+                , fixed $ map (\x -> renderPart mempty x) rule.rule
+                , D.span_
+                    [ renderMeta mempty " #"
+                    , renderRule mempty rule.rName
+                    ]
+                , D.span_
+                    [ text_ " "
+                    , D.button
+                        ( oneOf
+                            [ D.Class !:= "select"
+                            , D.OnClick <:=> traverse_ push.select <$> replacement
+                            ]
+                        )
+                        [ text_ "Select" ]
+                    ]
+                ]
+          ]
+        ]
+
 main :: Nut
 main =
   vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
@@ -1571,6 +1648,7 @@ main =
             $ currentTokens' <#> \toks table -> parseSteps table <$> toks <@> 1
         currentState = maybe 0 lastState <$> currentParseSteps'
         currentGrammarTokens = gatherTokens' <<< _.augmented <$> currentGrammar
+        receiveToks toks = push.changeText (true /\ String.fromCodePointArray toks)
       envy $ memoBang currentState 0 \currentState -> do
         envy $ memoize currentStates \currentStates -> do
           -- Note quite sure what's happening here, but we basically need a
@@ -1607,6 +1685,7 @@ main =
                       Just e -> D.div_ [ D.span (D.Class !:= "text-red-300") [ text_ e ] ]
                   ]
               , grammarComponent "Generate grammar" sampleGrammar push.grammar
+              , D.div_ [ switcher (flip explorerComponent receiveToks) currentGrammar ]
               {-
               , D.table_ $ pure $ D.tbody_ $
                   let
