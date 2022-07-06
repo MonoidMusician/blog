@@ -1733,6 +1733,7 @@ explorerComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp
                       [ D.Xtype !:= "range"
                       , D.Min !:= "0"
                       , D.Max !:= "30"
+                      , D.Value !:= "15"
                       , slider $ bang $ push.amt <<< Int.round
                       ]
                   )
@@ -1745,7 +1746,7 @@ explorerComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp
                   )
                   [ text_ "Random" ]
               ]
-          , D.ul_ $ pure $ switcher (fixed <<< map (D.li_ <<< map (\x -> renderTok mempty x)))
+          , D.ul_ $ pure $ switcher (fixed <<< map (\xs -> D.li (D.Class !:= "clickable" <|> D.OnClick !:= sendUp xs) <<< map (\x -> renderTok mempty x) $ xs))
               event.randomMany
           , D.table (D.Class !:= "explorer-table")
               [ D.tbody_ $ rules <#> \rule -> do
