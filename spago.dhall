@@ -30,6 +30,7 @@ to generate this file without the comments in this block.
   , "filterable"
   , "foldable-traversable"
   , "free"
+  , "gen"
   , "integers"
   , "lists"
   , "maybe"

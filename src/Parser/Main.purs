@@ -6,6 +6,8 @@ import Bolson.Core (Child(..), dyn, envy, fixed)
 import Control.Alt ((<|>))
 import Control.Alternative (guard)
 import Control.Apply (lift2)
+import Control.Monad.Gen (class MonadGen)
+import Control.Monad.Gen as Gen
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.ST.Class (class MonadST, liftST)
 import Control.Monad.ST.Internal as STRef
@@ -21,7 +23,7 @@ import Data.Compactable (compact)
 import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..), either, fromRight', hush, note)
 import Data.Filterable (filter)
-import Data.Foldable (any, foldMap, for_, oneOf, oneOfMap, traverse_)
+import Data.Foldable (any, foldMap, for_, oneOf, oneOfMap, sum, traverse_)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
@@ -33,6 +35,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust, fromMaybe, isJust, maybe)
 import Data.Newtype (class Newtype, unwrap)
 import Data.Number (e, pi)
+import Data.Semigroup.Foldable (minimum, minimumBy)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Show.Generic (genericShow)
@@ -41,7 +44,7 @@ import Data.String as String
 import Data.String.NonEmpty as NES
 import Data.String.NonEmpty.Internal (NonEmptyString)
 import Data.Time.Duration (Seconds(..))
-import Data.Traversable (mapAccumL, traverse)
+import Data.Traversable (for, mapAccumL, sequence, traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
@@ -91,12 +94,98 @@ type Nutss =
   => Array (Array (DC.Domable m lock payload))
 
 newtype Grammar nt r tok = MkGrammar
-  ( Array
-      { pName :: nt
-      , rName :: r
-      , rule :: Fragment nt tok
-      }
-  )
+  ( Array (GrammarRule nt r tok) )
+type GrammarRule nt r tok =
+  { pName :: nt -- nonterminal / production rule name
+  , rName :: r -- each rule has a unique name
+  , rule :: Fragment nt tok -- sequence of nonterminals and terminals that make up the rule
+  }
+
+getRulesFor :: forall nt r tok. Eq nt => Array (Produced nt r tok) -> nt -> Array { rule :: Fragment nt tok, produced :: Array tok }
+getRulesFor rules nt = rules # filterMap \rule ->
+  if rule.production.pName /= nt then Nothing else
+    Just { rule: rule.production.rule, produced: rule.produced }
+
+countNTs :: forall nt tok. Fragment nt tok -> Int
+countNTs = sum <<< map (\t -> if isNonTerminal t then 1 else 0)
+
+-- NonEmptyArray (Int /\ rule)
+-- every minimum that occurs
+
+chooseBySize :: forall r nt tok. Int -> NonEmptyArray { rule :: Fragment nt tok | r } -> NonEmptyArray { rule :: Fragment nt tok | r }
+chooseBySize i as =
+  let
+    sized = as <#> \rule -> countNTs rule.rule /\ rule
+  in case NEA.fromArray (NEA.filter (\(size /\ _) -> size <= i) sized) of
+    Nothing ->
+      map snd $ NEA.head $
+        NEA.groupAllBy (compare `on` fst) sized
+    Just as' -> map snd as'
+
+type Produced nt r tok =
+  { production :: GrammarRule nt r tok
+  , produced :: Array tok
+  }
+
+produceable ::
+  forall nt r tok. Eq nt => Eq r => Eq tok => Grammar nt r tok ->
+    Array (Produced nt r tok)
+produceable (MkGrammar initialRules) = produceAll []
+  where
+    produceOne produced (NonTerminal nt) =
+      Array.find (_.production >>> _.pName >>> eq nt) produced <#> _.produced
+    produceOne _ (Terminal tok) = pure [tok]
+    produceAll rules =
+      let rules' = produceMore rules in
+      if rules' == rules then rules else produceAll rules'
+    produceMore produced =
+      let
+        rejected = initialRules `Array.difference` map _.production produced
+        more = rejected # filterMap \rule ->
+          rule.rule # traverse (produceOne produced) # map \prod ->
+            { production: rule
+            , produced: join prod
+            }
+      in
+        produced <> more
+
+shrink :: forall m. MonadGen m => m ~> m
+shrink = Gen.resize (_ `div` 2)
+
+genNT :: forall m nt r tok. Eq nt => MonadGen m =>
+  Array (Produced nt r tok) ->
+  (nt -> Maybe (m (Array tok)))
+genNT grammar nt = genNT1 grammar nt <#> \mr ->
+  mr >>= genMore grammar
+
+genMore :: forall m nt r tok. Eq nt => MonadGen m =>
+  Array (Produced nt r tok) ->
+  { rule :: Fragment nt tok, produced :: Array tok } ->
+  m (Array tok)
+genMore grammar { rule, produced } =
+  -- `genMoreMaybe` should never fail, if the `Produced` data is any good
+  -- but just in case! we still need to produce a value, so `produced` is a
+  -- default value we have access to from the `Produced` data.
+  fromMaybe (pure produced) (genMoreMaybe grammar rule)
+
+genMoreMaybe :: forall m nt r tok. Eq nt => MonadGen m =>
+  Array (Produced nt r tok) ->
+  Fragment nt tok ->
+  Maybe (m (Array tok))
+genMoreMaybe grammar rule =
+  map (map join <<< sequence) $
+    for rule case _ of
+      Terminal tok -> Just (pure [tok] :: m (Array tok))
+      NonTerminal nt ->
+        shrink <$> genNT grammar nt
+
+genNT1 :: forall m nt r tok. Eq nt => MonadGen m =>
+  Array (Produced nt r tok) ->
+  (nt -> Maybe (m { rule :: Fragment nt tok, produced :: Array tok }))
+genNT1 grammar nt =
+  getRulesFor grammar nt # NEA.fromArray #
+    map (\rules -> Gen.sized \sz -> chooseBySize sz rules # Gen.elements)
+
 
 derive instance newtypeGrammar :: Newtype (Grammar nt r tok) _
 
@@ -1568,63 +1657,72 @@ explorerComponent
   -> Domable m lock payload
 explorerComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp =
   vbussed (Proxy :: Proxy (V ExplorerAction)) \push event -> do
-    let
-      currentParts = bang [NonTerminal entry] <|> event.select
-      currentFocused = event.focus <|> map uniqueNonTerminal currentParts
-      uniqueNonTerminal = only <<< foldMapWithIndex
-        \i v -> maybe [] (\r -> [i /\ r]) (unNonTerminal v)
-      activity here = here <#> if _ then "active" else "inactive"
-      renderPartHere i (NonTerminal nt) =
-        D.span
-          (D.Class <:=> (currentFocused <#> any (fst >>> eq i) >>> if _ then "selected" else ""))
-          [ renderNT (Just (push.focus (Just (i /\ nt)))) nt ]
-      renderPartHere _ (Terminal tok) = renderTok mempty tok
-      send = currentParts <#> \parts ->
-        case traverse unTerminal parts of
-          Nothing -> pure unit
-          Just toks -> sendUp toks
-    D.div_
-      [ D.span_ [ switcher (fixed <<< mapWithIndex renderPartHere) currentParts ]
-      , D.button
-          ( D.Class !:= ""
-          <|> D.OnClick <:=> send
-          )
-          [ text_ "Send" ]
-      , D.button
-          ( D.Class !:= "delete"
-          <|> D.OnClick !:= push.select [NonTerminal entry]
-          )
-          [ text_ "Reset" ]
-      , D.table (D.Class !:= "explorer-table")
-          [ D.tbody_ $ rules <#> \rule -> do
-              let
-                focusHere = currentFocused # map (any (snd >>> eq rule.pName))
-                replacement = sampleOn currentParts $ currentFocused <#> \mfoc parts -> do
-                  focused /\ nt <- mfoc
-                  guard $ nt == rule.pName
-                  guard $ focused <= Array.length parts
-                  pure $ Array.take focused parts <> rule.rule <> Array.drop (focused + 1) parts
-              D.tr (D.Class <:=> activity focusHere) $ map (D.td_ <<< pure) $
-                [ renderNT mempty rule.pName
-                , renderMeta mempty " : "
-                , fixed $ map (\x -> renderPart mempty x) rule.rule
-                , D.span_
-                    [ renderMeta mempty " #"
-                    , renderRule mempty rule.rName
-                    ]
-                , D.span_
-                    [ text_ " "
-                    , D.button
-                        ( oneOf
-                            [ D.Class !:= "select"
-                            , D.OnClick <:=> traverse_ push.select <$> replacement
+    envy $ memoBeh event.select [NonTerminal entry] \currentParts -> do
+      let
+        uniqueNonTerminal = only <<< foldMapWithIndex
+          \i v -> maybe [] (\r -> [i /\ r]) (unNonTerminal v)
+      envy $ memoBeh (event.focus <|> map uniqueNonTerminal currentParts) (Just (0 /\ entry)) \currentFocused -> do
+        let
+          producedRules = produceable (MkGrammar rules)
+          activity here = here <#> if _ then "active" else "inactive"
+          renderPartHere i (NonTerminal nt) =
+            D.span
+              (D.Class <:=> (currentFocused <#> any (fst >>> eq i) >>> if _ then "selected" else ""))
+              [ renderNT (Just (push.focus (Just (i /\ nt)))) nt ]
+          renderPartHere _ (Terminal tok) = renderTok mempty tok
+          send = currentParts <#> \parts ->
+            case traverse unTerminal parts of
+              Nothing -> pure unit
+              Just toks -> sendUp toks
+        D.div_
+          [ D.span_ [ switcher (fixed <<< mapWithIndex renderPartHere) currentParts ]
+          , D.button
+              ( D.Class !:= ""
+              <|> D.OnClick <:=> send
+              )
+              [ text_ "Send" ]
+          , D.button
+              ( D.Class !:= "delete"
+              <|> D.OnClick !:= push.select [NonTerminal entry]
+              )
+              [ text_ "Reset" ]
+          , D.table (D.Class !:= "explorer-table")
+              [ D.tbody_ $ rules <#> \rule -> do
+                  let
+                    focusHere = currentFocused # map (any (snd >>> eq rule.pName))
+                    replacement = sampleOn currentParts $ currentFocused <#> \mfoc parts -> do
+                      focused /\ nt <- mfoc
+                      guard $ nt == rule.pName
+                      guard $ focused <= Array.length parts
+                      pure $ Array.take focused parts <> rule.rule <> Array.drop (focused + 1) parts
+                  D.tr (D.Class <:=> activity focusHere) $ map (D.td_ <<< pure) $
+                    [ renderNT mempty rule.pName
+                    , renderMeta mempty " : "
+                    , fixed $ map (\x -> renderPart mempty x) rule.rule
+                    , D.span_
+                        [ renderMeta mempty " #"
+                        , renderRule mempty rule.rName
+                        ]
+                    , D.span_
+                        [ text_ " "
+                        , D.button
+                            ( oneOf
+                                [ D.Class !:= "select"
+                                , D.OnClick <:=> traverse_ push.select <$> replacement
+                                ]
+                            )
+                            [ text_ "Select" ]
+                        ]
+                    , case Array.find (_.production >>> eq rule) producedRules of
+                        Nothing -> text_ "Unproduceable"
+                        Just { produced } ->
+                          D.span_
+                            [ D.em_ [ text_ "e.g. " ]
+                            , fixed $ map (\x -> renderTok mempty x) produced
                             ]
-                        )
-                        [ text_ "Select" ]
                     ]
-                ]
-          ]
-        ]
+              ]
+            ]
 
 main :: Nut
 main =
