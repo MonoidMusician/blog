@@ -94,7 +94,8 @@ type Nutss =
   => Array (Array (DC.Domable m lock payload))
 
 newtype Grammar nt r tok = MkGrammar
-  ( Array (GrammarRule nt r tok) )
+  (Array (GrammarRule nt r tok))
+
 type GrammarRule nt r tok =
   { pName :: nt -- nonterminal / production rule name
   , rName :: r -- each rule has a unique name
@@ -103,7 +104,8 @@ type GrammarRule nt r tok =
 
 getRulesFor :: forall nt r tok. Eq nt => Array (Produced nt r tok) -> nt -> Array { rule :: Fragment nt tok, produced :: Array tok }
 getRulesFor rules nt = rules # filterMap \rule ->
-  if rule.production.pName /= nt then Nothing else
+  if rule.production.pName /= nt then Nothing
+  else
     Just { rule: rule.production.rule, produced: rule.produced }
 
 countNTs :: forall nt tok. Fragment nt tok -> Int
@@ -116,76 +118,94 @@ chooseBySize :: forall r nt tok. Int -> NonEmptyArray { rule :: Fragment nt tok 
 chooseBySize i as =
   let
     sized = as <#> \rule -> countNTs rule.rule /\ rule
-  in case NEA.fromArray (NEA.filter (\(size /\ _) -> size <= i) sized) of
-    Nothing ->
-      map snd $ NEA.head $
-        NEA.groupAllBy (compare `on` fst) sized
-    Just as' -> map snd as'
+  in
+    case NEA.fromArray (NEA.filter (\(size /\ _) -> size <= i) sized) of
+      Nothing ->
+        map snd $ NEA.head $
+          NEA.groupAllBy (compare `on` fst) sized
+      Just as' -> map snd as'
 
 type Produced nt r tok =
   { production :: GrammarRule nt r tok
   , produced :: Array tok
   }
 
-produceable ::
-  forall nt r tok. Eq nt => Eq r => Eq tok => Grammar nt r tok ->
-    Array (Produced nt r tok)
+produceable
+  :: forall nt r tok
+   . Eq nt
+  => Eq r
+  => Eq tok
+  => Grammar nt r tok
+  -> Array (Produced nt r tok)
 produceable (MkGrammar initialRules) = produceAll []
   where
-    produceOne produced (NonTerminal nt) =
-      Array.find (_.production >>> _.pName >>> eq nt) produced <#> _.produced
-    produceOne _ (Terminal tok) = pure [tok]
-    produceAll rules =
-      let rules' = produceMore rules in
+  produceOne produced (NonTerminal nt) =
+    Array.find (_.production >>> _.pName >>> eq nt) produced <#> _.produced
+  produceOne _ (Terminal tok) = pure [ tok ]
+  produceAll rules =
+    let
+      rules' = produceMore rules
+    in
       if rules' == rules then rules else produceAll rules'
-    produceMore produced =
-      let
-        rejected = initialRules `Array.difference` map _.production produced
-        more = rejected # filterMap \rule ->
-          rule.rule # traverse (produceOne produced) # map \prod ->
-            { production: rule
-            , produced: join prod
-            }
-      in
-        produced <> more
+  produceMore produced =
+    let
+      rejected = initialRules `Array.difference` map _.production produced
+      more = rejected # filterMap \rule ->
+        rule.rule # traverse (produceOne produced) # map \prod ->
+          { production: rule
+          , produced: join prod
+          }
+    in
+      produced <> more
 
 shrink :: forall m. MonadGen m => m ~> m
 shrink = Gen.resize (_ `div` 2)
 
-genNT :: forall m nt r tok. Eq nt => MonadGen m =>
-  Array (Produced nt r tok) ->
-  (nt -> Maybe (m (Array tok)))
+genNT
+  :: forall m nt r tok
+   . Eq nt
+  => MonadGen m
+  => Array (Produced nt r tok)
+  -> (nt -> Maybe (m (Array tok)))
 genNT grammar nt = genNT1 grammar nt <#> \mr ->
   mr >>= genMore grammar
 
-genMore :: forall m nt r tok. Eq nt => MonadGen m =>
-  Array (Produced nt r tok) ->
-  { rule :: Fragment nt tok, produced :: Array tok } ->
-  m (Array tok)
+genMore
+  :: forall m nt r tok
+   . Eq nt
+  => MonadGen m
+  => Array (Produced nt r tok)
+  -> { rule :: Fragment nt tok, produced :: Array tok }
+  -> m (Array tok)
 genMore grammar { rule, produced } =
   -- `genMoreMaybe` should never fail, if the `Produced` data is any good
   -- but just in case! we still need to produce a value, so `produced` is a
   -- default value we have access to from the `Produced` data.
   fromMaybe (pure produced) (genMoreMaybe grammar rule)
 
-genMoreMaybe :: forall m nt r tok. Eq nt => MonadGen m =>
-  Array (Produced nt r tok) ->
-  Fragment nt tok ->
-  Maybe (m (Array tok))
+genMoreMaybe
+  :: forall m nt r tok
+   . Eq nt
+  => MonadGen m
+  => Array (Produced nt r tok)
+  -> Fragment nt tok
+  -> Maybe (m (Array tok))
 genMoreMaybe grammar rule =
   map (map join <<< sequence) $
     for rule case _ of
-      Terminal tok -> Just (pure [tok] :: m (Array tok))
+      Terminal tok -> Just (pure [ tok ] :: m (Array tok))
       NonTerminal nt ->
         shrink <$> genNT grammar nt
 
-genNT1 :: forall m nt r tok. Eq nt => MonadGen m =>
-  Array (Produced nt r tok) ->
-  (nt -> Maybe (m { rule :: Fragment nt tok, produced :: Array tok }))
+genNT1
+  :: forall m nt r tok
+   . Eq nt
+  => MonadGen m
+  => Array (Produced nt r tok)
+  -> (nt -> Maybe (m { rule :: Fragment nt tok, produced :: Array tok }))
 genNT1 grammar nt =
   getRulesFor grammar nt # NEA.fromArray #
     map (\rules -> Gen.sized \sz -> chooseBySize sz rules # Gen.elements)
-
 
 derive instance newtypeGrammar :: Newtype (Grammar nt r tok) _
 
@@ -392,9 +412,11 @@ exFromString = String.toCodePointArray >>> flip append [ defaultEOF ] >>> Array.
 
 fromString :: SAugmented -> String -> Maybe (List CodePoint)
 fromString grammar =
-  (join \e -> if String.contains (String.Pattern (String.singleton grammar.eof)) e
-    then identity else flip append (String.singleton grammar.eof))
-  >>> fromString' grammar
+  ( join \e ->
+      if String.contains (String.Pattern (String.singleton grammar.eof)) e then identity
+      else flip append (String.singleton grammar.eof)
+  )
+    >>> fromString' grammar
 
 fromString' :: SAugmented -> String -> Maybe (List CodePoint)
 fromString' grammar = String.toCodePointArray
@@ -738,6 +760,7 @@ closeStates grammar states =
 data CST r tok
   = Leaf tok
   | Branch r (Array (CST r tok))
+
 type SCST = CST (NonEmptyString /\ String) CodePoint
 
 derive instance genericCST :: Generic (CST r tok) _
@@ -927,15 +950,15 @@ getHeader (States states) = bimap Array.nub Array.nub $
   fromPart (NonTerminal nt) = [] /\ [ nt ]
   fromPart (Terminal tok) = [ tok ] /\ []
 
-
 col :: forall a m e. Eq a => Applicative m => Attr e D.Class String => a -> a -> AnEvent m (Attribute e)
 col j i =
   if i == j then D.Class !:= "first" else empty
 
 renderParseTable
-  :: forall s m lock payload r. Korok s m =>
-  { getCurrentState :: Int -> AnEvent m Boolean | r } ->
-  SStates
+  :: forall s m lock payload r
+   . Korok s m
+  => { getCurrentState :: Int -> AnEvent m Boolean | r }
+  -> SStates
   -> Domable m lock payload
 renderParseTable info (States states) =
   let
@@ -1011,11 +1034,11 @@ renderASTTree ast =
 renderASTChild :: SAST -> Nuts
 renderASTChild (Layer r []) =
   [ D.span (D.Class !:= "leaf node")
-    [ renderRule mempty r ]
+      [ renderRule mempty r ]
   ]
 renderASTChild (Layer r cs) =
   [ D.span (D.Class !:= "node")
-    [ renderRule mempty r ]
+      [ renderRule mempty r ]
   , D.ol (D.Class !:= "layer") $
       cs <#> \c -> D.li_ (renderASTChild c)
   ]
@@ -1028,11 +1051,11 @@ renderCSTTree ast =
 renderCSTChild :: SCST -> Nuts
 renderCSTChild (Leaf tok) =
   [ D.span (D.Class !:= "leaf node")
-    [ renderTok mempty tok ]
+      [ renderTok mempty tok ]
   ]
 renderCSTChild (Branch (_ /\ r) cs) =
   [ D.span (D.Class !:= "node")
-    [ renderRule mempty r ]
+      [ renderRule mempty r ]
   , D.ol (D.Class !:= "layer") $
       cs <#> \c -> D.li_ (renderCSTChild c)
   ]
@@ -1128,13 +1151,16 @@ renderStateTable info (States states) = do
     mkTH _ _ _ = D.td_
     stateClass sName = (if _ then "active" else "") <$> info.getCurrentState sName
     renderStateHere items =
-      let n = Array.length items
-      in items # mapWithIndex \j -> D.tr_ <<< mapWithIndex (\i -> mkTH n j i <<< pure)
+      let
+        n = Array.length items
+      in
+        items # mapWithIndex \j -> D.tr_ <<< mapWithIndex (\i -> mkTH n j i <<< pure)
   D.table (D.Class !:= "state-table")
     $ states <#>
-      \{ sName, items } ->
-        D.tbody (D.Class <:=> stateClass sName) $
-          renderStateHere $ renderState sName items
+        \{ sName, items } ->
+          D.tbody (D.Class <:=> stateClass sName)
+            $ renderStateHere
+            $ renderState sName items
 
 renderItem :: Int -> Int -> SStateItem -> Nuts
 renderItem sName j { pName, rName, rule: rule@(Zipper _ after), lookahead } =
@@ -1150,8 +1176,9 @@ renderZipper :: SZipper -> Nut
 renderZipper (Zipper before after) =
   D.span (D.Class !:= ("zipper" <> if Array.null after then " reducible" else ""))
     [ D.span (D.Class !:= "parsed") $ before <#> \x -> renderPart mempty x
-    , if Array.null after then fixed empty else
-      D.span empty $ after <#> \x -> renderPart mempty x
+    , if Array.null after then fixed empty
+      else
+        D.span empty $ after <#> \x -> renderPart mempty x
     ]
 
 renderLookahead :: String -> Array CodePoint -> Nut
@@ -1224,8 +1251,9 @@ spotlight start shineAt cb =
   let
     state = withLast shineAt
     swept = keepLatest $ state <#> \{ now, last } ->
-      if last == Just now then empty else
-      oneOfMap bang last <|> bang now
+      if last == Just now then empty
+      else
+        oneOfMap bang last <|> bang now
   in
     sweep swept \sweeper ->
       let
@@ -1455,7 +1483,7 @@ parseGrammar top rules = do
   firstRule <- note "Need at least 1 rule in the grammar" $ Array.head rules
   let
     entry = fromMaybe firstRule.pName top.entry
-    nonTerminals = longestFirst $ [top.top] <> (rules <#> _.pName)
+    nonTerminals = longestFirst $ [ top.top ] <> (rules <#> _.pName)
     parse = parseDefinition nonTerminals
     rules' = rules <#> \r -> r { rule = parse r.rule }
     topRule = { pName: top.top, rName: top.topName, rule: [ NonTerminal entry, Terminal top.eof ] }
@@ -1465,18 +1493,14 @@ parseGrammar top rules = do
       , rule: Zipper [] topRule.rule
       , lookahead: []
       }
-  if Array.length (Array.nub ((rules <#> _.rName) <> [top.topName])) /= 1 + Array.length rules
-    then Left "Rule names need to be unique"
-    else pure unit
-  if not isJust (Array.find (eq entry <<< _.pName) rules)
-    then Left "Top-level does not refer to nonterminal"
-    else pure unit
-  if Set.member top.eof (gatherTokens (MkGrammar rules'))
-    then Left "Grammar references EOF symbol"
-    else pure unit
-  if Set.member top.top (gatherNonTerminals (MkGrammar rules'))
-    then Left "Grammar references top rule"
-    else pure unit
+  if Array.length (Array.nub ((rules <#> _.rName) <> [ top.topName ])) /= 1 + Array.length rules then Left "Rule names need to be unique"
+  else pure unit
+  if not isJust (Array.find (eq entry <<< _.pName) rules) then Left "Top-level does not refer to nonterminal"
+  else pure unit
+  if Set.member top.eof (gatherTokens (MkGrammar rules')) then Left "Grammar references EOF symbol"
+  else pure unit
+  if Set.member top.top (gatherNonTerminals (MkGrammar rules')) then Left "Grammar references top rule"
+  else pure unit
   pure $ { augmented: MkGrammar ([ topRule ] <> rules'), start, eof: top.eof, entry }
 
 grammarComponent
@@ -1657,10 +1681,10 @@ explorerComponent
   -> Domable m lock payload
 explorerComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp =
   vbussed (Proxy :: Proxy (V ExplorerAction)) \push event -> do
-    envy $ memoBeh event.select [NonTerminal entry] \currentParts -> do
+    envy $ memoBeh event.select [ NonTerminal entry ] \currentParts -> do
       let
         uniqueNonTerminal = only <<< foldMapWithIndex
-          \i v -> maybe [] (\r -> [i /\ r]) (unNonTerminal v)
+          \i v -> maybe [] (\r -> [ i /\ r ]) (unNonTerminal v)
       envy $ memoBeh (event.focus <|> map uniqueNonTerminal currentParts) (Just (0 /\ entry)) \currentFocused -> do
         let
           producedRules = produceable (MkGrammar rules)
@@ -1678,12 +1702,12 @@ explorerComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp
           [ D.span_ [ switcher (fixed <<< mapWithIndex renderPartHere) currentParts ]
           , D.button
               ( D.Class !:= ""
-              <|> D.OnClick <:=> send
+                  <|> D.OnClick <:=> send
               )
               [ text_ "Send" ]
           , D.button
               ( D.Class !:= "delete"
-              <|> D.OnClick !:= push.select [NonTerminal entry]
+                  <|> D.OnClick !:= push.select [ NonTerminal entry ]
               )
               [ text_ "Reset" ]
           , D.table (D.Class !:= "explorer-table")
@@ -1722,7 +1746,7 @@ explorerComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp
                             ]
                     ]
               ]
-            ]
+          ]
 
 main :: Nut
 main =
@@ -1757,7 +1781,7 @@ main =
             let
               currentStateItem =
                 sampleOn currentStates
-                $ currentState <#> \st (States states) -> Array.find (_.sName >>> eq st) states
+                  $ currentState <#> \st (States states) -> Array.find (_.sName >>> eq st) states
               currentValidTokens =
                 currentStateItem <#> case _ of
                   Nothing -> Map.empty
@@ -1799,7 +1823,7 @@ main =
               , D.div_ $ pure $ switcher (\(x /\ getCurrentState) -> renderStateTable { getCurrentState } x) currentStatesAndGetState
               , D.div_ $ pure $ switcher (\(x /\ getCurrentState) -> renderParseTable { getCurrentState } x) currentStatesAndGetState
               , D.div_ $ pure $
-                  switcher (\x -> fixed $ ([Nothing] <> map Just x) <#> renderTokenHere) currentGrammarTokens
+                  switcher (\x -> fixed $ ([ Nothing ] <> map Just x) <#> renderTokenHere) currentGrammarTokens
               , D.div_
                   [ D.span (D.Class !:= "terminal") [ input' "" currentValue' (\v -> push.changeText (false /\ v)) ] ]
               , D.div_ $ pure $ currentParseSteps `flip switcher` \todaysSteps ->
