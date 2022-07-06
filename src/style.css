@@ -257,6 +257,9 @@ table.grammar td:last-child {
 .state-table tbody.active {
   background-color: #554803;
 }
+.state-table tbody.hover {
+  background-color: #5d573b;
+}
 .state-table tbody tr th {
   text-align: right;
   padding-right: 1em;
@@ -315,6 +318,9 @@ th.first, td.first {
 }
 .parse-table tr.active {
   background-color: #554803;
+}
+.parse-table tr.hover {
+  background-color: #5d573b;
 }
 .parse-table td {
   padding: 0 0.75em;

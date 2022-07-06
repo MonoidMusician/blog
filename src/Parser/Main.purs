@@ -29,6 +29,7 @@ import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.Int (floor)
+import Data.Int as Int
 import Data.List (List)
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
@@ -76,6 +77,7 @@ import Parser.Proto (ParseSteps(..), Stack(..), parseSteps, topOf)
 import Parser.Proto as Proto
 import Parser.ProtoG8 as G8
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Test.QuickCheck.Gen as QC
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Web.Event.Event (target)
@@ -1671,6 +1673,8 @@ lastState (Step _ s) = lastState s
 type ExplorerAction =
   ( focus :: Maybe (Int /\ NonEmptyString)
   , select :: SFragment
+  , size :: Int, amt :: Int
+  , randomMany :: Array (Array CodePoint)
   )
 
 explorerComponent
@@ -1683,11 +1687,15 @@ explorerComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp
   vbussed (Proxy :: Proxy (V ExplorerAction)) \push event -> do
     envy $ memoBeh event.select [ NonTerminal entry ] \currentParts -> do
       let
-        uniqueNonTerminal = only <<< foldMapWithIndex
+        firstNonTerminal = Array.head <<< foldMapWithIndex
           \i v -> maybe [] (\r -> [ i /\ r ]) (unNonTerminal v)
-      envy $ memoBeh (event.focus <|> map uniqueNonTerminal currentParts) (Just (0 /\ entry)) \currentFocused -> do
+      envy $ memoBeh (event.focus <|> map firstNonTerminal currentParts) (Just (0 /\ entry)) \currentFocused -> do
         let
           producedRules = produceable (MkGrammar rules)
+          randomProduction nt sz =
+            genNT producedRules nt # traverse (Gen.resize (const sz) >>> QC.randomSampleOne)
+          randomProductions nt sz amt =
+            genNT producedRules nt # traverse (Gen.resize (const sz) >>> QC.randomSample' amt)
           activity here = here <#> if _ then "active" else "inactive"
           renderPartHere i (NonTerminal nt) =
             D.span
@@ -1710,6 +1718,35 @@ explorerComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp
                   <|> D.OnClick !:= push.select [ NonTerminal entry ]
               )
               [ text_ "Reset" ]
+          , D.div_
+              [ D.input
+                  ( oneOf
+                      [ D.Xtype !:= "range"
+                      , D.Min !:= "0"
+                      , D.Max !:= "100"
+                      , slider $ bang $ push.size <<< Int.round
+                      ]
+                  )
+                  []
+              , D.input
+                  ( oneOf
+                      [ D.Xtype !:= "range"
+                      , D.Min !:= "0"
+                      , D.Max !:= "30"
+                      , slider $ bang $ push.amt <<< Int.round
+                      ]
+                  )
+                  []
+              , D.button
+                  ( D.Class !:= ""
+                      <|> D.OnClick <:=>
+                          (biSampleOn (bang 15 <|> event.amt) $ ((bang 50 <|> event.size) <#> \sz amt ->
+                            (traverse_ (push.randomMany) =<< randomProductions entry sz amt)))
+                  )
+                  [ text_ "Random" ]
+              ]
+          , D.ul_ $ pure $ switcher (fixed <<< map (D.li_ <<< map (\x -> renderTok mempty x)))
+              event.randomMany
           , D.table (D.Class !:= "explorer-table")
               [ D.tbody_ $ rules <#> \rule -> do
                   let
@@ -1807,7 +1844,6 @@ main =
                       Just e -> D.div_ [ D.span (D.Class !:= "text-red-300") [ text_ e ] ]
                   ]
               , grammarComponent "Generate grammar" sampleGrammar push.grammar
-              , D.div_ [ switcher (flip explorerComponent receiveToks) currentGrammar ]
               {-
               , D.table_ $ pure $ D.tbody_ $
                   let
@@ -1822,6 +1858,7 @@ main =
               -}
               , D.div_ $ pure $ switcher (\(x /\ getCurrentState) -> renderStateTable { getCurrentState } x) currentStatesAndGetState
               , D.div_ $ pure $ switcher (\(x /\ getCurrentState) -> renderParseTable { getCurrentState } x) currentStatesAndGetState
+              , D.div_ [ switcher (flip explorerComponent receiveToks) currentGrammar ]
               , D.div_ $ pure $
                   switcher (\x -> fixed $ ([ Nothing ] <> map Just x) <#> renderTokenHere) currentGrammarTokens
               , D.div_

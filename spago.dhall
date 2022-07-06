@@ -42,6 +42,7 @@ to generate this file without the comments in this block.
   , "prelude"
   , "profunctor"
   , "psci-support"
+  , "quickcheck"
   , "refs"
   , "st"
   , "strings"
