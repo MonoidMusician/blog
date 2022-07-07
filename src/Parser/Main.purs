@@ -962,10 +962,13 @@ renderParseTable info (States states) =
     terminals /\ nonTerminals = getHeader (States states)
     renderTerminals x = renderTok mempty x
     renderNonTerminals x = renderNT mempty x
-    renderShiftReduce Nothing = []
-    renderShiftReduce (Just (Shift s)) = [ renderCmd mempty "s", renderSt mempty s ]
-    renderShiftReduce (Just (Reduces rs)) = rs # foldMap \r -> [ renderCmd mempty "r", renderRule mempty r ]
+    renderShiftReduce Nothing = fixed []
+    renderShiftReduce (Just (Shift s)) = D.span_ [ renderCmd mempty "s", renderSt mempty s ]
+    renderShiftReduce (Just (Reduces rs)) =
+      D.span (if NEA.length rs > 1 then D.Class !:= "conflict" else empty) $
+        rs # foldMap \r -> [ renderCmd mempty "r", renderRule mempty r ]
     renderShiftReduce (Just (ShiftReduces s rs)) =
+      D.span (D.Class !:= "conflict") $
       [ renderCmd mempty "s", renderSt mempty s ] <> (rs # foldMap \r -> [ renderCmd mempty "r", renderRule mempty r ])
     renderGoto Nothing = []
     renderGoto (Just s) = [ renderCmd mempty "g", renderSt mempty s ]
@@ -974,7 +977,7 @@ renderParseTable info (States states) =
         forTerminal tok = map snd <$> Map.lookup tok (unwrap state.advance)
         forNonTerminal nt = Map.lookup nt state.receive
       in
-        map (renderShiftReduce <<< forTerminal) terminals <> map (renderGoto <<< forNonTerminal) nonTerminals
+        map (pure <<< renderShiftReduce <<< forTerminal) terminals <> map (renderGoto <<< forNonTerminal) nonTerminals
 
     header = D.tr_ $ mapWithIndex (\i -> D.th (col (Array.length terminals + 1) i) <<< pure) $
       [ text_ "" ] <> map renderTerminals terminals <> map renderNonTerminals nonTerminals
@@ -1566,7 +1569,7 @@ grammarComponent buttonText initialGrammar sendGrammar =
             [ D.div_
                 [ changeState.errorMessage # switcher \et -> case et of
                     Nothing -> envy empty
-                    Just e -> D.div_ [ D.span (D.Class !:= "text-red-300") [ text_ e ] ]
+                    Just e -> D.div (D.Class !:= "Error") [ text_ e ]
                 ]
             , D.div_
                 [ D.span (D.Class !:= "non-terminal") [ join (input "Top name") initialTop.top putInput.top ]
@@ -1872,7 +1875,7 @@ main =
               [ D.div_
                   [ event.errorMessage # switcher \et -> case et of
                       Nothing -> envy empty
-                      Just e -> D.div_ [ D.span (D.Class !:= "text-red-300") [ text_ e ] ]
+                      Just e -> D.div (D.Class !:= "Error") [ text_ e ]
                   ]
               , D.h2_ [ text_ "Input a grammar" ]
               , peas
@@ -1911,12 +1914,12 @@ main =
                 , "Terminals can be “shifted” onto the stack, transitioning to a new state seeded by pushing through that terminal in all applicable rules in the current state."
                 , "Completely parsed rules will be “reduced” when their lookahead appears, popping the values matching the rule off of the stack and replacing it with the corresponding nonterminal, which then is received by the last state not involved in the rule."
                 , "Nonterminals received from another state trigger “gotos” to indicate the next state."
-                , "Two types of conflicts may occur: if a terminal indicates both a shift and reduce actions (shift–reduce conflict) or multiple reduce actions (reduce–reduce conflict)."
+                , "Two types of conflicts may occur: if a terminal indicates both a shift and reduce actions (shift–reduce conflict) or multiple reduce actions (reduce–reduce conflict). Note that there cannot be multiple shift actions at once, so most implementations (including this one) choose to do the shift action in the case of shift–reduce conflict."
                 ]
               , D.div_ $ pure $ switcher (\(x /\ getCurrentState) -> renderParseTable { getCurrentState } x) currentStatesAndGetState
               , D.h2_ [ text_ "Explore building trees in the grammar" ]
               , peas
-                [ "Each rule can be read as a nondeterministic transition: “this nonterminal may be replaced with this sequence of terminals and nonterminals”. Build a tree by following these state transitions, and when it consists of only terminals, send it off to be parsed below!"
+                [ "Each rule can be read as a transition: “this nonterminal may be replaced with this sequence of terminals and nonterminals”. Build a tree by following these state transitions, and when it consists of only terminals, send it off to be parsed below!"
                 ]
               , D.div_ [ switcher (flip explorerComponent receiveToks) currentGrammar ]
               , D.h2_ [ text_ "Input custom text to see parsing step-by-step" ]
