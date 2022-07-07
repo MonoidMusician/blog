@@ -1,6 +1,8 @@
+/*
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/**/
 
 @import url('https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,600;1,600&family=Fira+Code:wght@300;400;700&family=Oswald:wght@200..700&family=Sofia&family=Amaranth:ital,wght@0,400;0,700;1,400;1,700&display=swap');
 
@@ -337,15 +339,22 @@ th.first, td.first {
 button {
   font-family: "Amaranth";
   font-size: 0.9em;
+  line-height: 1.2;
   border-radius: 1em;
   color: #2372ffbb;
   border: 2px solid #2372ffaa;
+  background: none;
   padding: 0 0.5em;
   margin: 0 0.25em;
   transition: border-color 0.2s, color 0.2s, box-shadow 0.1s ease-out, transform 0.1s ease-out;
   box-shadow: 1px 1px 0.5px 0.5px transparent, inset 1px 1px 0px 1.5px transparent;
   /* https://stackoverflow.com/questions/3461441/prevent-flicker-on-webkit-transition-of-webkit-transform */
   -webkit-backface-visibility: hidden;
+  transform: translate(0, -2px);
+}
+button.big {
+  padding-top: 0.2em;
+  padding-bottom: 0.25em;
 }
 button:not(:disabled):hover {
   transition: border-color 0.1s, color 0.1s, box-shadow 0.1s ease-out, transform 0.1s ease-out;
@@ -361,7 +370,7 @@ button:not(:disabled):active {
   color: #2372ffff;
   border-color: #2372ffff;
   box-shadow: 0px 0px 0px 0px transparent, inset 1px 1px 0px 0.5px #0002;
-  transform: translate(1.1px, 1.1px);
+  transform: translate(1.1px, calc(1.1px - 2px));
 }
 button:focus-visible {
   outline: 1px solid white;
@@ -406,4 +415,121 @@ button:disabled {
     #888888 8px
   );
   background-clip: text;
+}
+
+label {
+  margin: 2px;
+  position: relative;
+  display: inline-block;
+  border-radius: 4px;
+}
+label > span {
+  font-family: "Amaranth";
+  font-weight: 400;
+  font-style: italic;
+  font-size: 12px;
+  display: block;
+  position: absolute;
+  padding: 0 4px;
+  top: -1px;
+  left: 4px;
+  background: #043147;
+  letter-spacing: normal;
+  color: #f0e8d4;
+  color: #2372ff;
+  line-height: 3px;
+}
+label > span:last-child {
+  left: initial;
+  right: 4px;
+}
+label.range > span {
+  top: -8px;
+}
+label > input {
+  background: none;
+  border: none;
+  padding: 0 8px;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  height: 34px;
+  border-style: solid;
+  border-width: 1px;
+  border-color: #2372ffaa;
+  border-radius: 4px;
+  transition: border-color 0.2s;
+}
+@media (hover: hover) and (pointer: fine) {
+  label > input:not(:hover) {
+    border-color: #2373ff55;
+  }
+}
+label > input:not([type=range]):focus {
+  outline: none;
+  border-color: #2372ff;
+}
+label > input[type=range] {
+  border: none;
+  padding: 0;
+  height: auto;
+}
+
+
+
+
+.flex {
+  display: flex;
+}
+.justify-between {
+  justify-content: space-between;
+}
+.hidden {
+  visibility: hidden;
+}
+
+h1 {
+  text-align: center;
+  font-size: 45px;
+  font-weight: 700;
+  font-weight: 300;
+  font-feature-settings: "ss01" 1;
+  /*
+    background-color: #f1ede2;
+    color: #f0e8d412;
+    text-shadow: 0px 2px 3px #3a383375;
+    -webkit-background-clip: text;
+    -moz-background-clip: text;
+    background-clip: text;
+  */
+}
+h2, h3, h4, h5 {
+  font-weight: 500;
+  font-feature-settings: "ss01" 1;
+}
+h2 {
+  text-align: center;
+  font-size: 34px;
+  margin-top: 2em;
+  margin-bottom: 1em;
+  font-weight: 500;
+}
+h3 {
+  font-size: 30px;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  line-height: 0.9;
+}
+h4 {
+  font-size: 26px;
+  font-family: 'Cormorant Upright';
+}
+h5 {
+  font-size: 22px;
+  font-style: italic;
+  text-shadow: none;
+  font-weight: 700;
+}
+h5 em {
+  font-style: normal;
 }

@@ -77,6 +77,7 @@ import Parser.Proto (ParseSteps(..), Stack(..), parseSteps, topOf)
 import Parser.Proto as Proto
 import Parser.ProtoG8 as G8
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Random.LCG as LCG
 import Test.QuickCheck.Gen as QC
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -907,39 +908,33 @@ withValue fn = cb \e -> for_
   )
   (value >=> fn)
 
-input :: String -> String -> (String -> Effect Unit) -> Nut
-input placeholder initialValue onInput =
-  D.input
-    ( oneOf
-        [ inputClass
-        , D.Placeholder <:=> if placeholder == "" then empty else bang placeholder
-        , D.Value <:=> if initialValue == "" then empty else bang initialValue
-        , D.OnInput !:= withValue onInput
-        ]
-    )
-    []
+input :: String -> String -> String -> (String -> Effect Unit) -> Nut
+input label placeholder initialValue onInput =
+  D.label_
+    [ D.span_ [ text_ label ]
+    , D.input
+        ( oneOf
+            [ D.Placeholder <:=> if placeholder == "" then empty else bang placeholder
+            , D.Value <:=> if initialValue == "" then empty else bang initialValue
+            , D.OnInput !:= withValue onInput
+            ]
+        )
+        []
+    ]
 
-input' :: forall s m lock payload. Korok s m => String -> AnEvent m String -> (String -> Effect Unit) -> Domable m lock payload
-input' placeholder initialValue onInput =
-  D.input
-    ( oneOf
-        [ inputClass
-        , D.Placeholder <:=> if placeholder == "" then empty else bang placeholder
-        , D.Value <:=> initialValue
-        , D.OnInput !:= withValue onInput
-        ]
-    )
-    []
-
-buttonClass :: forall m e. Applicative m => Attr e D.Class String => AnEvent m (Attribute e)
-buttonClass = D.Class !:= ""
-
-arrowClass :: forall m e. Applicative m => Attr e D.Class String => AnEvent m (Attribute e)
-arrowClass = D.Class !:= "bg-green-500 hover:bg-green-700 text-white font-bold"
-
-inputClass :: forall m e. Applicative m => Attr e D.Class String => AnEvent m (Attribute e)
-inputClass = D.Class !:=
-  "shadow appearance-none border rounded py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+input' :: forall s m lock payload. Korok s m => String -> String -> AnEvent m String -> (String -> Effect Unit) -> Domable m lock payload
+input' label placeholder initialValue onInput =
+  D.label_
+    [ D.span_ [ text_ label ]
+    , D.input
+        ( oneOf
+            [ D.Placeholder <:=> if placeholder == "" then empty else bang placeholder
+            , D.Value <:=> initialValue
+            , D.OnInput !:= withValue onInput
+            ]
+        )
+        []
+    ]
 
 type Header nt tok = Array tok /\ Array nt
 
@@ -1574,10 +1569,10 @@ grammarComponent buttonText initialGrammar sendGrammar =
                     Just e -> D.div_ [ D.span (D.Class !:= "text-red-300") [ text_ e ] ]
                 ]
             , D.div_
-                [ D.span (D.Class !:= "non-terminal") [ join input initialTop.top putInput.top ]
-                , D.span (D.Class !:= "non-terminal") [ input "" initialTop.entry putInput.entry ]
-                , D.span (D.Class !:= "terminal") [ join input initialTop.eof putInput.eof ]
-                , D.span (D.Class !:= "rule") [ join input initialTop.topName putInput.topName ]
+                [ D.span (D.Class !:= "non-terminal") [ join (input "Top name") initialTop.top putInput.top ]
+                , D.span (D.Class !:= "non-terminal") [ input "Entrypoint" "" initialTop.entry putInput.entry ]
+                , D.span (D.Class !:= "terminal") [ join (input "Final token") initialTop.eof putInput.eof ]
+                , D.span (D.Class !:= "rule") [ join (input "Top rule name") initialTop.topName putInput.topName ]
                 ]
             , D.table_
                 [ D.tr_
@@ -1623,28 +1618,35 @@ grammarComponent buttonText initialGrammar sendGrammar =
                     )
                     (oneOfMap bang initialRules <|> changeState.addRule)
                 ]
-            , input "" "" putInput.pName
-            , input "" "" putInput.rule
-            , input "" "" putInput.rName
-            , D.button
-                ( oneOf
-                    [ buttonClass
-                    , D.OnClick <:=> do
-                        sampleJITE currentText $ sampleJITE counted
-                          $ map readersT
-                          $ bang \i text -> do
-                              pushState.errorMessage Nothing
-                              case NES.fromString text.pName of
-                                Nothing -> pushState.errorMessage (Just "Need name for the non-terminal.")
-                                Just pName -> pushState.addRule (i /\ text { pName = pName })
-                    ]
-                )
-                [ text_ "Add" ]
+            , D.div_
+              [ D.span (D.Class !:= "non-terminal")
+                [ input "Nonterminal name" "" "" putInput.pName ]
+              , renderMeta mempty " : "
+              , D.span (D.Class !:= "terminal")
+                [ input "Value" "" "" putInput.rule ]
+              , renderMeta mempty " #"
+              , D.span (D.Class !:= "rule")
+                [ input "Rule name" "" "" putInput.rName ]
+              , D.button
+                  ( oneOf
+                      [ D.Class !:= "big"
+                      , D.OnClick <:=> do
+                          sampleJITE currentText $ sampleJITE counted
+                            $ map readersT
+                            $ bang \i text -> do
+                                pushState.errorMessage Nothing
+                                case NES.fromString text.pName of
+                                  Nothing -> pushState.errorMessage (Just "Need name for the non-terminal.")
+                                  Just pName -> pushState.addRule (i /\ text { pName = pName })
+                      ]
+                  )
+                  [ text_ "Add rule" ]
+              ]
             , if buttonText == "" then fixed []
               else
                 D.div_ $ pure $ D.button
                   ( oneOf
-                      [ buttonClass
+                      [ D.Class !:= "big"
                       , currentGrammar <#> \g -> D.OnClick := do
                           pushState.errorMessage Nothing
                           case g of
@@ -1673,8 +1675,6 @@ lastState (Step _ s) = lastState s
 type ExplorerAction =
   ( focus :: Maybe (Int /\ NonEmptyString)
   , select :: SFragment
-  , size :: Int, amt :: Int
-  , randomMany :: Array (Array CodePoint)
   )
 
 explorerComponent
@@ -1692,10 +1692,6 @@ explorerComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp
       envy $ memoBeh (event.focus <|> map firstNonTerminal currentParts) (Just (0 /\ entry)) \currentFocused -> do
         let
           producedRules = produceable (MkGrammar rules)
-          randomProduction nt sz =
-            genNT producedRules nt # traverse (Gen.resize (const sz) >>> QC.randomSampleOne)
-          randomProductions nt sz amt =
-            genNT producedRules nt # traverse (Gen.resize (const sz) >>> QC.randomSample' amt)
           activity here = here <#> if _ then "active" else "inactive"
           renderPartHere i (NonTerminal nt) =
             D.span
@@ -1718,36 +1714,6 @@ explorerComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp
                   <|> D.OnClick !:= push.select [ NonTerminal entry ]
               )
               [ text_ "Reset" ]
-          , D.div_
-              [ D.input
-                  ( oneOf
-                      [ D.Xtype !:= "range"
-                      , D.Min !:= "0"
-                      , D.Max !:= "100"
-                      , slider $ bang $ push.size <<< Int.round
-                      ]
-                  )
-                  []
-              , D.input
-                  ( oneOf
-                      [ D.Xtype !:= "range"
-                      , D.Min !:= "0"
-                      , D.Max !:= "30"
-                      , D.Value !:= "15"
-                      , slider $ bang $ push.amt <<< Int.round
-                      ]
-                  )
-                  []
-              , D.button
-                  ( D.Class !:= ""
-                      <|> D.OnClick <:=>
-                          (biSampleOn (bang 15 <|> event.amt) $ ((bang 50 <|> event.size) <#> \sz amt ->
-                            (traverse_ (push.randomMany) =<< randomProductions entry sz amt)))
-                  )
-                  [ text_ "Random" ]
-              ]
-          , D.ul_ $ pure $ switcher (fixed <<< map (\xs -> D.li (D.Class !:= "clickable" <|> D.OnClick !:= sendUp xs) <<< map (\x -> renderTok mempty x) $ xs))
-              event.randomMany
           , D.table (D.Class !:= "explorer-table")
               [ D.tbody_ $ rules <#> \rule -> do
                   let
@@ -1785,6 +1751,70 @@ explorerComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp
                     ]
               ]
           ]
+
+type RandomAction =
+  ( size :: Int, amt :: Int
+  , randomMany :: Array (Array CodePoint)
+  )
+
+randomComponent
+  :: forall s m lock payload
+   . Korok s m
+  => SAugmented
+  -> (Array CodePoint -> Effect Unit)
+  -> Domable m lock payload
+randomComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp =
+  vbussed (Proxy :: Proxy (V RandomAction)) \push event -> do
+    let
+      producedRules = produceable (MkGrammar rules)
+      initialSize = 50
+      initialAmt = 15
+      randomProductions nt sz amt =
+        genNT producedRules nt # traverse (Gen.resize (const sz) >>> QC.randomSample' amt)
+      initial = genNT producedRules entry # maybe [] (QC.sample (LCG.mkSeed 1234) initialAmt)
+    D.div_
+      [ D.div_
+        [ D.label (D.Class !:= "range")
+          [ D.span_ [ text_ "Simple" ]
+          , D.input
+              ( oneOf
+                  [ D.Xtype !:= "range"
+                  , D.Min !:= "0"
+                  , D.Max !:= "100"
+                  , slider $ bang $ push.size <<< Int.round
+                  ]
+              )
+              []
+          , D.span_ [ text_ "Complex" ]
+          ]
+        , D.label (D.Class !:= "range")
+          [ D.span_ [ text_ "Few" ]
+          , D.input
+            ( oneOf
+                [ D.Xtype !:= "range"
+                , D.Min !:= "1"
+                , D.Max !:= "30"
+                , D.Value !:= "15"
+                , slider $ bang $ push.amt <<< Int.round
+                ]
+            )
+            []
+          , D.span_ [ text_ "Many" ]
+          ]
+        , D.button
+            ( D.Class !:= ""
+                <|> D.OnClick <:=>
+                    (biSampleOn (bang initialAmt <|> event.amt) $ ((bang initialSize <|> event.size) <#> \sz amt ->
+                      (traverse_ (push.randomMany) =<< randomProductions entry sz amt)))
+            )
+            [ text_ "Random" ]
+        ]
+    , D.ul_ $ pure $ switcher (fixed <<< map (\xs -> D.li (D.Class !:= "clickable" <|> D.OnClick !:= sendUp xs) <<< map (\x -> renderTok mempty x) $ xs))
+    (bang initial <|> event.randomMany)
+    ]
+
+peas :: Array String -> Nut
+peas x = fixed (map (D.p_ <<< pure <<< text_) x)
 
 main :: Nut
 main =
@@ -1844,7 +1874,18 @@ main =
                       Nothing -> envy empty
                       Just e -> D.div_ [ D.span (D.Class !:= "text-red-300") [ text_ e ] ]
                   ]
-              , grammarComponent "Generate grammar" sampleGrammar push.grammar
+              , D.h2_ [ text_ "Input a grammar" ]
+              , peas
+                [ "Craft a grammar out of a set of rules. Each rule consists of a nonterminal name, then a colon followed by a sequence of nonterminals and terminals; each rule must also have a unique name."
+                , "The top rule is controlled by the upper input boxes (LR(1) grammars often require a top rule that contains a unique terminal to terminate each input), while the lower input boxes are for adding a new rule. The nonterminals are automatically parsed out of the entered rule, which is otherwise assumed to consist of terminals."
+                , "Click “Use grammar” to see the current set of rules in action! It may take a few seconds, depending on the size of the grammar and how many states it produces."
+                ]
+              , grammarComponent "Use grammar" sampleGrammar push.grammar
+              , D.h2_ [ text_ "Generate random matching inputs" ]
+              , peas
+                [ "This will randomly generate some inputs that conform to the grammar. Click on one to send it to be tested down below!"
+                ]
+              , D.div_ [ switcher (flip randomComponent receiveToks) currentGrammar ]
               {-
               , D.table_ $ pure $ D.tbody_ $
                   let
@@ -1857,13 +1898,35 @@ main =
                       , [ [], [ m " | " ], [ nt "L", t ",", nt "E" ], [], [ m " | " ], [ r "L2", text_ " ", nt "L", text_ " ", nt "E" ] ]
                       ]
               -}
+              , D.h2_ [ text_ "List of parsing states" ]
+              , peas
+                [ "To construct the LR(1) parse table, the possible states are enumerated. Each state represents partial progress of some rules in the grammar. The center dot “•” represents the dividing line between already-parsed and about-to-be-parsed."
+                , "Each state starts from a few seed rules, which are then closed by adding all nonterminals that could be parsed next. Then new states are explored by advancing on terminals or nonterminals, each of which generates some new seed states."
+                , "When a full rule is parsed, it is eligible to be reduced, but this is only done when one of its lookaheads come next (highlighted in red)."
+                ]
               , D.div_ $ pure $ switcher (\(x /\ getCurrentState) -> renderStateTable { getCurrentState } x) currentStatesAndGetState
+              , D.h2_ [ text_ "Table of states and parse actions" ]
+              , peas
+                [ "Once the states are enumerated, the table of parse actions can be read off:"
+                , "Terminals can be “shifted” onto the stack, transitioning to a new state seeded by pushing through that terminal in all applicable rules in the current state."
+                , "Completely parsed rules will be “reduced” when their lookahead appears, popping the values matching the rule off of the stack and replacing it with the corresponding nonterminal, which then is received by the last state not involved in the rule."
+                , "Nonterminals received from another state trigger “gotos” to indicate the next state."
+                , "Two types of conflicts may occur: if a terminal indicates both a shift and reduce actions (shift–reduce conflict) or multiple reduce actions (reduce–reduce conflict)."
+                ]
               , D.div_ $ pure $ switcher (\(x /\ getCurrentState) -> renderParseTable { getCurrentState } x) currentStatesAndGetState
+              , D.h2_ [ text_ "Explore building trees in the grammar" ]
+              , peas
+                [ "Each rule can be read as a nondeterministic transition: “this nonterminal may be replaced with this sequence of terminals and nonterminals”. Build a tree by following these state transitions, and when it consists of only terminals, send it off to be parsed below!"
+                ]
               , D.div_ [ switcher (flip explorerComponent receiveToks) currentGrammar ]
+              , D.h2_ [ text_ "Input custom text to see parsing step-by-step" ]
+              , peas
+                [ "Text entered here (which may also be generated by the above widgets) will be parsed step-by-step, and the final parse tree displayed if the parse succeeded. (Note that the closing terminal is automatically appended, if necessary.) Check the state tables above to see what state the current input ends up in, and the valid next terminals will be highlighted for entry."
+                ]
               , D.div_ $ pure $
                   switcher (\x -> fixed $ ([ Nothing ] <> map Just x) <#> renderTokenHere) currentGrammarTokens
               , D.div_
-                  [ D.span (D.Class !:= "terminal") [ input' "" currentValue' (\v -> push.changeText (false /\ v)) ] ]
+                  [ D.span (D.Class !:= "terminal") [ input' "Source text" "" currentValue' (\v -> push.changeText (false /\ v)) ] ]
               , D.div_ $ pure $ currentParseSteps `flip switcher` \todaysSteps ->
                   let
                     contentAsMonad = showMaybeParseSteps $ todaysSteps
@@ -1911,8 +1974,7 @@ main =
                                 [ D.div_
                                     [ D.button
                                         ( oneOf
-                                            [ buttonClass
-                                            , (biSampleOn rate ((/\) <$> startState)) <#> \(s /\ rt) -> D.OnClick := do
+                                            [ (biSampleOn rate ((/\) <$> startState)) <#> \(s /\ rt) -> D.OnClick := do
                                                 case s of
                                                   Just unsub -> do
                                                     unsub
@@ -1997,9 +2059,9 @@ main =
                                   in
                                     D.div_
                                       [ D.button
-                                          (oneOf [ arrowClass, clickF $ pPush.toggleLeft ])
+                                          (oneOf [ clickF $ pPush.toggleLeft ])
                                           [ text_ "<" ]
-                                      , D.button (oneOf [ arrowClass, clickF $ pPush.toggleRight ])
+                                      , D.button (oneOf [ clickF $ pPush.toggleRight ])
                                           [ text_ ">" ]
                                       ]
                                 , D.div_ [ content ]

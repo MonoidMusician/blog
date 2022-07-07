@@ -32,6 +32,7 @@ to generate this file without the comments in this block.
   , "free"
   , "gen"
   , "integers"
+  , "lcg"
   , "lists"
   , "maybe"
   , "newtype"
