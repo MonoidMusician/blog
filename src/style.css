@@ -130,6 +130,9 @@ body, .parse-table > thead > tr > th:not(:first-child) {
             right: 0;
             top: 0;
         }
+        .AST .node:hover + ol li:before {
+            outline-color: green;
+        }
         .AST li:first-child:before {left: 50%;}
         .AST li:last-child:before {right: 50%;}
 
@@ -141,6 +144,9 @@ body, .parse-table > thead > tr > th:not(:first-child) {
             padding: .1em .2em 0;
             position: relative;
         }
+        .AST .node:hover, .AST .node:hover + ol .node {
+          border-color: green;
+        }
 
             /* | */
             .AST ol:before,
@@ -150,6 +156,9 @@ body, .parse-table > thead > tr > th:not(:first-child) {
                 height: .45em;
                 left: 50%;
                 position: absolute;
+            }
+            .AST .node:hover + ol .node:before, .AST .node:hover + ol:before, .AST .node:hover + ol ol:before {
+                outline-color: green;
             }
             .AST ol:before {
                 top: -.5em;
@@ -271,7 +280,7 @@ table.grammar td:last-child {
   background-color: #463d10;
 }
 .state-table tbody.hover {
-  background-color: #5d573b;
+  background-color: #4b4731;
 }
 .state-table tbody tr th {
   text-align: right;
@@ -333,7 +342,7 @@ th.first, td.first {
   background-color: #463d10;
 }
 .parse-table tr.hover {
-  background-color: #5d573b;
+  background-color: #4b4731;
 }
 .parse-table td {
   padding: 0 0.75em;
@@ -367,17 +376,17 @@ button.big {
   padding-top: 0.2em;
   padding-bottom: 0.25em;
 }
-button:not(:disabled):hover {
+button:not(:disabled):not(.disabled):hover {
   transition: border-color 0.1s, color 0.1s, box-shadow 0.1s ease-out, transform 0.1s ease-out;
   color: #2372ffff;
   box-shadow: 1px 1px 0.5px 0.5px #2372ff44, inset 1px 1px 0px 1.5px #0002;
 }
 @media (hover: hover) and (pointer: fine) {
-  button:not(:disabled):not(:hover) {
+  button:not(:disabled):not(.disabled):not(:hover) {
     border-color: #2372ff55;
   }
 }
-button:not(:disabled):active {
+button:not(:disabled):not(.disabled):active {
   color: #2372ffff;
   border-color: #2372ffff;
   box-shadow: 0px 0px 0px 0px transparent, inset 1px 1px 0px 0.5px #0002;
@@ -387,7 +396,7 @@ button:focus-visible {
   outline: 1px solid white;
   color: #2372ffff;
 }
-button:disabled {
+button:disabled, button.disabled {
   border-color: #2372ff55;
 }
 
@@ -395,16 +404,16 @@ button.delete {
   color: #ff004dbb;
   border: 2px solid #ff004daa;
 }
-button.delete:not(:disabled):hover {
+button.delete:not(:disabled):not(.disabled):hover {
   color: #ff004dff;
   box-shadow: 1px 1px 0.5px 0.5px #ff004d44, inset 1px 1px 0px 1.5px #0002;
 }
 @media (hover: hover) and (pointer: fine) {
-  button.delete:not(:hover) {
+  button.delete:not(:disabled):not(.disabled):not(:hover) {
     border-color: #ff004d55;
   }
 }
-button.delete:not(:disabled):active {
+button.delete:not(:disabled):not(.disabled):active {
   color: #ff004dff;
   border-color: #ff004dff;
   box-shadow: 0px 0px 0px 0px transparent, inset 1px 1px 0px 0.5px #0002;
@@ -412,11 +421,11 @@ button.delete:not(:disabled):active {
 button.delete:focus-visible {
   color: #ff004dff;
 }
-button.delete:disabled {
+button.delete:disabled, button.delete.disabled {
   border-color: #ff004d55;
 }
 
-button:disabled {
+button:disabled, button.disabled {
   color: transparent;
   background: repeating-linear-gradient(
     12deg,
@@ -443,7 +452,7 @@ label > span {
   position: absolute;
   padding: 0 4px;
   top: -1px;
-  left: 4px;
+  left: 5px;
   background: #043147;
   letter-spacing: normal;
   color: #f0e8d4;
