@@ -126,6 +126,9 @@ getRulesFor rules nt = rules # filterMap \rule ->
 countNTs :: forall nt tok. Fragment nt tok -> Int
 countNTs = sum <<< map (\t -> if isNonTerminal t then 1 else 0)
 
+countTs :: forall nt tok. Fragment nt tok -> Int
+countTs = sum <<< map (\t -> if isTerminal t then 1 else 0)
+
 -- NonEmptyArray (Int /\ rule)
 -- every minimum that occurs
 
@@ -136,14 +139,29 @@ chooseBySize i as =
   in
     case NEA.fromArray (NEA.filter (\(size /\ _) -> size <= i) sized) of
       Nothing ->
+        -- If none are small enough, take the smallest ones with the least tokens
+        -- (this prevents e.g. infinite extra parentheses)
         map snd $ NEA.head $
-          NEA.groupAllBy (compare `on` fst) sized
+          NEA.groupAllBy (compare `on` fst <> compare `on` (snd >>> _.rule >>> Array.length)) sized
       Just as' -> map snd as'
 
 type Produced nt r tok =
   { production :: GrammarRule nt r tok
   , produced :: Array tok
   }
+type Produceable nt r tok =
+  { grammar :: Augmented nt r tok
+  , produced :: Array (Produced nt r tok)
+  }
+type SProduceable = Produceable NonEmptyString String CodePoint
+
+withProduceable :: forall nt r tok
+   . Eq nt
+  => Eq r
+  => Eq tok
+  => Augmented nt r tok
+  -> Produceable nt r tok
+withProduceable = { grammar: _, produced: _ } <*> (produceable <<< _.augmented)
 
 produceable
   :: forall nt r tok
@@ -173,8 +191,8 @@ produceable (MkGrammar initialRules) = produceAll []
     in
       produced <> more
 
-shrink :: forall m. MonadGen m => m ~> m
-shrink = Gen.resize (_ `div` 2)
+shrink :: forall m. MonadGen m => Int -> m ~> m
+shrink n = Gen.resize $ (_ - n) >>> (_ `div` 2)
 
 genNT
   :: forall m nt r tok
@@ -183,7 +201,7 @@ genNT
   => Array (Produced nt r tok)
   -> (nt -> Maybe (m (Array tok)))
 genNT grammar nt = genNT1 grammar nt <#> \mr ->
-  mr >>= genMore grammar
+  mr >>= \r -> shrink (countTs r.rule) $ genMore grammar r
 
 genMore
   :: forall m nt r tok
@@ -209,8 +227,7 @@ genMoreMaybe grammar rule =
   map (map join <<< sequence) $
     for rule case _ of
       Terminal tok -> Just (pure [ tok ] :: m (Array tok))
-      NonTerminal nt ->
-        shrink <$> genNT grammar nt
+      NonTerminal nt -> genNT grammar nt
 
 genNT1
   :: forall m nt r tok
@@ -1495,6 +1512,9 @@ renderTok' cls c t = D.span (D.OnClick <:=> filterMap identity c <|> D.Class <:=
 renderNT :: Maybe (Effect Unit) -> NonEmptyString -> Nut
 renderNT c nt = D.span (D.OnClick ?:= c <|> D.Class !:= "non-terminal" <> if isJust c then " clickable" else "") [ text_ (NES.toString nt) ]
 
+renderNT' :: forall s m lock payload. Korok s m => AnEvent m String -> AnEvent m (Maybe (Effect Unit)) -> NonEmptyString -> Domable m lock payload
+renderNT' cls c nt = D.span (D.OnClick <:=> filterMap identity c <|> D.Class <:=> (bang "non-terminal" <|> (append "non-terminal " <$> cls))) [ text_ (NES.toString nt) ]
+
 renderRule :: Maybe (Effect Unit) -> String -> Nut
 renderRule c r = D.span (D.OnClick ?:= c <|> D.Class !:= "rule" <> if isJust c then " clickable" else "") [ text_ r ]
 
@@ -1816,10 +1836,10 @@ type ExplorerAction =
 explorerComponent
   :: forall s m lock payload
    . Korok s m
-  => SAugmented
+  => SProduceable
   -> (Array CodePoint -> Effect Unit)
   -> Domable m lock payload
-explorerComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp =
+explorerComponent { produced: producedRules, grammar : { augmented: MkGrammar rules, start: { pName: entry } } } sendUp =
   vbussed (Proxy :: Proxy (V ExplorerAction)) \push event -> do
     envy $ memoBeh event.select [ NonTerminal entry ] \currentParts -> do
       let
@@ -1827,7 +1847,6 @@ explorerComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp
           \i v -> maybe [] (\r -> [ i /\ r ]) (unNonTerminal v)
       envy $ memoBeh (event.focus <|> map firstNonTerminal currentParts) (Just (0 /\ entry)) \currentFocused -> do
         let
-          producedRules = produceable (MkGrammar rules)
           activity here = here <#> if _ then "active" else "inactive"
           renderPartHere i (NonTerminal nt) =
             D.span
@@ -1896,16 +1915,30 @@ type RandomAction =
   , randomMany :: Array (Array CodePoint)
   )
 
+sample :: forall nt r tok. Eq nt => Eq r => Eq tok => Produceable nt r tok -> Maybe (Array tok)
+sample grammar =
+  QC.evalGen <$> genNT grammar.produced grammar.grammar.entry <@>
+    { size: 15, newSeed: LCG.mkSeed 12345678 }
+
+sampleS :: SProduceable -> String
+sampleS = sample >>> maybe "" String.fromCodePointArray
+
+sampleE :: forall nt r tok. Eq nt => Eq r => Eq tok => Produceable nt r tok -> Effect (Maybe (Array tok))
+sampleE grammar = sequence $
+  QC.randomSampleOne <$> genNT grammar.produced grammar.grammar.entry
+
+sampleSE :: SProduceable -> Effect String
+sampleSE = sampleE >>> map (maybe "" String.fromCodePointArray)
+
 randomComponent
   :: forall s m lock payload
    . Korok s m
-  => SAugmented
+  => SProduceable
   -> (Array CodePoint -> Effect Unit)
   -> Domable m lock payload
-randomComponent { augmented: MkGrammar rules, start: { pName: entry } } sendUp =
+randomComponent { produced: producedRules, grammar: { augmented: MkGrammar rules, start: { pName: entry } } } sendUp =
   vbussed (Proxy :: Proxy (V RandomAction)) \push event -> do
     let
-      producedRules = produceable (MkGrammar rules)
       initialSize = 50
       initialAmt = 15
       randomProductions nt sz amt =
@@ -2035,8 +2068,9 @@ mainComponent initialGrammar grammarStream sendGrammar =
   vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
     envy $ memoBangFold const (fromEvent grammarStream <|> event.grammar) initialGrammar \currentGrammar -> do
       let
-        currentValue = bang "" <|> map snd event.changeText
-        currentValue' = bang "" <|> filterMap (\(keep /\ v) -> if keep then Just v else Nothing) event.changeText
+        initialValue = sampleS (withProduceable initialGrammar)
+        currentValue = bang initialValue <|> map snd event.changeText
+        currentValue' = bang initialValue <|> filterMap (\(keep /\ v) -> if keep then Just v else Nothing) event.changeText
         currentStates = map (either (const (States [])) identity) $ currentGrammar <#> \{ augmented, start } ->
           numberStates (add 1) augmented (calculateStates augmented start)
         currentTable = toTable <$> currentStates
@@ -2052,6 +2086,8 @@ mainComponent initialGrammar grammarStream sendGrammar =
             $ currentTokens' <#> \toks table -> parseSteps table <$> toks <@> 1
         currentState = maybe 0 lastState <$> currentParseSteps'
         currentGrammarTokens = gatherTokens' <<< _.augmented <$> currentGrammar
+        currentGrammarNTs = gatherNonTerminals' <<< _.augmented <$> currentGrammar
+        currentProduceable = withProduceable <$> currentGrammar
         receiveToks toks = push.changeText (true /\ String.fromCodePointArray toks)
       envy $ memoBang currentState 0 \currentState -> do
         envy $ memoize currentStates \currentStates -> do
@@ -2068,6 +2104,10 @@ mainComponent initialGrammar grammarStream sendGrammar =
                 currentStateItem <#> case _ of
                   Nothing -> Map.empty
                   Just { advance: SemigroupMap adv } -> adv
+              currentValidNTs =
+                currentStateItem <#> case _ of
+                  Nothing -> Map.empty
+                  Just { receive: adv } -> adv
 
               renderTokenHere mtok = do
                 let
@@ -2082,6 +2122,14 @@ mainComponent initialGrammar grammarStream sendGrammar =
                     Nothing -> codePointFromChar '⌫'
                     Just tok -> tok
                 renderTok' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (Just <$> onClick) toktext
+              renderNTHere nt = do
+                let
+                  onClick = sampleJITE currentProduceable $ sampleJITE currentValue $ bang $ ReaderT \v -> ReaderT \prod -> do
+                    genned <- map (maybe "" String.fromCodePointArray) $ sequence $
+                      QC.randomSampleOne <$> genNT prod.produced nt
+                    push.changeText $ true /\ (v <> genned)
+                  valid = currentValidNTs <#> Map.member nt
+                renderNT' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (Just <$> onClick) nt
             D.div_
               [ D.div_
                   [ event.errorMessage # switcher \et -> case et of
@@ -2099,7 +2147,7 @@ mainComponent initialGrammar grammarStream sendGrammar =
               , peas
                   [ "This will randomly generate some inputs that conform to the grammar. Click on one to send it to be tested down below!"
                   ]
-              , D.div_ [ switcher (flip randomComponent receiveToks) currentGrammar ]
+              , D.div_ [ switcher (flip randomComponent receiveToks) currentProduceable ]
               {-
               , D.table_ $ pure $ D.tbody_ $
                   let
@@ -2132,13 +2180,17 @@ mainComponent initialGrammar grammarStream sendGrammar =
               , peas
                   [ "Each rule can be read as a transition: “this nonterminal may be replaced with this sequence of terminals and nonterminals”. Build a tree by following these state transitions, and when it consists of only terminals, send it off to be parsed below!"
                   ]
-              , D.div_ [ switcher (flip explorerComponent receiveToks) currentGrammar ]
+              , D.div_ [ switcher (flip explorerComponent receiveToks) currentProduceable ]
               , D.h2_ [ text_ "Input custom text to see parsing step-by-step" ]
               , peas
                   [ "Text entered here (which may also be generated by the above widgets) will be parsed step-by-step, and the final parse tree displayed if the parse succeeded. (Note that the closing terminal is automatically appended, if necessary.) Check the state tables above to see what state the current input ends up in, and the valid next terminals will be highlighted for entry."
                   ]
-              , D.div_ $ pure $
-                  switcher (\x -> fixed $ ([ Nothing ] <> map Just x) <#> renderTokenHere) currentGrammarTokens
+              , D.div_
+                  [ D.span_ $ pure $
+                      switcher (\x -> fixed $ ([ Nothing ] <> map Just x) <#> renderTokenHere) currentGrammarTokens
+                  , D.span_ $ pure $
+                      switcher (\x -> fixed $ x <#> renderNTHere) currentGrammarNTs
+                  ]
               , D.div_
                   [ D.span (D.Class !:= "terminal") [ input' "Source text" "" currentValue' (\v -> push.changeText (false /\ v)) ] ]
               , D.div_ $ pure $ currentParseSteps `flip switcher` \todaysSteps ->
