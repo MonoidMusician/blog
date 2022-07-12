@@ -380,6 +380,19 @@ th.first, td.first {
   padding: 0 0.75em;
 }
 
+.parse-table > thead > tr > th {
+  vertical-align: bottom;
+}
+.pileup {
+  display: flex;
+  flex-direction: column;
+}
+.pileup > :last-child {
+  margin-top: 0.2em;
+  border-top: 1px solid gray;
+  padding-top: 0.2em;
+}
+
 .explorer-table tr.active {
 }
 .explorer-table tr.inactive {

@@ -970,15 +970,21 @@ renderParseTable
   :: forall s m lock payload r
    . Korok s m
   => { getCurrentState :: Int -> AnEvent m Boolean | r }
+  -> SGrammar
   -> SStates
   -> Domable m lock payload
-renderParseTable info (States states) =
+renderParseTable info (MkGrammar grammar) (States states) =
   bussed \push event ->
     let
       stateHighlighted = bang Nothing <|> event
       terminals /\ nonTerminals = getHeader (States states)
       renderTerminals x = renderTok mempty x
-      renderNonTerminals x = renderNT mempty x
+      gatherRules nt = grammar # filterMap \r ->
+        if r.pName == nt then Just r.rName else Nothing
+      renderNonTerminals x =
+        D.div (D.Class !:= "pileup") $
+          (map (\y -> renderRule mempty y) (gatherRules x)) <>
+          [ renderNT mempty x ]
       renderStHere s =
         D.span
           ( oneOf
@@ -1532,6 +1538,14 @@ only :: forall a. Array a -> Maybe a
 only [ a ] = Just a
 only _ = Nothing
 
+findNext :: Set String -> String -> Int -> String
+findNext avoid pre n =
+  let
+    pren = pre <> show n
+  in if pren `Set.member` avoid then findNext avoid pre (n+1) else pren
+
+
+
 parseGrammar
   :: { top :: NonEmptyString
      , entry :: Maybe NonEmptyString
@@ -1546,7 +1560,13 @@ parseGrammar top rules = do
     entry = fromMaybe firstRule.pName top.entry
     nonTerminals = longestFirst $ [ top.top ] <> (rules <#> _.pName)
     parse = parseDefinition nonTerminals
-    rules' = rules <#> \r -> r { rule = parse r.rule }
+    rules' = _.value $ rules # flip mapAccumL Set.empty
+      \ruleNames r ->
+        let
+          rName =
+            if r.rName /= "" then r.rName else
+              findNext ruleNames (NES.toString r.pName) 1
+        in { value: r { rule = parse r.rule, rName = rName }, accum: Set.insert rName ruleNames }
     topRule = { pName: top.top, rName: top.topName, rule: [ NonTerminal entry, Terminal top.eof ] }
     start =
       { pName: topRule.pName
@@ -1554,7 +1574,7 @@ parseGrammar top rules = do
       , rule: Zipper [] topRule.rule
       , lookahead: []
       }
-  if Array.length (Array.nub ((rules <#> _.rName) <> [ top.topName ])) /= 1 + Array.length rules then Left "Rule names need to be unique"
+  if Array.length (Array.nub ((rules' <#> _.rName) <> [ top.topName ])) /= 1 + Array.length rules then Left $ "Rule names need to be unique: " <> show (rules' <#> _.rName)
   else pure unit
   if not isJust (Array.find (eq entry <<< _.pName) rules) then Left "Top-level does not refer to nonterminal"
   else pure unit
@@ -1973,7 +1993,7 @@ main =
                   ]
               , D.h2_ [ text_ "Input a grammar" ]
               , peas
-                  [ "Craft a grammar out of a set of rules. Each rule consists of a nonterminal name, then a colon followed by a sequence of nonterminals and terminals. Each rule must also have a unique name, which will be used to refer to it during parsing and when displaying parse trees."
+                  [ "Craft a grammar out of a set of rules. Each rule consists of a nonterminal name, then a colon followed by a sequence of nonterminals and terminals. Each rule must also have a unique name, which will be used to refer to it during parsing and when displaying parse trees. If ommitted, an automatic rule name will be supplied based on the nonterminal name."
                   , "The top rule is controlled by the upper input boxes (LR(1) grammars often require a top rule that contains a unique terminal to terminate each input), while the lower input boxes are for adding a new rule. The nonterminals are automatically parsed out of the entered rule, which is otherwise assumed to consist of terminals."
                   , "Click “Use grammar” to see the current set of rules in action! It may take a few seconds, depending on the size of the grammar and how many states it produces."
                   ]
@@ -2010,7 +2030,7 @@ main =
                   , "Nonterminals received from another state trigger “gotos” to indicate the next state."
                   , "Two types of conflicts may occur: if a terminal indicates both a shift and reduce actions (shift–reduce conflict) or multiple reduce actions (reduce–reduce conflict). Note that there cannot be multiple shift actions at once, so most implementations (including this one) choose to do the shift action in the case of shift–reduce conflict."
                   ]
-              , D.div_ $ pure $ switcher (\(x /\ getCurrentState) -> renderParseTable { getCurrentState } x) currentStatesAndGetState
+              , D.div_ $ pure $ switcher (\(grammar /\ x /\ getCurrentState) -> renderParseTable { getCurrentState } grammar x) (sampleOn (_.augmented <$> currentGrammar) (map (flip (/\)) currentStatesAndGetState))
               , D.h2_ [ text_ "Explore building trees in the grammar" ]
               , peas
                   [ "Each rule can be read as a transition: “this nonterminal may be replaced with this sequence of terminals and nonterminals”. Build a tree by following these state transitions, and when it consists of only terminals, send it off to be parsed below!"
