@@ -40,11 +40,11 @@ parseMany table inputs initialState = go inputs (Zero initialState) where
   go (i : is) stack = parseOne table i stack >>= go is
 
 type ParseStep input stack = { stack :: stack, inputs :: List input }
-data ParseSteps input stack
-  = Error
-  | Complete stack
-  | Step (ParseStep input stack) (ParseSteps input stack)
-derive instance functorParseSteps :: Functor (ParseSteps input)
+data ParseSteps rule input stack
+  = Error (ParseStep input stack)
+  | Complete (ParseStep input stack) stack
+  | Step (ParseStep input stack) (Either input rule) (ParseSteps rule input stack)
+derive instance functorParseSteps :: Functor (ParseSteps rule input)
 
 startParse :: forall state i o. List i -> state -> ParseStep i (Stack state o)
 startParse inputs initialState = { stack: Zero initialState, inputs: inputs }
@@ -52,7 +52,7 @@ startParse inputs initialState = { stack: Zero initialState, inputs: inputs }
 parseStep :: forall state rule i o.
   Table state rule i o ->
   (ParseStep i (Stack state o)) ->
-  Either (Maybe (Stack state o)) (ParseStep i (Stack state o))
+  Either (Maybe (Stack state o)) { next :: ParseStep i (Stack state o), action :: Either i rule }
 parseStep (Table { step, promote, goto }) { inputs, stack } =
   case inputs of
     Nil -> Left (Just stack)
@@ -60,17 +60,17 @@ parseStep (Table { step, promote, goto }) { inputs, stack } =
       Nothing -> Left Nothing
       Just (Left newState) ->
         let stack' = (Snoc stack (promote input) newState)
-        in Right { stack: stack', inputs: inputs' }
+        in Right { next: { stack: stack', inputs: inputs' }, action: Left input }
       Just (Right rule) ->
         case goto rule stack of
           Nothing -> Left Nothing
-          Just stack' -> Right { stack: stack', inputs: inputs }
+          Just stack' -> Right { next: { stack: stack', inputs: inputs }, action: Right rule }
 
-parseSteps :: forall state rule i o. Table state rule i o -> List i -> state -> ParseSteps i (Stack state o)
+parseSteps :: forall state rule i o. Table state rule i o -> List i -> state -> ParseSteps rule i (Stack state o)
 parseSteps table inputs initialState =
   let step = startParse inputs initialState in
-  Step step (go step) where
+  go step where
     go step = case parseStep table step of
-      Left Nothing -> Error
-      Left (Just v) -> Complete v
-      Right step' -> Step step' (go step')
+      Left Nothing -> Error step
+      Left (Just v) -> Complete step v
+      Right { next: step', action } -> Step step action (go step')

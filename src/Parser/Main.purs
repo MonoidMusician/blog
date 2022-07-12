@@ -5,7 +5,7 @@ import Prelude
 import Bolson.Core (Child(..), dyn, envy, fixed)
 import Control.Alt ((<|>))
 import Control.Alternative (guard)
-import Control.Apply (lift2)
+import Control.Apply (lift2, lift3)
 import Control.Monad.Gen (class MonadGen)
 import Control.Monad.Gen as Gen
 import Control.Monad.Reader (ReaderT(..))
@@ -506,6 +506,11 @@ data ShiftReduce s r
   | Reduces (NonEmptyArray r)
   | ShiftReduces s (NonEmptyArray r)
 
+unShift :: forall s r. ShiftReduce s r -> Maybe s
+unShift (Shift s) = Just s
+unShift (ShiftReduces s _) = Just s
+unShift (Reduces _) = Nothing
+
 derive instance functorShiftReduce :: Functor (ShiftReduce s)
 instance semigroupShiftReduce :: Semigroup (ShiftReduce s r) where
   -- We don't expect to see two shifts
@@ -525,6 +530,7 @@ type StateInfo s nt r tok =
   , advance :: SemigroupMap tok (ShiftReduce s (nt /\ r))
   , receive :: Map nt s
   }
+type SStateInfo = StateInfo Int NonEmptyString String CodePoint
 
 newtype States s nt r tok = States
   (Array (StateInfo s nt r tok))
@@ -559,6 +565,15 @@ numberStates ix grammar states = map States $ states #
           , advance: shifts <> reductions
           , receive
           }
+
+toAdvance :: forall nt tok. Zipper nt tok -> Maybe (Part nt tok)
+toAdvance (Zipper _ after) = Array.head after
+
+toAdvanceTo :: forall s nt r tok. Ord nt => Ord tok =>
+  StateInfo s nt r tok -> Zipper nt tok -> Maybe s
+toAdvanceTo { advance, receive } = toAdvance >=> case _ of
+  NonTerminal nt -> Map.lookup nt receive
+  Terminal tok -> Map.lookup tok (unwrap advance) >>= unShift
 
 getReduction :: forall nt r tok. Ord tok => StateItem nt r tok -> SemigroupMap tok (nt /\ r)
 getReduction { pName, rName, rule: Zipper _ [], lookahead } =
@@ -1082,8 +1097,8 @@ showMaybeStack (Just stack) = showStack stack
 
 type SAStack = Stack Int (Either CodePoint SAST)
 type SCStack = Stack Int SCST
-type SAParseSteps = ParseSteps CodePoint SAStack
-type SCParseSteps = ParseSteps CodePoint SCStack
+type SAParseSteps = ParseSteps (NonEmptyString /\ String) CodePoint SAStack
+type SCParseSteps = ParseSteps (NonEmptyString /\ String) CodePoint SCStack
 
 showMaybeParseSteps :: forall s m lock payload. Korok s m => Maybe SCParseSteps -> SuperStack m (Domable m lock payload)
 showMaybeParseSteps Nothing = pure (pure (text_ "Parse error"))
@@ -1112,6 +1127,20 @@ getVisibilityAndIncrement' s = do
         )
     )
 
+getVisibility
+  :: forall m s element
+   . MonadST s m
+  => Attr element D.Class String
+  => SuperStack m (Int /\ AnEvent m (Attribute element))
+getVisibility = do
+  n <- get
+  pure
+    ( \f -> n /\
+        ( f n <#> \v ->
+            D.Class := (if v then "" else " hidden")
+        )
+    )
+
 showParseStep
   :: forall r s m lock payload
    . Korok s m
@@ -1135,6 +1164,18 @@ showParseStep (Right { stack, inputs }) = do
   getVisibilityAndIncrement' "flex justify-between" <#> map \(n /\ vi) ->
     D.div vi [ D.div_ [ text_ ("Step " <> show n <> ": "), showStack stack ], D.div_ (foldMap (\x -> [ renderTok mempty x ]) inputs) ]
 
+showParseTransition
+  :: forall r s m lock payload
+   . Korok s m
+  => Int /\ Either CodePoint (NonEmptyString /\ String)
+  -> SuperStack m (Domable m lock payload)
+showParseTransition (s /\ Left tok) = do
+  getVisibility <#> map \(n /\ vi) ->
+    D.div vi [ {- renderTok mempty tok, text_ " ", -} renderCmd mempty "s", renderSt mempty s ]
+showParseTransition (s /\ Right (nt /\ rule)) = do
+  getVisibility <#> map \(n /\ vi) ->
+    D.div vi [ renderCmd mempty "r", renderRule mempty rule, renderMeta mempty " —> ", renderCmd mempty "g", renderSt mempty s ]
+
 type SuperStack m a = StateT Int Trampoline ((Int -> AnEvent m Boolean) -> a)
 
 showParseSteps
@@ -1147,17 +1188,15 @@ showParseSteps i = map fixed <$> (go i)
   go =
     let
       s v = showParseStep v
+      t v = showParseTransition v
     in
       case _ of
-        Error -> do
-          s (Left Nothing) <#> map \o -> [ o ]
-        (Complete v) -> do
-          s (Left (Just v)) <#> map \o -> [ o ]
-        (Step step more) -> do
-          lift2 (\o r -> [ o ] <> r) <$> s (Right step) <*> go more
-
-renderState :: Int -> SState -> Nutss
-renderState sName (State items) = (\j v -> renderItem sName j v) `mapWithIndex` items
+        Error prev -> do
+          lift2 (\o u -> [ o, u ]) <$> s (Right prev) <*> s (Left Nothing)
+        Complete prev v -> do
+          lift2 (\o u -> [ o, u ]) <$> s (Right prev) <*> s (Left (Just v))
+        Step prev action more -> do
+          lift3 (\o v r -> [ o, v ] <> r) <$> s (Right prev) <*> t (firstState more /\ action) <*> go more
 
 renderStateTable :: forall s m lock payload r. Korok s m => { getCurrentState :: Int -> AnEvent m Boolean | r } -> SStates -> Domable m lock payload
 renderStateTable info (States states) = do
@@ -1173,19 +1212,25 @@ renderStateTable info (States states) = do
         items # mapWithIndex \j -> D.tr_ <<< mapWithIndex (\i -> mkTH n j i <<< pure)
   D.table (D.Class !:= "state-table")
     $ states <#>
-        \{ sName, items } ->
+        \s@{ sName, items } ->
           D.tbody (D.Class <:=> stateClass sName)
             $ renderStateHere
-            $ renderState sName items
+            $ renderState s items
 
-renderItem :: Int -> Int -> SStateItem -> Nuts
-renderItem sName j { pName, rName, rule: rule@(Zipper _ after), lookahead } =
-  [ if j == 0 then renderSt mempty sName else text_ ""
+renderState :: SStateInfo -> SState -> Nutss
+renderState s (State items) = (\j v -> renderItem s j v) `mapWithIndex` items
+
+renderItem :: SStateInfo -> Int -> SStateItem -> Nuts
+renderItem s j { pName, rName, rule: rule@(Zipper _ after), lookahead } =
+  [ if j == 0 then renderSt mempty s.sName else text_ ""
   , renderNT mempty pName
   , renderMeta mempty ": "
   , renderZipper rule
   , renderLookahead (if Array.null after then " reducible" else "") lookahead
   , fixed [ renderMeta mempty " #", renderRule mempty rName ]
+  , case toAdvanceTo s rule of
+      Nothing -> fixed []
+      Just s' -> fixed [ renderMeta mempty " —> ", renderSt mempty s' ]
   ]
 
 renderZipper :: SZipper -> Nut
@@ -1709,10 +1754,14 @@ sampleGrammar = fromSeed' defaultTopName defaultTopRName defaultEOF
   (unsafePartial (fromJust (NES.fromString "Additive")))
 
 lastState :: SCParseSteps -> Int
-lastState Error = 0
-lastState (Step x Error) = topOf x.stack
-lastState (Complete x) = topOf x
-lastState (Step _ s) = lastState s
+lastState (Error x) = topOf x.stack
+lastState (Complete _ x) = topOf x
+lastState (Step _ _ s) = lastState s
+
+firstState :: SCParseSteps -> Int
+firstState (Error x) = topOf x.stack
+firstState (Complete x _) = topOf x.stack
+firstState (Step x _ _) = topOf x.stack
 
 type ExplorerAction =
   ( focus :: Maybe (Int /\ NonEmptyString)
@@ -1924,7 +1973,7 @@ main =
                   ]
               , D.h2_ [ text_ "Input a grammar" ]
               , peas
-                  [ "Craft a grammar out of a set of rules. Each rule consists of a nonterminal name, then a colon followed by a sequence of nonterminals and terminals; each rule must also have a unique name."
+                  [ "Craft a grammar out of a set of rules. Each rule consists of a nonterminal name, then a colon followed by a sequence of nonterminals and terminals. Each rule must also have a unique name, which will be used to refer to it during parsing and when displaying parse trees."
                   , "The top rule is controlled by the upper input boxes (LR(1) grammars often require a top rule that contains a unique terminal to terminate each input), while the lower input boxes are for adding a new rule. The nonterminals are automatically parsed out of the entered rule, which is otherwise assumed to consist of terminals."
                   , "Click “Use grammar” to see the current set of rules in action! It may take a few seconds, depending on the size of the grammar and how many states it produces."
                   ]
