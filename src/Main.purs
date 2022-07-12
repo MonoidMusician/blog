@@ -7,4 +7,4 @@ import Effect (Effect)
 import Parser.Main as Parser
 
 main :: Effect Unit
-main = runInBody Parser.main
+main = Parser.mainE >>= \(Parser.SafeNut n) -> runInBody n

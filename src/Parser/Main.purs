@@ -14,7 +14,9 @@ import Control.Monad.ST.Internal as STRef
 import Control.Monad.State (StateT, get, put, runStateT)
 import Control.Monad.Trampoline (Trampoline, runTrampoline)
 import Control.Plus (empty)
-import Data.Array ((..), (!!))
+import Data.Argonaut (stringify)
+import Data.Argonaut as Json
+import Data.Array ((!!), (..))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Array.NonEmpty.Internal (NonEmptyArray)
@@ -60,12 +62,13 @@ import Deku.Core as DC
 import Deku.DOM as D
 import Deku.Listeners (click, slider)
 import Effect (Effect)
+import Effect.Class.Console (log)
 import Effect.Class.Console as Log
 import Effect.Now (now)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior (step)
-import FRP.Event (class IsEvent, AnEvent, bang, create, filterMap, fold, keepLatest, makeEvent, mapAccum, memoize, sampleOn, subscribe, sweep, toEvent, withLast)
+import FRP.Event (class IsEvent, AnEvent, bang, create, filterMap, fold, fromEvent, keepLatest, makeEvent, mapAccum, memoize, sampleOn, subscribe, sweep, toEvent, withLast)
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Class (biSampleOn)
 import FRP.Event.Time (withTime)
@@ -73,6 +76,8 @@ import FRP.Event.VBus (V)
 import FRP.Rate (Beats(..), RateInfo, timeFromRate)
 import FRP.SampleJIT (readersT, sampleJITE)
 import FRP.SelfDestruct (selfDestruct)
+import Foreign (unsafeToForeign)
+import JSURI (decodeURIComponent, encodeURIComponent)
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps, topOf)
 import Parser.Proto as Proto
 import Parser.ProtoG8 as G8
@@ -82,7 +87,14 @@ import Test.QuickCheck.Gen as QC
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Web.Event.Event (target)
+import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
+import Web.HTML (window)
+import Web.HTML.Event.PopStateEvent.EventTypes (popstate)
 import Web.HTML.HTMLInputElement (fromEventTarget, value)
+import Web.HTML.History (DocumentTitle(..), URL(..), pushState)
+import Web.HTML.Location as Location
+import Web.HTML.Window (history)
+import Web.HTML.Window as Window
 
 data StepAction = Initial | Toggle | Slider | Play
 
@@ -326,12 +338,14 @@ parseIntoGrammar
   -> Grammar NonEmptyString t CodePoint
 parseIntoGrammar = compose MkGrammar $
   Array.mapMaybe (\r -> NES.fromString r.pName <#> \p -> r { pName = p })
-    >>> \grammar ->
-      let
-        nts = longestFirst (grammar <#> _.pName)
-        p = parseDefinition nts
-      in
-        grammar <#> \r -> r { rule = p r.rule }
+    >>> parseDefinitions
+
+parseDefinitions grammar =
+  let
+    nts = longestFirst (grammar <#> _.pName)
+    p = parseDefinition nts
+  in
+    grammar <#> \r -> r { rule = p r.rule }
 
 exGrammar :: SGrammar
 exGrammar = parseIntoGrammar
@@ -448,11 +462,15 @@ data Zipper nt tok = Zipper (Fragment nt tok) (Fragment nt tok)
 
 derive instance eqZipper :: (Eq nt, Eq tok) => Eq (Zipper nt tok)
 derive instance ordZipper :: (Ord nt, Ord tok) => Ord (Zipper nt tok)
-derive instance genericZipper :: Generic (Zipper state tok) _
+derive instance genericZipper :: Generic (Zipper nt tok) _
 instance showZipper :: (Show nt, Show tok) => Show (Zipper nt tok) where
   show x = genericShow x
 
 type SZipper = Zipper NonEmptyString CodePoint
+
+unZipper :: forall nt tok. Zipper nt tok -> Fragment nt tok
+unZipper (Zipper before after) = before <> after
+
 newtype State nt r tok = State (Array (StateItem nt r tok))
 
 instance eqState :: (Eq nt, Eq r, Eq tok) => Eq (State nt r tok) where
@@ -895,6 +913,11 @@ parseDefinition nts s = case String.uncons s of
       Just nt -> [ NonTerminal nt ] <> parseDefinition nts (String.drop (NES.length nt) s)
       Nothing -> [ Terminal c ] <> parseDefinition nts s'
   Nothing -> []
+
+unParseDefinition :: Fragment NonEmptyString CodePoint -> String
+unParseDefinition = foldMap case _ of
+  NonTerminal nt -> NES.toString nt
+  Terminal tok -> String.singleton tok
 
 recognize :: Array NonEmptyString -> String -> Maybe NonEmptyString
 recognize nts s = nts # Array.find \nt ->
@@ -1589,9 +1612,11 @@ grammarComponent
    . Korok s m
   => String
   -> SAugmented
+  -> AnEvent Effect SAugmented
   -> (SAugmented -> Effect Unit)
   -> Domable m lock payload
-grammarComponent buttonText initialGrammar sendGrammar =
+grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
+  (bang reallyInitialGrammar <|> fromEvent forceGrammar) `flip switcher` \initialGrammar ->
   vbussed (Proxy :: Proxy (V GrammarInputs)) \putInput inputs ->
     vbussed (Proxy :: Proxy (V GrammarAction)) \pushState changeState ->
       let
@@ -1934,12 +1959,84 @@ peas :: Array String -> Nut
 peas x = fixed (map (D.p_ <<< pure <<< text_) x)
 
 main :: Nut
-main =
-  vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
-    envy $ memoBangFold const event.grammar sampleGrammar \currentGrammar -> do
+main = mainComponent sampleGrammar empty mempty
+
+newtype SafeNut = SafeNut Nut
+
+grammarCodec ::
+  { encode :: SAugmented -> Json.Json
+  , decode :: Json.Json -> Maybe SAugmented
+  }
+grammarCodec =
+  { encode: \g ->
+      Json.fromArray $ unwrap g.augmented <#> \r ->
+        Json.fromArray
+          [ Json.fromString $ NES.toString r.pName
+          , Json.fromString $ unParseDefinition r.rule
+          , Json.fromString r.rName
+          ]
+  , decode: (fromRules <<< parseDefinitions) <=< Json.toArray >=> traverse Json.toArray >=> traverse \js ->
+      ado
+        pName <- NES.fromString =<< Json.toString =<< js !! 0
+        rule <- Json.toString =<< js !! 1
+        rName <- Json.toString =<< js !! 2
+        in { pName, rule, rName }
+  } where
+    fromRules rules = do
+      top <- rules !! 0
+      case top.rule of
+        [NonTerminal entry, Terminal eof] -> Just
+          { augmented: MkGrammar rules
+          , entry, eof
+          , start: { lookahead: [], pName: top.pName, rName: top.rName, rule: Zipper [] top.rule }
+          }
+        _ -> Nothing
+
+mainE :: Effect SafeNut
+mainE = do
+  w <- window
+  let
+    getGrammar = do
+      s <- Window.location w >>= Location.search
+      let p = "grammar="
+      case String.indexOf (String.Pattern p) s of
+        Nothing -> Nothing <$ log "No grammar in query"
+        Just i -> do
+          let
+            -- FIXME
+            s' = String.drop (i + String.length p) s
+          case decodeURIComponent s' of
+            Nothing -> Nothing <$ log "Failed to decode URL"
+            Just s'' ->
+              case Json.parseJson s'' of
+                Left _ -> Nothing <$ log ("Failed to parse JSON: " <> s'')
+                Right j ->
+                  case grammarCodec.decode j of
+                    Nothing -> Nothing <$ log "Failed to decode"
+                    Just g -> pure $ Just g
+    setGrammar g = do
       let
-        currentValue = bang "0+1*2" <|> map snd event.changeText
-        currentValue' = bang "0+1*2" <|> filterMap (\(keep /\ v) -> if keep then Just v else Nothing) event.changeText
+        j = stringify $ grammarCodec.encode g
+        q = unsafePartial $ fromJust $ encodeURIComponent j
+      h <- history w
+      pushState (unsafeToForeign j) (DocumentTitle "") (URL ("?grammar="<>q)) h
+    navGrammar = makeEvent \push -> do
+      e <- eventListener \_ -> do
+        traverse_ push =<< getGrammar
+      addEventListener popstate e false (Window.toEventTarget w)
+      pure $ removeEventListener popstate e false (Window.toEventTarget w)
+  initialGrammar <- fromMaybe sampleGrammar <$> getGrammar
+  pure (SafeNut (mainComponent initialGrammar navGrammar setGrammar))
+
+mainComponent :: forall s m lock payload.
+  Korok s m =>
+  SAugmented -> AnEvent Effect SAugmented -> (SAugmented -> Effect Unit) -> Domable m lock payload
+mainComponent initialGrammar grammarStream sendGrammar =
+  vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
+    envy $ memoBangFold const (fromEvent grammarStream <|> event.grammar) initialGrammar \currentGrammar -> do
+      let
+        currentValue = bang "" <|> map snd event.changeText
+        currentValue' = bang "" <|> filterMap (\(keep /\ v) -> if keep then Just v else Nothing) event.changeText
         currentStates = map (either (const (States [])) identity) $ currentGrammar <#> \{ augmented, start } ->
           numberStates (add 1) augmented (calculateStates augmented start)
         currentTable = toTable <$> currentStates
@@ -1997,7 +2094,7 @@ main =
                   , "The top rule is controlled by the upper input boxes (LR(1) grammars often require a top rule that contains a unique terminal to terminate each input), while the lower input boxes are for adding a new rule. The nonterminals are automatically parsed out of the entered rule, which is otherwise assumed to consist of terminals."
                   , "Click “Use grammar” to see the current set of rules in action! It may take a few seconds, depending on the size of the grammar and how many states it produces."
                   ]
-              , grammarComponent "Use grammar" sampleGrammar push.grammar
+              , D.div_ [ grammarComponent "Use grammar" initialGrammar grammarStream (push.grammar <> sendGrammar) ]
               , D.h2_ [ text_ "Generate random matching inputs" ]
               , peas
                   [ "This will randomly generate some inputs that conform to the grammar. Click on one to send it to be tested down below!"
@@ -2018,7 +2115,7 @@ main =
               , D.h2_ [ text_ "List of parsing states" ]
               , peas
                   [ "To construct the LR(1) parse table, the possible states are enumerated. Each state represents partial progress of some rules in the grammar. The center dot “•” represents the dividing line between already-parsed and about-to-be-parsed."
-                  , "Each state starts from a few seed rules, which are then closed by adding all nonterminals that could be parsed next. Then new states are explored by advancing on terminals or nonterminals, each of which generates some new seed states."
+                  , "Each state starts from a few seed rules, which are then closed by adding all nonterminals that could be parsed next. Then new states are explored by advancing on terminals or nonterminals, each of which generates some new seed items. That is, if multiple rules will advance on the same (non)terminal, they will collectively form the seed items for a state. (This state may have been recorded already, in which case nothing further is done.)"
                   , "When a full rule is parsed, it is eligible to be reduced, but this is only done when one of its lookaheads come next (highlighted in red)."
                   ]
               , D.div_ $ pure $ switcher (\(x /\ getCurrentState) -> renderStateTable { getCurrentState } x) currentStatesAndGetState
