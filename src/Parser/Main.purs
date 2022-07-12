@@ -1036,16 +1036,16 @@ type ParsedUIAction = V
 data TodoAction = Prioritize | Delete
 
 showStack :: SCStack -> Nut
-showStack i = D.span (D.Class !:= "stack") (go i)
+showStack i = D.span (D.Class !:= "full stack") (go i)
   where
   go (Zero state) = [ D.sub_ [ renderSt mempty state ] ]
   go (Snoc stack tok state) = go stack
-    <> [ renderStackItem (map snd <$> prune tok) ]
+    <> [ renderCSTTree tok ]
     <> [ D.sub_ [ renderSt mempty state ] ]
 
 renderStackItem :: Either CodePoint SAST -> Nut
 renderStackItem (Left x) = renderTok mempty x
-renderStackItem (Right x) = renderAST x
+renderStackItem (Right x) = renderASTTree x
 
 renderAST :: SAST -> Nut
 renderAST (Layer r []) = D.span (D.Class !:= "layer") [ renderRule mempty r ]
@@ -1157,7 +1157,7 @@ showParseStep (Left (Just v)) = do
   getVisibilityAndIncrement <#> map \(n /\ vi) ->
     case getResultC v of
       Just r | Right p <- map snd <$> prune r ->
-        D.div vi [ text_ $ ("Step the last: "), renderAST p, renderASTTree p, renderCSTTree r ]
+        D.div vi [ text_ $ ("Step the last: "), renderCSTTree r ]
       _ ->
         D.div vi [ text_ $ ("Step the last: ") <> "Something went wrong" ]
 showParseStep (Right { stack, inputs }) = do
@@ -1171,10 +1171,10 @@ showParseTransition
   -> SuperStack m (Domable m lock payload)
 showParseTransition (s /\ Left tok) = do
   getVisibility <#> map \(n /\ vi) ->
-    D.div vi [ {- renderTok mempty tok, text_ " ", -} renderCmd mempty "s", renderSt mempty s ]
+    D.span vi [ {- renderTok mempty tok, text_ " ", -} renderCmd mempty "s", renderSt mempty s ]
 showParseTransition (s /\ Right (nt /\ rule)) = do
   getVisibility <#> map \(n /\ vi) ->
-    D.div vi [ renderCmd mempty "r", renderRule mempty rule, renderMeta mempty " —> ", renderCmd mempty "g", renderSt mempty s ]
+    D.span vi [ renderCmd mempty "r", renderRule mempty rule, renderMeta mempty " —> ", renderCmd mempty "g", renderSt mempty s ]
 
 type SuperStack m a = StateT Int Trampoline ((Int -> AnEvent m Boolean) -> a)
 
@@ -2047,23 +2047,23 @@ main =
                           )
                           pEvent.animationTick
                           { target: Beats 0.0 }
-                        currentIndex = dedupOn (eq `on` fst) $ bang (nEntities /\ Initial) <|>
+                        currentIndex = dedupOn (eq `on` fst) $ bang (0 /\ Initial) <|>
                           mapAccum
-                            (\(f /\ a) x -> let fx = clamp 0 nEntities (f x) in fx /\ fx /\ a)
+                            (\(f /\ a) x -> let fx = clamp 0 (nEntities - 1) (f x) in fx /\ fx /\ a)
                             ( oneOf
                                 [ ((_ - 1) /\ Toggle) <$ pEvent.toggleLeft
                                 , ((_ + 1) /\ Toggle) <$ pEvent.toggleRight
                                 -- if we're starting and at the end of a play, loop back to the beginning
-                                , (\(tf /\ _) -> if tf then ((\n -> if n == nEntities then 0 else n + 1) /\ Play) else ((_ + 1) /\ Play)) <$> animationTick
+                                , (\(tf /\ _) -> if tf then ((\n -> if n == nEntities - 1 then 0 else n + 1) /\ Play) else ((_ + 1) /\ Play)) <$> animationTick
                                 , (floor >>> const >>> (_ /\ Slider)) <$> pEvent.slider
                                 ]
                             )
-                            nEntities
+                            0
                       in
-                        -- Memoize it and run it through `stepByStep` to toggle each
+                        -- Memoize it and run it through `spotlight` to toggle each
                         -- item individually
                         envy $ keepLatest $ memoize currentIndex \stackIndex ->
-                          stepByStep true (map fst stackIndex) \sweeper ->
+                          spotlight false (map fst stackIndex) \sweeper ->
                             let
                               content = contentAsMonad2 sweeper
                             in
@@ -2080,7 +2080,7 @@ main =
                                                     let toSeconds = unInstant >>> unwrap >>> (_ / 1000.0)
                                                     t <- toSeconds <$> now
                                                     sub <- subscribe
-                                                      ( selfDestruct (\((isStart /\ _) /\ ci) -> (fst ci == nEntities && not isStart)) (pPush.startState Nothing)
+                                                      ( selfDestruct (\((isStart /\ _) /\ ci) -> (fst ci == (nEntities - 1) && not isStart)) (pPush.startState Nothing)
                                                           ( sampleOn (toEvent currentIndex)
                                                               ( (/\) <$> mapAccum (\i tf -> false /\ tf /\ i)
                                                                   ( timeFromRate (step rt $ toEvent pEvent.rate)
@@ -2129,7 +2129,8 @@ main =
                                         ( oneOf
                                             [ D.Xtype !:= "range"
                                             , D.Min !:= "0"
-                                            , D.Max !:= show nEntities
+                                            , D.Max !:= show (nEntities - 1)
+                                            , D.Value !:= "0"
                                             , stackIndex
                                                 # filterMap case _ of
                                                     _ /\ Slider -> Nothing
@@ -2161,6 +2162,6 @@ main =
                                       , D.button (oneOf [ clickF $ pPush.toggleRight ])
                                           [ text_ ">" ]
                                       ]
-                                , D.div_ [ content ]
+                                , D.div (D.Class !:= "parse-steps") [ content ]
                                 ]
               ]

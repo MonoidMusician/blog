@@ -87,6 +87,38 @@ body, .parse-table > thead > tr > th:not(:first-child) {
 .stack > sub {
   margin: 0 1px;
 }
+.full.stack {
+  display: flex;
+  flex-direction: row;
+}
+.full.stack > .terminal {
+  border: solid .1em #7a6565;
+  border-radius: .2em;
+  display: inline-block;
+  height: fit-content;
+  margin: 0 .2em .5em;
+  padding: .1em .2em 0;
+}
+.full.stack > sub {
+  margin-top: .5em;
+  text-decoration: underline;
+  text-decoration-color: #ccb11c;
+}
+.full.stack > :nth-last-child(2), .full.stack > .AST:nth-last-child(2) > li > .node {
+  border-color: lightgreen;
+}
+.parse-steps {
+  position: relative;
+  width: 100%;
+}
+.parse-steps > div {
+  top: 2em;
+  position: absolute;
+  width: 100%;
+}
+.parse-steps > span {
+  position: absolute;
+}
 .layer .rule, .layer .meta {
   margin: 0;
 }
@@ -168,7 +200,7 @@ body, .parse-table > thead > tr > th:not(:first-child) {
             }
 
 /* The root node doesn't connect upwards */
-.AST > li {margin-top: 0;}
+.AST > li {margin-top: 0; padding-top: 0}
     .AST > li:before,
     .AST > li:after,
     .AST > li > .node:before {
