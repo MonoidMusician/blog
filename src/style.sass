@@ -322,10 +322,11 @@ table
   .cmd
     color: #bb194f
 
+table
+  border-spacing: 0
 
-
-table.grammar td:last-child
-  padding-left: 1em
+table.grammar .trouble
+  background: rgba(120, 0, 0, 0.5)
 
 .state-table
   border-spacing: 0
@@ -415,8 +416,6 @@ table.grammar td:last-child
     padding-top: 0.2em
 
 
-.explorer-table tr.active
-
 .explorer-table tr.inactive
   opacity: 0.65
 
@@ -438,7 +437,6 @@ table.grammar td:last-child
   box-shadow: 1px 1px 0.5px 0.5px transparent, inset 1px 1px 0px 1.5px transparent
   /* https://stackoverflow.com/questions/3461441/prevent-flicker-on-webkit-transition-of-webkit-transform */
   -webkit-backface-visibility: hidden
-  transform: translate(0, -2px)
 
   &.big
     padding-top: 0.2em
@@ -457,7 +455,7 @@ table.grammar td:last-child
       color: color.change($color, $alpha: 1)
       border-color: color.change($color, $alpha: 1)
       box-shadow: 0px 0px 0px 0px transparent, inset 1px 1px 0px 0.5px #0002
-      transform: translate(1.1px, calc(1.1px - 2px))
+      transform: translate(1.1px, 1.1px)
 
   &:focus-visible
     outline: 1px solid white
@@ -486,7 +484,10 @@ label
   display: inline-block
   border-radius: 4px
 
-  & > span
+  vertical-align: bottom
+  transform: translateY(0.1em)
+
+  & > span:not(.error)
     font-family: "Amaranth"
     font-weight: 400
     font-style: italic
@@ -501,16 +502,60 @@ label
     color: #f0e8d4
     color: #2372ff
     line-height: 3px
+    pointer-events: none
 
     &:last-child
       left: initial
       right: 4px
 
-  &.range
-    margin-top: 10px
+  & > span.error
+    position: absolute
+    top: calc(100% - 1px)
+    background: #073146
+    display: block
+    font-family: "Cormorant"
+    font-size: 80%
+    color: #f0e8d4
+    line-height: normal
+    letter-spacing: normal
+    border: 1px solid #ff004daa
+    border-radius: 4px
+    padding: 4px
+    z-index: 2
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out
+  &:hover > span.error
+    pointer-events: all
+    opacity: 1
+    transform: translate(0, 0)
+  &:not(:hover) > span.error
+    // so that it does not reveal itself
+    pointer-events: none
+    opacity: 0
+    transform: translate(0px, -10px)
+  & > span.error:empty
+    display: none
+  & > span.error:blank
+    display: none
 
-  &.range > span
+  &.range
+    transform: translateY(10px)
+
+  &.range > span:not(.error)
     top: -8px
+
+  &.text.invalid::after
+    content: "!"
+    font-family: 'Fira Code'
+    font-weight: 600
+    position: absolute
+    right: 8px
+    top: calc(50% - 0.5em - 0.45em)
+    color: rgba(255, 0, 77)
+    background: linear-gradient(90deg, transparent, #073146 0.7em)
+    padding-left: 0.7em
+    padding-bottom: 0.2em
+    padding-top: 0.3em
+    letter-spacing: normal
 
   & > input
     background: none
@@ -538,6 +583,16 @@ label
       border: none
       padding: 0
       height: auto
+
+  &.invalid > input
+    border-color: #ff004daa
+    @media (hover: hover) and (pointer: fine)
+      &:not([type=range]):not(:hover)
+        border-color: #ff004d55
+    &:not([type=range]):focus
+      outline: none
+      border-color: #ff004d
+
 
 
 

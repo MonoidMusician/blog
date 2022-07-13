@@ -16,7 +16,7 @@ import Control.Monad.Trampoline (Trampoline, runTrampoline)
 import Control.Plus (empty)
 import Data.Argonaut (stringify)
 import Data.Argonaut as Json
-import Data.Array ((!!), (..))
+import Data.Array (intercalate, (!!), (..))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Array.NonEmpty.Internal (NonEmptyArray)
@@ -25,7 +25,8 @@ import Data.Compactable (compact)
 import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..), either, fromRight', hush, note)
 import Data.Filterable (filter)
-import Data.Foldable (any, foldMap, for_, oneOf, oneOfMap, sequence_, sum, traverse_)
+import Data.Foldable (class Foldable, any, foldMap, for_, oneOf, oneOfMap, sequence_, sum, traverse_)
+import Data.Foldable (length) as Foldable
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Function (on)
 import Data.FunctorWithIndex (mapWithIndex)
@@ -37,6 +38,7 @@ import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust, fromMaybe, isJust, isNothing, maybe)
 import Data.Newtype (class Newtype, unwrap)
+import Data.NonEmpty (NonEmpty(..))
 import Data.Number (e, pi)
 import Data.Semigroup.Foldable (minimum, minimumBy)
 import Data.Set (Set)
@@ -432,17 +434,27 @@ gatherTokens :: forall nt r tok. Ord tok => Grammar nt r tok -> Set tok
 gatherTokens (MkGrammar rules) = rules # Array.foldMap \{ rule } ->
   Array.mapMaybe unTerminal rule # Set.fromFoldable
 
+gatherTokens_ :: forall nt r tok. Ord tok => Grammar nt r tok -> Map tok (NonEmptyArray r)
+gatherTokens_ (MkGrammar rules) = unwrap $ rules # Array.foldMap \{ rule, rName } ->
+  Array.mapMaybe unTerminal rule # foldMap \tok ->
+    SemigroupMap $ Map.singleton tok (NEA.singleton rName)
+
 gatherTokens' :: forall nt r tok. Ord tok => Grammar nt r tok -> Array tok
 gatherTokens' (MkGrammar rules) = Array.nub $ rules # Array.foldMap \{ rule } ->
   Array.mapMaybe unTerminal rule
 
 gatherNonTerminals :: forall nt r tok. Ord nt => Grammar nt r tok -> Set nt
-gatherNonTerminals (MkGrammar rules) = rules # Array.foldMap \{ rule } ->
-  Array.mapMaybe unNonTerminal rule # Set.fromFoldable
+gatherNonTerminals (MkGrammar rules) = rules # Array.foldMap \{ rule, pName } ->
+  Array.mapMaybe unNonTerminal rule # NonEmpty pName # Set.fromFoldable
+
+gatherNonTerminals_ :: forall nt r tok. Ord nt => Grammar nt r tok -> Map nt (NonEmptyArray r)
+gatherNonTerminals_ (MkGrammar rules) = unwrap $ rules # Array.foldMap \{ rule, pName, rName } ->
+  Array.mapMaybe unNonTerminal rule # NonEmpty pName # foldMap \nt ->
+    SemigroupMap $ Map.singleton nt (NEA.singleton rName)
 
 gatherNonTerminals' :: forall nt r tok. Ord nt => Grammar nt r tok -> Array nt
-gatherNonTerminals' (MkGrammar rules) = Array.nub $ rules # Array.foldMap \{ rule } ->
-  Array.mapMaybe unNonTerminal rule
+gatherNonTerminals' (MkGrammar rules) = Array.nub $ rules # Array.foldMap \{ rule, pName } ->
+  [ pName ] <> Array.mapMaybe unNonTerminal rule
 
 exFromString :: String -> Maybe (List CodePoint)
 exFromString = String.toCodePointArray >>> flip append [ defaultEOF ] >>> Array.toUnfoldable >>> verifyTokens exSeed.augmented
@@ -974,7 +986,7 @@ withValue fn = cb \e -> for_
 
 input :: String -> String -> String -> (String -> Effect Unit) -> Nut
 input label placeholder initialValue onInput =
-  D.label_
+  D.label (D.Class !:= "text")
     [ D.span_ [ text_ label ]
     , D.input
         ( oneOf
@@ -986,9 +998,26 @@ input label placeholder initialValue onInput =
         []
     ]
 
+inputValidated :: forall s m lock payload. Korok s m =>
+  String -> String -> String -> String -> AnEvent m String -> (String -> Effect Unit) -> Domable m lock payload
+inputValidated cls label placeholder initialValue valid onInput =
+  D.label (D.Class <:=> (append "text" <<< (eq "" >>> if _ then "" else " invalid")) <$> (bang "" <|> valid))
+    [ D.span_ [ text_ label ]
+    , D.input
+        ( oneOf
+            [ D.Placeholder <:=> if placeholder == "" then empty else bang placeholder
+            , D.Value <:=> if initialValue == "" then empty else bang initialValue
+            , D.OnInput !:= withValue onInput
+            , D.Class !:= cls
+            ]
+        )
+        []
+    , D.span (D.Class !:= "error") [ text valid ]
+    ]
+
 input' :: forall s m lock payload. Korok s m => String -> String -> AnEvent m String -> (String -> Effect Unit) -> Domable m lock payload
 input' label placeholder initialValue onInput =
-  D.label_
+  D.label (D.Class !:= "text")
     [ D.span_ [ text_ label ]
     , D.input
         ( oneOf
@@ -1571,19 +1600,20 @@ stateComponent = bussed \addNew addEvent ->
           ]
 
 type GrammarInputs =
-  ( pName :: String
-  , rule :: String
-  , rName :: String
-  , top :: String
-  , entry :: String
-  , eof :: String
-  , topName :: String
+  ( pName :: V ( value :: String, error :: String )
+  , rule :: V ( value :: String, error :: String )
+  , rName :: V ( value :: String, error :: String )
+  , top :: V ( value :: String, error :: String )
+  , entry :: V ( value :: String, error :: String )
+  , eof :: V ( value :: String, error :: String )
+  , topName :: V ( value :: String, error :: String )
   )
 
 type GrammarAction =
-  ( errorMessage :: Maybe String
+  ( errorMessage :: Maybe ParseGrammarError
   , addRule :: Int /\ { pName :: NonEmptyString, rule :: String, rName :: String }
   , removeRule :: Int
+  , troubleRules :: Array String
   )
 
 only :: forall a. Array a -> Maybe a
@@ -1604,9 +1634,9 @@ parseGrammar
      , topName :: String
      }
   -> Array { pName :: NonEmptyString, rule :: String, rName :: String }
-  -> Either String SAugmented
+  -> Either ParseGrammarError SAugmented
 parseGrammar top rules = do
-  firstRule <- note "Need at least 1 rule in the grammar" $ Array.head rules
+  firstRule <- note NoRules $ Array.head rules
   let
     entry = fromMaybe firstRule.pName top.entry
     nonTerminals = longestFirst $ [ top.top ] <> (rules <#> _.pName)
@@ -1627,15 +1657,84 @@ parseGrammar top rules = do
       , rule: Zipper [] topRule.rule
       , lookahead: []
       }
-  if Array.length (Array.nub ((rules' <#> _.rName) <> [ top.topName ])) /= 1 + Array.length rules then Left $ "Rule names need to be unique: " <> show (rules' <#> _.rName)
+
+    tokenRefs = gatherTokens_ (MkGrammar rules')
+    ntRefs = gatherNonTerminals_ (MkGrammar rules')
+    eofNT = NES.singleton top.eof
+
+    duplicatedRules =
+      filterMap (\rs -> if NEA.length rs > 1 then Just (NEA.head rs) else Nothing)
+        (Array.groupAll ((rules' <#> _.rName) <> [ top.topName ]))
+  if top.top == entry then Left TopClash
   else pure unit
-  if not isJust (Array.find (eq entry <<< _.pName) rules) then Left "Top-level does not refer to nonterminal"
+  case NEA.fromArray duplicatedRules of
+    Just d -> Left $ RuleNamesUnique d
+    Nothing -> pure unit
+  if not isJust (Array.find (eq entry <<< _.pName) rules) then Left (MissingEntry entry)
   else pure unit
-  if Set.member top.eof (gatherTokens (MkGrammar rules')) then Left "Grammar references EOF symbol"
-  else pure unit
-  if Set.member top.top (gatherNonTerminals (MkGrammar rules')) then Left "Grammar references top rule"
-  else pure unit
+  case Map.lookup top.top ntRefs of
+    Just refs -> Left (ReferencesTop refs)
+    Nothing -> pure unit
+  case NEA.fromArray $ filterMap (\r -> if r.pName == eofNT then Just r.rName else Nothing) rules' of
+    Just refs -> Left (EOFNonTerminal refs)
+    Nothing -> pure unit
+  case Map.lookup top.eof tokenRefs <> Map.lookup eofNT ntRefs of
+    Just refs -> Left (ReferencesEOF refs)
+    Nothing -> pure unit
   pure $ { augmented: MkGrammar ([ topRule ] <> rules'), start, eof: top.eof, entry }
+
+data ParseGrammarError
+  = ReferencesEOF (NonEmptyArray String)
+  | EOFNonTerminal (NonEmptyArray String)
+  | ReferencesTop (NonEmptyArray String)
+  | MissingEntry NonEmptyString
+  | TopClash
+  | RuleNamesUnique (NonEmptyArray String)
+  | NoRules
+
+pl :: forall f a b. Foldable f => f a -> b -> b -> b
+pl as _ many | Foldable.length as > 1 = many
+pl _ single _ = single
+
+list :: forall f s m lock payload. Korok s m => Foldable f =>
+  f (Domable m lock payload) -> Array (Domable m lock payload)
+list = Array.fromFoldable >>> case _ of
+  [a] -> [a]
+  [a,b] -> [a, text_ " & ", b]
+  as -> case Array.unsnoc as of
+    Nothing -> []
+    Just { init: as', last: b } ->
+      Array.intercalate [text_ ", "] (map pure as') <> [text_ " & ", b]
+
+rulesAtFault :: ParseGrammarError -> Array String
+rulesAtFault = case _ of
+  NoRules -> []
+  ReferencesEOF rules -> NEA.toArray rules
+  EOFNonTerminal rules -> NEA.toArray rules
+  ReferencesTop rules -> NEA.toArray rules
+  MissingEntry _ -> []
+  TopClash -> []
+  RuleNamesUnique rules -> NEA.toArray rules
+
+parseGrammarError :: ParseGrammarError -> Nut
+parseGrammarError NoRules = text_ "Need at least one rule in the grammar."
+parseGrammarError (ReferencesEOF rules) = fixed $
+  [ text_ "The final token must only be referenced in the top rule, but it was also referenced in " ]
+  <> list (map (\x -> fixed [renderMeta mempty "#", renderRule mempty x]) rules) <>
+  [text_ "."]
+parseGrammarError (EOFNonTerminal rules) = fixed $
+  [ text_ "The final token must not be a nonterminal, but it appeared in " ]
+  <> list (map (\x -> fixed [renderMeta mempty "#", renderRule mempty x]) rules) <>
+  [text_ "."]
+parseGrammarError (ReferencesTop rules) = fixed $
+  [ text_ "The top nonterminal must not appear in the rest of the grammar, but it was also referenced in " ]
+  <> list (map (\x -> fixed [renderMeta mempty "#", renderRule mempty x]) rules) <>
+  [text_ "."]
+parseGrammarError (MissingEntry nt) = fixed
+  [ text_ "Entry point ", renderNT mempty nt, text_ " is not present as a nonterminal in the grammar." ]
+parseGrammarError TopClash = text_ "Entry point must be different from the top rule."
+parseGrammarError (RuleNamesUnique rules) = fixed $
+  [ text_ "Rule names must be unique, but " ] <> list (map (\x -> fixed [renderMeta mempty "#", renderRule mempty x]) rules) <> [text_ " ", text_ (pl rules "was" "were"), text_ " duplicated"]
 
 grammarComponent
   :: forall s m lock payload
@@ -1674,16 +1773,16 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                 , topName: defaultTopRName
                 }
           currentText =
-            biSampleOn (bang "" <|> inputs.pName)
-              $ biSampleOn (bang "" <|> inputs.rule)
+            biSampleOn (bang "" <|> inputs.pName.value)
+              $ biSampleOn (bang "" <|> inputs.rule.value)
               $
-                (bang "" <|> inputs.rName) <#> \rName rule pName ->
+                (bang "" <|> inputs.rName.value) <#> \rName rule pName ->
                   { rName, rule, pName }
           currentTop =
-            biSampleOn (bang initialTop.top <|> inputs.top)
-              $ biSampleOn (bang initialTop.entry <|> inputs.entry)
-              $ biSampleOn (bang initialTop.eof <|> inputs.eof)
-              $ biSampleOn (bang initialTop.topName <|> inputs.topName)
+            biSampleOn (bang initialTop.top <|> inputs.top.value)
+              $ biSampleOn (bang initialTop.entry <|> inputs.entry.value)
+              $ biSampleOn (bang initialTop.eof <|> inputs.eof.value)
+              $ biSampleOn (bang initialTop.topName <|> inputs.topName.value)
               $ bang { topName: _, eof: _, entry: _, top: _ }
           counted = add (Array.length initialRules) <$>
             (bang 0 <|> (add 1 <$> fst <$> changeState.addRule))
@@ -1693,7 +1792,7 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
               currentNTs = dedup $ map longestFirst $
                 biSampleOn
                   (map (_.pName <<< snd) <$> currentRules)
-                  (append <<< pure <<< fromMaybe defaultTopName <<< NES.fromString <$> (bang initialTop.top <|> inputs.top))
+                  (append <<< pure <<< fromMaybe defaultTopName <<< NES.fromString <$> (bang initialTop.top <|> inputs.top.value))
               currentTopParsed = biSampleOn currentRules $ currentTop <#> \r rules ->
                 { top: fromMaybe defaultTopName $ NES.fromString r.top
                 , entry: NES.fromString r.entry <|> (Array.head rules <#> snd >>> _.pName)
@@ -1701,19 +1800,20 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                 , topName: r.topName
                 }
               currentGrammar = biSampleOn (map snd <$> currentRules) (currentTopParsed <#> parseGrammar)
+
+              rulesInTrouble = bang [] <|> changeState.troubleRules
+
+              putEofError v = putInput.eof.error $
+                if String.length v <= 1 then "" else
+                  "Must be a single character (Unicode code point)"
             D.div_
               [ D.div_
-                  [ changeState.errorMessage # switcher \et -> case et of
-                      Nothing -> envy empty
-                      Just e -> D.div (D.Class !:= "Error") [ text_ e ]
+                  [ join (inputValidated "non-terminal" "Top name") initialTop.top inputs.top.error (const (putInput.top.error "") <> putInput.top.value)
+                  , inputValidated "non-terminal" "Entry point" "" initialTop.entry inputs.entry.error (const (putInput.entry.error "") <> putInput.entry.value)
+                  , join (inputValidated "terminal" "Final token") initialTop.eof inputs.eof.error (putEofError <> putInput.eof.value)
+                  , join (inputValidated "rule" "Top rule name") initialTop.topName inputs.topName.error (const (putInput.topName.error "") <> putInput.topName.value)
                   ]
-              , D.div_
-                  [ D.span (D.Class !:= "non-terminal") [ join (input "Top name") initialTop.top putInput.top ]
-                  , D.span (D.Class !:= "non-terminal") [ input "Entrypoint" "" initialTop.entry putInput.entry ]
-                  , D.span (D.Class !:= "terminal") [ join (input "Final token") initialTop.eof putInput.eof ]
-                  , D.span (D.Class !:= "rule") [ join (input "Top rule name") initialTop.topName putInput.topName ]
-                  ]
-              , D.table_
+              , D.table (D.Class !:= "grammar")
                   [ D.tr_
                       [ D.td_ [ switcher (\x -> renderNT mempty x) (currentTopParsed <#> _.top) ]
                       , D.td_ [ renderMeta mempty " : " ]
@@ -1728,7 +1828,7 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                       ]
                   , D.tbody_ $ pure $ dyn $ map
                       ( \(i /\ txt) -> keepLatest $ bus \p' e' ->
-                          ( bang $ Insert $ D.tr_ $ map (D.td_ <<< pure) $
+                          ( bang $ Insert $ D.tr (D.Class <:=> (rulesInTrouble <#> \rit -> if Array.elem txt.rName rit then "trouble" else "")) $ map (D.td_ <<< pure) $
                               [ renderNT mempty txt.pName
                               , renderMeta mempty " : "
                               , D.span_
@@ -1747,7 +1847,7 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                                   , D.button
                                       ( oneOf
                                           [ D.Class !:= "delete"
-                                          , D.OnClick !:= (p' Remove *> pushState.removeRule i)
+                                          , D.OnClick !:= (p' Remove *> pushState.removeRule i *> pushState.troubleRules [])
                                           ]
                                       )
                                       [ text_ "Delete" ]
@@ -1758,14 +1858,11 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                       (oneOfMap bang initialRules <|> changeState.addRule)
                   ]
               , D.div_
-                  [ D.span (D.Class !:= "non-terminal")
-                      [ input "Nonterminal name" "" "" putInput.pName ]
+                  [ inputValidated "non-terminal" "Nonterminal name" "" "" inputs.pName.error (const (putInput.pName.error "") <> putInput.pName.value)
                   , renderMeta mempty " : "
-                  , D.span (D.Class !:= "terminal")
-                      [ input "Value" "" "" putInput.rule ]
+                  , inputValidated "terminal" "Value" "" "" inputs.rule.error (const (putInput.rule.error "") <> putInput.rule.value)
                   , renderMeta mempty " #"
-                  , D.span (D.Class !:= "rule")
-                      [ input "Rule name" "" "" putInput.rName ]
+                  , inputValidated "rule" "Rule name" "" "" inputs.rName.error (const (putInput.rName.error "") <> putInput.rName.value)
                   , D.button
                       ( oneOf
                           [ D.Class !:= "big add"
@@ -1773,14 +1870,22 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                               sampleJITE currentText $ sampleJITE counted
                                 $ map readersT
                                 $ bang \i text -> do
-                                    pushState.errorMessage Nothing
                                     case NES.fromString text.pName of
-                                      Nothing -> pushState.errorMessage (Just "Need name for the non-terminal.")
-                                      Just pName -> pushState.addRule (i /\ text { pName = pName })
+                                      Nothing -> do
+                                        putInput.pName.error "Name for non-terminal must be non-empty."
+                                      -- TODO: findNext ruleNames text.pName 1
+                                      Just pName -> do
+                                        pushState.errorMessage Nothing
+                                        putInput.pName.error ""
+                                        putInput.rule.error ""
+                                        putInput.rName.error ""
+                                        pushState.troubleRules []
+                                        pushState.addRule (i /\ text { pName = pName })
                           ]
                       )
                       [ text_ "Add rule" ]
                   ]
+              , D.br_ []
               , if buttonText == "" then fixed []
                 else
                   D.div_ $ pure $ D.button
@@ -1788,12 +1893,46 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                         [ D.Class !:= "big"
                         , currentGrammar <#> \g -> D.OnClick := do
                             pushState.errorMessage Nothing
+                            putInput.pName.error ""
+                            putInput.rule.error ""
+                            putInput.rName.error ""
+                            putInput.top.error ""
+                            putInput.entry.error ""
+                            putInput.eof.error ""
+                            putInput.topName.error ""
+                            pushState.troubleRules []
                             case g of
-                              Left err -> pushState.errorMessage (Just err)
-                              Right g' -> sendGrammar g'
+                              Left err -> do
+                                pushState.errorMessage (Just err)
+                                pushState.troubleRules (rulesAtFault err)
+                                case err of
+                                  NoRules ->
+                                    pure unit
+                                  ReferencesEOF _ ->
+                                    putInput.eof.error "Must not appear in the rest of the grammar"
+                                  EOFNonTerminal _ ->
+                                    putInput.eof.error "Cannot appear as nonterminal"
+                                  ReferencesTop _ ->
+                                    putInput.top.error "Must not appear in the rest of the grammar"
+                                  MissingEntry _ ->
+                                    putInput.entry.error "Must name a nonterminal in the grammar"
+                                  TopClash ->
+                                    putInput.entry.error "Cannot be the top rule itself"
+                                  RuleNamesUnique _ ->
+                                    pure unit
+                              Right g' -> do
+                                sendGrammar g'
                         ]
                     )
                     [ text_ buttonText ]
+              , D.div_
+                  [ changeState.errorMessage # switcher \et -> case et of
+                      Nothing -> envy empty
+                      Just e -> fixed
+                        [ D.br_ []
+                        , D.div (D.Class !:= "Error") [ parseGrammarError e ]
+                        ]
+                  ]
               ]
 
 type TopLevelUIAction = V
