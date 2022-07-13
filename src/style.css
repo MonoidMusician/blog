@@ -11,8 +11,9 @@ body {
   background: #043147;
   color: #f0e8d4;
   font-family: "Cormorant";
+  margin: 0;
 }
-body, .parse-table > thead > tr > th:not(:first-child) {
+body, .parse-table > thead > tr > th:not(:first-child), .parse-table tr > th:first-child {
   background: #043147;
 }
 ::selection {
@@ -20,12 +21,60 @@ body, .parse-table > thead > tr > th:not(:first-child) {
   color: white;
   text-shadow: none;
 }
+
+table {
+  white-space: nowrap;
+}
+
 .unusable {
   opacity: 0.45;
 }
 .clickable {
   cursor: pointer;
 }
+
+.widgets.focus-mode {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: repeat(2, 50vw);
+  grid-auto-flow: row;
+  grid-auto-rows: 50vh;
+  overflow: auto;
+  scroll-snap-type: both mandatory;
+}
+
+@media (max-width: 760px) {
+  .widgets.focus-mode {
+    grid-template-columns: repeat(1, 100vw);
+  }
+}
+@media (max-height: 500px) {
+  .widgets.focus-mode {
+    grid-auto-rows: 100vh;
+  }
+}
+.widgets.focus-mode > :not(.widget) {
+  display: none;
+}
+.widgets.focus-mode > .widget {
+  flex: 0 0 auto;
+  align-self: stretch;
+  overflow: auto;
+  border: 1px solid gray;
+  box-sizing: border-box;
+  scroll-snap-align: start;
+}
+.widgets.focus-mode > .widget > :only-child {
+  padding: 10px;
+  width: max-content;
+  height: max-content;
+}
+.widgets.focus-mode > .widget > table {
+  width: max-content;
+}
+
+
 .keyword {
   font-family: "Sofia";
   color: #918b8e;
@@ -344,6 +393,7 @@ th.first, td.first {
 }
 .parse-table > thead {
   position: sticky;
+  z-index: 1;
   top: -1px;
 }
 /*
@@ -354,15 +404,17 @@ th.first, td.first {
   border-right: 1px solid transparent;
 }
 /**/
-.parse-table thead th:not(:first-child), .parse-table tr:last-child td:not(:first-child) {
+.parse-table thead th, .parse-table tr:last-child td:not(:first-child) {
   border-bottom: 1px solid #afafafc2;
 }
 .parse-table tbody tr th:first-child {
   text-align: right;
   padding: 0 0.5em;
+  position: sticky;
+  left: 0;
 }
-.parse-table tbody tr td:first-of-type {
-  border-left: 1px solid #afafafc2;
+.parse-table tbody tr th {
+  border-right: 1px solid #afafafc2;
 }
 .parse-table tbody tr td:last-child {
   border-right: 1px solid #afafafc2;
@@ -370,10 +422,10 @@ th.first, td.first {
 .parse-table tbody td {
   text-align: left;
 }
-.parse-table tr.active {
+.parse-table tr.active, .parse-table tr.active > th {
   background-color: #463d10;
 }
-.parse-table tr.hover {
+.parse-table tr.hover, .parse-table tr.hover > th {
   background-color: #4b4731;
 }
 .parse-table td {
@@ -507,6 +559,9 @@ label > span {
 label > span:last-child {
   left: initial;
   right: 4px;
+}
+label.range {
+  margin-top: 10px;
 }
 label.range > span {
   top: -8px;
