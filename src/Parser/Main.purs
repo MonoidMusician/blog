@@ -2,7 +2,7 @@ module Parser.Main where
 
 import Prelude
 
-import Bolson.Core (Child(..), dyn, envy, fixed)
+import Bolson.Core (Child(..))
 import Control.Alt ((<|>))
 import Control.Alternative (guard)
 import Control.Apply (lift2, lift3)
@@ -58,8 +58,8 @@ import Data.Variant (Variant)
 import Data.Variant as V
 import Data.Variant as Variant
 import Deku.Attribute (class Attr, Attribute, Cb, cb, prop', unsafeAttribute, (:=))
-import Deku.Control (switcher, text, text_)
-import Deku.Core (class Korok, Domable, Nut, bus, bussed, insert, remove, vbussed)
+import Deku.Control (bus, bussed, vbussed, switcher, text, text_, dyn, envy, fixed)
+import Deku.Core (class Korok, Domable, Nut, insert, remove)
 import Deku.Core as DC
 import Deku.DOM as D
 import Deku.Listeners (click, slider)
@@ -101,14 +101,14 @@ import Web.HTML.Window as Window
 data StepAction = Initial | Toggle | Slider | Play
 
 type Nuts =
-  forall s m lock payload
+  forall s e m lock payload
    . DC.Korok s m
-  => Array (DC.Domable m lock payload)
+  => Array (DC.Domable e m lock payload)
 
 type Nutss =
-  forall s m lock payload
+  forall s e m lock payload
    . DC.Korok s m
-  => Array (Array (DC.Domable m lock payload))
+  => Array (Array (DC.Domable e m lock payload))
 
 newtype Grammar nt r tok = MkGrammar
   (Array (GrammarRule nt r tok))
@@ -998,8 +998,8 @@ input label placeholder initialValue onInput =
         []
     ]
 
-inputValidated :: forall s m lock payload. Korok s m =>
-  String -> String -> String -> String -> AnEvent m String -> (String -> Effect Unit) -> Domable m lock payload
+inputValidated :: forall s e m lock payload. Korok s m =>
+  String -> String -> String -> String -> AnEvent m String -> (String -> Effect Unit) -> Domable e m lock payload
 inputValidated cls label placeholder initialValue valid onInput =
   D.label (D.Class <:=> (append "text" <<< (eq "" >>> if _ then "" else " invalid")) <$> (bang "" <|> valid))
     [ D.span_ [ text_ label ]
@@ -1015,7 +1015,7 @@ inputValidated cls label placeholder initialValue valid onInput =
     , D.span (D.Class !:= "error") [ text valid ]
     ]
 
-input' :: forall s m lock payload. Korok s m => String -> String -> AnEvent m String -> (String -> Effect Unit) -> Domable m lock payload
+input' :: forall s e m lock payload. Korok s m => String -> String -> AnEvent m String -> (String -> Effect Unit) -> Domable e m lock payload
 input' label placeholder initialValue onInput =
   D.label (D.Class !:= "text")
     [ D.span_ [ text_ label ]
@@ -1045,12 +1045,12 @@ col j i =
   if i == j then D.Class !:= "first" else empty
 
 renderParseTable
-  :: forall s m lock payload r
+  :: forall s e m lock payload r
    . Korok s m
   => { getCurrentState :: Int -> AnEvent m Boolean | r }
   -> SGrammar
   -> SStates
-  -> Domable m lock payload
+  -> Domable e m lock payload
 renderParseTable info (MkGrammar grammar) (States states) =
   bussed \push event ->
     let
@@ -1184,7 +1184,7 @@ type SCStack = Stack Int SCST
 type SAParseSteps = ParseSteps (NonEmptyString /\ String) CodePoint SAStack
 type SCParseSteps = ParseSteps (NonEmptyString /\ String) CodePoint SCStack
 
-showMaybeParseSteps :: forall s m lock payload. Korok s m => Maybe SCParseSteps -> SuperStack m (Domable m lock payload)
+showMaybeParseSteps :: forall s e m lock payload. Korok s m => Maybe SCParseSteps -> SuperStack m (Domable e m lock payload)
 showMaybeParseSteps Nothing = pure (pure (text_ "Parse error"))
 showMaybeParseSteps (Just stack) = showParseSteps stack
 
@@ -1226,14 +1226,14 @@ getVisibility = do
     )
 
 showParseStep
-  :: forall r s m lock payload
+  :: forall r s e m lock payload
    . Korok s m
   => Either (Maybe SCStack)
        { inputs :: List CodePoint
        , stack :: SCStack
        | r
        }
-  -> SuperStack m (Domable m lock payload)
+  -> SuperStack m (Domable e m lock payload)
 showParseStep (Left Nothing) = do
   getVisibilityAndIncrement <#> map \(n /\ vi) ->
     D.div vi [ (text_ $ ("Step " <> show n <> ": ") <> "Parse error") ]
@@ -1249,10 +1249,10 @@ showParseStep (Right { stack, inputs }) = do
     D.div vi [ D.div_ [ text_ ("Step " <> show n <> ": "), showStack stack ], D.div_ (foldMap (\x -> [ renderTok mempty x ]) inputs) ]
 
 showParseTransition
-  :: forall r s m lock payload
+  :: forall r s e m lock payload
    . Korok s m
   => Int /\ Either CodePoint (NonEmptyString /\ String)
-  -> SuperStack m (Domable m lock payload)
+  -> SuperStack m (Domable e m lock payload)
 showParseTransition (s /\ Left tok) = do
   getVisibility <#> map \(n /\ vi) ->
     D.span vi [ {- renderTok mempty tok, text_ " ", -} renderCmd mempty "s", renderSt mempty s ]
@@ -1263,10 +1263,10 @@ showParseTransition (s /\ Right (nt /\ rule)) = do
 type SuperStack m a = StateT Int Trampoline ((Int -> AnEvent m Boolean) -> a)
 
 showParseSteps
-  :: forall s m lock payload
+  :: forall s e m lock payload
    . Korok s m
   => SCParseSteps
-  -> SuperStack m (Domable m lock payload)
+  -> SuperStack m (Domable e m lock payload)
 showParseSteps i = map fixed <$> (go i)
   where
   go =
@@ -1282,7 +1282,7 @@ showParseSteps i = map fixed <$> (go i)
         Step prev action more -> do
           lift3 (\o v r -> [ o, v ] <> r) <$> s (Right prev) <*> t (firstState more /\ action) <*> go more
 
-renderStateTable :: forall s m lock payload r. Korok s m => { getCurrentState :: Int -> AnEvent m Boolean | r } -> SStates -> Domable m lock payload
+renderStateTable :: forall s e m lock payload r. Korok s m => { getCurrentState :: Int -> AnEvent m Boolean | r } -> SStates -> Domable e m lock payload
 renderStateTable info (States states) = do
   let
     mkTH n 0 0 = D.th (D.Rowspan !:= show n)
@@ -1422,21 +1422,21 @@ type ListicleEvent a = Variant (add :: a, remove :: Int)
 -- | Start from an initial value, listen for external add events, internal remove events,
 -- | raise messages on change, and return the current value on finalize.
 listicle
-  :: forall s m lock payload a
+  :: forall s e m lock payload a
    . Korok s m
   => Show a
   => { initial :: Array a -- initial value
      , addEvent :: AnEvent m a -- external add events
 
-     , remove :: Maybe (Effect Unit -> Domable m lock payload) -- remove button
-     , finalize :: Maybe (AnEvent m (Array a) -> Domable m lock payload) -- finalize button
+     , remove :: Maybe (Effect Unit -> Domable e m lock payload) -- remove button
+     , finalize :: Maybe (AnEvent m (Array a) -> Domable e m lock payload) -- finalize button
 
-     , renderItem :: a -> Domable m lock payload
-     , begin :: Maybe (Domable m lock payload)
-     , end :: Maybe (Domable m lock payload)
-     , separator :: Maybe (Domable m lock payload)
+     , renderItem :: a -> Domable e m lock payload
+     , begin :: Maybe (Domable e m lock payload)
+     , end :: Maybe (Domable e m lock payload)
+     , separator :: Maybe (Domable e m lock payload)
      }
-  -> ComponentSpec m lock payload (Array a)
+  -> ComponentSpec e m lock payload (Array a)
 listicle desc = keepLatest $ bus \pushRemove removesEvent ->
   let
     addEvent = counter desc.addEvent <#> \(v /\ i) -> (i + Array.length desc.initial) /\ v
@@ -1470,13 +1470,13 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
           Nothing -> []
           Just v -> [ v ]
 
-        withRemover :: Domable m lock payload -> Int -> Array (Domable m lock payload)
+        withRemover :: Domable e m lock payload -> Int -> Array (Domable e m lock payload)
         withRemover item idx = case desc.remove of
           Nothing -> [ item ]
           Just remover ->
             [ item, remover (pushRemove idx) ]
 
-        renderOne :: Int /\ a -> Array (Domable m lock payload)
+        renderOne :: Int /\ a -> Array (Domable e m lock payload)
         renderOne (idx /\ item) = withRemover (desc.renderItem item) idx
 
         dropComma :: Int -> AnEvent m Boolean
@@ -1499,7 +1499,7 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
           let
             renderItems = sampleOn (Array.length <$> currentValue) $
               (initialEvent <|> addEvent) <#> \(idx /\ item) len ->
-                ( bang $ insert $ fixed $ append
+                ( insert $ fixed $ append
                     (if len > 0 && idx /= 0 then [ switcher (fixed <<< if _ then [] else sep) (bang false <|> dropComma idx) ] else [])
                     (renderOne (idx /\ item))
                 ) <|> filter (eq idx) removesEvent $> remove
@@ -1509,12 +1509,12 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
         { element, value: map snd <$> currentValue }
 
 -- | Abstract component
-type ComponentSpec m lock payload d =
-  AnEvent m (Component m lock payload d)
+type ComponentSpec e m lock payload d =
+  AnEvent m (Component e m lock payload d)
 
 -- | Instantiated component
-type Component m lock payload d =
-  { element :: Domable m lock payload
+type Component e m lock payload d =
+  { element :: Domable e m lock payload
   , value :: AnEvent m d
   }
 
@@ -1526,11 +1526,11 @@ type Component m lock payload d =
 -- | otherwise the value is attached to a phantom instance that has no DOM
 -- | presence, due to the way busses and subscriptions work.
 withInstance
-  :: forall s d m lock payload
+  :: forall s d e m lock payload
    . Korok s m
-  => ComponentSpec m lock payload d
-  -> (Component m lock payload d -> Domable m lock payload)
-  -> Domable m lock payload
+  => ComponentSpec e m lock payload d
+  -> (Component e m lock payload d -> Domable e m lock payload)
+  -> Domable e m lock payload
 withInstance componentSpec renderer =
   envy $ memoize componentSpec \component ->
     renderer
@@ -1544,13 +1544,13 @@ renderAs c t = D.span (D.Class !:= c) [ text_ t ]
 renderTok :: Maybe (Effect Unit) -> CodePoint -> Nut
 renderTok c t = D.span (D.OnClick ?:= c <|> D.Class !:= "terminal" <> if isJust c then " clickable" else "") [ text_ (String.singleton t) ]
 
-renderTok' :: forall s m lock payload. Korok s m => AnEvent m String -> AnEvent m (Maybe (Effect Unit)) -> CodePoint -> Domable m lock payload
+renderTok' :: forall s e m lock payload. Korok s m => AnEvent m String -> AnEvent m (Maybe (Effect Unit)) -> CodePoint -> Domable e m lock payload
 renderTok' cls c t = D.span (D.OnClick <:=> filterMap identity c <|> D.Class <:=> (bang "terminal" <|> (append "terminal " <$> cls))) [ text_ (String.singleton t) ]
 
 renderNT :: Maybe (Effect Unit) -> NonEmptyString -> Nut
 renderNT c nt = D.span (D.OnClick ?:= c <|> D.Class !:= "non-terminal" <> if isJust c then " clickable" else "") [ text_ (NES.toString nt) ]
 
-renderNT' :: forall s m lock payload. Korok s m => AnEvent m String -> AnEvent m (Maybe (Effect Unit)) -> NonEmptyString -> Domable m lock payload
+renderNT' :: forall s e m lock payload. Korok s m => AnEvent m String -> AnEvent m (Maybe (Effect Unit)) -> NonEmptyString -> Domable e m lock payload
 renderNT' cls c nt = D.span (D.OnClick <:=> filterMap identity c <|> D.Class <:=> (bang "non-terminal" <|> (append "non-terminal " <$> cls))) [ text_ (NES.toString nt) ]
 
 renderRule :: Maybe (Effect Unit) -> String -> Nut
@@ -1562,7 +1562,7 @@ renderMeta c x = D.span (D.OnClick ?:= c <|> D.Class !:= "meta" <> if isJust c t
 renderSt :: Maybe (Effect Unit) -> Int -> Nut
 renderSt c x = D.span (D.OnClick ?:= c <|> D.Class !:= "state" <> if isJust c then " clickable" else "") [ text_ (show x) ]
 
-renderSt' :: forall s m lock payload. Korok s m => AnEvent m String -> Maybe (Effect Unit) -> Int -> Domable m lock payload
+renderSt' :: forall s e m lock payload. Korok s m => AnEvent m String -> Maybe (Effect Unit) -> Int -> Domable e m lock payload
 renderSt' cls c x = D.span (D.OnClick ?:= c <|> D.Class <:=> (bang "state" <|> (append "state " <$> cls))) [ text_ (show x) ]
 
 renderPart :: Maybe (Effect Unit) -> Part NonEmptyString CodePoint -> Nut
@@ -1573,9 +1573,9 @@ renderCmd :: Maybe (Effect Unit) -> String -> Nut
 renderCmd c x = D.span (D.OnClick ?:= c <|> D.Class !:= "cmd" <> if isJust c then " clickable" else "") [ text_ x ]
 
 stateComponent
-  :: forall s m lock payload
+  :: forall s e m lock payload
    . Korok s m
-  => Domable m lock payload
+  => Domable e m lock payload
 stateComponent = bussed \addNew addEvent ->
   let
     component0 = listicle
@@ -1696,8 +1696,8 @@ pl :: forall f a b. Foldable f => f a -> b -> b -> b
 pl as _ many | Foldable.length as > 1 = many
 pl _ single _ = single
 
-list :: forall f s m lock payload. Korok s m => Foldable f =>
-  f (Domable m lock payload) -> Array (Domable m lock payload)
+list :: forall f s e m lock payload. Korok s m => Foldable f =>
+  f (Domable e m lock payload) -> Array (Domable e m lock payload)
 list = Array.fromFoldable >>> case _ of
   [a] -> [a]
   [a,b] -> [a, text_ " & ", b]
@@ -1737,13 +1737,13 @@ parseGrammarError (RuleNamesUnique rules) = fixed $
   [ text_ "Rule names must be unique, but " ] <> list (map (\x -> fixed [renderMeta mempty "#", renderRule mempty x]) rules) <> [text_ " ", text_ (pl rules "was" "were"), text_ " duplicated"]
 
 grammarComponent
-  :: forall s m lock payload
+  :: forall s e m lock payload
    . Korok s m
   => String
   -> SAugmented
   -> AnEvent Effect SAugmented
   -> (SAugmented -> Effect Unit)
-  -> Domable m lock payload
+  -> Domable e m lock payload
 grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
   (bang reallyInitialGrammar <|> fromEvent forceGrammar) `flip switcher` \initialGrammar ->
     vbussed (Proxy :: Proxy (V GrammarInputs)) \putInput inputs ->
@@ -1984,11 +1984,11 @@ type ExplorerAction =
   )
 
 explorerComponent
-  :: forall s m lock payload
+  :: forall s e m lock payload
    . Korok s m
   => SProduceable
   -> (Array CodePoint -> Effect Unit)
-  -> Domable m lock payload
+  -> Domable e m lock payload
 explorerComponent { produced: producedRules, grammar: { augmented: MkGrammar rules, start: { pName: entry } } } sendUp =
   vbussed (Proxy :: Proxy (V ExplorerAction)) \push event -> do
     envy $ memoBeh event.select [ NonTerminal entry ] \currentParts -> do
@@ -2081,11 +2081,11 @@ sampleSE :: SProduceable -> Effect String
 sampleSE = sampleE >>> map (maybe "" String.fromCodePointArray)
 
 randomComponent
-  :: forall s m lock payload
+  :: forall s e m lock payload
    . Korok s m
   => SProduceable
   -> (Array CodePoint -> Effect Unit)
-  -> Domable m lock payload
+  -> Domable e m lock payload
 randomComponent { produced: producedRules, grammar: { augmented: MkGrammar rules, start: { pName: entry } } } sendUp =
   vbussed (Proxy :: Proxy (V RandomAction)) \push event -> do
     let
@@ -2214,12 +2214,12 @@ mainE = do
   pure (SafeNut (mainComponent initialGrammar navGrammar setGrammar))
 
 mainComponent
-  :: forall s m lock payload
+  :: forall s e m lock payload
    . Korok s m
   => SAugmented
   -> AnEvent Effect SAugmented
   -> (SAugmented -> Effect Unit)
-  -> Domable m lock payload
+  -> Domable e m lock payload
 mainComponent initialGrammar grammarStream sendGrammar =
   vbussed (Proxy :: _ TopLevelUIAction) \push event -> do
     envy $ memoBangFold const (fromEvent grammarStream <|> event.grammar) initialGrammar \currentGrammar -> do
