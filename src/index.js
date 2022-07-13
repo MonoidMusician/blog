@@ -1,4 +1,4 @@
-import "./style.css";
+import "./style.sass";
 import { main } from "../output/Main";
 main();
 

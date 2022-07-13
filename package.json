@@ -5,7 +5,7 @@
 	"main": "index.js",
 	"scripts": {
 		"make-ssr": "esbuild ./output/SSR/index.js --bundle --format=cjs --outfile=ssr.js",
-		"start": "spago build && npm run make-ssr && webpack serve --open",
+		"start": "spago build && npm run make-ssr && webpack serve --stats-error-details",
 		"build": "npm run build-ps && rm -rf dist && mkdir dist && npm run make-ssr && webpack --mode=production",
 		"build-ps": "spago build"
 	},
@@ -31,5 +31,9 @@
 		"webpack": "^5.72.0",
 		"webpack-cli": "^4.9.2",
 		"webpack-dev-server": "^4.8.1"
+	},
+	"dependencies": {
+		"sass": "^1.53.0",
+		"sass-loader": "^13.0.2"
 	}
 }

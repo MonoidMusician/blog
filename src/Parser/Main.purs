@@ -1768,7 +1768,7 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                       [ input "Rule name" "" "" putInput.rName ]
                   , D.button
                       ( oneOf
-                          [ D.Class !:= "big"
+                          [ D.Class !:= "big add"
                           , D.OnClick <:=> do
                               sampleJITE currentText $ sampleJITE counted
                                 $ map readersT
@@ -1907,7 +1907,7 @@ explorerComponent { produced: producedRules, grammar: { augmented: MkGrammar rul
                                 , D.OnClick <:=> traverse_ push.select <$> replacement
                                 ]
                             )
-                            [ text_ "Select" ]
+                            [ text_ "Choose" ]
                         ]
                     , case Array.find (_.production >>> eq rule) producedRules of
                         Nothing -> text_ "Unproduceable"
@@ -2109,7 +2109,7 @@ mainComponent initialGrammar grammarStream sendGrammar =
 
         widget o w = D.div (D.Class !:= "widget" <|> D.Style !:= ("order: " <> show o))
           [ D.div_
-              [ D.button (D.OnClick !:= push.focusMode unit <|> D.Class !:= "big")
+              [ D.button (D.OnClick !:= push.focusMode unit <|> D.Class !:= "big bonus")
                   [ text_ "Toggle dashboard mode" ]
               , D.br_ []
               , D.br_ []
