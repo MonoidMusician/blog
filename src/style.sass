@@ -28,6 +28,9 @@ table
 .clickable
   cursor: pointer
 
+.widgets .widget
+  overflow-x: auto
+  overflow-y: hidden
 
 .widgets.focus-mode
   width: 100vw
@@ -53,6 +56,7 @@ table
     border: 1px solid gray
     box-sizing: border-box
     scroll-snap-align: start
+    position: relative
 
     & > :only-child
       padding: 10px
@@ -155,19 +159,22 @@ table
 
   & > :nth-last-child(2),
   & > .AST:nth-last-child(2) > li > .node
+    z-index: 1
     border-color: lightgreen
 
 .parse-steps
-  position: relative
+  // https://pqina.nl/blog/css-grid-position-absolute-alternative/
+  display: grid
+  grid-template-columns: 1fr
   width: 100%
 
-  & > div
-    top: 2em
-    position: absolute
-    width: 100%
+  & > *
+    grid-row-start: 1
+    grid-column-start: 1
 
-  & > span
-    position: absolute
+  & > div
+    padding-top: 2em
+    width: 100%
 
 .layer .rule,
 .layer .meta
@@ -496,7 +503,7 @@ label
     position: absolute
     padding: 0 4px
     top: -1px
-    left: 5px
+    left: 7px
     background: #043147
     letter-spacing: normal
     color: #f0e8d4
@@ -523,11 +530,11 @@ label
     padding: 4px
     z-index: 2
     transition: opacity 0.2s ease-out, transform 0.2s ease-out
-  &:hover > span.error
+  &:hover > span.error, & > input:focus ~ span.error
     pointer-events: all
     opacity: 1
     transform: translate(0, 0)
-  &:not(:hover) > span.error
+  &:not(:hover) > input:not(:focus) ~ span.error
     // so that it does not reveal itself
     pointer-events: none
     opacity: 0
@@ -549,7 +556,7 @@ label
     font-weight: 600
     position: absolute
     right: 8px
-    top: calc(50% - 0.5em - 0.45em)
+    top: calc(50% - 0.5em - 0.4em)
     color: rgba(255, 0, 77)
     background: linear-gradient(90deg, transparent, #073146 0.7em)
     padding-left: 0.7em
@@ -682,6 +689,7 @@ h5 em
   border-image-slice: 1
   padding: 8px
   /*margin: 0 -9px;*/
+  position: relative
 
 .Box > :first-child, .Example > :first-child, .Details > :first-child, .Error > :first-child, .Warning > :first-child, .Key_Idea > :first-child, .Bonus > :first-child, .Note > :first-child
   margin-top: 0
