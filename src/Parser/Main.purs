@@ -6,6 +6,7 @@ import Bolson.Core (Child(..))
 import Control.Alt ((<|>))
 import Control.Alternative (guard)
 import Control.Apply (lift2, lift3)
+import Control.Bind (bindFlipped)
 import Control.Monad.Gen (class MonadGen)
 import Control.Monad.Gen as Gen
 import Control.Monad.Reader (ReaderT(..))
@@ -36,11 +37,10 @@ import Data.Int as Int
 import Data.List (List)
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromJust, fromMaybe, isJust, isNothing, maybe)
+import Data.Maybe (Maybe(..), fromJust, fromMaybe, isJust, maybe)
 import Data.Newtype (class Newtype, unwrap)
 import Data.NonEmpty (NonEmpty(..))
 import Data.Number (e, pi)
-import Data.Semigroup.Foldable (minimum, minimumBy)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Show.Generic (genericShow)
@@ -53,24 +53,22 @@ import Data.Traversable (for, mapAccumL, sequence, traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import Data.Typelevel.Undefined (undefined)
 import Data.Variant (Variant)
 import Data.Variant as V
 import Data.Variant as Variant
-import Deku.Attribute (class Attr, Attribute, Cb, cb, prop', unsafeAttribute, (:=))
+import Deku.Attribute (class Attr, Attribute, Cb, cb, (:=))
 import Deku.Control (bus, bussed, vbussed, switcher, text, text_, dyn, envy, fixed)
 import Deku.Core (class Korok, Domable, Nut, insert, remove)
 import Deku.Core as DC
 import Deku.DOM as D
 import Deku.Listeners (click, slider)
 import Effect (Effect)
-import Effect.Class.Console (log)
 import Effect.Class.Console as Log
 import Effect.Now (now)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior (step)
-import FRP.Event (class IsEvent, AnEvent, bang, create, filterMap, fold, fromEvent, keepLatest, makeEvent, mapAccum, memoize, sampleOn, subscribe, sweep, toEvent, withLast)
+import FRP.Event (class IsEvent, AnEvent, Event, bang, create, filterMap, fold, fromEvent, keepLatest, makeEvent, mapAccum, memoize, sampleOn, subscribe, sweep, toEvent, withLast)
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Class (biSampleOn)
 import FRP.Event.Time (withTime)
@@ -78,8 +76,6 @@ import FRP.Event.VBus (V)
 import FRP.Rate (Beats(..), RateInfo, timeFromRate)
 import FRP.SampleJIT (readersT, sampleJITE)
 import FRP.SelfDestruct (selfDestruct)
-import Foreign (unsafeToForeign)
-import JSURI (decodeURIComponent, encodeURIComponent)
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps, topOf)
 import Parser.Proto as Proto
 import Parser.ProtoG8 as G8
@@ -89,14 +85,9 @@ import Test.QuickCheck.Gen as QC
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Web.Event.Event (target)
-import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
-import Web.HTML (window)
-import Web.HTML.Event.PopStateEvent.EventTypes (popstate)
 import Web.HTML.HTMLInputElement (fromEventTarget, value)
-import Web.HTML.History (DocumentTitle(..), URL(..), pushState)
-import Web.HTML.Location as Location
-import Web.HTML.Window (history)
-import Web.HTML.Window as Window
+import Widget (Widget)
+import Widget.Types (SafeNut(..))
 
 data StepAction = Initial | Toggle | Slider | Play
 
@@ -2144,8 +2135,6 @@ peas x = fixed (map (D.p_ <<< pure <<< text_) x)
 main :: Nut
 main = mainComponent sampleGrammar empty mempty
 
-newtype SafeNut = SafeNut Nut
-
 grammarCodec
   :: { encode :: SAugmented -> Json.Json
      , decode :: Json.Json -> Maybe SAugmented
@@ -2177,41 +2166,23 @@ grammarCodec =
         }
       _ -> Nothing
 
-mainE :: Effect SafeNut
-mainE = do
-  w <- window
+cheatEvent :: forall a. Event a -> Effect (Maybe a)
+cheatEvent e = do
+  ref <- Ref.new Nothing
+  join $ subscribe e \v -> Ref.write (Just v) ref
+  Ref.read ref
+
+widget :: Widget
+widget { interface } = do
   let
-    getGrammar = do
-      s <- Window.location w >>= Location.search
-      let p = "grammar="
-      case String.indexOf (String.Pattern p) s of
-        Nothing -> Nothing <$ log "No grammar in query"
-        Just i -> do
-          let
-            -- FIXME
-            s' = String.drop (i + String.length p) s
-          case decodeURIComponent s' of
-            Nothing -> Nothing <$ log "Failed to decode URL"
-            Just s'' ->
-              case Json.parseJson s'' of
-                Left _ -> Nothing <$ log ("Failed to parse JSON: " <> s'')
-                Right j ->
-                  case grammarCodec.decode j of
-                    Nothing -> Nothing <$ log "Failed to decode"
-                    Just g -> pure $ Just g
-    setGrammar g = do
-      let
-        j = stringify $ grammarCodec.encode g
-        q = unsafePartial $ fromJust $ encodeURIComponent j
-      h <- history w
-      pushState (unsafeToForeign j) (DocumentTitle "") (URL ("?grammar=" <> q)) h
-    navGrammar = makeEvent \push -> do
-      e <- eventListener \_ -> do
-        traverse_ push =<< getGrammar
-      addEventListener popstate e false (Window.toEventTarget w)
-      pure $ removeEventListener popstate e false (Window.toEventTarget w)
-  initialGrammar <- fromMaybe sampleGrammar <$> getGrammar
-  pure (SafeNut (mainComponent initialGrammar navGrammar setGrammar))
+    upstream = case interface "grammar" of
+      io ->
+        { send: grammarCodec.encode >>> io.send
+        , receive: filterMap grammarCodec.decode io.receive
+        }
+  initialGrammar <- fromMaybe sampleGrammar <$> cheatEvent upstream.receive
+  pure $ SafeNut do
+    mainComponent initialGrammar upstream.receive upstream.send
 
 mainComponent
   :: forall s e m lock payload

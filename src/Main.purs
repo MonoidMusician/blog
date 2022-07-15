@@ -2,9 +2,20 @@ module Main where
 
 import Prelude
 
-import Deku.Toplevel (runInBody)
+import Data.Tuple.Nested ((/\))
 import Effect (Effect)
+import Foreign.Object as Object
 import Parser.Main as Parser
+import Widget (Widgets, instantiateAll)
+import Widget.Query as Widget.Query
+import Widget.Types (SafeNut(..))
 
-main :: Effect Unit
-main = Parser.mainE >>= \(Parser.SafeNut n) -> runInBody n
+widgets :: Widgets
+widgets = Object.fromFoldable
+  [ "Parser.Main" /\ Parser.widget
+  , "Widget.Query" /\ Widget.Query.widget
+  ]
+
+-- Returns a cleanup effect
+main :: Effect (Effect Unit)
+main = instantiateAll widgets

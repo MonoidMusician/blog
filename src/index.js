@@ -1,10 +1,10 @@
 import "./style.sass";
 import { main } from "../output/Main";
-main();
+var unsub = main();
 
 if (module.hot) {
 	module.hot.accept("../output/Main", function () {
-		document.body.innerHTML = "";
-		main();
+		unsub();
+		unsub = main();
 	});
 }
