@@ -9,6 +9,7 @@ import Control.Plus (empty)
 import Data.Argonaut (Json)
 import Data.Argonaut as Json
 import Data.Array as Array
+import Data.Coyoneda (Coyoneda(..))
 import Data.Either (Either(..))
 import Data.Foldable (foldMap, for_, traverse_)
 import Data.Maybe (Maybe(..))
@@ -17,9 +18,11 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Deku.Control (fixed)
 import Deku.Toplevel (runInElement')
 import Effect (Effect)
+import Effect.AVar (AVar)
 import Effect.Class.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
-import FRP.Event (Event, create, filterMap, makeEvent, subscribe)
+import FRP.Event (Event, create, filterMap, makeEvent, subscribe, sweep)
+import FRP.Event.Class (bang)
 import Foreign.Object (Object)
 import Foreign.Object as Object
 import Foreign.Object.ST (STObject)
@@ -41,16 +44,25 @@ import Widget.Types (SafeNut(..))
 type Interface a =
   { send :: a -> Effect Unit
   , receive :: Event a
+  , loopback :: Event a
+  , mailbox :: Event (a -> Event Unit)
+  , current :: Effect (Maybe a)
   }
 disconnected :: forall a. Interface a
-disconnected = { send: mempty, receive: empty }
+disconnected =
+  { send: mempty
+  , receive: empty
+  , loopback: empty
+  , mailbox: bang (const empty)
+  , current: pure Nothing
+  }
 
 type KeyedInterface = String -> Interface Json
 -- We adjoint integers for tracking sources so we do not send to the source
 -- it came from
 type DataShare = STObject Global (Int /\ (String -> Interface (Int /\ Json)))
 
-makeKeyedInterface :: forall a. Effect (String -> Interface a)
+makeKeyedInterface :: forall a. Ord a => Effect (String -> Interface a)
 makeKeyedInterface = do
   interfaces <- liftST $ STO.new
   -- This is possible to do purely, by creating a shared event bus in the
@@ -64,7 +76,7 @@ makeKeyedInterface = do
         io <$ liftST (STO.poke k io interfaces)
 
 -- Each new subscription gets the latest value
-createBehavioral :: forall a. Effect (Interface a)
+createBehavioral :: forall a. Ord a => Effect (Interface a)
 createBehavioral = do
   ref <- liftST (STRef.new Nothing)
   upstream <- create
@@ -73,7 +85,13 @@ createBehavioral = do
     downstream = makeEvent \k -> do
       liftST (STRef.read ref) >>= traverse_ k
       subscribe upstream.event k
-  pure { send: write <> upstream.push, receive: downstream }
+  pure
+    { send: write <> upstream.push
+    , receive: downstream
+    , loopback: downstream
+    , mailbox: sweep downstream identity
+    , current: liftST (STRef.read ref)
+    }
 
 getInterface :: DataShare -> String -> Effect KeyedInterface
 getInterface share k = do
@@ -87,9 +105,13 @@ getInterface share k = do
   pure \k1 ->
     let
       int = r k1
+      receive = filterMap (\(j /\ v) -> if i /= j then Just v else Nothing) int.receive
     in
       { send: \v -> int.send (i /\ v)
-      , receive: filterMap (\(j /\ v) -> if i /= j then Just v else Nothing) int.receive
+      , receive: receive
+      , loopback: int.receive <#> snd
+      , mailbox: sweep receive identity
+      , current: int.current <#> map \(_ /\ v) -> v
       }
 
 type KeyedInterfaceWithAttrs =

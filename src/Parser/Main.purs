@@ -14,6 +14,7 @@ import Control.Monad.ST.Class (class MonadST, liftST)
 import Control.Monad.ST.Internal as STRef
 import Control.Monad.State (StateT, get, put, runStateT)
 import Control.Monad.Trampoline (Trampoline, runTrampoline)
+import Control.Monad.Writer (writer)
 import Control.Plus (empty)
 import Data.Argonaut (stringify)
 import Data.Argonaut as Json
@@ -22,25 +23,36 @@ import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Array.NonEmpty.Internal (NonEmptyArray)
 import Data.Bifunctor (class Bifunctor, bimap, lmap)
+import Data.Bifunctor as BF
+import Data.Codec (BasicCodec, Codec, GCodec(..), basicCodec, codec, decode, encode, mapCodec, (<~<), (~))
+import Data.Codec.Argonaut (JsonDecodeError(..), JsonCodec)
+import Data.Codec.Argonaut as CA
+import Data.Codec.Argonaut.Record as CAR
+import Data.Codec.Argonaut.Record as Codec.Record
+import Data.Codec.Argonaut.Variant as CAV
 import Data.Compactable (compact)
 import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..), either, fromRight', hush, note)
 import Data.Filterable (filter)
-import Data.Foldable (class Foldable, any, foldMap, for_, oneOf, oneOfMap, sequence_, sum, traverse_)
+import Data.Foldable (class Foldable, any, elem, foldMap, for_, oneOf, oneOfMap, sequence_, sum, traverse_)
 import Data.Foldable (length) as Foldable
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Function (on)
+import Data.Functor.Compose (Compose(..))
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.Int (floor)
 import Data.Int as Int
-import Data.List (List)
+import Data.List (List(..))
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromJust, fromMaybe, isJust, maybe)
-import Data.Newtype (class Newtype, unwrap)
+import Data.Maybe (Maybe(..), fromJust, fromMaybe, fromMaybe', isJust, maybe)
+import Data.Maybe.Last (Last(..))
+import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.NonEmpty (NonEmpty(..))
 import Data.Number (e, pi)
+import Data.Profunctor (dimap, lcmap)
+import Data.Profunctor.Star (Star(..))
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Show.Generic (genericShow)
@@ -51,7 +63,7 @@ import Data.String.NonEmpty.Internal (NonEmptyString)
 import Data.Time.Duration (Seconds(..))
 import Data.Traversable (for, mapAccumL, sequence, traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
-import Data.Tuple (fst, snd)
+import Data.Tuple (fst, snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Variant (Variant)
 import Data.Variant as V
@@ -63,6 +75,7 @@ import Deku.Core as DC
 import Deku.DOM as D
 import Deku.Listeners (click, slider)
 import Effect (Effect)
+import Effect.Class.Console (log, logShow)
 import Effect.Class.Console as Log
 import Effect.Now (now)
 import Effect.Ref as Ref
@@ -76,17 +89,20 @@ import FRP.Event.VBus (V)
 import FRP.Rate (Beats(..), RateInfo, timeFromRate)
 import FRP.SampleJIT (readersT, sampleJITE)
 import FRP.SelfDestruct (selfDestruct)
+import Foreign.Object (Object)
+import Foreign.Object as Object
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps, topOf)
 import Parser.Proto as Proto
 import Parser.ProtoG8 as G8
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Random.LCG as LCG
+import Record as Record
 import Test.QuickCheck.Gen as QC
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Web.Event.Event (target)
 import Web.HTML.HTMLInputElement (fromEventTarget, value)
-import Widget (Widget)
+import Widget (Widget, Interface)
 import Widget.Types (SafeNut(..))
 
 data StepAction = Initial | Toggle | Slider | Play
@@ -103,6 +119,7 @@ type Nutss =
 
 newtype Grammar nt r tok = MkGrammar
   (Array (GrammarRule nt r tok))
+derive newtype instance showGrammar :: (Show nt, Show r, Show tok) => Show (Grammar nt r tok)
 
 type GrammarRule nt r tok =
   { pName :: nt -- nonterminal / production rule name
@@ -398,16 +415,16 @@ exStates a = fromRight' (\_ -> unsafeCrashWith "state generation did not work")
   (numberStates (add 1) exSeed.augmented (exGenerated a))
 
 g8Table :: forall a. a -> Proto.Table Int (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok) (CST (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok))
-g8Table = toTable <<< g8States
+g8Table = apply toTable indexStates <<< g8States
 
-exTable :: forall t. t -> Proto.Table Int (NonEmptyString /\ String) CodePoint (CST (NonEmptyString /\ String) CodePoint)
-exTable = toTable <<< exStates
+exTable :: forall t. t -> SCTable
+exTable = apply toTable indexStates <<< exStates
 
 g8Table' :: forall a. a -> Proto.Table Int (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok) (Either (Maybe G8.Tok) (AST (Maybe G8.Sorts /\ Maybe G8.Rule)))
-g8Table' = toTable' <<< g8States
+g8Table' = apply toTable' indexStates <<< g8States
 
-exTable' :: forall t. t -> Proto.Table Int (NonEmptyString /\ String) CodePoint (Either CodePoint (AST (NonEmptyString /\ String)))
-exTable' = toTable' <<< exStates
+exTable' :: forall t. t -> SATable
+exTable' = apply toTable' indexStates <<< exStates
 
 g8FromString :: String -> Maybe (List (Maybe G8.Tok))
 g8FromString = G8.g8FromString >>> map map map case _ of
@@ -451,12 +468,17 @@ exFromString :: String -> Maybe (List CodePoint)
 exFromString = String.toCodePointArray >>> flip append [ defaultEOF ] >>> Array.toUnfoldable >>> verifyTokens exSeed.augmented
 
 fromString :: SAugmented -> String -> Maybe (List CodePoint)
-fromString grammar =
-  ( join \e ->
-      if String.contains (String.Pattern (String.singleton grammar.eof)) e then identity
-      else flip append (String.singleton grammar.eof)
-  )
-    >>> fromString' grammar
+fromString grammar = addEOF grammar >>> fromString' grammar
+
+addEOF :: SAugmented -> String -> String
+addEOF grammar e =
+  if String.contains (String.Pattern (String.singleton grammar.eof)) e then e
+  else e <> String.singleton grammar.eof
+
+addEOF' :: SAugmented -> List CodePoint -> List CodePoint
+addEOF' grammar e =
+  if grammar.eof `elem` e then e
+  else e <> pure grammar.eof
 
 fromString' :: SAugmented -> String -> Maybe (List CodePoint)
 fromString' grammar = String.toCodePointArray
@@ -495,6 +517,7 @@ unZipper :: forall nt tok. Zipper nt tok -> Fragment nt tok
 unZipper (Zipper before after) = before <> after
 
 newtype State nt r tok = State (Array (StateItem nt r tok))
+derive instance newtypeState :: Newtype (State nt r tok) _
 
 instance eqState :: (Eq nt, Eq r, Eq tok) => Eq (State nt r tok) where
   eq (State s1) (State s2) = s1 == s2 ||
@@ -546,6 +569,10 @@ data ShiftReduce s r
   = Shift s
   | Reduces (NonEmptyArray r)
   | ShiftReduces s (NonEmptyArray r)
+
+derive instance genericShiftReduce :: Generic (ShiftReduce s r) _
+instance showShiftReduce :: (Show s, Show r) => Show (ShiftReduce s r) where
+  show = genericShow
 
 unShift :: forall s r. ShiftReduce s r -> Maybe s
 unShift (Shift s) = Just s
@@ -833,7 +860,7 @@ instance showCST :: (Show r, Show tok) => Show (CST r tok) where
   show x = genericShow x
 
 data AST r = Layer r (Array (AST r))
-type SAST = AST String
+type SAST = AST (NonEmptyString /\ String)
 
 derive instance functorAST :: Functor AST
 derive instance genericAST :: Generic (AST r) _
@@ -844,6 +871,16 @@ prune :: forall r tok. CST r tok -> Either tok (AST r)
 prune (Leaf tok) = Left tok
 prune (Branch r rec) = Right (Layer r (Array.mapMaybe (hush <<< prune) rec))
 
+type StateIndex s = Map s Int
+type SStateIndex = StateIndex Int
+
+type SCTable = Proto.Table Int (NonEmptyString /\ String) CodePoint SCST
+type SATable = Proto.Table Int (NonEmptyString /\ String) CodePoint (Either CodePoint SAST)
+
+indexStates :: forall s nt r tok. Ord s => States s nt r tok -> StateIndex s
+indexStates (States states) =
+  Map.fromFoldable $ mapWithIndex (\i { sName } -> sName /\ i) states
+
 toTable
   :: forall s nt r tok
    . Ord s
@@ -851,10 +888,10 @@ toTable
   => Eq r
   => Ord tok
   => States s nt r tok
+  -> StateIndex s
   -> Proto.Table s (nt /\ r) tok (CST (nt /\ r) tok)
-toTable (States states) =
+toTable (States states) tabulated =
   let
-    tabulated = Map.fromFoldable $ mapWithIndex (\i { sName } -> sName /\ i) states
     lookupState s = Map.lookup s tabulated >>= Array.index states
     lookupAction tok { advance: SemigroupMap m } = Map.lookup tok m
     lookupReduction (p /\ r) { items: State items } = items # oneOfMap case _ of
@@ -892,10 +929,10 @@ toTable'
   => Eq r
   => Ord tok
   => States s nt r tok
+  -> StateIndex s
   -> Proto.Table s (nt /\ r) tok (Either tok (AST (nt /\ r)))
-toTable' (States states) =
+toTable' (States states) tabulated =
   let
-    tabulated = Map.fromFoldable $ mapWithIndex (\i { sName } -> sName /\ i) states
     lookupState s = Map.lookup s tabulated >>= Array.index states
     lookupAction tok { advance: SemigroupMap m } = Map.lookup tok m
     lookupReduction (p /\ r) { items: State items } = items # oneOfMap case _ of
@@ -989,8 +1026,16 @@ input label placeholder initialValue onInput =
         []
     ]
 
-inputValidated :: forall s e m lock payload. Korok s m =>
-  String -> String -> String -> String -> AnEvent m String -> (String -> Effect Unit) -> Domable e m lock payload
+inputValidated
+  :: forall s e m lock payload
+   . Korok s m
+  => String
+  -> String
+  -> String
+  -> String
+  -> AnEvent m String
+  -> (String -> Effect Unit)
+  -> Domable e m lock payload
 inputValidated cls label placeholder initialValue valid onInput =
   D.label (D.Class <:=> (append "text" <<< (eq "" >>> if _ then "" else " invalid")) <$> (bang "" <|> valid))
     [ D.span_ [ text_ label ]
@@ -1123,8 +1168,8 @@ renderStackItem (Left x) = renderTok mempty x
 renderStackItem (Right x) = renderASTTree x
 
 renderAST :: SAST -> Nut
-renderAST (Layer r []) = D.span (D.Class !:= "layer") [ renderRule mempty r ]
-renderAST (Layer r cs) =
+renderAST (Layer (_ /\ r) []) = D.span (D.Class !:= "layer") [ renderRule mempty r ]
+renderAST (Layer (_ /\ r) cs) =
   D.span (D.Class !:= "layer")
     [ renderMeta mempty "("
     , renderRule mempty r
@@ -1138,11 +1183,11 @@ renderASTTree ast =
     [ D.li_ (renderASTChild ast) ]
 
 renderASTChild :: SAST -> Nuts
-renderASTChild (Layer r []) =
+renderASTChild (Layer (_ /\ r) []) =
   [ D.span (D.Class !:= "leaf node")
       [ renderRule mempty r ]
   ]
-renderASTChild (Layer r cs) =
+renderASTChild (Layer (_ /\ r) cs) =
   [ D.span (D.Class !:= "node")
       [ renderRule mempty r ]
   , D.ol (D.Class !:= "layer") $
@@ -1345,11 +1390,15 @@ memoBeh e a f = makeEvent \k -> do
   { push, event } <- create
   current <- liftST (STRef.new a)
   let
+    writeVal v = liftST (STRef.write v current) :: m a
     event' = makeEvent \k' -> do
       liftST (STRef.read current) >>= k'
       subscribe event k'
   k (f event')
-  subscribe e push
+  subscribe e (\v -> writeVal v *> push v)
+
+memoBehFold :: forall m a b t r. Applicative m => MonadST t m => (a -> b -> b) -> AnEvent m a -> b -> (AnEvent m b -> r) -> AnEvent m r
+memoBehFold folder event start = memoBeh (fold folder event start) start
 
 toggle :: forall s m a b. HeytingAlgebra b => MonadST s m => b -> AnEvent m a → AnEvent m b
 toggle start event = bangFold (\_ x -> not x) event start
@@ -1384,24 +1433,23 @@ stepByStep start index cb =
 
 spotlight :: forall a s m r. Ord a => MonadST s m => Boolean -> AnEvent m a -> ((a -> AnEvent m Boolean) -> r) -> AnEvent m r
 spotlight start shineAt cb =
-  let
-    state = withLast shineAt
-    swept = keepLatest $ state <#> \{ now, last } ->
-      if last == Just now then empty
-      else
-        oneOfMap bang last <|> bang now
-  in
-    sweep swept \sweeper ->
-      let
-        sweeper' a = toggle start <<< sweeper $ a
-      in
-        cb sweeper'
+  sweep (spotlightChange shineAt) \sweeper ->
+    cb (toggle start <<< sweeper)
+
+spotlightChange shineAt =
+  keepLatest $ withLast shineAt <#> \{ now, last } ->
+    if last == Just now then empty
+    else
+      oneOfMap bang last <|> bang now
 
 debug :: forall m a. Show a => String -> AnEvent m a -> AnEvent m a
 debug tag = map \a -> unsafePerformEffect (a <$ (Log.info (tag <> show a)))
 
 unsafeDebug :: forall m a. String -> AnEvent m a -> AnEvent m a
 unsafeDebug tag = map \a -> unsafePerformEffect (a <$ (Log.info tag <* Log.info (unsafeCoerce a)))
+
+silentDebug :: forall m a. String -> AnEvent m a -> AnEvent m a
+silentDebug tag = map \a -> unsafePerformEffect (a <$ Log.info tag)
 
 type ListicleEvent a = Variant (add :: a, remove :: Int)
 
@@ -1591,13 +1639,13 @@ stateComponent = bussed \addNew addEvent ->
           ]
 
 type GrammarInputs =
-  ( pName :: V ( value :: String, error :: String )
-  , rule :: V ( value :: String, error :: String )
-  , rName :: V ( value :: String, error :: String )
-  , top :: V ( value :: String, error :: String )
-  , entry :: V ( value :: String, error :: String )
-  , eof :: V ( value :: String, error :: String )
-  , topName :: V ( value :: String, error :: String )
+  ( pName :: V (value :: String, error :: String)
+  , rule :: V (value :: String, error :: String)
+  , rName :: V (value :: String, error :: String)
+  , top :: V (value :: String, error :: String)
+  , entry :: V (value :: String, error :: String)
+  , eof :: V (value :: String, error :: String)
+  , topName :: V (value :: String, error :: String)
   )
 
 type GrammarAction =
@@ -1687,15 +1735,19 @@ pl :: forall f a b. Foldable f => f a -> b -> b -> b
 pl as _ many | Foldable.length as > 1 = many
 pl _ single _ = single
 
-list :: forall f s e m lock payload. Korok s m => Foldable f =>
-  f (Domable e m lock payload) -> Array (Domable e m lock payload)
+list
+  :: forall f s e m lock payload
+   . Korok s m
+  => Foldable f
+  => f (Domable e m lock payload)
+  -> Array (Domable e m lock payload)
 list = Array.fromFoldable >>> case _ of
-  [a] -> [a]
-  [a,b] -> [a, text_ " & ", b]
+  [ a ] -> [ a ]
+  [ a, b ] -> [ a, text_ " & ", b ]
   as -> case Array.unsnoc as of
     Nothing -> []
     Just { init: as', last: b } ->
-      Array.intercalate [text_ ", "] (map pure as') <> [text_ " & ", b]
+      Array.intercalate [ text_ ", " ] (map pure as') <> [ text_ " & ", b ]
 
 rulesAtFault :: ParseGrammarError -> Array String
 rulesAtFault = case _ of
@@ -1711,21 +1763,24 @@ parseGrammarError :: ParseGrammarError -> Nut
 parseGrammarError NoRules = text_ "Need at least one rule in the grammar."
 parseGrammarError (ReferencesEOF rules) = fixed $
   [ text_ "The final token must only be referenced in the top rule, but it was also referenced in " ]
-  <> list (map (\x -> fixed [renderMeta mempty "#", renderRule mempty x]) rules) <>
-  [text_ "."]
+    <> list (map (\x -> fixed [ renderMeta mempty "#", renderRule mempty x ]) rules)
+    <>
+      [ text_ "." ]
 parseGrammarError (EOFNonTerminal rules) = fixed $
   [ text_ "The final token must not be a nonterminal, but it appeared in " ]
-  <> list (map (\x -> fixed [renderMeta mempty "#", renderRule mempty x]) rules) <>
-  [text_ "."]
+    <> list (map (\x -> fixed [ renderMeta mempty "#", renderRule mempty x ]) rules)
+    <>
+      [ text_ "." ]
 parseGrammarError (ReferencesTop rules) = fixed $
   [ text_ "The top nonterminal must not appear in the rest of the grammar, but it was also referenced in " ]
-  <> list (map (\x -> fixed [renderMeta mempty "#", renderRule mempty x]) rules) <>
-  [text_ "."]
+    <> list (map (\x -> fixed [ renderMeta mempty "#", renderRule mempty x ]) rules)
+    <>
+      [ text_ "." ]
 parseGrammarError (MissingEntry nt) = fixed
   [ text_ "Entry point ", renderNT mempty nt, text_ " is not present as a nonterminal in the grammar." ]
 parseGrammarError TopClash = text_ "Entry point must be different from the top rule."
 parseGrammarError (RuleNamesUnique rules) = fixed $
-  [ text_ "Rule names must be unique, but " ] <> list (map (\x -> fixed [renderMeta mempty "#", renderRule mempty x]) rules) <> [text_ " ", text_ (pl rules "was" "were"), text_ " duplicated"]
+  [ text_ "Rule names must be unique, but " ] <> list (map (\x -> fixed [ renderMeta mempty "#", renderRule mempty x ]) rules) <> [ text_ " ", text_ (pl rules "was" "were"), text_ " duplicated" ]
 
 grammarComponent
   :: forall s e m lock payload
@@ -1778,12 +1833,13 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
           counted = add (Array.length initialRules) <$>
             (bang 0 <|> (add 1 <$> fst <$> changeState.addRule))
         in
-          envy $ memoBangFold changeRule ruleChanges initialRules \currentRules -> do
+          envy $ memoBeh currentTop initialTop \currentTop -> do
+          envy $ memoBehFold changeRule ruleChanges initialRules \currentRules -> do
             let
               currentNTs = dedup $ map longestFirst $
                 biSampleOn
                   (map (_.pName <<< snd) <$> currentRules)
-                  (append <<< pure <<< fromMaybe defaultTopName <<< NES.fromString <$> (bang initialTop.top <|> inputs.top.value))
+                  (append <<< pure <<< fromMaybe defaultTopName <<< NES.fromString <<< _.top <$> currentTop)
               currentTopParsed = biSampleOn currentRules $ currentTop <#> \r rules ->
                 { top: fromMaybe defaultTopName $ NES.fromString r.top
                 , entry: NES.fromString r.entry <|> (Array.head rules <#> snd >>> _.pName)
@@ -1795,7 +1851,8 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
               rulesInTrouble = bang [] <|> changeState.troubleRules
 
               putEofError v = putInput.eof.error $
-                if String.length v <= 1 then "" else
+                if String.length v <= 1 then ""
+                else
                   "Must be a single character (Unicode code point)"
             D.div_
               [ D.div_
@@ -2135,54 +2192,743 @@ peas x = fixed (map (D.p_ <<< pure <<< text_) x)
 main :: Nut
 main = mainComponent sampleGrammar empty mempty
 
-grammarCodec
-  :: { encode :: SAugmented -> Json.Json
-     , decode :: Json.Json -> Maybe SAugmented
-     }
-grammarCodec =
-  { encode: \g ->
-      Json.fromArray $ unwrap g.augmented <#> \r ->
-        Json.fromArray
-          [ Json.fromString $ NES.toString r.pName
-          , Json.fromString $ unParseDefinition r.rule
-          , Json.fromString r.rName
-          ]
-  , decode: (fromRules <<< parseDefinitions) <=< Json.toArray >=> traverse Json.toArray >=> traverse \js ->
-      ado
-        pName <- NES.fromString =<< Json.toString =<< js !! 0
-        rule <- Json.toString =<< js !! 1
-        rName <- Json.toString =<< js !! 2
-        in { pName, rule, rName }
-  }
+rulesCodec
+  :: forall m r
+   . Applicative m
+  => BasicCodec m
+       (Array { pName :: NonEmptyString, rule :: String | r })
+       (Array { pName :: NonEmptyString, rule :: SFragment | r })
+rulesCodec = basicCodec
+  (pure <<< parseDefinitions)
+  (map \r -> r { rule = unParseDefinition r.rule })
+
+lastMile
+  :: BasicCodec (Either JsonDecodeError)
+       (Array { pName :: NonEmptyString, rName :: String, rule :: SFragment })
+       SAugmented
+lastMile = basicCodec
+  (fromRules)
+  (unwrap <<< _.augmented)
   where
   fromRules rules = do
-    top <- rules !! 0
+    top <- note (AtIndex 0 MissingValue) $ rules !! 0
     case top.rule of
-      [ NonTerminal entry, Terminal eof ] -> Just
+      [ NonTerminal entry, Terminal eof ] -> pure
         { augmented: MkGrammar rules
         , entry
         , eof
         , start: { lookahead: [], pName: top.pName, rName: top.rName, rule: Zipper [] top.rule }
         }
-      _ -> Nothing
+      _ -> Left $ AtIndex 0 $ UnexpectedValue $ Json.fromString $ unParseDefinition top.rule
 
-cheatEvent :: forall a. Event a -> Effect (Maybe a)
-cheatEvent e = do
-  ref <- Ref.new Nothing
-  join $ subscribe e \v -> Ref.write (Just v) ref
-  Ref.read ref
+nonEmptyStringCodec :: JsonCodec NonEmptyString
+nonEmptyStringCodec =
+  CA.prismaticCodec "NonEmptyString" NES.fromString NES.toString CA.string
+nonEmptyArrayCodec :: forall a. JsonCodec a -> JsonCodec (NonEmptyArray a)
+nonEmptyArrayCodec =
+  CA.prismaticCodec "NonEmptyArray" NEA.fromArray NEA.toArray <<< CA.array
 
-widget :: Widget
-widget { interface } = do
-  let
-    upstream = case interface "grammar" of
-      io ->
-        { send: grammarCodec.encode >>> io.send
-        , receive: filterMap grammarCodec.decode io.receive
+grammarCodec :: JsonCodec SAugmented
+grammarCodec = lastMile <~< rulesCodec <~< CA.array do
+  CAR.object "GrammarItem"
+    { pName: nonEmptyStringCodec
+    , rName: CA.string
+    , rule: CA.string
+    }
+
+_n :: forall m c d a b. Monad m => Newtype a b => Codec m c d b b -> Codec m c d a a
+_n = mapCodec (pure <<< wrap) unwrap
+
+tuple :: forall a b. JsonCodec a -> JsonCodec b -> JsonCodec (a /\ b)
+tuple a b = CA.indexedArray "Tuple" $ (/\)
+  <$> fst ~ CA.index 0 a
+  <*> snd ~ CA.index 1 b
+
+mappy :: forall k a. Ord k => JsonCodec k -> JsonCodec a -> JsonCodec (Map k a)
+mappy key codec = GCodec dec enc
+  where
+  asArray = identity :: Array ~> Array
+  dec = ReaderT \j -> map Map.fromFoldable $
+    traverse (\(k /\ j') -> BF.lmap (AtKey k) ((/\) <$> decode key (Json.fromString k) <*> decode codec j'))
+      <<< asArray <<< Object.toUnfoldable
+      =<< decode CA.jobject j
+  enc = Star \xs -> writer $ (/\) xs $ Json.fromObject $ Object.fromFoldable $ asArray $
+    Array.mapMaybe (\(k /\ v) -> (/\) <$> Json.toString (encode key k) <@> encode codec v) $ Map.toUnfoldable xs
+
+maybeCodec :: forall a. JsonCodec a -> JsonCodec (Maybe a)
+maybeCodec codecA =
+  dimap toVariant fromVariant
+    (CAV.variant
+      # CAV.variantCase (Proxy :: Proxy "Just") (Right codecA)
+      # CAV.variantCase (Proxy :: Proxy "Nothing") (Left unit))
+  where
+  toVariant = case _ of
+    Just a -> Variant.inj (Proxy :: Proxy "Just") a
+    Nothing -> Variant.inj (Proxy :: Proxy "Nothing") unit
+  fromVariant = V.case_
+    # Variant.on (Proxy :: Proxy "Just") Just
+    # Variant.on (Proxy :: Proxy "Nothing") (const Nothing)
+
+eitherCodec :: forall a b. JsonCodec a -> JsonCodec b -> JsonCodec (Either a b)
+eitherCodec codecA codecB =
+  dimap toVariant fromVariant
+    (CAV.variant
+      # CAV.variantCase (Proxy :: Proxy "Left") (Right codecA)
+      # CAV.variantCase (Proxy :: Proxy "Right") (Right codecB)
+    )
+  where
+  toVariant = case _ of
+    Left a -> Variant.inj (Proxy :: Proxy "Left") a
+    Right b -> Variant.inj (Proxy :: Proxy "Right") b
+  fromVariant = V.case_
+    # Variant.on (Proxy :: Proxy "Left") Left
+    # Variant.on (Proxy :: Proxy "Right") Right
+
+setCodec :: forall a. Ord a => JsonCodec a -> JsonCodec (Set a)
+setCodec codecA = dimap Set.toUnfoldable Set.fromFoldable $
+  CA.array codecA
+
+listCodec :: forall a. JsonCodec a -> JsonCodec (List a)
+listCodec codecA = dimap Array.fromFoldable Array.toUnfoldable $
+  CA.array codecA
+
+statesCodec :: JsonCodec SStates
+statesCodec = _n $ CA.array $ stateInfoCodec
+
+stateInfoCodec :: JsonCodec SStateInfo
+stateInfoCodec =
+  CAR.object "State"
+    { sName: CA.int
+    , items: stateCodec
+    , advance: _n $ mappy CA.codePoint $ shiftReduceCodec CA.int (tuple nonEmptyStringCodec CA.string)
+    , receive: mappy nonEmptyStringCodec CA.int
+    }
+
+shiftReduceCodec :: forall s r. JsonCodec s -> JsonCodec r -> JsonCodec (ShiftReduce s r)
+shiftReduceCodec s r = CAV.variantMatch
+  { "Shift": Right s
+  , "Reduces": Right $ nonEmptyArrayCodec r
+  , "ShiftReduces": Right $ tuple s (nonEmptyArrayCodec r)
+  } # dimap
+    do
+      case _ of
+        Shift s -> Variant.inj (Proxy :: Proxy "Shift") s
+        Reduces r -> Variant.inj (Proxy :: Proxy "Reduces") r
+        ShiftReduces s r -> Variant.inj (Proxy :: Proxy "ShiftReduces") (s /\ r)
+    do
+      Variant.match
+        { "Shift": Shift
+        , "Reduces": Reduces
+        , "ShiftReduces": \(s /\ r) -> ShiftReduces s r
         }
-  initialGrammar <- fromMaybe sampleGrammar <$> cheatEvent upstream.receive
+
+stateCodec :: JsonCodec SState
+stateCodec = _n $ CA.array $ CAR.object "StateItem"
+  { lookahead: CA.array CA.codePoint
+  , pName: nonEmptyStringCodec
+  , rName: CA.string
+  , rule: CA.indexedArray "Zipper" $ Zipper
+    <$> (\(Zipper before _) -> before) ~ CA.index 0 fragmentCodec
+    <*> (\(Zipper _ after) -> after) ~ CA.index 1 fragmentCodec
+  }
+
+fragmentCodec :: JsonCodec SFragment
+fragmentCodec = CA.array partCodec
+
+partCodec :: JsonCodec SPart
+partCodec = CAV.variantMatch
+  { "Terminal": Right CA.codePoint
+  , "NonTerminal": Right nonEmptyStringCodec
+  } # dimap
+    do
+      case _ of
+        Terminal s -> Variant.inj (Proxy :: Proxy "Terminal") s
+        NonTerminal r -> Variant.inj (Proxy :: Proxy "NonTerminal") r
+    do
+      Variant.match
+        { "Terminal": Terminal
+        , "NonTerminal": NonTerminal
+        }
+
+produceableCodec :: JsonCodec SProduceable
+produceableCodec = CAR.object "Produceable"
+  { grammar: grammarCodec
+  , produced: prulesCodec <~< CA.array do
+      CAR.object "Produced"
+        { produced: basicCodec (pure <<< String.toCodePointArray) String.fromCodePointArray <~< CA.string
+        , production:
+            CAR.object "GrammarItem"
+              { pName: nonEmptyStringCodec
+              , rName: CA.string
+              , rule: CA.string
+              }
+        }
+  }
+  where
+  prulesCodec = basicCodec (pure <<< smuggled) smuggle <~< rulesCodec <~< basicCodec (pure <<< smuggle) smuggled
+
+smuggle
+  :: forall f a b c d
+   . Functor f
+  => f
+       { produced :: a
+       , production ::
+           { pName :: b
+           , rName :: c
+           , rule :: d
+           }
+       }
+  -> f
+       { pName :: b
+       , produced :: a
+       , rName :: c
+       , rule :: d
+       }
+smuggle = map \{ produced, production } ->
+  { pName: production.pName
+  , rName: production.rName
+  , rule: production.rule
+  , produced: produced
+  }
+
+smuggled
+  :: forall f a b c d
+   . Functor f
+  => f
+       { pName :: a
+       , produced :: b
+       , rName :: c
+       , rule :: d
+       }
+  -> f
+       { produced :: b
+       , production ::
+           { pName :: a
+           , rName :: c
+           , rule :: d
+           }
+       }
+smuggled = map \r ->
+  { produced: r.produced
+  , production:
+      { pName: r.pName
+      , rName: r.rName
+      , rule: r.rule
+      }
+  }
+
+parseStepsCodec :: JsonCodec SCParseSteps
+parseStepsCodec = dimap conv1 conv2 $
+  CAR.object "ParseSteps"
+    { steps: listCodec $
+        CAR.object "ParseStep"
+          { stack: stackCodec
+          , inputs: listCodec input
+          , step: eitherCodec input rule
+          }
+    , ending:
+      CAV.variantMatch
+        { "Error": Right $
+            CAR.object "ParseError"
+              { stack: stackCodec
+              , inputs: listCodec input
+              }
+        , "Complete": Right $
+            CAR.object "ParseComplete"
+              { stack: stackCodec
+              , inputs: listCodec input
+              , final: stackCodec
+              }
+        }
+    }
+  where
+  input = CA.codePoint
+  rule = tuple nonEmptyStringCodec CA.string
+  conv1 = case _ of
+    Error final ->
+      { steps: Nil
+      , ending: Variant.inj (Proxy :: Proxy "Error") final
+      }
+    Complete final stack ->
+      { steps: Nil
+      , ending: Variant.inj (Proxy :: Proxy "Complete") $
+          Record.insert (Proxy :: Proxy "final") stack final
+      }
+    Step { stack, inputs } step more ->
+      conv1 more # Record.modify (Proxy :: Proxy "steps")
+        (Cons { stack, inputs, step })
+  conv2 = case _ of
+    { steps: Nil, ending } ->
+      ending # Variant.match
+        { "Error": Error
+        , "Complete": \{ stack, inputs, final } ->
+            Complete { stack, inputs } final
+        }
+    { steps: Cons { stack, inputs, step } steps, ending } ->
+      Step { stack, inputs } step (conv2 { steps, ending })
+
+cstCodec :: JsonCodec SCST
+cstCodec = CA.fix \rec ->
+  dimap conv1 conv2 $ CAV.variantMatch
+    { "Leaf": Right CA.codePoint
+    , "Branch": Right $ tuple (tuple nonEmptyStringCodec CA.string) (CA.array rec)
+    }
+  where
+  conv1 = case _ of
+    Leaf v -> Variant.inj (Proxy :: Proxy "Leaf") v
+    Branch r cs -> Variant.inj (Proxy :: Proxy "Branch") (r /\ cs)
+  conv2 = Variant.match
+    { "Leaf": Leaf
+    , "Branch": uncurry Branch
+    }
+
+stackCodec :: JsonCodec SCStack
+stackCodec = dimap conv1 conv2 $
+  CAR.object "Stack"
+    { head: CA.int
+    , tail: listCodec $ CAR.object "StackItem"
+        { tok: cstCodec
+        , state: CA.int
+        }
+    }
+  where
+  conv1 = case _ of
+    Zero head -> { head, tail: Nil }
+    Snoc more tok state ->
+      conv1 more # Record.modify (Proxy :: Proxy "tail")
+        (Cons { tok, state })
+  conv2 = case _ of
+    { head, tail: Nil } -> Zero head
+    { head, tail: Cons { tok, state } tail } ->
+      Snoc (conv2 { head, tail }) tok state
+
+computeGrammar :: SAugmented ->
+  { produceable :: SProduceable
+  , states :: SStates
+  , stateIndex :: SStateIndex
+  , allTokens :: Array CodePoint
+  , allNTs :: Array NonEmptyString
+  }
+computeGrammar grammar =
+  let
+    _produceable = withProduceable grammar
+    _states = either (const (States [])) identity $ numberStates (add 1) grammar.augmented (calculateStates grammar.augmented grammar.start)
+    _stateIndex = indexStates _states
+    _allTokens = gatherTokens' grammar.augmented
+    _allNTs = gatherNonTerminals' grammar.augmented
+  in
+    { produceable: _produceable
+    , states: _states
+    , stateIndex: _stateIndex
+    , allTokens: _allTokens
+    , allNTs: _allNTs
+    }
+
+computeInput :: forall r.
+  { grammar :: SAugmented
+  , states :: SStates
+  , stateIndex :: SStateIndex
+  | r
+  } ->
+  String ->
+  { tokens :: Maybe (List CodePoint)
+  , tokens' :: Maybe (List CodePoint)
+  , parseSteps :: Maybe SCParseSteps
+  , stateId :: Int
+  , state :: Maybe SStateInfo
+  , validTokens :: Set CodePoint
+  , validNTs :: Set NonEmptyString
+  }
+computeInput { grammar, states, stateIndex } =
+  let
+    _tokenize' = fromString' grammar
+    table = toTable states stateIndex
+  in \value ->
+    let
+      _tokens' = _tokenize' value
+      _tokens = _tokens' <#> addEOF' grammar
+      _parseSteps = parseSteps table <$> _tokens <@> 1
+      _stateId = maybe 0 lastState _parseSteps
+      _state = unwrap states # Array.find (_.sName >>> eq _stateId)
+      _validTokens = _state # maybe Map.empty (_.advance >>> unwrap) # Map.keys
+      _validNTs = _state # maybe Map.empty _.receive # Map.keys
+    in
+      { tokens: _tokens
+      , tokens': _tokens'
+      , parseSteps: _parseSteps
+      , stateId: _stateId
+      , state: _state
+      , validTokens: _validTokens
+      , validNTs: _validNTs
+      }
+
+adaptInterface :: forall f a b. Foldable f => BasicCodec f a b -> Interface a -> Interface b
+adaptInterface codec interface =
+  { send: interface.send <<< encode codec
+  , mailbox: interface.mailbox <#> (_ <<< encode codec)
+  , receive: keepLatest $ oneOfMap bang <<< decode codec <$> interface.receive
+  , loopback: keepLatest $ oneOfMap bang <<< decode codec <$> interface.loopback
+  , current: interface.current <#> bindFlipped
+      (decode codec >>> last)
+  }
+  where
+  last = unwrap <<< foldMap (Last <<< Just)
+
+widgetGrammar :: Widget
+widgetGrammar { interface, attrs } = do
+  let
+    io =
+      { grammar: adaptInterface grammarCodec (interface "grammar")
+      , produceable: adaptInterface produceableCodec (interface "produceable")
+      , states: adaptInterface statesCodec (interface "states")
+      , stateIndex: adaptInterface (mappy CA.int CA.int) (interface "stateIndex")
+      , allTokens: adaptInterface (CA.array CA.codePoint) (interface "allTokens")
+      , allNTs: adaptInterface (CA.array nonEmptyStringCodec) (interface "allNTs")
+      }
+    sendOthers grammar = do
+      let computed = computeGrammar grammar
+      io.produceable.send computed.produceable
+      io.states.send computed.states
+      io.stateIndex.send computed.stateIndex
+      io.allTokens.send computed.allTokens
+      io.allNTs.send computed.allNTs
+    upstream =
+      { send: \grammar -> do
+          sendOthers grammar
+          io.grammar.send grammar
+      , receive: io.grammar.receive
+      , current: io.grammar.current
+      }
+  initialGrammar <- fromMaybe sampleGrammar <$> upstream.current
+  -- For all of the other data, it might not be updated (e.g. because we only
+  -- received a grammar from the query)
+  sendOthers initialGrammar
+  buttonName <- fromMaybe "Use grammar" <<< Json.toString <$> attrs "action"
   pure $ SafeNut do
-    mainComponent initialGrammar upstream.receive upstream.send
+    grammarComponent buttonName initialGrammar upstream.receive upstream.send
+
+widgetInput :: Widget
+widgetInput { interface, attrs } = do
+  let
+    io =
+      { grammar: adaptInterface grammarCodec (interface "grammar")
+      , produceable: adaptInterface produceableCodec (interface "produceable")
+      , states: adaptInterface statesCodec (interface "states")
+      , stateIndex: adaptInterface (mappy CA.int CA.int) (interface "stateIndex")
+      , allTokens: adaptInterface (CA.array CA.codePoint) (interface "allTokens")
+      , allNTs: adaptInterface (CA.array nonEmptyStringCodec) (interface "allNTs")
+
+      , input: adaptInterface CA.string (interface "input")
+      , tokens: adaptInterface (maybeCodec (listCodec CA.codePoint)) (interface "tokens")
+      , tokens': adaptInterface (maybeCodec (listCodec CA.codePoint)) (interface "tokens'")
+      , parseSteps: adaptInterface (maybeCodec parseStepsCodec) (interface "parseSteps")
+      , stateId: adaptInterface CA.int (interface "stateId")
+      , state: adaptInterface (maybeCodec stateInfoCodec) (interface "state")
+      , validTokens: adaptInterface (setCodec CA.codePoint) (interface "validTokens")
+      , validNTs: adaptInterface (setCodec nonEmptyStringCodec) (interface "validNTs")
+      }
+    sendOthers input = do
+      let
+        replace _ =
+          let
+            grammar = sampleGrammar
+            c = computeGrammar grammar
+          in
+            { grammar, states: c.states, stateIndex: c.stateIndex }
+      others <- fromMaybe' replace <$> unwrap do
+        { grammar: _, states: _, stateIndex: _ }
+          <$> Compose io.grammar.current
+          <*> Compose io.states.current
+          <*> Compose io.stateIndex.current
+      let
+        c = computeInput others input
+      io.tokens.send c.tokens
+      io.tokens'.send c.tokens'
+      io.parseSteps.send c.parseSteps
+      io.stateId.send c.stateId
+      io.state.send c.state
+      io.validTokens.send c.validTokens
+      io.validNTs.send c.validNTs
+    upstream =
+      { send: \input -> do
+          sendOthers input
+          io.input.send input
+      , receive: io.input.receive
+      , current: io.input.current
+      }
+  initialGrammar <- fromMaybe sampleGrammar <$> io.grammar.current
+  initialInput <- fromMaybe' (\_ -> sampleS (withProduceable initialGrammar)) <$> upstream.current
+  -- For all of the other data, it might not be updated (e.g. because we only
+  -- received a grammar from the query)
+  sendOthers initialInput
+  pure $ SafeNut do
+    inputComponent initialInput upstream.receive upstream.send
+      { grammar: fromEvent io.grammar.receive
+      , states: fromEvent io.states.receive
+      , tokens: fromEvent io.tokens.loopback
+      , tokens': fromEvent io.tokens'.loopback
+      , parseSteps: fromEvent io.parseSteps.loopback
+      , stateId: fromEvent io.stateId.loopback
+      , state: fromEvent io.stateId.loopback
+      , allTokens: fromEvent io.allTokens.receive
+      , allNTs: fromEvent io.allNTs.receive
+      , validTokens: fromEvent io.validTokens.loopback
+      , validNTs: fromEvent io.validNTs.loopback
+      , produceable: fromEvent io.produceable.receive
+      }
+
+widgets :: Object Widget
+widgets = Object.fromFoldable $ map (lmap (append "Parser."))
+  [ "Main" /\ widgetGrammar
+  , "Input" /\ widgetInput
+  , "Random" /\ withProduceableSendTokens randomComponent
+  , "Explorer" /\ withProduceableSendTokens explorerComponent
+  , "StateTable" /\ widgetStateTable
+  , "ParseTable" /\ widgetParseTable
+  ]
+
+withGrammar :: (forall s e m lock payload. Korok s m => SAugmented -> Domable e m lock payload) -> Widget
+withGrammar component { interface } = do
+  let
+    grammarEvent = filterMap (hush <<< decode grammarCodec) (interface "grammar").receive
+  pure $ SafeNut (switcher component (bang sampleGrammar <|> fromEvent grammarEvent))
+
+withProduceableSendTokens :: (forall s e m lock payload. Korok s m => SProduceable -> (Array CodePoint -> Effect Unit) -> Domable e m lock payload) -> Widget
+withProduceableSendTokens component { interface } = do
+  let
+    grammarEvent = filterMap (hush <<< decode produceableCodec) (interface "produceable").receive
+    sendTokens = (interface "input").send <<< Json.fromString <<< String.fromCodePointArray
+  pure $ SafeNut (switcher (flip component sendTokens) (bang (withProduceable sampleGrammar) <|> fromEvent grammarEvent))
+
+widgetStateTable :: Widget
+widgetStateTable { interface } = do
+  let
+    currentMailbox = keepLatest $ currentStates $> (interface "current-state").mailbox
+    currentGetCurrentState = currentMailbox <#> \queryJ i ->
+      toggle false (queryJ (Json.fromNumber (Int.toNumber i)))
+    currentStates = filterMap (hush <<< decode statesCodec) (interface "states").receive
+    currentStatesAndGetState = (sampleOn currentGetCurrentState (map (/\) currentStates))
+  pure $ SafeNut (switcher (\(x /\ getCurrentState) -> renderStateTable { getCurrentState: fromEvent <$> getCurrentState } x) (fromEvent currentStatesAndGetState))
+
+widgetParseTable :: Widget
+widgetParseTable { interface } = do
+  let
+    currentMailbox = keepLatest $ currentStates $> (interface "current-state").mailbox
+    currentGetCurrentState = currentMailbox <#> \queryJ i ->
+      toggle false (queryJ (Json.fromNumber (Int.toNumber i)))
+    currentStates = filterMap (hush <<< decode statesCodec) (interface "states").receive
+    currentStatesAndGetState = (sampleOn currentGetCurrentState (map (/\) currentStates))
+    currentGrammar = filterMap (hush <<< decode grammarCodec) (interface "grammar").receive
+  initialGrammar <- fromMaybe sampleGrammar <<< join <<< map (hush <<< decode grammarCodec) <$> (interface "grammar").current
+  pure $ SafeNut (switcher (\(grammar /\ x /\ getCurrentState) -> renderParseTable { getCurrentState: fromEvent <$> getCurrentState } grammar x) (flip sampleOn ((/\) <<< _.augmented <$> (bang initialGrammar <|> fromEvent currentGrammar)) (fromEvent currentStatesAndGetState)))
+
+inputComponent
+  :: forall r s e m lock payload
+   . Korok s m
+  => String
+  -> AnEvent Effect String
+  -> (String -> Effect Unit)
+  ->
+    { grammar :: AnEvent m SAugmented
+    , states :: AnEvent m SStates
+    , tokens :: AnEvent m (Maybe (List CodePoint))
+    , tokens' :: AnEvent m (Maybe (List CodePoint))
+    , parseSteps :: AnEvent m (Maybe SCParseSteps)
+    , stateId :: AnEvent m Int
+    , state :: AnEvent m Int
+    , allTokens :: AnEvent m (Array CodePoint)
+    , allNTs :: AnEvent m (Array NonEmptyString)
+    , validTokens :: AnEvent m (Set CodePoint)
+    , validNTs :: AnEvent m (Set NonEmptyString)
+    , produceable :: AnEvent m SProduceable
+    | r
+    }
+  -> Domable e m lock payload
+inputComponent initialInput inputStream sendInput current =
+  bussed \pushInput localInput -> do
+    let
+      currentValue = bang initialInput <|> fromEvent inputStream <|> map snd localInput
+      currentValue' = bang initialInput <|> fromEvent inputStream <|>
+        filterMap (\(keep /\ v) -> if keep then Just v else Nothing) localInput
+      currentParseSteps = current.parseSteps
+      currentGrammarTokens = current.allTokens
+      currentGrammarNTs = current.allNTs
+      currentValidTokens = current.validTokens
+      currentValidNTs = current.validNTs
+      currentProduceable = current.produceable
+
+      renderTokenHere mtok = do
+        let
+          onClick = sampleJITE currentValue $ bang $ ReaderT \v ->
+            sendInput <> (pushInput <<< (/\) true) $ case mtok of
+              Just tok -> v <> String.singleton tok
+              Nothing -> String.take (String.length v - 1) v
+          valid = case mtok of
+            Just tok -> currentValidTokens <#> Set.member tok
+            Nothing -> currentValue <#> not String.null
+          toktext = case mtok of
+            Nothing -> codePointFromChar '⌫'
+            Just tok -> tok
+        renderTok' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (Just <$> onClick) toktext
+      renderNTHere nt = do
+        let
+          onClick = sampleJITE currentProduceable $ sampleJITE currentValue $ bang $ ReaderT \v -> ReaderT \prod -> do
+            genned <- map (maybe "" String.fromCodePointArray) $ sequence $
+              QC.randomSampleOne <$> genNT prod.produced nt
+            pushInput $ true /\ (v <> genned)
+          valid = currentValidNTs <#> Set.member nt
+        renderNT' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (Just <$> onClick) nt
+    D.div_
+      [ D.div_
+          [ D.span_ $ pure $
+              switcher (\x -> fixed $ ([ Nothing ] <> map Just x) <#> renderTokenHere) currentGrammarTokens
+          , D.span_ $ pure $
+              switcher (\x -> fixed $ x <#> renderNTHere) currentGrammarNTs
+          ]
+      , D.div_
+          [ D.span (D.Class !:= "terminal") [ input' "Source text" "" currentValue' (\v -> pushInput (false /\ v) *> sendInput v) ] ]
+      , D.div_ $ pure $ currentParseSteps `flip switcher` \todaysSteps ->
+          let
+            contentAsMonad = showMaybeParseSteps $ todaysSteps
+            -- Run the first layer of the monad, to get the number of items being rendered up-front
+            contentAsMonad2 /\ nEntities = runTrampoline (runStateT contentAsMonad 0)
+          in
+            vbussed (Proxy :: _ ParsedUIAction) \pPush pEvent ->
+              let
+                -- Maintain the current index, clamped between 0 and nEntitities
+                -- (Note: it is automatically reset, since `switcher` resubscribes,
+                -- creating new state for it)
+                startState = pEvent.startState <|> bang Nothing
+                rate = pEvent.rate <|> bang 1.0
+                animationTick = compact $ mapAccum
+                  ( \i@(tf /\ { beats: Beats beats }) { target: Beats target' } ->
+                      let
+                        target = if tf then 0.0 else target'
+                      in
+                        if target > beats then ({ target: Beats target } /\ Nothing)
+                        else ({ target: Beats (target + 1.0) } /\ Just i)
+                  )
+                  pEvent.animationTick
+                  { target: Beats 0.0 }
+                currentIndex = dedupOn (eq `on` fst) $ bang (0 /\ Initial) <|>
+                  mapAccum
+                    (\(f /\ a) x -> let fx = clamp 0 (nEntities - 1) (f x) in fx /\ fx /\ a)
+                    ( oneOf
+                        [ ((_ - 1) /\ Toggle) <$ pEvent.toggleLeft
+                        , ((_ + 1) /\ Toggle) <$ pEvent.toggleRight
+                        -- if we're starting and at the end of a play, loop back to the beginning
+                        , (\(tf /\ _) -> if tf then ((\n -> if n == nEntities - 1 then 0 else n + 1) /\ Play) else ((_ + 1) /\ Play)) <$> animationTick
+                        , (floor >>> const >>> (_ /\ Slider)) <$> pEvent.slider
+                        ]
+                    )
+                    0
+              in
+                -- Memoize it and run it through `spotlight` to toggle each
+                -- item individually
+                envy $ keepLatest $ memoize currentIndex \stackIndex ->
+                  spotlight false (map fst stackIndex) \sweeper ->
+                    let
+                      content = contentAsMonad2 sweeper
+                    in
+                      D.div_
+                        [ D.div_
+                            [ D.button
+                                ( oneOf
+                                    [ (biSampleOn rate ((/\) <$> startState)) <#> \(s /\ rt) -> D.OnClick := do
+                                        case s of
+                                          Just unsub -> do
+                                            unsub
+                                            pPush.startState Nothing
+                                          Nothing -> do
+                                            let toSeconds = unInstant >>> unwrap >>> (_ / 1000.0)
+                                            t <- toSeconds <$> now
+                                            sub <- subscribe
+                                              ( selfDestruct (\((isStart /\ _) /\ ci) -> (fst ci == (nEntities - 1) && not isStart)) (pPush.startState Nothing)
+                                                  ( sampleOn (toEvent currentIndex)
+                                                      ( (/\) <$> mapAccum (\i tf -> false /\ tf /\ i)
+                                                          ( timeFromRate (step rt $ toEvent pEvent.rate)
+                                                              ( _.time
+                                                                  >>> toSeconds
+                                                                  >>> (_ - t)
+                                                                  >>> Seconds <$> withTime (animationFrame)
+                                                              )
+                                                          )
+                                                          true
+                                                      )
+                                                  )
+                                              )
+                                              \(info /\ _) -> pPush.animationTick info
+                                            pPush.startState (Just sub)
+                                    ]
+                                )
+                                [ text
+                                    ( startState <#> case _ of
+                                        Just _ -> "Pause"
+                                        Nothing -> "Play"
+                                    )
+                                ]
+                            ]
+                        , D.div_
+                            [ text_ "Speed"
+                            , D.span_ $ join $ map
+                                ( \(n /\ l) ->
+                                    [ D.input
+                                        ( oneOfMap bang
+                                            [ D.Xtype := "radio"
+                                            , D.Checked := show (l == "1x")
+                                            , D.Name := "speed"
+                                            , D.Value := show n
+                                            , D.OnClick := cb \_ -> pPush.rate n
+                                            ]
+                                        )
+                                        []
+                                    , D.label_ [ text_ l ]
+                                    ]
+                                )
+                                [ 1.0 /\ "1x", (1.0 / e) /\ "ex", (1.0 / pi) /\ "pix" ]
+                            ]
+                        , D.div_
+                            [ D.input
+                                ( oneOf
+                                    [ D.Xtype !:= "range"
+                                    , D.Min !:= "0"
+                                    , D.Max !:= show (nEntities - 1)
+                                    , D.Value !:= "0"
+                                    , stackIndex
+                                        # filterMap case _ of
+                                            _ /\ Slider -> Nothing
+                                            x /\ _ -> Just x
+                                        <#> (\si -> D.Value := show si)
+                                    , slider $ startState <#> case _ of
+                                        Nothing -> pPush.slider
+                                        Just unsub -> \n -> pPush.slider n
+                                          *> unsub
+                                          *> pPush.startState Nothing
+                                    ]
+                                )
+                                []
+                            ]
+                        , let
+                            clickF f = click $
+                              startState <#>
+                                ( case _ of
+                                    Nothing -> f unit
+                                    Just unsub -> f unit
+                                      *> unsub
+                                      *> pPush.startState Nothing
+                                )
+                          in
+                            D.div_
+                              [ D.button
+                                  (oneOf [ clickF $ pPush.toggleLeft ])
+                                  [ text_ "<" ]
+                              , D.button (oneOf [ clickF $ pPush.toggleRight ])
+                                  [ text_ ">" ]
+                              ]
+                        , D.div (D.Class !:= "parse-steps") [ content ]
+                        ]
+      ]
+
 
 mainComponent
   :: forall s e m lock payload
@@ -2200,7 +2946,7 @@ mainComponent initialGrammar grammarStream sendGrammar =
         currentValue' = bang initialValue <|> filterMap (\(keep /\ v) -> if keep then Just v else Nothing) event.changeText
         currentStates = map (either (const (States [])) identity) $ currentGrammar <#> \{ augmented, start } ->
           numberStates (add 1) augmented (calculateStates augmented start)
-        currentTable = toTable <$> currentStates
+        currentTable = apply toTable indexStates <$> currentStates
         currentFromString = fromString <$> currentGrammar
         currentFromString' = fromString' <$> currentGrammar
         currentTokens = biSampleOn currentValue currentFromString

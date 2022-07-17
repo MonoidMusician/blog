@@ -11,9 +11,8 @@ import Widget.Query as Widget.Query
 import Widget.Types (SafeNut(..))
 
 widgets :: Widgets
-widgets = Object.fromFoldable
-  [ "Parser.Main" /\ Parser.widget
-  , "Widget.Query" /\ Widget.Query.widget
+widgets = Parser.widgets `Object.union` Object.fromFoldable
+  [ "Widget.Query" /\ Widget.Query.widget
   ]
 
 -- Returns a cleanup effect
