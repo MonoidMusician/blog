@@ -43,6 +43,7 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.Int (floor)
 import Data.Int as Int
+import Data.Lazy (defer, force)
 import Data.List (List(..))
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
@@ -2227,6 +2228,9 @@ nonEmptyStringCodec =
 nonEmptyArrayCodec :: forall a. JsonCodec a -> JsonCodec (NonEmptyArray a)
 nonEmptyArrayCodec =
   CA.prismaticCodec "NonEmptyArray" NEA.fromArray NEA.toArray <<< CA.array
+intStringCodec :: JsonCodec Int
+intStringCodec =
+  CA.prismaticCodec "Int" Int.fromString show CA.string
 
 grammarCodec :: JsonCodec SAugmented
 grammarCodec = lastMile <~< rulesCodec <~< CA.array do
@@ -2548,7 +2552,8 @@ computeInput { grammar, states, stateIndex } =
       _tokens' = _tokenize' value
       _tokens = _tokens' <#> addEOF' grammar
       _parseSteps = parseSteps table <$> _tokens <@> 1
-      _stateId = maybe 0 lastState _parseSteps
+      _parseSteps' = parseSteps table <$> _tokens' <@> 1
+      _stateId = maybe 0 lastState _parseSteps'
       _state = unwrap states # Array.find (_.sName >>> eq _stateId)
       _validTokens = _state # maybe Map.empty (_.advance >>> unwrap) # Map.keys
       _validNTs = _state # maybe Map.empty _.receive # Map.keys
@@ -2581,7 +2586,7 @@ widgetGrammar { interface, attrs } = do
       { grammar: adaptInterface grammarCodec (interface "grammar")
       , produceable: adaptInterface produceableCodec (interface "produceable")
       , states: adaptInterface statesCodec (interface "states")
-      , stateIndex: adaptInterface (mappy CA.int CA.int) (interface "stateIndex")
+      , stateIndex: adaptInterface (mappy intStringCodec CA.int) (interface "stateIndex")
       , allTokens: adaptInterface (CA.array CA.codePoint) (interface "allTokens")
       , allNTs: adaptInterface (CA.array nonEmptyStringCodec) (interface "allNTs")
       }
@@ -2607,6 +2612,15 @@ widgetGrammar { interface, attrs } = do
   pure $ SafeNut do
     grammarComponent buttonName initialGrammar upstream.receive upstream.send
 
+sideKick :: forall a. (a -> Effect Unit) -> Event a -> Effect (Event a)
+sideKick eff e = do
+  unsub <- Ref.new mempty
+  pure $ makeEvent \k -> do
+    join $ Ref.read unsub
+    u <- subscribe e eff
+    Ref.write u unsub
+    subscribe e k <> (pure u)
+
 widgetInput :: Widget
 widgetInput { interface, attrs } = do
   let
@@ -2614,7 +2628,7 @@ widgetInput { interface, attrs } = do
       { grammar: adaptInterface grammarCodec (interface "grammar")
       , produceable: adaptInterface produceableCodec (interface "produceable")
       , states: adaptInterface statesCodec (interface "states")
-      , stateIndex: adaptInterface (mappy CA.int CA.int) (interface "stateIndex")
+      , stateIndex: adaptInterface (mappy intStringCodec CA.int) (interface "stateIndex")
       , allTokens: adaptInterface (CA.array CA.codePoint) (interface "allTokens")
       , allNTs: adaptInterface (CA.array nonEmptyStringCodec) (interface "allNTs")
 
@@ -2627,19 +2641,19 @@ widgetInput { interface, attrs } = do
       , validTokens: adaptInterface (setCodec CA.codePoint) (interface "validTokens")
       , validNTs: adaptInterface (setCodec nonEmptyStringCodec) (interface "validNTs")
       }
-    sendOthers input = do
+    replace = defer \_ ->
       let
-        replace _ =
-          let
-            grammar = sampleGrammar
-            c = computeGrammar grammar
-          in
-            { grammar, states: c.states, stateIndex: c.stateIndex }
-      others <- fromMaybe' replace <$> unwrap do
+        grammar = sampleGrammar
+        c = computeGrammar grammar
+      in
+        { grammar, states: c.states, stateIndex: c.stateIndex }
+    sendOthers input = do
+      others <- fromMaybe' (\_ -> force replace) <$> unwrap do
         { grammar: _, states: _, stateIndex: _ }
           <$> Compose io.grammar.current
           <*> Compose io.states.current
           <*> Compose io.stateIndex.current
+      log $ unsafeCoerce others
       let
         c = computeInput others input
       io.tokens.send c.tokens
@@ -2649,21 +2663,25 @@ widgetInput { interface, attrs } = do
       io.state.send c.state
       io.validTokens.send c.validTokens
       io.validNTs.send c.validNTs
+  receiver <- sideKick sendOthers io.input.receive
+  initialGrammar <- fromMaybe sampleGrammar <$> io.grammar.current
+  initialInput <- fromMaybe' (\_ -> sampleS (withProduceable initialGrammar)) <$> io.input.current
+  grammarStream <- sideKick (\_ -> io.input.current >>= fromMaybe initialInput >>> sendOthers) io.grammar.receive
+  let
+    sendInput = sendOthers <> io.input.send
     upstream =
-      { send: \input -> do
-          sendOthers input
-          io.input.send input
-      , receive: io.input.receive
+      { send: sendInput
+      -- it turns out that inputComponent never actually subscribes to
+      -- grammar, so we need to force `sideKick` to happen
+      , receive: sampleOn grammarStream (const <$> receiver)
       , current: io.input.current
       }
-  initialGrammar <- fromMaybe sampleGrammar <$> io.grammar.current
-  initialInput <- fromMaybe' (\_ -> sampleS (withProduceable initialGrammar)) <$> upstream.current
   -- For all of the other data, it might not be updated (e.g. because we only
   -- received a grammar from the query)
   sendOthers initialInput
   pure $ SafeNut do
     inputComponent initialInput upstream.receive upstream.send
-      { grammar: fromEvent io.grammar.receive
+      { grammar: fromEvent grammarStream
       , states: fromEvent io.states.receive
       , tokens: fromEvent io.tokens.loopback
       , tokens': fromEvent io.tokens'.loopback
@@ -2760,7 +2778,7 @@ inputComponent initialInput inputStream sendInput current =
       renderTokenHere mtok = do
         let
           onClick = sampleJITE currentValue $ bang $ ReaderT \v ->
-            sendInput <> (pushInput <<< (/\) true) $ case mtok of
+            (pushInput <<< (/\) true) <> sendInput $ case mtok of
               Just tok -> v <> String.singleton tok
               Nothing -> String.take (String.length v - 1) v
           valid = case mtok of
@@ -2775,7 +2793,7 @@ inputComponent initialInput inputStream sendInput current =
           onClick = sampleJITE currentProduceable $ sampleJITE currentValue $ bang $ ReaderT \v -> ReaderT \prod -> do
             genned <- map (maybe "" String.fromCodePointArray) $ sequence $
               QC.randomSampleOne <$> genNT prod.produced nt
-            pushInput $ true /\ (v <> genned)
+            (pushInput <<< (/\) true) <> sendInput $ (v <> genned)
           valid = currentValidNTs <#> Set.member nt
         renderNT' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (Just <$> onClick) nt
     D.div_
@@ -2810,7 +2828,7 @@ inputComponent initialInput inputStream sendInput current =
                   )
                   pEvent.animationTick
                   { target: Beats 0.0 }
-                currentIndex = dedupOn (eq `on` fst) $ bang (0 /\ Initial) <|>
+                currentIndex = dedupOn (eq `on` fst) $ bang ((nEntities - 1) /\ Initial) <|>
                   mapAccum
                     (\(f /\ a) x -> let fx = clamp 0 (nEntities - 1) (f x) in fx /\ fx /\ a)
                     ( oneOf
@@ -2821,7 +2839,7 @@ inputComponent initialInput inputStream sendInput current =
                         , (floor >>> const >>> (_ /\ Slider)) <$> pEvent.slider
                         ]
                     )
-                    0
+                    (nEntities - 1)
               in
                 -- Memoize it and run it through `spotlight` to toggle each
                 -- item individually
@@ -2893,7 +2911,7 @@ inputComponent initialInput inputStream sendInput current =
                                     [ D.Xtype !:= "range"
                                     , D.Min !:= "0"
                                     , D.Max !:= show (nEntities - 1)
-                                    , D.Value !:= "0"
+                                    , D.Value !:= show (nEntities - 1)
                                     , stackIndex
                                         # filterMap case _ of
                                             _ /\ Slider -> Nothing

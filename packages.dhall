@@ -153,7 +153,7 @@ let additions =
           , "web-events"
           ]
         , repo = "https://github.com/mikesol/purescript-deku.git"
-        , version = "remove-listeners"
+        , version = "main"
         }
       , wags =
         { dependencies =
