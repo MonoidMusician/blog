@@ -1,0 +1,15 @@
+from: markdown+tex_math_single_backslash+footnotes+inline_notes
+toc: true
+toc-depth: 5
+section-divs: true
+template: pandoc/post
+filters:
+  - pandoc/lua/sidenotes.lua
+  - pandoc/lua/anchor-links.lua
+  - pandoc/lua/static-katex.lua
+  - pandoc/lua/concat.lua
+  - pandoc/lua/canvas.lua
+css:
+  - https://cdn.jsdelivr.net/npm/katex@0.15.6/dist/katex.min.css
+  - https://cdn.jsdelivr.net/npm/katex@0.13.23/dist/contrib/copy-tex.css
+  - styles/bundled.css
