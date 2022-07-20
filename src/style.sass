@@ -213,6 +213,12 @@ table
   display: table-cell
   padding: .5em 0 0
   vertical-align: top
+  :only-child
+    padding-top: 0
+.compact.AST li
+  padding-top: 4px
+  :only-child
+    padding-top: 0
 
         /* _________ */
 .AST li:before
@@ -222,6 +228,8 @@ table
   position: absolute
   right: 0
   top: 0
+.compact.AST li:before
+  outline-width: 0.5px
 
 .AST .node:hover + ol li:before
   outline-color: green
@@ -238,6 +246,11 @@ table
   margin: 0 .2em .5em
   padding: .1em .2em 0
   position: relative
+.compact.AST .node
+  border-width: 1px
+  border-radius: 2px
+  margin: 0 2px 4px
+  padding: 2px 2px 0
 
 .AST .node:hover,
 .AST .node:hover + ol .node
@@ -252,6 +265,9 @@ table
   height: .45em
   left: 50%
   position: absolute
+.compact.AST ol:before, .compact.AST .node:before
+  outline-width: 0.5px
+  height: 4px
 
 .AST .node:hover + ol .node:before,
 .AST .node:hover + ol:before,
@@ -260,9 +276,13 @@ table
 
 .AST ol:before
   top: -.5em
+.compact.AST ol:before
+  top: -4px
 
 .AST .node:before
   top: -.55em
+.compact.AST .node:before
+  top: -4.5px
 
 
 /* The root node doesn't connect upwards */

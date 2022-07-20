@@ -11,6 +11,7 @@ import Control.Monad.Gen (class MonadGen)
 import Control.Monad.Gen as Gen
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.ST.Class (class MonadST, liftST)
+import Control.Monad.ST.Internal (STRef)
 import Control.Monad.ST.Internal as STRef
 import Control.Monad.State (StateT, get, put, runStateT)
 import Control.Monad.Trampoline (Trampoline, runTrampoline)
@@ -38,6 +39,7 @@ import Data.Foldable (class Foldable, any, elem, foldMap, for_, oneOf, oneOfMap,
 import Data.Foldable (length) as Foldable
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Function (on)
+import Data.Functor.App (App(..))
 import Data.Functor.Compose (Compose(..))
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
@@ -49,6 +51,7 @@ import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust, fromMaybe, fromMaybe', isJust, maybe)
 import Data.Maybe.Last (Last(..))
+import Data.Monoid as Monoid
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.NonEmpty (NonEmpty(..))
 import Data.Number (e, pi)
@@ -82,7 +85,7 @@ import Effect.Now (now)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior (step)
-import FRP.Event (class IsEvent, AnEvent, Event, bang, create, filterMap, fold, fromEvent, keepLatest, makeEvent, mapAccum, memoize, sampleOn, subscribe, sweep, toEvent, withLast)
+import FRP.Event (class IsEvent, AnEvent, Event, bang, count, create, filterMap, fold, fromEvent, keepLatest, makeEvent, mapAccum, memoize, sampleOn, sampleOn_, subscribe, sweep, toEvent, withLast)
 import FRP.Event.AnimationFrame (animationFrame)
 import FRP.Event.Class (biSampleOn)
 import FRP.Event.Time (withTime)
@@ -101,6 +104,7 @@ import Record as Record
 import Test.QuickCheck.Gen as QC
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
+import Unsafe.Reference (unsafeRefEq)
 import Web.Event.Event (target)
 import Web.HTML.HTMLInputElement (fromEventTarget, value)
 import Widget (Widget, Interface)
@@ -1398,6 +1402,18 @@ memoBeh e a f = makeEvent \k -> do
   k (f event')
   subscribe e (\v -> writeVal v *> push v)
 
+memoLast :: forall m a t r. Applicative m => MonadST t m => AnEvent m a -> (AnEvent m a -> r) -> AnEvent m r
+memoLast e f = makeEvent \k -> do
+  { push, event } <- create
+  current <- liftST (STRef.new Nothing)
+  let
+    writeVal v = void $ liftST (STRef.write (Just v) current) :: m Unit
+    event' = makeEvent \k' -> do
+      liftST (STRef.read current) >>= traverse_ k'
+      subscribe event k'
+  k (f event')
+  subscribe e (\v -> writeVal v *> push v)
+
 memoBehFold :: forall m a b t r. Applicative m => MonadST t m => (a -> b -> b) -> AnEvent m a -> b -> (AnEvent m b -> r) -> AnEvent m r
 memoBehFold folder event start = memoBeh (fold folder event start) start
 
@@ -1437,14 +1453,51 @@ spotlight start shineAt cb =
   sweep (spotlightChange shineAt) \sweeper ->
     cb (toggle start <<< sweeper)
 
+spotlightChange :: forall s m a. MonadST s m => Eq a => AnEvent m a -> AnEvent m a
 spotlightChange shineAt =
   keepLatest $ withLast shineAt <#> \{ now, last } ->
     if last == Just now then empty
     else
       oneOfMap bang last <|> bang now
 
+sweepSave :: forall m s r a. Ord a => MonadST s m => AnEvent m a -> ((a -> AnEvent m Unit) -> r) -> AnEvent m r
+sweepSave e f = makeEvent \k1 -> do
+  r <- liftST $ STRef.new Map.empty
+  saved <- liftST $ STRef.new Map.empty
+  let
+    modifier = case _ of
+      Nothing -> Just (Just 1)
+      Just (Just n) -> Just (Just (n+1))
+      Just Nothing -> Just Nothing
+    stashed k2 (Just (Just n)) = do
+      let _ = unsafePerformEffect $ log $ "doit "  <> show n
+      unwrap $ Monoid.power (App k2) n
+    stashed _ _ = pure unit
+  k1 $ f \a -> makeEvent \k2 -> do
+    stashed (k2 unit) =<< (liftST $ Map.lookup a <$> STRef.read saved)
+    void $ liftST $ STRef.modify (Map.insert a Nothing) saved
+    void $ liftST $ STRef.modify (Map.alter (case _ of
+      Nothing -> Just [k2]
+      Just arr -> Just (arr <> [k2])) a)  r
+    pure $ void $ liftST $ STRef.modify (Map.alter (case _ of
+      Nothing -> Nothing
+      Just arr -> Just (Array.deleteBy unsafeRefEq k2 arr)) a) r
+  unsub <- subscribe e \a -> do
+    void $ liftST $ STRef.modify (Map.alter modifier a) saved
+    o <- liftST $ STRef.read r
+    case Map.lookup a o of
+      Nothing -> pure unit
+      Just arr -> for_ arr (_ $ unit)
+  pure do
+    -- free references - helps gc?
+    void $ liftST $ STRef.write (Map.empty) r
+    unsub
+
 debug :: forall m a. Show a => String -> AnEvent m a -> AnEvent m a
 debug tag = map \a -> unsafePerformEffect (a <$ (Log.info (tag <> show a)))
+
+debugJson :: forall m. String -> AnEvent m Json.Json -> AnEvent m Json.Json
+debugJson tag = map \a -> unsafePerformEffect (a <$ (Log.info (tag <> Json.stringify a)))
 
 unsafeDebug :: forall m a. String -> AnEvent m a -> AnEvent m a
 unsafeDebug tag = map \a -> unsafePerformEffect (a <$ (Log.info tag <* Log.info (unsafeCoerce a)))
@@ -2234,11 +2287,10 @@ intStringCodec =
 
 grammarCodec :: JsonCodec SAugmented
 grammarCodec = lastMile <~< rulesCodec <~< CA.array do
-  CAR.object "GrammarItem"
-    { pName: nonEmptyStringCodec
-    , rName: CA.string
-    , rule: CA.string
-    }
+  CA.indexedArray "GrammarItem" $ { pName: _, rule: _, rName: _ }
+    <$> _.pName ~ CA.index 0 nonEmptyStringCodec
+    <*> _.rule ~ CA.index 1 CA.string
+    <*> _.rName ~ CA.index 2 CA.string
 
 _n :: forall m c d a b. Monad m => Newtype a b => Codec m c d b b -> Codec m c d a a
 _n = mapCodec (pure <<< wrap) unwrap
@@ -2614,12 +2666,15 @@ widgetGrammar { interface, attrs } = do
 
 sideKick :: forall a. (a -> Effect Unit) -> Event a -> Effect (Event a)
 sideKick eff e = do
-  unsub <- Ref.new mempty
+  current <- Ref.new 0
   pure $ makeEvent \k -> do
-    join $ Ref.read unsub
-    u <- subscribe e eff
-    Ref.write u unsub
-    subscribe e k <> (pure u)
+    this <- add 1 <$> Ref.read current
+    u <- subscribe e \v -> do
+      active <- Ref.read current
+      when (active == this) (eff v)
+      k v
+    Ref.modify_ (add 1) current
+    pure u
 
 widgetInput :: Widget
 widgetInput { interface, attrs } = do
@@ -2653,7 +2708,6 @@ widgetInput { interface, attrs } = do
           <$> Compose io.grammar.current
           <*> Compose io.states.current
           <*> Compose io.stateIndex.current
-      log $ unsafeCoerce others
       let
         c = computeInput others input
       io.tokens.send c.tokens
@@ -2718,27 +2772,50 @@ withProduceableSendTokens component { interface } = do
     sendTokens = (interface "input").send <<< Json.fromString <<< String.fromCodePointArray
   pure $ SafeNut (switcher (flip component sendTokens) (bang (withProduceable sampleGrammar) <|> fromEvent grammarEvent))
 
+spotlightBeh :: forall s m a b. MonadST s m => Ord a => AnEvent m a -> ((a -> AnEvent m Boolean) -> b) -> AnEvent m b
+spotlightBeh e f = sweep (spotlightChange e) \g -> f \a ->
+  toggle false $ keepLatest $
+    -- query the behavioral event for its current value
+    -- before only listening to sweeps
+    bang (unit <$ filter (eq a) e) <|> bang (g a)
+
 widgetStateTable :: Widget
 widgetStateTable { interface } = do
   let
-    currentMailbox = keepLatest $ currentStates $> (interface "current-state").mailbox
-    currentGetCurrentState = currentMailbox <#> \queryJ i ->
-      toggle false (queryJ (Json.fromNumber (Int.toNumber i)))
+    stateIdI = adaptInterface CA.int (interface "stateId")
+    currentGetCurrentState = spotlightBeh stateIdI.receive identity
     currentStates = filterMap (hush <<< decode statesCodec) (interface "states").receive
     currentStatesAndGetState = (sampleOn currentGetCurrentState (map (/\) currentStates))
-  pure $ SafeNut (switcher (\(x /\ getCurrentState) -> renderStateTable { getCurrentState: fromEvent <$> getCurrentState } x) (fromEvent currentStatesAndGetState))
+  pure $ SafeNut (switcher (\(x /\ getCurrentState) -> renderStateTable { getCurrentState: fromEvent <<< getCurrentState } x) (fromEvent currentStatesAndGetState))
 
 widgetParseTable :: Widget
 widgetParseTable { interface } = do
   let
-    currentMailbox = keepLatest $ currentStates $> (interface "current-state").mailbox
-    currentGetCurrentState = currentMailbox <#> \queryJ i ->
-      toggle false (queryJ (Json.fromNumber (Int.toNumber i)))
+    stateIdI = adaptInterface CA.int (interface "stateId")
+    currentGetCurrentState = spotlightBeh stateIdI.receive identity
     currentStates = filterMap (hush <<< decode statesCodec) (interface "states").receive
     currentStatesAndGetState = (sampleOn currentGetCurrentState (map (/\) currentStates))
     currentGrammar = filterMap (hush <<< decode grammarCodec) (interface "grammar").receive
   initialGrammar <- fromMaybe sampleGrammar <<< join <<< map (hush <<< decode grammarCodec) <$> (interface "grammar").current
   pure $ SafeNut (switcher (\(grammar /\ x /\ getCurrentState) -> renderParseTable { getCurrentState: fromEvent <$> getCurrentState } grammar x) (flip sampleOn ((/\) <<< _.augmented <$> (bang initialGrammar <|> fromEvent currentGrammar)) (fromEvent currentStatesAndGetState)))
+
+-- | Filter out events from one source from a larger event. That is, given
+-- | events `e1` and `e2`, the following equation ought to hold:
+-- |
+-- | ```purescript
+-- | notFrom e1 (e1 <|> e2) = e2 = notFrom e1 (e2 <|> e1)
+-- | ```
+-- |
+-- | This relies on the events being well-behaved, mostly that they broadcast
+-- | the same event to all of their subscribers in order of subscription.
+notFrom :: forall s m a. MonadST s m => Eq a => AnEvent m a -> AnEvent m a -> AnEvent m a
+notFrom suspect downstream =
+  -- Subscribe to `downstream` first, so events coming from `suspect` will
+  -- come in later and take precedence on the left side of `sampleOn_`
+  let instigator = Just <$> downstream <|> Nothing <$ suspect
+  -- Only respond to events from downstream, of course, but with the above
+  -- filtering
+  in filterMap identity (sampleOn_ instigator downstream)
 
 inputComponent
   :: forall r s e m lock payload
@@ -2763,189 +2840,188 @@ inputComponent
     }
   -> Domable e m lock payload
 inputComponent initialInput inputStream sendInput current =
-  bussed \pushInput localInput -> do
-    let
-      currentValue = bang initialInput <|> fromEvent inputStream <|> map snd localInput
-      currentValue' = bang initialInput <|> fromEvent inputStream <|>
-        filterMap (\(keep /\ v) -> if keep then Just v else Nothing) localInput
-      currentParseSteps = current.parseSteps
-      currentGrammarTokens = current.allTokens
-      currentGrammarNTs = current.allNTs
-      currentValidTokens = current.validTokens
-      currentValidNTs = current.validNTs
-      currentProduceable = current.produceable
+  bussed \pushInput localInput ->
+    envy $ memoBeh (fromEvent inputStream <|> localInput) initialInput \currentValue -> do
+      let
+        currentValue' = notFrom localInput currentValue
+        currentParseSteps = current.parseSteps
+        currentGrammarTokens = current.allTokens
+        currentGrammarNTs = current.allNTs
+        currentValidTokens = current.validTokens
+        currentValidNTs = current.validNTs
+        currentProduceable = current.produceable
 
-      renderTokenHere mtok = do
-        let
-          onClick = sampleJITE currentValue $ bang $ ReaderT \v ->
-            (pushInput <<< (/\) true) <> sendInput $ case mtok of
-              Just tok -> v <> String.singleton tok
-              Nothing -> String.take (String.length v - 1) v
-          valid = case mtok of
-            Just tok -> currentValidTokens <#> Set.member tok
-            Nothing -> currentValue <#> not String.null
-          toktext = case mtok of
-            Nothing -> codePointFromChar '⌫'
-            Just tok -> tok
-        renderTok' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (Just <$> onClick) toktext
-      renderNTHere nt = do
-        let
-          onClick = sampleJITE currentProduceable $ sampleJITE currentValue $ bang $ ReaderT \v -> ReaderT \prod -> do
-            genned <- map (maybe "" String.fromCodePointArray) $ sequence $
-              QC.randomSampleOne <$> genNT prod.produced nt
-            (pushInput <<< (/\) true) <> sendInput $ (v <> genned)
-          valid = currentValidNTs <#> Set.member nt
-        renderNT' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (Just <$> onClick) nt
-    D.div_
-      [ D.div_
-          [ D.span_ $ pure $
-              switcher (\x -> fixed $ ([ Nothing ] <> map Just x) <#> renderTokenHere) currentGrammarTokens
-          , D.span_ $ pure $
-              switcher (\x -> fixed $ x <#> renderNTHere) currentGrammarNTs
-          ]
-      , D.div_
-          [ D.span (D.Class !:= "terminal") [ input' "Source text" "" currentValue' (\v -> pushInput (false /\ v) *> sendInput v) ] ]
-      , D.div_ $ pure $ currentParseSteps `flip switcher` \todaysSteps ->
+        renderTokenHere mtok = do
           let
-            contentAsMonad = showMaybeParseSteps $ todaysSteps
-            -- Run the first layer of the monad, to get the number of items being rendered up-front
-            contentAsMonad2 /\ nEntities = runTrampoline (runStateT contentAsMonad 0)
-          in
-            vbussed (Proxy :: _ ParsedUIAction) \pPush pEvent ->
-              let
-                -- Maintain the current index, clamped between 0 and nEntitities
-                -- (Note: it is automatically reset, since `switcher` resubscribes,
-                -- creating new state for it)
-                startState = pEvent.startState <|> bang Nothing
-                rate = pEvent.rate <|> bang 1.0
-                animationTick = compact $ mapAccum
-                  ( \i@(tf /\ { beats: Beats beats }) { target: Beats target' } ->
-                      let
-                        target = if tf then 0.0 else target'
-                      in
-                        if target > beats then ({ target: Beats target } /\ Nothing)
-                        else ({ target: Beats (target + 1.0) } /\ Just i)
-                  )
-                  pEvent.animationTick
-                  { target: Beats 0.0 }
-                currentIndex = dedupOn (eq `on` fst) $ bang ((nEntities - 1) /\ Initial) <|>
-                  mapAccum
-                    (\(f /\ a) x -> let fx = clamp 0 (nEntities - 1) (f x) in fx /\ fx /\ a)
-                    ( oneOf
-                        [ ((_ - 1) /\ Toggle) <$ pEvent.toggleLeft
-                        , ((_ + 1) /\ Toggle) <$ pEvent.toggleRight
-                        -- if we're starting and at the end of a play, loop back to the beginning
-                        , (\(tf /\ _) -> if tf then ((\n -> if n == nEntities - 1 then 0 else n + 1) /\ Play) else ((_ + 1) /\ Play)) <$> animationTick
-                        , (floor >>> const >>> (_ /\ Slider)) <$> pEvent.slider
-                        ]
+            onClick = sampleJITE currentValue $ bang $ ReaderT \v ->
+              pushInput <> sendInput $ case mtok of
+                Just tok -> v <> String.singleton tok
+                Nothing -> String.take (String.length v - 1) v
+            valid = case mtok of
+              Just tok -> currentValidTokens <#> Set.member tok
+              Nothing -> currentValue <#> not String.null
+            toktext = case mtok of
+              Nothing -> codePointFromChar '⌫'
+              Just tok -> tok
+          renderTok' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (Just <$> onClick) toktext
+        renderNTHere nt = do
+          let
+            onClick = sampleJITE currentProduceable $ sampleJITE currentValue $ bang $ ReaderT \v -> ReaderT \prod -> do
+              genned <- map (maybe "" String.fromCodePointArray) $ sequence $
+                QC.randomSampleOne <$> genNT prod.produced nt
+              pushInput <> sendInput $ (v <> genned)
+            valid = currentValidNTs <#> Set.member nt
+          renderNT' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (Just <$> onClick) nt
+      D.div_
+        [ D.div_
+            [ D.span_ $ pure $
+                switcher (\x -> fixed $ ([ Nothing ] <> map Just x) <#> renderTokenHere) currentGrammarTokens
+            , D.span_ $ pure $
+                switcher (\x -> fixed $ x <#> renderNTHere) currentGrammarNTs
+            ]
+        , D.div_
+            [ D.span (D.Class !:= "terminal") [ input' "Source text" "" currentValue' (pushInput <> sendInput) ] ]
+        , D.div_ $ pure $ currentParseSteps `flip switcher` \todaysSteps ->
+            let
+              contentAsMonad = showMaybeParseSteps $ todaysSteps
+              -- Run the first layer of the monad, to get the number of items being rendered up-front
+              contentAsMonad2 /\ nEntities = runTrampoline (runStateT contentAsMonad 0)
+            in
+              vbussed (Proxy :: _ ParsedUIAction) \pPush pEvent ->
+                let
+                  -- Maintain the current index, clamped between 0 and nEntitities
+                  -- (Note: it is automatically reset, since `switcher` resubscribes,
+                  -- creating new state for it)
+                  startState = pEvent.startState <|> bang Nothing
+                  rate = pEvent.rate <|> bang 1.0
+                  animationTick = compact $ mapAccum
+                    ( \i@(tf /\ { beats: Beats beats }) { target: Beats target' } ->
+                        let
+                          target = if tf then 0.0 else target'
+                        in
+                          if target > beats then ({ target: Beats target } /\ Nothing)
+                          else ({ target: Beats (target + 1.0) } /\ Just i)
                     )
-                    (nEntities - 1)
-              in
-                -- Memoize it and run it through `spotlight` to toggle each
-                -- item individually
-                envy $ keepLatest $ memoize currentIndex \stackIndex ->
-                  spotlight false (map fst stackIndex) \sweeper ->
-                    let
-                      content = contentAsMonad2 sweeper
-                    in
-                      D.div_
-                        [ D.div_
-                            [ D.button
-                                ( oneOf
-                                    [ (biSampleOn rate ((/\) <$> startState)) <#> \(s /\ rt) -> D.OnClick := do
-                                        case s of
-                                          Just unsub -> do
-                                            unsub
-                                            pPush.startState Nothing
-                                          Nothing -> do
-                                            let toSeconds = unInstant >>> unwrap >>> (_ / 1000.0)
-                                            t <- toSeconds <$> now
-                                            sub <- subscribe
-                                              ( selfDestruct (\((isStart /\ _) /\ ci) -> (fst ci == (nEntities - 1) && not isStart)) (pPush.startState Nothing)
-                                                  ( sampleOn (toEvent currentIndex)
-                                                      ( (/\) <$> mapAccum (\i tf -> false /\ tf /\ i)
-                                                          ( timeFromRate (step rt $ toEvent pEvent.rate)
-                                                              ( _.time
-                                                                  >>> toSeconds
-                                                                  >>> (_ - t)
-                                                                  >>> Seconds <$> withTime (animationFrame)
-                                                              )
-                                                          )
-                                                          true
-                                                      )
-                                                  )
-                                              )
-                                              \(info /\ _) -> pPush.animationTick info
-                                            pPush.startState (Just sub)
-                                    ]
-                                )
-                                [ text
-                                    ( startState <#> case _ of
-                                        Just _ -> "Pause"
-                                        Nothing -> "Play"
-                                    )
-                                ]
-                            ]
-                        , D.div_
-                            [ text_ "Speed"
-                            , D.span_ $ join $ map
-                                ( \(n /\ l) ->
-                                    [ D.input
-                                        ( oneOfMap bang
-                                            [ D.Xtype := "radio"
-                                            , D.Checked := show (l == "1x")
-                                            , D.Name := "speed"
-                                            , D.Value := show n
-                                            , D.OnClick := cb \_ -> pPush.rate n
-                                            ]
-                                        )
-                                        []
-                                    , D.label_ [ text_ l ]
-                                    ]
-                                )
-                                [ 1.0 /\ "1x", (1.0 / e) /\ "ex", (1.0 / pi) /\ "pix" ]
-                            ]
-                        , D.div_
-                            [ D.input
-                                ( oneOf
-                                    [ D.Xtype !:= "range"
-                                    , D.Min !:= "0"
-                                    , D.Max !:= show (nEntities - 1)
-                                    , D.Value !:= show (nEntities - 1)
-                                    , stackIndex
-                                        # filterMap case _ of
-                                            _ /\ Slider -> Nothing
-                                            x /\ _ -> Just x
-                                        <#> (\si -> D.Value := show si)
-                                    , slider $ startState <#> case _ of
-                                        Nothing -> pPush.slider
-                                        Just unsub -> \n -> pPush.slider n
-                                          *> unsub
-                                          *> pPush.startState Nothing
-                                    ]
-                                )
-                                []
-                            ]
-                        , let
-                            clickF f = click $
-                              startState <#>
-                                ( case _ of
-                                    Nothing -> f unit
-                                    Just unsub -> f unit
-                                      *> unsub
-                                      *> pPush.startState Nothing
-                                )
-                          in
-                            D.div_
+                    pEvent.animationTick
+                    { target: Beats 0.0 }
+                  currentIndex = dedupOn (eq `on` fst) $ bang ((nEntities - 1) /\ Initial) <|>
+                    mapAccum
+                      (\(f /\ a) x -> let fx = clamp 0 (nEntities - 1) (f x) in fx /\ fx /\ a)
+                      ( oneOf
+                          [ ((_ - 1) /\ Toggle) <$ pEvent.toggleLeft
+                          , ((_ + 1) /\ Toggle) <$ pEvent.toggleRight
+                          -- if we're starting and at the end of a play, loop back to the beginning
+                          , (\(tf /\ _) -> if tf then ((\n -> if n == nEntities - 1 then 0 else n + 1) /\ Play) else ((_ + 1) /\ Play)) <$> animationTick
+                          , (floor >>> const >>> (_ /\ Slider)) <$> pEvent.slider
+                          ]
+                      )
+                      (nEntities - 1)
+                in
+                  -- Memoize it and run it through `spotlight` to toggle each
+                  -- item individually
+                  envy $ keepLatest $ memoize currentIndex \stackIndex ->
+                    spotlight false (map fst stackIndex) \sweeper ->
+                      let
+                        content = contentAsMonad2 sweeper
+                      in
+                        D.div_
+                          [ D.div_
                               [ D.button
-                                  (oneOf [ clickF $ pPush.toggleLeft ])
-                                  [ text_ "<" ]
-                              , D.button (oneOf [ clickF $ pPush.toggleRight ])
-                                  [ text_ ">" ]
+                                  ( oneOf
+                                      [ (biSampleOn rate ((/\) <$> startState)) <#> \(s /\ rt) -> D.OnClick := do
+                                          case s of
+                                            Just unsub -> do
+                                              unsub
+                                              pPush.startState Nothing
+                                            Nothing -> do
+                                              let toSeconds = unInstant >>> unwrap >>> (_ / 1000.0)
+                                              t <- toSeconds <$> now
+                                              sub <- subscribe
+                                                ( selfDestruct (\((isStart /\ _) /\ ci) -> (fst ci == (nEntities - 1) && not isStart)) (pPush.startState Nothing)
+                                                    ( sampleOn (toEvent currentIndex)
+                                                        ( (/\) <$> mapAccum (\i tf -> false /\ tf /\ i)
+                                                            ( timeFromRate (step rt $ toEvent pEvent.rate)
+                                                                ( _.time
+                                                                    >>> toSeconds
+                                                                    >>> (_ - t)
+                                                                    >>> Seconds <$> withTime (animationFrame)
+                                                                )
+                                                            )
+                                                            true
+                                                        )
+                                                    )
+                                                )
+                                                \(info /\ _) -> pPush.animationTick info
+                                              pPush.startState (Just sub)
+                                      ]
+                                  )
+                                  [ text
+                                      ( startState <#> case _ of
+                                          Just _ -> "Pause"
+                                          Nothing -> "Play"
+                                      )
+                                  ]
                               ]
-                        , D.div (D.Class !:= "parse-steps") [ content ]
-                        ]
-      ]
+                          , D.div_
+                              [ text_ "Speed"
+                              , D.span_ $ join $ map
+                                  ( \(n /\ l) ->
+                                      [ D.input
+                                          ( oneOfMap bang
+                                              [ D.Xtype := "radio"
+                                              , D.Checked := show (l == "1x")
+                                              , D.Name := "speed"
+                                              , D.Value := show n
+                                              , D.OnClick := cb \_ -> pPush.rate n
+                                              ]
+                                          )
+                                          []
+                                      , D.label_ [ text_ l ]
+                                      ]
+                                  )
+                                  [ 1.0 /\ "1x", (1.0 / e) /\ "ex", (1.0 / pi) /\ "pix" ]
+                              ]
+                          , D.div_
+                              [ D.input
+                                  ( oneOf
+                                      [ D.Xtype !:= "range"
+                                      , D.Min !:= "0"
+                                      , D.Max !:= show (nEntities - 1)
+                                      , D.Value !:= show (nEntities - 1)
+                                      , stackIndex
+                                          # filterMap case _ of
+                                              _ /\ Slider -> Nothing
+                                              x /\ _ -> Just x
+                                          <#> (\si -> D.Value := show si)
+                                      , slider $ startState <#> case _ of
+                                          Nothing -> pPush.slider
+                                          Just unsub -> \n -> pPush.slider n
+                                            *> unsub
+                                            *> pPush.startState Nothing
+                                      ]
+                                  )
+                                  []
+                              ]
+                          , let
+                              clickF f = click $
+                                startState <#>
+                                  ( case _ of
+                                      Nothing -> f unit
+                                      Just unsub -> f unit
+                                        *> unsub
+                                        *> pPush.startState Nothing
+                                  )
+                            in
+                              D.div_
+                                [ D.button
+                                    (oneOf [ clickF $ pPush.toggleLeft ])
+                                    [ text_ "<" ]
+                                , D.button (oneOf [ clickF $ pPush.toggleRight ])
+                                    [ text_ ">" ]
+                                ]
+                          , D.div (D.Class !:= "parse-steps") [ content ]
+                          ]
+        ]
 
 
 mainComponent

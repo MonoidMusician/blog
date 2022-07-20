@@ -9,7 +9,6 @@ import Control.Plus (empty)
 import Data.Argonaut (Json)
 import Data.Argonaut as Json
 import Data.Array as Array
-import Data.Coyoneda (Coyoneda(..))
 import Data.Either (Either(..))
 import Data.Foldable (foldMap, for_, traverse_)
 import Data.Maybe (Maybe(..))
@@ -18,7 +17,6 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Deku.Control (fixed)
 import Deku.Toplevel (runInElement')
 import Effect (Effect)
-import Effect.AVar (AVar)
 import Effect.Class.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Event (Event, create, filterMap, makeEvent, subscribe, sweep)
@@ -34,7 +32,7 @@ import Web.DOM.Element as Element
 import Web.DOM.HTMLCollection as HTMLCollection
 import Web.DOM.Node (removeChild)
 import Web.DOM.NodeList as NodeList
-import Web.DOM.ParentNode (QuerySelector(..), children, querySelectorAll)
+import Web.DOM.ParentNode (QuerySelector(..), querySelectorAll)
 import Web.DOM.ParentNode as ParentNode
 import Web.HTML (window)
 import Web.HTML.HTMLDocument as HTMLDocument

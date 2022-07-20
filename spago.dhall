@@ -63,6 +63,7 @@ to generate this file without the comments in this block.
   , "type-equality"
   , "typelevel"
   , "unsafe-coerce"
+  , "unsafe-reference"
   , "uri"
   , "variant"
   , "web-dom"
