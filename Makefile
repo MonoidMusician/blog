@@ -30,3 +30,6 @@ $(BUILDIR) :
 
 $(BUILDIR)/%.html : $(TXTDIR)/%.md $(BUILDIR)
 	pandoc --defaults=pandoc/defaults.yaml $< -o $@
+
+ps :
+	spago bundle-app --main Main --to static/widgets.js
