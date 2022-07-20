@@ -1,0 +1,244 @@
+@use "sass:color"
+@import "variables.sass"
+
+$background: #043147
+$text: #f0e8d4
+$text2: #faffe5
+$stark: white
+$selection: rgb(3 182 140)
+
+@if $light
+  $background: #fff4e0
+  $background: #fff4e0 url("https://www.transparenttextures.com/patterns/bedge-grunge.png")
+  $background: #fff4e0 url("https://www.transparenttextures.com/patterns/clean-textile.png")
+  $background: #fff4e0 url("https://www.transparenttextures.com/patterns/tapestry.png")
+  /* the transparent linear-gradient masks the background image so it is not targeted by longpressing on iOS */
+  $background: linear-gradient(transparent, transparent), #fff4e0 url("data:image/png;base64,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") // https://www.transparenttextures.com/patterns/tapestry.png
+  $text: #210b06
+  $text2: #390c03
+  $stark: black
+  $selection: rgb(140 222 202)
+
+
+body
+  background: $background
+  color: $text
+
+
+h2, h3, h4, h5
+  color: $text2
+
+h3
+  border-bottom-color: $text
+
+
+pre
+  @if not $light
+    background-color: #00000070
+  @else
+    background-color: #fff8eb5e
+
+
+
+mjx-container[jax="CHTML"], .katex, span.katex
+  //color: #dfdae9;
+
+mjx-container[jax="CHTML"][display="true"], .katex
+  max-width: 100%
+  overflow-x: scroll
+
+
+// Selection colors (and styles)
+::selection
+  //background-color: #a2056175;
+  background-color: rgb(3 182 140 / 46%)
+  @if $light
+    background-color: rgb(140 222 202 / 46%)
+
+  color: $stark
+  text-shadow: none
+
+a[href]::selection, a[href] ::selection
+  text-decoration-line: underline
+  //color: #3feef0;
+  color: #35d62d
+  @if $light
+    color: #31ba2a
+
+
+
+// Box colors
+.Box
+  &::before
+    background: $background
+
+
+.Box > .Box
+  margin: 10px
+
+
+$transition: 0.4s
+
+@mixin Box($color)
+  @extend .Box
+  $keyframe: unique-id()
+  transition: border-image $transition
+  border-color: color.change($color, $alpha: 0.6)
+  border-image-source: radial-gradient(ellipse at 50% 50%, color.change($color, $alpha: 0.3), color.change($color, $alpha: 0.5))
+  &:hover
+    border-image-source: radial-gradient(ellipse at 50% 50%, color.change($color, $alpha: 1.0, $hue: -20deg), color.change($color, $alpha: 0.8))
+    //animation: $keyframe 8s $transition linear infinite;
+    //border-color: color.change($color, $alpha: 0.87);
+
+  &::before
+    color: $color
+
+  &::selection,   & *::selection
+    background-color: color.change($color, $alpha: 0.4)
+
+  @keyframes #{$keyframe}
+    $hi: 60%
+    $lo: 40%
+    0%
+      border-image-source: radial-gradient(ellipse at 50% 50%, color.change($color, $alpha: 1.0, $hue: -20deg), color.change($color, $alpha: 0.8))
+    15%
+      border-image-source: radial-gradient(ellipse at $lo $lo, color.change($color, $alpha: 1.0, $hue: -20deg), color.change($color, $alpha: 0.8))
+    20%
+      border-image-source: radial-gradient(ellipse at $lo 50%, color.change($color, $alpha: 1.0, $hue: -20deg), color.change($color, $alpha: 0.8))
+    25%
+      border-image-source: radial-gradient(ellipse at $lo $hi, color.change($color, $alpha: 1.0, $hue: -20deg), color.change($color, $alpha: 0.8))
+    30%
+      border-image-source: radial-gradient(ellipse at 50% $hi, color.change($color, $alpha: 1.0, $hue: -20deg), color.change($color, $alpha: 0.8))
+    35%
+      border-image-source: radial-gradient(ellipse at $hi $hi, color.change($color, $alpha: 1.0, $hue: -20deg), color.change($color, $alpha: 0.8))
+    40%
+      border-image-source: radial-gradient(ellipse at $hi 50%, color.change($color, $alpha: 1.0, $hue: -20deg), color.change($color, $alpha: 0.8))
+    45%
+      border-image-source: radial-gradient(ellipse at $hi $lo, color.change($color, $alpha: 1.0, $hue: -20deg), color.change($color, $alpha: 0.8))
+    50%
+      border-image-source: radial-gradient(ellipse at 50% $lo, color.change($color, $alpha: 1.0, $hue: -20deg), color.change($color, $alpha: 0.8))
+    55%
+      border-image-source: radial-gradient(ellipse at $lo $lo, color.change($color, $alpha: 1.0, $hue: -20deg), color.change($color, $alpha: 0.8))
+    70%
+      border-image-source: radial-gradient(ellipse at 50% 50%, color.change($color, $alpha: 1.0, $hue: -20deg), color.change($color, $alpha: 0.8))
+
+
+.Note
+  @include Box(#d350fe)
+
+.Bonus
+  @include Box(#e86db7)
+
+.Key_Idea
+  @include Box(#fab30e)
+
+.Warning
+  @include Box(#fe7a29)
+
+.Error
+  @include Box(#ff004d)
+
+.Details
+  @include Box(#2372ff)
+
+.Example
+  @include Box(#1dca24)
+
+
+// Code colors
+// Keyword
+code span.kw
+  color: #cf2a8f
+// String
+code span.st
+  color: goldenrod
+// SpecialChar
+code span.sc
+  color: yellow
+  @if $light
+    color: darkorange
+// SpecialString
+code span.ss
+  color: yellow
+// DataType
+code span.dt
+  color: #db74b9
+// Other
+code span.ot
+  color: #acd4e4
+// Operator
+code span.op
+  color: #f97d7d
+// Char
+code span.ch
+  color: #049b0a
+// Function
+code span.fu
+  color: #ff9358
+// Alert
+code span.al
+  color: #ffff00
+// Annotation
+code span.an
+  color: #0066ff
+  font-weight: bold
+  font-style: italic
+// Attribute
+code span.at
+  color: inherit
+// BaseN
+code span.bn
+  color: #44aa43
+// BuiltIn
+code span.bu
+  color: inherit
+// ControlFlow
+code span.cf
+  color: #43a8ed
+  font-weight: bold
+// Constant
+code span.cn
+  color: inherit
+// Comment
+code span.co
+  color: #0066ff
+  font-weight: bold
+  font-style: italic
+// Documentation
+code span.do
+  color: #0066ff
+  font-style: italic
+// DecVal
+code span.dv
+  color: #44aa43
+// Error
+code span.er
+  color: #ffff00
+  font-weight: bold
+// Extension
+code span.ex
+  color: inherit
+// Float
+code span.fl
+  color: #44aa43
+// Import
+code span.im
+  color: inherit
+// Information
+code span.in
+  color: #0066ff
+  font-weight: bold
+  font-style: italic
+// Preprocessor
+code span.pp
+  font-weight: bold
+// Variable
+code span.va
+  color: inherit
+// VerbatimString
+code span.vs
+  color: #049b0a
+// Warning
+code span.wa
+  color: #ffff00
+  font-weight: bold

@@ -1,0 +1,27 @@
+@import "variables.sass"
+
+@media print
+  body
+    background-color: transparent
+    color: black
+    font-size: 10pt
+
+  *, section p, h1, h2, h3, h4, h5
+    color: black
+    text-shadow: none !important
+
+  p, h2, h3
+    orphans: 3
+    widows: 3
+
+  h2, h3, h4
+    page-break-after: avoid
+
+  canvas
+    @if not $light
+      filter: invert(1)
+
+  .Box
+    page-break-inside: avoid
+    ::before
+      page-break-inside: avoid

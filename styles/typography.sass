@@ -1,0 +1,165 @@
+@import "colors.sass"
+@import "variables.sass"
+
+$font-size: 18px
+$main-font-size: $font-size
+$code-font-size: calc(15*$main-font-size/18)
+
+// Basic font sizes and weights
+body
+  font-size: $font-size
+  font-weight: 500
+
+strong
+  text-decoration: underline
+
+pre, code
+  font-size: $code-font-size
+  font-weight: 300
+
+mjx-container[jax="CHTML"], .katex, span.katex
+  font-size: 1em !important
+  overflow-y: hidden
+  -webkit-font-smoothing: antialiased
+
+section p, section li
+  @if not $light
+    text-shadow: 1px 1px 1px #0000005e
+
+  font-feature-settings: "ss02" 1
+  line-height: 1.4
+
+section li
+  margin-bottom: 0.5em
+
+
+p
+  text-align: justify
+  hyphens: auto
+
+
+// Headings
+h1
+  text-align: center
+  font-size: 45px
+  font-weight: 700
+  font-weight: 300
+  @if not $light
+    text-shadow: 2px 2px 2px #000000b3
+
+  font-feature-settings: "ss01" 1
+  /*
+    background-color: #f1ede2;
+    color: #f0e8d412;
+    text-shadow: 0px 2px 3px #3a383375;
+    -webkit-background-clip: text;
+    -moz-background-clip: text;
+    background-clip: text;
+    */
+
+h2, h3, h4, h5
+  font-weight: 500
+  @if not $light
+    text-shadow: 2px 2px 2px #000000b3
+
+  font-feature-settings: "ss01" 1
+
+h2
+  text-align: center
+  font-size: 34px
+  margin-top: 2em
+  margin-bottom: 1em
+  font-weight: 500
+
+h3
+  font-size: 30px
+  border-bottom-width: 1px
+  border-bottom-style: solid
+  line-height: 0.9
+
+h4
+  font-size: 26px
+  font-family: 'Cormorant Upright'
+
+h5
+  font-size: 22px
+  font-style: italic
+  text-shadow: none
+  font-weight: 700
+
+h5 em
+  font-style: normal
+
+
+.subtitle
+  font-family: 'Cormorant Upright'
+  text-align: center
+  margin-top: -1.8em
+  margin-bottom: 1.8em
+
+
+
+span.smallcaps
+  font-variant: small-caps
+
+span.underline
+  text-decoration: underline
+
+.nowrap
+  white-space: nowrap
+
+
+a[href]
+  @if not $light
+    color: #3feef0
+
+  color: #35d62d
+  text-decoration-line: initial
+  text-decoration-style: solid
+  text-decoration-thickness: 1px
+  .sidenote > &
+    text-decoration-thickness: 0.5px
+
+  text-underline-offset: 1px
+
+a[href]:hover, a[href]:active
+  text-decoration-line: underline
+
+a[href]:visited
+  color: #22c79a
+
+
+.visible-space[data-whitespace="0x20"]::before
+  content: "·"
+  transform: scale(0.8)
+  opacity: 0.4
+  position: absolute
+  color: #509e9e
+  text-shadow: none
+
+
+.visible-space[data-whitespace="0xa"]::before
+  content: "¶"
+  transform: scale(0.7)
+  opacity: 0.3
+  position: absolute
+  color: #509e9e
+  text-shadow: none
+
+
+.st .visible-space[data-whitespace="0x20"]::before
+  content: "·"
+  transform: scale(0.8)
+  opacity: 0.4
+  position: absolute
+  color: inherit
+  text-shadow: none
+
+
+.st .visible-space[data-whitespace="0xa"]::before
+  content: "¶"
+  transform: scale(0.7)
+  opacity: 0.3
+  position: absolute
+  color: inherit
+  text-shadow: none

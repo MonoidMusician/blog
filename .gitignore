@@ -8,3 +8,5 @@ output/
 .spago
 /PureScript/ssr.js
 /PureScript/dist/
+/cache/
+/static/

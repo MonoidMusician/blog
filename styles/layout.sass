@@ -1,0 +1,284 @@
+@import "variables.sass"
+@import "functions.sass"
+
+html, body
+  margin: 0
+  padding: 0
+  outline: 0
+
+body
+  padding: 0 8px
+
+body > section
+  padding: 0 5%
+  max-width: 60%
+  margin-left: auto
+  margin-right: auto
+  @media (max-width: $breakpoint)
+    max-width: 98%
+
+
+@media (max-width: $breakpoint)
+  p
+    text-align: left
+
+
+body > #TOC + section > h1
+  margin-top: 0
+
+pre
+  position: relative
+  overflow: scroll
+  padding: 0.5em
+  padding-bottom: 0.7em
+  margin-left: -0.5em
+  margin-right: -0.5em
+  border-radius: 6px
+  @if not $light
+    text-shadow: 0.5px 0.5px 1px #000
+
+  @if not $light
+    box-shadow: inset 0px 0px 3px 0px #ffffff1e, -1px -1px 3px 0px #4362b114
+  @else
+    box-shadow: inset 0px 0px 3px 2px rgb(255 255 255 / 12%), 0px 0px 3px 3px rgb(67 98 177 / 8%)
+
+  transition: 0.3s box-shadow
+
+code
+  position: relative
+
+pre:hover
+  /*box-shadow: inset 0px 0px 4px 1px #e010105c, -1px -1px 3px 0px #4362b114;*/
+
+blockquote
+  margin: 1em 0 1em 1.7em
+  padding-left: 1em
+  border-left: 2px solid #e6e6e6
+
+
+.katex-display
+  clear: both
+
+
+// TOC
+#TOC
+  position: sticky
+  top: 0
+  width: calc(20% - 1em - 8px)
+  padding-right: 1em
+  float: left
+  max-height: 100vh
+  overflow-y: auto
+  font-size: 0.8em
+  @media (max-width: $breakpoint)
+    display: none
+
+  & ul
+    list-style: circle
+    padding-inline-start: 1em
+    & > li
+      line-height: 1
+      margin: 0.45em 0
+
+
+  & > ul
+    list-style: none
+    padding-inline-start: 0em
+
+  & ul > li.current
+    list-style: disc
+
+  & > ul > li:not(.current) > ul
+    display: none
+
+  & > ul > li > ul > li ul > li:not(.current) > ul
+    display: none
+
+  & > ul > li > ul > li > ul > li > ul > li > a
+    font-family: "Cormorant Upright"
+
+  & > ul > li > ul > li > ul > li > ul > li > ul > li
+    font-style: italic
+
+  a[href]
+    color: inherit
+
+
+
+// Notes
+.Box
+  border-style: solid
+  border-width: 1px
+  border-image-slice: 1
+  padding: 8px
+  margin: 0 -9px
+  position: relative
+
+  & > :first-child
+    margin-top: 0
+
+  & > :last-child
+    margin-bottom: 0
+
+  &[data-box-name]::before
+    content: attr(data-box-name)
+
+  &::before
+    font-family: "Amaranth"
+    font-weight: 400
+    font-style: italic
+    font-size: 0.92em
+    transform: translateY(-1.2em)
+    display: block
+    position: absolute
+    padding: 0 4px
+
+
+@mixin Box($name)
+  @extend .Box
+  &::before
+    content: $name
+
+  &[data-box-name]::before
+    content: attr(data-box-name)
+
+
+.Note
+  @include Box(str-replace(str-slice("#{&}", 2), "_", " "))
+
+.Bonus
+  @include Box(str-replace(str-slice("#{&}", 2), "_", " "))
+
+.Key_Idea
+  @include Box(str-replace(str-slice("#{&}", 2), "_", " "))
+
+.Warning
+  @include Box(str-replace(str-slice("#{&}", 2), "_", " "))
+
+.Error
+  @include Box(str-replace(str-slice("#{&}", 2), "_", " "))
+
+.Details
+  @include Box(str-replace(str-slice("#{&}", 2), "_", " "))
+
+.Example
+  @include Box(str-replace(str-slice("#{&}", 2), "_", " "))
+
+
+body
+  counter-reset: sidenote-counter
+  counter-reset: katexEqnNo mmlEqnNo sidenote-counter !important
+
+.sidenote, .marginnote
+  float: right
+  clear: right
+  margin-right: calc(-30% - 1em)
+  width: calc(30% - 1em)
+  margin-top: 0.3rem
+  margin-bottom: 0
+  font-size: 1.1rem
+  line-height: 1.2
+  vertical-align: baseline
+  position: relative
+  text-align: left
+
+
+.sidenote > br:last-child
+  display: none
+
+
+.sidenote-number
+  counter-increment: sidenote-counter
+
+
+.sidenote-number:after, .sidenote:before
+  position: relative
+  vertical-align: baseline
+
+
+.sidenote-number:after
+  content: counter(sidenote-counter)
+  font-feature-settings: "sups" 1
+
+
+.sidenote:before
+  content: counter(sidenote-counter) " "
+  font-feature-settings: "sups" 1
+
+
+blockquote .sidenote, blockquote .marginnote
+  margin-right: -82%
+  min-width: 59%
+  text-align: left
+
+
+input.margin-toggle
+  display: none
+
+
+label.sidenote-number
+  display: inline-block
+  max-height: 2rem /* should be less than or equal to paragraph line-height */
+
+
+label.margin-toggle:not(.sidenote-number)
+  display: none
+
+
+@media (max-width: $breakpoint)
+  label.margin-toggle:not(.sidenote-number)
+    display: inline
+
+
+  .sidenote, .marginnote
+    display: none
+
+
+  .margin-toggle:checked + .sidenote, .margin-toggle:checked + .marginnote
+    display: block
+    float: left
+    left: 1rem
+    clear: both
+    width: 95%
+    margin: 1rem 2.5%
+    vertical-align: baseline
+    position: relative
+
+
+
+.pixelated
+  image-rendering: optimizeSpeed             /* STOP SMOOTHING, GIVE ME SPEED  */
+  image-rendering: -moz-crisp-edges          /* Firefox                        */
+  image-rendering: -o-crisp-edges            /* Opera                          */
+  image-rendering: -webkit-optimize-contrast /* Chrome (and eventually Safari) */
+  image-rendering: optimize-contrast         /* CSS3 Proposed                  */
+  image-rendering: pixelated /* Chrome */
+  -ms-interpolation-mode: nearest-neighbor   /* IE8+                           */
+
+
+h2, h3, h4, h5, h6
+  position: relative
+  & > a[href].anchor
+    color: inherit
+    &:visited
+      color: inherit
+
+
+  & > .anchor::before
+    content: '§'
+    display: inline-block
+    opacity: 0.03
+    @media (pointer:coarse)
+      opacity: 0.1
+
+    width: 0.65em
+    margin-left: -0.65em
+
+  section:hover > & > .anchor::before
+    opacity: 0.1
+
+  &:hover > .anchor::before, section:hover > &:hover > .anchor::before
+    opacity: 0.4
+
+  .anchor:hover::before, &:hover > .anchor:hover::before, section:hover > &:hover > .anchor:hover::before
+    opacity: 1

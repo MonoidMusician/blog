@@ -1,0 +1,15 @@
+{
+  "name": "blog",
+  "version": "0.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Verity Scheel (monoidmusician)",
+  "license": "ISC",
+  "dependencies": {
+    "canvas": "^2.9.3",
+    "parse5": "^7.0.0"
+  }
+}
