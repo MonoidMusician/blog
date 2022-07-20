@@ -7,10 +7,22 @@ HTMLS=$(patsubst $(TXTDIR)/%.md, $(BUILDIR)/%.html, $(MDS))
 
 all : $(HTMLS) $(BUILDIR)/styles/bundles.css
 
+init :
+	rm -f static/assets
+	ln -s $(realpath assets) static/assets
+	mkdir -p rendered
+	rm -f static/rendered
+	ln -s $(realpath rendered) static/rendered
+	mkdir -p cache
+
+clean :
+	rm -rf rendered/*
+	rm -rf cache/
+
 watch :
 	sass -w styles/bundled.sass $(BUILDIR)/styles/bundled.css
 
-$(BUILDIR)/styles/bundles.css : styles/bundled.sass
+$(BUILDIR)/styles/bundles.css : styles/*.sass
 	sass styles/bundled.sass $(BUILDIR)/styles/bundled.css
 
 $(BUILDIR) :

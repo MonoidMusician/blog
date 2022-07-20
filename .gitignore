@@ -10,3 +10,4 @@ output/
 /PureScript/dist/
 /cache/
 /static/
+/rendered/
