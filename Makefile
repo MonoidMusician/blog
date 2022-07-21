@@ -33,7 +33,7 @@ $(BUILDIR)/styles/bundles.css : styles/*.sass
 $(BUILDIR) :
 	mkdir -p $(BUILDIR)
 
-pandoc : $(BUILDIR)/*.html
+pandoc : $(HTMLS)
 
 $(BUILDIR)/%.html : $(TXTDIR)/%.md $(BUILDIR) pandoc/defaults.yaml pandoc/post.html
 	pandoc --defaults=pandoc/defaults.yaml $< -o $@
