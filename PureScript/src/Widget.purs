@@ -2,6 +2,7 @@ module Widget where
 
 import Prelude
 
+import Control.Bind (bindFlipped)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
 import Control.Monad.ST.Internal as STRef
@@ -9,17 +10,23 @@ import Control.Plus (empty)
 import Data.Argonaut (Json)
 import Data.Argonaut as Json
 import Data.Array as Array
+import Data.Codec (BasicCodec, decode, encode)
 import Data.Either (Either(..))
-import Data.Foldable (foldMap, for_, traverse_)
+import Data.Foldable (class Foldable, foldMap, for_, oneOfMap, traverse_)
 import Data.Maybe (Maybe(..))
+import Data.Maybe.Last (Last(..))
+import Data.Newtype (unwrap)
 import Data.Tuple (snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Deku.Control (fixed)
 import Deku.Toplevel (runInElement')
 import Effect (Effect)
+import Effect.Aff (Aff, Canceler(..), launchAff_, makeAff)
+import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
+import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
-import FRP.Event (Event, create, filterMap, makeEvent, subscribe, sweep)
+import FRP.Event (Event, create, filterMap, keepLatest, makeEvent, subscribe, sweep)
 import FRP.Event.Class (bang)
 import Foreign.Object (Object)
 import Foreign.Object as Object
@@ -27,7 +34,7 @@ import Foreign.Object.ST (STObject)
 import Foreign.Object.ST as STO
 import Web.DOM (Element)
 import Web.DOM.Document as Document
-import Web.DOM.Element (getAttribute)
+import Web.DOM.Element (getAttribute, removeAttribute)
 import Web.DOM.Element as Element
 import Web.DOM.HTMLCollection as HTMLCollection
 import Web.DOM.Node (removeChild)
@@ -36,7 +43,7 @@ import Web.DOM.ParentNode (QuerySelector(..), querySelectorAll)
 import Web.DOM.ParentNode as ParentNode
 import Web.HTML (window)
 import Web.HTML.HTMLDocument as HTMLDocument
-import Web.HTML.Window (document)
+import Web.HTML.Window (cancelAnimationFrame, document, requestAnimationFrame)
 import Widget.Types (SafeNut(..))
 
 type Interface a =
@@ -112,6 +119,18 @@ getInterface share k = do
       , current: int.current <#> map \(_ /\ v) -> v
       }
 
+adaptInterface :: forall f a b. Foldable f => BasicCodec f a b -> Interface a -> Interface b
+adaptInterface codec interface =
+  { send: interface.send <<< encode codec
+  , mailbox: interface.mailbox <#> (_ <<< encode codec)
+  , receive: keepLatest $ oneOfMap bang <<< decode codec <$> interface.receive
+  , loopback: keepLatest $ oneOfMap bang <<< decode codec <$> interface.loopback
+  , current: interface.current <#> bindFlipped
+      (decode codec >>> last)
+  }
+  where
+  last = unwrap <<< foldMap (Last <<< Just)
+
 type KeyedInterfaceWithAttrs =
   { interface :: KeyedInterface
   , attrs :: String -> Effect Json
@@ -160,10 +179,16 @@ instantiateWidget widgets share target = do
   safenut <- widget { interface, attrs }
   unsub <- snd <$> runInElement' target case safenut of
     SafeNut nut -> nut
+  removeAttribute "data-widget-loading" target
   pure $ unsub <> do
     childs <- HTMLCollection.toArray =<< (Element.toParentNode target # ParentNode.children)
     for_ childs \child ->
       Element.toNode target # removeChild (Element.toNode child)
+
+raf :: Aff Unit
+raf = makeAff \cb -> do
+  id <- requestAnimationFrame (cb (Right unit)) =<< window
+  pure $ Canceler \_ -> liftEffect (cancelAnimationFrame id =<< window)
 
 instantiateAll :: Widgets -> Effect (Effect Unit)
 instantiateAll widgets = do
@@ -171,4 +196,9 @@ instantiateAll widgets = do
   share <- liftST STO.new
   targetsN <- NodeList.toArray =<< querySelectorAll (QuerySelector "[data-widget]") (Document.toParentNode d)
   let targetsE = Array.mapMaybe Element.fromNode targetsN
-  targetsE # foldMap (instantiateWidget widgets share)
+  unsub <- Ref.new mempty
+  launchAff_ $ for_ targetsE \target -> do
+    raf
+    u <- liftEffect $ instantiateWidget widgets share target
+    liftEffect $ Ref.modify_ (_ <> u) unsub
+  pure $ join $ Ref.read unsub

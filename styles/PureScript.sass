@@ -16,7 +16,16 @@ table
   overflow-x: auto
   overflow-y: hidden
 
-.widgets.focus-mode
+[data-widget-empty]
+  display: none
+
+html
+  // necessary to enable snapping on `body.focus-mode`
+  // since it isn't clear which is actually scrolling? lol
+  scroll-snap-type: both mandatory
+
+.widgets.focus-mode, body.focus-mode
+  padding: 0
   width: 100vw
   height: 100vh
   display: grid
@@ -28,12 +37,17 @@ table
   @media (max-height: 500px)
     grid-auto-rows: 100vh
   overflow: auto
-  scroll-snap-type: both mandatory
+  // prevent vertical overscrolling since it gets stuck on Chrome
+  overscroll-behavior-y: none
+  &:not(body)
+    scroll-snap-type: both mandatory
 
-  & > :not(.widget)
+  & > :not(section):not(.widget):not(.widgets), & section > :not(section):not(.widget):not(.widgets), & .widgets > :not(section):not(.widget):not(.widgets)
     display: none
+  & section, & .widgets
+    display: contents
 
-  & > .widget
+  & > .widget, & section > .widget, & .widgets > .widget
     flex: 0 0 auto
     align-self: stretch
     overflow: auto
@@ -42,7 +56,8 @@ table
     scroll-snap-align: start
     position: relative
 
-    & > :only-child
+    & > :only-child, & > [data-widget="Widget.Control"]:first-child,
+    & > [data-widget="Widget.Control"]:first-child + :last-child
       padding: 10px
       width: max-content
       height: max-content
@@ -50,7 +65,24 @@ table
     & > table
       width: max-content
 
+.widget[data-widget-loading="true"]
+  position: relative
+  & > *
+    opacity: 0.5
+  &::before
+    content: "Loading …"
+  &[data-widget-ssr="true"]::before
+    width: 8em
+    height: 1em
+    position: absolute
+    left: calc(50% - 4em)
+    top: calc(50% - 0.5em)
 
+[data-widget] > [data-widget="Widget.Control"]:first-child
+  margin-bottom: 1em
+
+.widgets .widgets-ui
+  float: left
 
 .keyword
   font-family: "Sofia"
@@ -340,6 +372,7 @@ table.grammar .trouble
   background: rgba(120, 0, 0, 0.5)
 
 .state-table
+  margin: 0.5em 0
   border-spacing: 0
   border-collapse: collapse
 

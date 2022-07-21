@@ -86,7 +86,7 @@ import Random.LCG as LCG
 import Test.QuickCheck.Gen as QC
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
-import Widget (Widget, Interface)
+import Widget (Interface, Widget, adaptInterface)
 import Widget.Types (SafeNut(..))
 
 data StepAction = Initial | Toggle | Slider | Play
@@ -1029,7 +1029,7 @@ randomComponent { produced: producedRules, grammar: { start: { pName: entry } } 
               )
               [ text_ "Random" ]
           ]
-      , D.ul_ $ pure $ switcher (fixed <<< map (\xs -> D.li (D.Class !:= "clickable" <|> D.OnClick !:= sendUp xs) <<< map (\x -> renderTok mempty x) $ xs))
+      , D.ul (D.Class !:= "compact") $ pure $ switcher (fixed <<< map (\xs -> D.li (D.Class !:= "clickable" <|> D.OnClick !:= sendUp xs) <<< map (\x -> renderTok mempty x) $ xs))
           (bang initial <|> event.randomMany)
       ]
 
@@ -1096,18 +1096,6 @@ computeInput { grammar, states, stateIndex } =
       , validTokens: _validTokens
       , validNTs: _validNTs
       }
-
-adaptInterface :: forall f a b. Foldable f => BasicCodec f a b -> Interface a -> Interface b
-adaptInterface codec interface =
-  { send: interface.send <<< encode codec
-  , mailbox: interface.mailbox <#> (_ <<< encode codec)
-  , receive: keepLatest $ oneOfMap bang <<< decode codec <$> interface.receive
-  , loopback: keepLatest $ oneOfMap bang <<< decode codec <$> interface.loopback
-  , current: interface.current <#> bindFlipped
-      (decode codec >>> last)
-  }
-  where
-  last = unwrap <<< foldMap (Last <<< Just)
 
 widgetGrammar :: Widget
 widgetGrammar { interface, attrs } = do
@@ -1230,7 +1218,7 @@ widgetInput { interface, attrs } = do
 
 widgets :: Object Widget
 widgets = Object.fromFoldable $ map (lmap (append "Parser."))
-  [ "Main" /\ widgetGrammar
+  [ "Grammar" /\ widgetGrammar
   , "Input" /\ widgetInput
   , "Random" /\ withProduceableSendTokens randomComponent
   , "Explorer" /\ withProduceableSendTokens explorerComponent

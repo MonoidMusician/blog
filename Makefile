@@ -7,6 +7,9 @@ HTMLS=$(patsubst $(TXTDIR)/%.md, $(BUILDIR)/%.html, $(MDS))
 
 all : $(HTMLS) $(BUILDIR)/styles/bundles.css
 
+watch-all :
+	./watch-all.sh
+
 init :
 	rm -f static/assets
 	ln -s $(realpath assets) static/assets
@@ -19,7 +22,9 @@ clean :
 	rm -rf rendered/*
 	rm -rf cache/
 
-watch :
+sass : $(BUILDIR)/styles/bundles.css
+
+watch-sass :
 	sass -w styles/bundled.sass $(BUILDIR)/styles/bundled.css
 
 $(BUILDIR)/styles/bundles.css : styles/*.sass
@@ -28,8 +33,16 @@ $(BUILDIR)/styles/bundles.css : styles/*.sass
 $(BUILDIR) :
 	mkdir -p $(BUILDIR)
 
+pandoc : $(BUILDIR)/*.html
+
 $(BUILDIR)/%.html : $(TXTDIR)/%.md $(BUILDIR)
 	pandoc --defaults=pandoc/defaults.yaml $< -o $@
 
-ps :
+watch-pandoc :
+	ls $(TXTDIR)/*.md | entr make pandoc
+
+ps : PureScript/src packages.dhall spago.dhall
 	spago bundle-app --main Main --to static/widgets.js
+
+watch-ps :
+	spago bundle-app -w --main Main --to static/widgets.js
