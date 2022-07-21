@@ -35,11 +35,11 @@ $(BUILDIR) :
 
 pandoc : $(BUILDIR)/*.html
 
-$(BUILDIR)/%.html : $(TXTDIR)/%.md $(BUILDIR)
+$(BUILDIR)/%.html : $(TXTDIR)/%.md $(BUILDIR) pandoc/defaults.yaml pandoc/post.html
 	pandoc --defaults=pandoc/defaults.yaml $< -o $@
 
 watch-pandoc :
-	ls $(TXTDIR)/*.md | entr make pandoc
+	ls $(TXTDIR)/*.md pandoc/defaults.yaml pandoc/post.html | entr make pandoc
 
 ps : PureScript/src packages.dhall spago.dhall
 	spago bundle-app --main Main --to static/widgets.js

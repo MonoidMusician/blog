@@ -1,5 +1,5 @@
-@import "colors.sass"
-@import "variables.sass"
+@use "colors.sass"
+@use "variables.sass" as *
 
 $font-size: 18px
 $main-font-size: $font-size
@@ -38,6 +38,10 @@ ul.compact li
 p
   text-align: justify
   hyphens: auto
+p, li
+  font-variant-numeric: lining-nums
+li::marker
+  font-variant-numeric: oldstyle-nums
 
 
 // Headings
@@ -165,3 +169,6 @@ a[href]:visited
   position: absolute
   color: inherit
   text-shadow: none
+
+.co .visible-space::before
+  display: none

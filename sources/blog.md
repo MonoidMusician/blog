@@ -1,11 +1,10 @@
-Cofree Collective Blog
-======================
-
-::: {.subtitle}
-[Looking for [Solomonʼs
-blog](https://cofree.coffee/~solomon/)?]{.nowrap} [Or [a page that
-doesnʼt exist](http://never)?]{.nowrap}
-:::
+---
+title: Cofree Collective Blog
+subtitle: |
+  [Looking for [Solomonʼs
+  blog](https://cofree.coffee/~solomon/)?]{.nowrap} [Or [a page that
+  doesnʼt exist](http://never)?]{.nowrap}
+---
 
 Introduction
 ------------

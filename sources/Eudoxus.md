@@ -1,4 +1,8 @@
-# Eudoxus Real Numbers as Slopes of Pixelated Graphs
+---
+title: Eudoxus Real Numbers as Slopes of Pixelated Graphs
+author:
+- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+---
 
 If you have a little background in classical constructions of the real numbers, you might have noticed that all of the usual constructions start with the rational numbers as a base, and then build up to real numbers.
 For example, Cauchy real numbers are constructed as sequences _of rational numbers_ satisfying the Cauchy condition on the usual rational metric.

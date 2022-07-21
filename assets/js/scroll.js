@@ -77,6 +77,7 @@ document.addEventListener('DOMContentLoaded', function() {
             let id = Object.keys(values).reduce((a, b) => values[a] >= values[b] ? a : b);
             //console.log(id, values);
             let orig = document.querySelector(`#TOC a[href="#${id}"]`);
+            if (!orig) return;
             let anchor = orig;
             while (anchor && anchor.offsetParent === null) {
                 while (anchor && !anchor.nextElementSibling) anchor = anchor.parentElement;

@@ -186,7 +186,7 @@ decide (Reduces r) = if NEA.length r == 1 then Just (Right (NEA.head r)) else No
 
 derive instance functorShiftReduce :: Functor (ShiftReduce s)
 instance semigroupShiftReduce :: Semigroup (ShiftReduce s r) where
-  -- We don't expect to see two shifts
+  -- We do not expect to see two shifts, so arbitrarily prefer the first one
   append (Shift s) (Shift _) = Shift s
   append (Shift s) (ShiftReduces _ rs) = ShiftReduces s rs
   append (ShiftReduces s rs) (Shift _) = ShiftReduces s rs

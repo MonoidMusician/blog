@@ -32,11 +32,10 @@ function makeVisibleSpaces() {
         replacements.push(span);
         i = found+1;
       }
-      if (i === 0) return console.log("no:",value);
+      if (i === 0) return;
       if (i < value.length) {
         replacements.push(document.createTextNode(value.substring(i, value.length)));
       }
-      console.log(e, replacements);
       replacements.forEach(function(r) {
         e.parentNode.insertBefore(r, e);
       });
