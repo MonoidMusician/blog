@@ -41,7 +41,8 @@ function makeVisibleSpaces() {
       });
       e.parentNode.removeChild(e);
     } else {
-      forEach(e.childNodes, visit);
+      // Convert the children to a static list so we don't iterate over what we are mutating
+      forEach(Array.from(e.childNodes), visit);
     }
   }
   forEach(document.querySelectorAll('pre, code'), visit);
