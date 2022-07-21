@@ -5,7 +5,7 @@ HTMLS=$(patsubst $(TXTDIR)/%.md, $(BUILDIR)/%.html, $(MDS))
 
 .PHONY : all
 
-all : $(HTMLS) $(BUILDIR)/styles/bundles.css
+all : sass pandoc ps
 
 watch-all :
 	./watch-all.sh

@@ -4,12 +4,16 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "make": "make all"
   },
   "author": "Verity Scheel (monoidmusician)",
   "license": "ISC",
   "dependencies": {
     "canvas": "^2.9.3",
-    "parse5": "^7.0.0"
+    "parse5": "^7.0.0",
+    "esbuild": "^0.14.49",
+    "katex": "^0.16.0",
+    "purescript": "^0.15.4",
+    "spago": "^0.20.9"
   }
 }

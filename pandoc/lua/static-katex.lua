@@ -7,7 +7,7 @@ function Math(h)
   local output = io.open(fname .. '.html')
   if output == nil then
     if bin == false then
-      os.execute('ln -sf $(npx -p katex which katex) cache/katex')
+      os.execute('ln -sf $(which katex || npx -p katex which katex) cache/katex')
       bin = true
     end
     local display_flag = ''
