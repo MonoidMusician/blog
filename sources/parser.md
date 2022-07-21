@@ -6,14 +6,15 @@ author:
 
 I have been building this framework for explaining, analyzing, and teaching about LR(1) grammars for a couple months now.
 I hope to turn it into a series of interactive blog posts to explain what parsing is and some approaches we can take to it, most notably [LR(1)](https://en.wikipedia.org/wiki/Canonical_LR_parser) parsing.
-Many notable parser generators like Haskellʼs [Happy](https://www.haskell.org/happy/) and the mainstream [Yacc](https://en.wikipedia.org/wiki/Yacc), [Bison](https://en.wikipedia.org/wiki/GNU_Bison), and [Tree-sitter](https://tree-sitter.github.io/tree-sitter/) use variants of LR(1), modified for efficiency by reducing the number of generated states.
+Many notable parser generators like Haskellʼs [Happy](https://www.haskell.org/happy/) and the mainstream [Yacc](https://en.wikipedia.org/wiki/Yacc), [Bison](https://en.wikipedia.org/wiki/GNU_Bison), and [Tree-sitter](https://tree-sitter.github.io/tree-sitter/) use variants of LR(1), modified for efficiency by reducing the number of generated states.^[Specifically LALR(1) is the most common alternative, and it cuts down on states by merging ones that are the same except for their lookaheads. We will not focus on any of those details in this series, most likely.]
+
+The interactive widgets here will allow you to build and verify your intuition by clicking through examples, because I believe that once you are armed with the basic ideas and the right intuition, you can figure out the rest of details for yourself.
+
+Alternatively, it can serve as a playground to test out hypotheses about grammars, see exactly where things go wrong when conflicts occur, and what to do to fix those errors.^[Have you ever had to debug a Happy grammar by opening up the [`.info`](https://www.haskell.org/happy/doc/html/sec-invoking.html) file? Itʼs overwhelming!]
 
 My real goal is to show you how intuitive LR(1) parsing can be!
 Thatʼs right, thereʼs nothing too advanced or magical going on, just some intuitive ideas carried to their logical conclusions.
 I used to be scared of parser generators, but once I was introduced to them I followed this approach to understand them for myself and I hope to share that with you.
-
-Armed with the basic ideas and the right intuition I believe youʼll be well prepared to figure out the details for yourself.
-The interactive widgets here will allow you to build and verify your intuition.
 
 As (functional) programmers, weʼre used to learning topics in terms of the appropriate datatypes and operations for the job, and thatʼs what I will go through for you here.
 Hint: weʼll use a lot of monoids!
@@ -65,6 +66,7 @@ Big shoutout to [@mikesol](https://github.com/mikesol) for creating the framewor
 ### Topics
 
 - Using this tool by example
+- Terminology reference
 - Basics: What are grammars (BNF)
   1. Nonterminals and terminals
   1. Sequencing and alternation (regexes)
@@ -88,12 +90,12 @@ Big shoutout to [@mikesol](https://github.com/mikesol) for creating the framewor
   1. Finding perfect representations, e.g. no leading zeroes, if you want it to encode data exactly
   1. Common practice of using grammars this way (e.g. in type theory papers)
 
-### Ideas
+### Ideas & Questions
 
 - State exploration: current state, next states, previous states
 - Emulate Happy, especially precedence operators
-- Can Happy precedence operators be explained in terms of alternative grammars?
-- Generate example inputs for each state, espeically to diagnose conflicts
+- Can Happy precedence operators be explained in terms of alternative grammars? Can the conflict resolutions always be “pulled back” to a grammar that would generate the same table, or a larger table that represents the same abstract grammar? Does it require quotiented grammars to explain?
+- Generate example inputs for each state, especially to diagnose conflicts^[currently it only generates example inputs for nonterminals/productions]
 - Explain [Earley parsing](https://en.wikipedia.org/wiki/Earley_parser) using a similar approach
 - Better errors!
 
@@ -105,7 +107,7 @@ Big shoutout to [@mikesol](https://github.com/mikesol) for creating the framewor
 ::: {.widget widget="Widget.Query" widget-empty="true" widget-datakey="default" widget-data-keys="grammar" widget-loading="true"}
 :::
 
-### Input a grammar
+### Enter a grammar
 Craft a grammar out of a set of rules. Each rule consists of a nonterminal name, then a colon followed by a sequence of nonterminals and terminals. Each rule must also have a unique name, which will be used to refer to it during parsing and when displaying parse trees. If ommitted, an automatic rule name will be supplied based on the nonterminal name.
 
 The top rule is controlled by the upper input boxes (LR(1) grammars often require a top rule that contains a unique terminal to terminate each input), while the lower input boxes are for adding a new rule. The nonterminals are automatically parsed out of the entered rule, which is otherwise assumed to consist of terminals.
@@ -116,16 +118,6 @@ Click “Use grammar” to see the current set of rules in action! It may take a
 ::: {widget="Widget.Control" widget-datakey="main"}
 :::
 ::: {.widget widget="Parser.Grammar" widget-datakey="default" widget-loading="true"}
-:::
-::::
-
-### Input custom text to see parsing step-by-step
-Text entered here (which may also be generated by other widgets below) will be parsed step-by-step, and the final parse tree displayed if the parse succeeded. (Note that the closing terminal is automatically appended, if necessary.) Check the state tables above to see what state the current input ends up in, and the valid next terminals will be highlighted for entry.
-
-:::: widget-group
-::: {widget="Widget.Control" widget-datakey="main"}
-:::
-::: {.widget widget="Parser.Input" widget-datakey="default" widget-loading="true"}
 :::
 ::::
 
@@ -150,6 +142,16 @@ Each rule can be read as a transition: “this nonterminal may be replaced with 
 :::
 ::::
 
+### See parsing step-by-step on custom input
+Text entered here (which may also be generated by other widgets below) will be parsed step-by-step, and the final parse tree displayed if the parse succeeded. (Note that the closing terminal is automatically appended, if necessary.) Check the state tables above to see what state the current input ends up in, and the valid next terminals will be highlighted for entry.
+
+:::: widget-group
+::: {widget="Widget.Control" widget-datakey="main"}
+:::
+::: {.widget widget="Parser.Input" widget-datakey="default" widget-loading="true"}
+:::
+::::
+
 ### List of parsing states
 To construct the LR(1) parse table, the possible states are enumerated. Each state represents partial progress of some rules in the grammar. The center dot “•” represents the dividing line between already-parsed and about-to-be-parsed.
 
@@ -164,7 +166,7 @@ When a full rule is parsed, it is eligible to be reduced, but this is only done 
 :::
 ::::
 
-### Table of states and parse actions
+### Table of parse actions for each state
 Once the states are enumerated, the table of parse actions can be read off:
 
 Terminals can be “shifted” onto the stack, transitioning to a new state seeded by pushing through that terminal in all applicable rules in the current state.
