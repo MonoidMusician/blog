@@ -5,6 +5,7 @@ node_modules/
 output/
 .purs*
 .psa*
+.psc*
 .spago
 /PureScript/ssr.js
 /PureScript/dist/

@@ -34,6 +34,7 @@ controlWidget { interface } = do
       [ D.button
           (oneOf
             [ D.OnClick !:= ((focus_mode.send <> setFocusMode) <<< not <<< fromMaybe false =<< focus_mode.current)
+            , D.Class !:= "big bonus"
             ]
           )
           [ text $ (bang false <|> fromEvent focus_mode.loopback) <#> if _ then "Leave dashboard mode" else "Enter dashboard mode" ]

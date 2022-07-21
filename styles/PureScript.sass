@@ -12,7 +12,7 @@ table
 .clickable
   cursor: pointer
 
-.widgets .widget
+.widgets .widget, section .widget
   overflow-x: auto
   overflow-y: hidden
 
@@ -42,12 +42,12 @@ html
   &:not(body)
     scroll-snap-type: both mandatory
 
-  & > :not(section):not(.widget):not(.widgets), & section > :not(section):not(.widget):not(.widgets), & .widgets > :not(section):not(.widget):not(.widgets)
+  & > :not(section):not(.widget):not(.widgets):not(.widget-group), & section > :not(section):not(.widget):not(.widgets):not(.widget-group), & .widgets > :not(section):not(.widget):not(.widgets):not(.widget-group)
     display: none
   & section, & .widgets
     display: contents
 
-  & > .widget, & section > .widget, & .widgets > .widget
+  & > .widget, & > .widget-group, & section > .widget, & section > .widget-group, & .widgets > .widget, & .widgets > .widget-group
     flex: 0 0 auto
     align-self: stretch
     overflow: auto
@@ -78,7 +78,7 @@ html
     left: calc(50% - 4em)
     top: calc(50% - 0.5em)
 
-[data-widget] > [data-widget="Widget.Control"]:first-child
+[data-widget] > [data-widget="Widget.Control"]:first-child, .widget-group > [data-widget="Widget.Control"]:first-child
   margin-bottom: 1em
 
 .widgets .widgets-ui
