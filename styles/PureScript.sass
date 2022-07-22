@@ -1,5 +1,6 @@
 @use "sass:color"
 @use "colors.sass" as *
+@use "variables.sass" as *
 
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@200..700&family=Sofia&display=swap')
 
@@ -52,6 +53,8 @@ html
     flex: 0 0 auto
     align-self: stretch
     overflow: auto
+    overscroll-behavior: none
+    -webkit-overscroll-behavior: none
     border: 1px solid gray
     box-sizing: border-box
     scroll-snap-align: start
@@ -101,7 +104,10 @@ html
 .terminal
   font-weight: bolder
   font-family: "Fira Code"
-  color: #c2d3d3
+  @if not $light
+    color: #c2d3d3
+  @else
+    color: #8093a6
 
 .selected
   text-decoration: underline
@@ -115,7 +121,10 @@ html
 .meta
   font-family: "Oswald"
   font-weight: 300
-  color: #7a6565
+  @if not $light
+    color: #7a6565
+  @else
+    color: #b59f9f
   font-size: 1em
   line-height: 1em
   margin: 0 calc(0.1em + 1.5px) 0 0.1em
@@ -130,7 +139,10 @@ html
 .rule
   font-family: "Oswald"
   font-weight: 200
-  color: #47cf6e
+  @if not $light
+    color: #47cf6e
+  @else
+    color: #028928
   margin: 0 3.5px 0 2px
 
 .non-terminal:last-child,
@@ -144,7 +156,10 @@ html
 .state
   font-family: "Cormorant"
   font-variant-numeric: lining-nums tabular-nums
-  color: #ccb11c
+  @if not $light
+    color: #ccb11c
+  @else
+    color: #b39907
 
 
 .stack
@@ -205,6 +220,11 @@ html
 /* https://www.cssscript.com/clean-tree-diagram/ */
 /* https://codepen.io/ross-angus/pen/jwxMjL */
 
+$AST-outline: #7a6565
+@if $light
+  $AST-outline: #dbb0b0
+
+
 /* It's supposed to look like a tree diagram */
 .AST,
 .AST ol,
@@ -239,7 +259,7 @@ html
 
         /* _________ */
 .AST li:before
-  outline: solid 1px #7a6565
+  outline: solid 1px $AST-outline
   content: ""
   left: 0
   position: absolute
@@ -257,7 +277,7 @@ html
   right: 50%
 
 .AST .node
-  border: solid .1em #7a6565
+  border: solid .1em $AST-outline
   border-radius: .2em
   display: inline-block
   margin: 0 .2em .5em
@@ -277,7 +297,7 @@ html
             /* | */
 .AST ol:before,
 .AST .node:before
-  outline: solid 1px #7a6565
+  outline: solid 1px $AST-outline
   content: ""
   height: .45em
   left: 50%
@@ -331,7 +351,10 @@ html
 
   &:hover
     & > :not(.parsed) > :first-child
-      outline: 2px solid cyan
+      @if not $light
+        outline: 2px solid cyan
+      @else
+        outline: 2px solid #0ab6d6
       outline-offset: 2px
 
     & > .parsed:last-child
@@ -342,7 +365,10 @@ html
     content: "•"
     font-family: "Fira Code"
     line-height: 1em
-    color: cyan
+    @if not $light
+      color: cyan
+    @else
+      color: #0ab6d6
 
   &.reducible::after
     content: "•"
@@ -379,9 +405,15 @@ table.grammar .trouble
 
   & > tbody
     &.active
-      background-color: #463d10
+      @if not $light
+        background-color: #463d10
+      @else
+        background-color: #feec95
     &.hover
-      background-color: #4b4731
+      @if not $light
+        background-color: #4b4731
+      @else
+        background-color: #eee4a9
 
     & > tr
       & > th
@@ -438,11 +470,17 @@ table.grammar .trouble
 
   & tr.active
     &, & > th
-      background-color: #463d10
+      @if not $light
+        background-color: #463d10
+      @else
+        background-color: #feec95
 
   & tr.hover
     &, & > th
-      background-color: #4b4731
+      @if not $light
+        background-color: #4b4731
+      @else
+        background-color: #eee4a9
 
   & td
     padding: 0 0.75em
@@ -483,6 +521,9 @@ table.grammar .trouble
   /* https://stackoverflow.com/questions/3461441/prevent-flicker-on-webkit-transition-of-webkit-transform */
   -webkit-backface-visibility: hidden
 
+  &:last-child
+    margin-bottom: 2px
+
   &.big
     padding-top: 0.2em
     padding-bottom: 0.25em
@@ -491,15 +532,24 @@ table.grammar .trouble
     &:hover
       transition: border-color 0.1s, color 0.1s, box-shadow 0.1s ease-out, transform 0.1s ease-out
       color: color.change($color, $alpha: 1)
-      box-shadow: 1px 1px 0.5px 0.5px color.change($color, $alpha: 0.26), inset 1px 1px 0px 1.5px #0002
+      @if not $light
+        box-shadow: 1px 1px 0.5px 0.5px color.change($color, $alpha: 0.26), inset 1px 1px 0px 1.5px #0002
+      @else
+        box-shadow: 1px 1px 0.5px 0.5px color.change($color, $alpha: 0.26), inset 1px 1px 0px 1.5px #0001
     &:not(:hover)
       @media (hover: hover) and (pointer: fine)
+        @if not $light
           border-color: color.change($color, $alpha: 0.33)
+        @else
+          border-color: color.change($color, $alpha: 0.45)
 
     &:active
       color: color.change($color, $alpha: 1)
       border-color: color.change($color, $alpha: 1)
-      box-shadow: 0px 0px 0px 0px transparent, inset 1px 1px 0px 0.5px #0002
+      @if not $light
+        box-shadow: 0px 0px 0px 0px transparent, inset 1px 1px 0px 0.5px #0002
+      @else
+        box-shadow: 0px 0px 0px 0px transparent, inset 1px 1px 0px 0.5px #0001
       transform: translate(1.1px, 1.1px)
 
   &:focus-visible
@@ -510,7 +560,10 @@ table.grammar .trouble
     border-color: color.change($color, $alpha: 0.33)
 
     color: transparent
-    background: repeating-linear-gradient(12deg,#707070,#707070 4px,#888888 4px,#888888 8px)
+    @if not $light
+      background: repeating-linear-gradient(12deg,#707070,#707070 4px,#888888 4px,#888888 8px)
+    @else
+      background: repeating-linear-gradient(12deg,#bbbbbb,#bbbbbb 4px,#888888 4px,#888888 8px)
     background-clip: text
     -webkit-background-clip: text
 
@@ -556,11 +609,11 @@ label
   & > span.error
     position: absolute
     top: calc(100% - 1px)
-    background: #073146
+    background: $background
     display: block
     font-family: "Cormorant"
     font-size: 80%
-    color: #f0e8d4
+    color: $text
     line-height: normal
     letter-spacing: normal
     border: 1px solid #ff004daa
@@ -596,7 +649,7 @@ label
     right: 8px
     top: calc(50% - 0.5em - 0.4em)
     color: rgba(255, 0, 77)
-    background: linear-gradient(90deg, transparent, #073146 0.7em)
+    background: linear-gradient(90deg, transparent, $background-color 0.7em)
     padding-left: 0.7em
     padding-bottom: 0.2em
     padding-top: 0.3em
@@ -618,7 +671,10 @@ label
 
     @media (hover: hover) and (pointer: fine)
       &:not([type=range]):not(:hover)
-        border-color: #2373ff55
+        @if not $light
+          border-color: #2373ff55
+        @else
+          border-color: #2373ff66
 
     &:not([type=range]):focus
       outline: none

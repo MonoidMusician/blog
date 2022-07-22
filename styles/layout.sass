@@ -1,5 +1,5 @@
 @use "variables.sass" as *
-@use "functions.sass"
+@use "functions.sass" as *
 
 html, body
   margin: 0
@@ -120,7 +120,6 @@ blockquote
   border-width: 1px
   border-image-slice: 1
   padding: 8px
-  margin: 0 -9px
   position: relative
 
   & > :first-child
@@ -141,7 +140,8 @@ blockquote
     display: block
     position: absolute
     padding: 0 4px
-
+body section > .Box
+  margin: 0 -9px
 
 @mixin Box($name)
   @extend .Box
