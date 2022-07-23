@@ -37,7 +37,7 @@ import Web.DOM.Document as Document
 import Web.DOM.Element (getAttribute, removeAttribute)
 import Web.DOM.Element as Element
 import Web.DOM.HTMLCollection as HTMLCollection
-import Web.DOM.Node (removeChild)
+import Web.DOM.Node (appendChild, removeChild)
 import Web.DOM.NodeList as NodeList
 import Web.DOM.ParentNode (QuerySelector(..), querySelectorAll)
 import Web.DOM.ParentNode as ParentNode
@@ -175,6 +175,11 @@ instantiateWidget :: Widgets -> DataShare -> Element -> Effect (Effect Unit)
 instantiateWidget widgets share target = do
   widget <- lookupWidget widgets target
   interface <- lookupInterface share target
+  getAttribute "data-widget-parent" target >>= traverse_ \search ->
+    window >>= document >>= HTMLDocument.toParentNode >>> querySelectorAll (QuerySelector search) >>= NodeList.toArray >>= case _ of
+      [newParent] -> appendChild (Element.toNode target) newParent
+      [] -> log $ "No elements found matching selector " <> search
+      _ -> log $ "Multiple elements found matching selector " <> search
   attrs <- collectAttrs target
   safenut <- widget { interface, attrs }
   unsub <- snd <$> runInElement' target case safenut of

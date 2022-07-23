@@ -77,7 +77,13 @@ document.addEventListener('DOMContentLoaded', function() {
             let id = Object.keys(values).reduce((a, b) => values[a] >= values[b] ? a : b);
             //console.log(id, values);
             let orig = document.querySelector(`#TOC a[href="#${id}"]`);
-            if (!orig) return;
+            if (!orig) {
+                var allSectionLinks = document.querySelectorAll("#TOC a[href]");
+                allSectionLinks.forEach(link => {
+                        link.parentElement.classList.remove("current");
+                });
+                return;
+            }
             let anchor = orig;
             while (anchor && anchor.offsetParent === null) {
                 while (anchor && !anchor.nextElementSibling) anchor = anchor.parentElement;

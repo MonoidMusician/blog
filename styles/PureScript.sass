@@ -40,7 +40,7 @@ html
     grid-auto-rows: 100vh
   overflow: auto
   // prevent vertical overscrolling since it gets stuck on Chrome
-  overscroll-behavior-y: none
+  // overscroll-behavior-y: none
   &:not(body)
     scroll-snap-type: both mandatory
 
@@ -53,8 +53,6 @@ html
     flex: 0 0 auto
     align-self: stretch
     overflow: auto
-    overscroll-behavior: none
-    -webkit-overscroll-behavior: none
     border: 1px solid gray
     box-sizing: border-box
     scroll-snap-align: start

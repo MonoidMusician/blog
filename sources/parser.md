@@ -183,3 +183,6 @@ Two types of conflicts may occur: if a terminal indicates both a shift and reduc
 ::: {.widget widget="Parser.ParseTable" widget-datakey="default" widget-loading="true"}
 :::
 ::::
+
+::: {widget="Widget.Control" widget-datakey="main" widget-parent="#TOC"}
+:::

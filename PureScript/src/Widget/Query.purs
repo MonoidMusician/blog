@@ -96,7 +96,9 @@ sideInterface prefix interfaces = makeEvent \k -> do
   sub2 <- subscribe (bang initial <|> queryChanges) \kvs -> do
     for_ interfaces \{ key, io } -> do
       for_ (Object.lookup (prefix <> key) kvs) \value -> do
-        io.send value
+        io.current >>= case _ of
+          Just v | v == value -> pure unit
+          _ -> io.send value
         Ref.modify_ (Object.insert key value) ref
   k initial
   pure $ sub1 <> sub2
