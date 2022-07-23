@@ -13,8 +13,9 @@ import Data.Tuple (fst, snd)
 import Data.Tuple.Nested ((/\), type (/\))
 import Data.Variant (Variant)
 import Data.Variant as Variant
-import Deku.Control (bus, dyn, fixed, switcher)
-import Deku.Core (class Korok, Domable, insert, remove)
+import Deku.Control (switcher)
+import Bolson.Core (dyn, fixed)
+import Deku.Core (bus, class Korok, Domable, insert, remove)
 import Deku.DOM as D
 import Effect (Effect)
 import FRP.Deku.Component (ComponentSpec)
@@ -34,21 +35,21 @@ type ListicleEvent a = Variant (add :: a, remove :: Int)
 -- | Start from an initial value, listen for external add events, internal remove events,
 -- | raise messages on change, and return the current value on finalize.
 listicle
-  :: forall s e m lock payload a
+  :: forall s m lock payload a
    . Korok s m
   => Show a
   => { initial :: Array a -- initial value
      , addEvent :: AnEvent m a -- external add events
 
-     , remove :: Maybe (Effect Unit -> Domable e m lock payload) -- remove button
-     , finalize :: Maybe (AnEvent m (Array a) -> Domable e m lock payload) -- finalize button
+     , remove :: Maybe (Effect Unit -> Domable m lock payload) -- remove button
+     , finalize :: Maybe (AnEvent m (Array a) -> Domable m lock payload) -- finalize button
 
-     , renderItem :: a -> Domable e m lock payload
-     , begin :: Maybe (Domable e m lock payload)
-     , end :: Maybe (Domable e m lock payload)
-     , separator :: Maybe (Domable e m lock payload)
+     , renderItem :: a -> Domable m lock payload
+     , begin :: Maybe (Domable m lock payload)
+     , end :: Maybe (Domable m lock payload)
+     , separator :: Maybe (Domable m lock payload)
      }
-  -> ComponentSpec e m lock payload (Array a)
+  -> ComponentSpec m lock payload (Array a)
 listicle desc = keepLatest $ bus \pushRemove removesEvent ->
   let
     addEvent = counter desc.addEvent <#> \(v /\ i) -> (i + Array.length desc.initial) /\ v
@@ -82,13 +83,13 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
           Nothing -> []
           Just v -> [ v ]
 
-        withRemover :: Domable e m lock payload -> Int -> Array (Domable e m lock payload)
+        withRemover :: Domable m lock payload -> Int -> Array (Domable m lock payload)
         withRemover item idx = case desc.remove of
           Nothing -> [ item ]
           Just remover ->
             [ item, remover (pushRemove idx) ]
 
-        renderOne :: Int /\ a -> Array (Domable e m lock payload)
+        renderOne :: Int /\ a -> Array (Domable m lock payload)
         renderOne (idx /\ item) = withRemover (desc.renderItem item) idx
 
         dropComma :: Int -> AnEvent m Boolean
@@ -111,7 +112,7 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
           let
             renderItems = sampleOn (Array.length <$> currentValue) $
               (initialEvent <|> addEvent) <#> \(idx /\ item) len ->
-                ( insert $ fixed $ append
+                ( bang $ insert $ fixed $ append
                     (if len > 0 && idx /= 0 then [ switcher (fixed <<< if _ then [] else sep) (bang false <|> dropComma idx) ] else [])
                     (renderOne (idx /\ item))
                 ) <|> filter (eq idx) removesEvent $> remove

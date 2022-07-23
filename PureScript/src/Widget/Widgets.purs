@@ -6,7 +6,8 @@ import Control.Alt ((<|>))
 import Data.Codec.Argonaut as CA
 import Data.Maybe (fromMaybe)
 import Data.Traversable (for_, oneOf, traverse_)
-import Deku.Control (bussed, text, text_)
+import Deku.Control (text, text_)
+import Deku.Core (bussed)
 import Deku.DOM as D
 import FRP.Deku ((!:=), (<:=>))
 import FRP.Event (bang, fromEvent)

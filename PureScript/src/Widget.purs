@@ -2,6 +2,7 @@ module Widget where
 
 import Prelude
 
+import Bolson.Core (fixed)
 import Control.Bind (bindFlipped)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
@@ -18,7 +19,6 @@ import Data.Maybe.Last (Last(..))
 import Data.Newtype (unwrap)
 import Data.Tuple (snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import Deku.Control (fixed)
 import Deku.Toplevel (runInElement')
 import Effect (Effect)
 import Effect.Aff (Aff, Canceler(..), launchAff_, makeAff)
@@ -182,7 +182,7 @@ instantiateWidget widgets share target = do
       _ -> log $ "Multiple elements found matching selector " <> search
   attrs <- collectAttrs target
   safenut <- widget { interface, attrs }
-  unsub <- snd <$> runInElement' target case safenut of
+  unsub <- runInElement' target case safenut of
     SafeNut nut -> nut
   removeAttribute "data-widget-loading" target
   pure $ unsub <> do

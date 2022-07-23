@@ -2,18 +2,18 @@ module FRP.Deku.Component where
 
 import Prelude
 
-import Bolson.Control (envy)
+import Bolson.Core (envy)
 import Deku.Core (class Korok, Domable)
 import FRP.Event (AnEvent, keepLatest, memoize)
 
 
 -- | Abstract component
-type ComponentSpec e m lock payload d =
-  AnEvent m (Component e m lock payload d)
+type ComponentSpec m lock payload d =
+  AnEvent m (Component m lock payload d)
 
 -- | Instantiated component
-type Component e m lock payload d =
-  { element :: Domable e m lock payload
+type Component m lock payload d =
+  { element :: Domable m lock payload
   , value :: AnEvent m d
   }
 
@@ -25,11 +25,11 @@ type Component e m lock payload d =
 -- | otherwise the value is attached to a phantom instance that has no DOM
 -- | presence, due to the way busses and subscriptions work.
 withInstance
-  :: forall s d e m lock payload
+  :: forall s d m lock payload
    . Korok s m
-  => ComponentSpec e m lock payload d
-  -> (Component e m lock payload d -> Domable e m lock payload)
-  -> Domable e m lock payload
+  => ComponentSpec m lock payload d
+  -> (Component m lock payload d -> Domable m lock payload)
+  -> Domable m lock payload
 withInstance componentSpec renderer =
   envy $ memoize componentSpec \component ->
     renderer

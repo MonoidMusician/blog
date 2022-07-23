@@ -14,7 +14,7 @@ import Data.Semigroup.Last (Last(..))
 import Data.String as String
 import Data.Traversable (foldMap, for_, traverse)
 import Data.Tuple.Nested ((/\))
-import Deku.Control (envy, fixed)
+import Bolson.Core (envy, fixed)
 import Effect (Effect)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
