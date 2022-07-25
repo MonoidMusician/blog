@@ -67,7 +67,7 @@ a[href]::selection, a[href] ::selection
 
 // Box colors
 .Box
-  &::before
+  &:not(details)::before, &:not(:not(details)) > summary
     background: $background
 
 
@@ -81,15 +81,24 @@ $transition: 0.4s
   @extend .Box
   $keyframe: unique-id()
   transition: border-image $transition
-  border-color: color.change($color, $alpha: 0.6)
+  border-color: color.change($color, $alpha: 0.5)
   border-image-source: radial-gradient(ellipse at 50% 50%, color.change($color, $alpha: 0.3), color.change($color, $alpha: 0.5))
-  &:hover
+  &:not(details):hover, &:not(:not(details))[open]:hover
     border-image-source: radial-gradient(ellipse at 50% 50%, color.change($color, $alpha: 1.0, $hue: -20deg), color.change($color, $alpha: 0.8))
     //animation: $keyframe 8s $transition linear infinite;
     //border-color: color.change($color, $alpha: 0.87);
+  &:not(:not(details)):not([open])
+    border-image: none
+    border-bottom-style: dashed
+    box-shadow: 0px -1px 2px inset color.change($color, $alpha: 0.25)
 
-  &::before
+  &:not(details)::before, &:not(:not(details)) > summary
     color: $color
+  &:not(:not(details)) > summary
+    &::marker
+      transition: color $transition
+    &:not(:hover)::marker
+      color: color.change($color, $alpha: 0.4)
 
   &::selection,   & *::selection
     background-color: color.change($color, $alpha: 0.4)
@@ -146,98 +155,98 @@ $transition: 0.4s
 
 // Code colors
 // Keyword
-code span.kw
+code span.kw, code.kw
   color: #cf2a8f
 // String
-code span.st
+code span.st, code.st
   color: goldenrod
 // SpecialChar
-code span.sc
+code span.sc, code.sc
   color: yellow
   @if $light
     color: darkorange
 // SpecialString
-code span.ss
+code span.ss, code.ss
   color: yellow
 // DataType
-code span.dt
+code span.dt, code.dt
   color: #db74b9
 // Other
-code span.ot
+code span.ot, code.ot
   color: #acd4e4
 // Operator
-code span.op
+code span.op, code.op
   color: #f97d7d
 // Char
-code span.ch
+code span.ch, code.ch
   color: #049b0a
 // Function
-code span.fu
+code span.fu, code.fu
   color: #ff9358
 // Alert
-code span.al
+code span.al, code.al
   color: #ffff00
 // Annotation
-code span.an
+code span.an, code.an
   color: #0066ff
   font-weight: bold
   font-style: italic
 // Attribute
-code span.at
+code span.at, code.at
   color: inherit
 // BaseN
-code span.bn
+code span.bn, code.bn
   color: #44aa43
 // BuiltIn
-code span.bu
+code span.bu, code.bu
   color: inherit
 // ControlFlow
-code span.cf
+code span.cf, code.cf
   color: #43a8ed
   font-weight: bold
 // Constant
-code span.cn
+code span.cn, code.cn
   color: inherit
 // Comment
-code span.co
+code span.co, code.co
   color: #27c856
   font-style: italic
 // Documentation
-code span.do
+code span.do, code.do
   color: #0066ff
   font-style: italic
 // DecVal
-code span.dv
+code span.dv, code.dv
   color: #44aa43
 // Error
-code span.er
+code span.er, code.er
   color: #ffff00
   font-weight: bold
 // Extension
-code span.ex
+code span.ex, code.ex
   color: inherit
 // Float
-code span.fl
+code span.fl, code.fl
   color: #44aa43
 // Import
-code span.im
-  color: inherit
+code span.im, code.im
+  color: #7f2db9
 // Information
-code span.in
+code span.in, code.in
   color: #0066ff
   font-weight: bold
   font-style: italic
 // Preprocessor
-code span.pp
+code span.pp, code.pp
   font-weight: bold
 // Variable
-code span.va
+code span.va, code.va
   color: inherit
 // VerbatimString
-code span.vs
+code span.vs, code.vs
   color: #049b0a
 // Warning
-code span.wa
+code span.wa, code.wa
   color: #ffff00
   font-weight: bold
 

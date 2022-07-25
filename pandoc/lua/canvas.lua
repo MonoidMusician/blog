@@ -1,5 +1,3 @@
-os.execute("echo")
-
 function RawBlock(h)
   if h.format == 'html' then
     if re.find(h.text, "'<'[Cc]*[Aa][Nn][Vv][Aa][Ss]") ~= nil then

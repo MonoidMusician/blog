@@ -1,3 +1,5 @@
+@use "sass:selector"
+
 // https://css-tricks.com/snippets/sass/str-replace-function/
 
 /// Replace `$search` with `$replace` in `$string`
@@ -14,3 +16,8 @@
 
 
   @return $string
+
+// https://sass-lang.com/documentation/style-rules/parent-selector#advanced-nesting
+@mixin unify-parent($child)
+  @at-root #{selector.unify(&, $child)}
+    @content

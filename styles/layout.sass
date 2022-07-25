@@ -22,6 +22,10 @@ body > section
   p
     text-align: left
 
+dd
+  margin-bottom: 1em
+dd > p:first-child
+  margin-top: 0
 
 body > header > h1, body > #TOC + section > h1
   margin-top: 0
@@ -60,9 +64,27 @@ pre:hover
   /*box-shadow: inset 0px 0px 4px 1px #e010105c, -1px -1px 3px 0px #4362b114;*/
 
 blockquote
-  margin: 1em 0 1em 1.7em
-  padding-left: 1em
-  border-left: 2px solid #e6e6e6
+  font-style: italic
+  margin-left: 1em
+  margin-right: 1em
+  p:first-child
+    margin-top: 0.2em
+  p:last-child
+    margin-bottom: 0
+  em
+    font-style: normal
+  p::before
+    content: "‟"
+    font-size: 1.6em
+    line-height: 0.9
+    float: left
+    margin-left: -0.5em
+  p:last-child::after
+    content: "”"
+    font-size: 1.6em
+    line-height: 0.9
+    float: right
+    margin-right: -0.4em
 
 
 .katex-display
@@ -122,33 +144,41 @@ blockquote
   padding: 8px
   position: relative
 
-  & > :first-child
+  & > .sourceCode > pre
+    margin-left: -6px
+    margin-right: -6px
+
+  &:not(details) > :first-child, &:not(:not(details)) > :nth-child(2)
     margin-top: 0
 
   & > :last-child
     margin-bottom: 0
 
-  &[data-box-name]::before
+  &:not(details)[data-box-name]::before
     content: attr(data-box-name)
 
-  &::before
+  &:not(details)::before, &:not(:not(details)) > summary
     font-family: "Amaranth"
     font-weight: 400
     font-style: italic
     font-size: 0.92em
-    transform: translateY(-1.2em)
-    display: block
+    transform: translateY(calc(-.65em - 8px))
     position: absolute
     padding: 0 4px
+  &:not(details)::before
+    display: block
+  &:not(:not(details)) > summary
+    cursor: pointer
+    user-select: none
 body section > .Box
   margin: 0 -9px
 
 @mixin Box($name)
   @extend .Box
-  &::before
+  &:not(details)::before
     content: $name
 
-  &[data-box-name]::before
+  &:not(details)[data-box-name]::before
     content: attr(data-box-name)
 
 

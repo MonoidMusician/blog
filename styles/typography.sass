@@ -20,8 +20,12 @@ strong
 pre, code
   font-size: $code-font-size
   font-weight: 300
+  hyphens: none
 .sidenote code
   font-size: 0.8em
+p > code, li > code
+  margin-left: 2px
+  margin-right: 2px
 
 mjx-container[jax="CHTML"], .katex, span.katex
   font-size: 1em !important
@@ -49,6 +53,12 @@ p, li
 li::marker
   font-variant-numeric: oldstyle-nums
 
+//
+  header ~ section > p:first-child, h1 + p, h2 + p
+    &:not(.author)::first-letter
+      font-size: 1.4em
+      line-height: 1
+      font-weight: 200
 
 // Headings
 h1
@@ -148,7 +158,8 @@ a[href]:visited
   transform: scale(0.8)
   opacity: 0.4
   position: absolute
-  color: #509e9e
+  top: 0
+  color: #509e9e99
   text-shadow: none
   pointer-events: none
 
@@ -158,7 +169,8 @@ a[href]:visited
   transform: scale(0.7)
   opacity: 0.3
   position: absolute
-  color: #509e9e
+  top: 0
+  color: #509e9e99
   text-shadow: none
   pointer-events: none
 
@@ -168,6 +180,7 @@ a[href]:visited
   transform: scale(0.8)
   opacity: 0.4
   position: absolute
+  top: 0
   color: inherit
   text-shadow: none
   pointer-events: none
@@ -178,6 +191,7 @@ a[href]:visited
   transform: scale(0.7)
   opacity: 0.3
   position: absolute
+  top: 0
   color: inherit
   text-shadow: none
   pointer-events: none
