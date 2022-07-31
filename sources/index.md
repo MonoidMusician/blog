@@ -10,7 +10,16 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 
 ## Posts
 - [Interactive Parser Explanations](parser.html)
+
+  > I have been building this framework for explaining, analyzing, and teaching about LR(1) grammars for a couple months now.
+  > The interactive widgets here will allow you to build and verify your intuition by clicking through examples, because I believe that once you are armed with the basic ideas and the right intuition, you can figure out the rest of details for yourself.
+  > Alternatively, it can serve as a playground to test out hypotheses about grammars, see exactly where things go wrong when conflicts occur, and what to do to fix those errors.
+
 - [Eudoxus Real Numbers as Slopes of Pixelated Graphs](Eudoxus.html)
+
+  > This is a post on constructing real numbers without constructing rational numbers. Along the way the rationals will sort of be constructed, or at least heavily implied, but they donʼt directly figure into the definition! Instead all we need is functions from integers to integers.
+  >
+  > The construction weʼll be talking about is my favorite esoteric construction of real numbers: the _[Eudoxus real numbers](https://ncatlab.org/nlab/show/Eudoxus+real+number)_.
 
 ## Ideas/WIP
 - Interactive type theory!
