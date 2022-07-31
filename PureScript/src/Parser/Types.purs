@@ -42,12 +42,12 @@ type Produced nt r tok =
   , produced :: Array tok
   }
 
-type Produceable nt r tok =
+type Producible nt r tok =
   { grammar :: Augmented nt r tok
   , produced :: Array (Produced nt r tok)
   }
 
-type SProduceable = Produceable NonEmptyString String CodePoint
+type SProducible = Producible NonEmptyString String CodePoint
 
 type Augmented nt r tok =
   { augmented :: Grammar nt r tok

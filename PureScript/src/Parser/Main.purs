@@ -77,12 +77,12 @@ import FRP.SampleJIT (readersT, sampleJITE)
 import FRP.SelfDestruct (selfDestruct)
 import Foreign.Object (Object)
 import Foreign.Object as Object
-import Parser.Algorithms (addEOF', calculateStates, fromSeed', fromString', gatherNonTerminals', gatherNonTerminals_, gatherTokens', gatherTokens_, getResultC, indexStates, longestFirst, numberStates, parseDefinition, parseIntoGrammar, toAdvanceTo, toTable, withProduceable)
-import Parser.Codecs (grammarCodec, intStringCodec, listCodec, mappy, maybeCodec, nonEmptyStringCodec, parseStepsCodec, produceableCodec, setCodec, stateInfoCodec, statesCodec)
+import Parser.Algorithms (addEOF', calculateStates, fromSeed', fromString', gatherNonTerminals', gatherNonTerminals_, gatherTokens', gatherTokens_, getResultC, indexStates, longestFirst, numberStates, parseDefinition, parseIntoGrammar, toAdvanceTo, toTable, withProducible)
+import Parser.Codecs (grammarCodec, intStringCodec, listCodec, mappy, maybeCodec, nonEmptyStringCodec, parseStepsCodec, producibleCodec, setCodec, stateInfoCodec, statesCodec)
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps, topOf)
 import Parser.Random (genNT, sampleS)
 import Parser.Samples (defaultEOF, defaultTopName, defaultTopRName)
-import Parser.Types (AST(..), CST(..), Grammar(..), Part(..), SAST, SAugmented, SCParseSteps, SCST, SCStack, SFragment, SGrammar, SProduceable, SState, SStateIndex, SStateInfo, SStateItem, SStates, SZipper, ShiftReduce(..), State(..), States(..), Zipper(..), prune, unNonTerminal, unSPart, unTerminal)
+import Parser.Types (AST(..), CST(..), Grammar(..), Part(..), SAST, SAugmented, SCParseSteps, SCST, SCStack, SFragment, SGrammar, SProducible, SState, SStateIndex, SStateInfo, SStateItem, SStates, SZipper, ShiftReduce(..), State(..), States(..), Zipper(..), prune, unNonTerminal, unSPart, unTerminal)
 import Partial.Unsafe (unsafePartial)
 import Random.LCG as LCG
 import Test.QuickCheck.Gen as QC
@@ -898,7 +898,7 @@ type ExplorerAction =
 explorerComponent
   :: forall s m lock payload
    . Korok s m
-  => SProduceable
+  => SProducible
   -> (Array CodePoint -> Effect Unit)
   -> Domable m lock payload
 explorerComponent { produced: producedRules, grammar: { augmented: MkGrammar rules, start: { pName: entry } } } sendUp =
@@ -961,7 +961,7 @@ explorerComponent { produced: producedRules, grammar: { augmented: MkGrammar rul
                             [ text_ "Choose" ]
                         ]
                     , case Array.find (_.production >>> eq rule) producedRules of
-                        Nothing -> text_ "Unproduceable"
+                        Nothing -> text_ "Unproducible"
                         Just { produced } ->
                           D.span_
                             [ D.em_ [ text_ "e.g. " ]
@@ -980,7 +980,7 @@ type RandomAction =
 randomComponent
   :: forall s m lock payload
    . Korok s m
-  => SProduceable
+  => SProducible
   -> (Array CodePoint -> Effect Unit)
   -> Domable m lock payload
 randomComponent { produced: producedRules, grammar: { start: { pName: entry } } } sendUp =
@@ -1039,7 +1039,7 @@ peas :: Array String -> Nut
 peas x = fixed (map (D.p_ <<< pure <<< text_) x)
 
 computeGrammar :: SAugmented ->
-  { produceable :: SProduceable
+  { producible :: SProducible
   , states :: SStates
   , stateIndex :: SStateIndex
   , allTokens :: Array CodePoint
@@ -1047,13 +1047,13 @@ computeGrammar :: SAugmented ->
   }
 computeGrammar grammar =
   let
-    _produceable = withProduceable grammar
+    _producible = withProducible grammar
     _states = either (const (States [])) identity $ numberStates (add 1) grammar.augmented (calculateStates grammar.augmented grammar.start)
     _stateIndex = indexStates _states
     _allTokens = gatherTokens' grammar.augmented
     _allNTs = gatherNonTerminals' grammar.augmented
   in
-    { produceable: _produceable
+    { producible: _producible
     , states: _states
     , stateIndex: _stateIndex
     , allTokens: _allTokens
@@ -1104,7 +1104,7 @@ widgetGrammar { interface, attrs } = do
   let
     io =
       { grammar: adaptInterface grammarCodec (interface "grammar")
-      , produceable: adaptInterface produceableCodec (interface "produceable")
+      , producible: adaptInterface producibleCodec (interface "producible")
       , states: adaptInterface statesCodec (interface "states")
       , stateIndex: adaptInterface (mappy intStringCodec CA.int) (interface "stateIndex")
       , allTokens: adaptInterface (CA.array CA.codePoint) (interface "allTokens")
@@ -1112,7 +1112,7 @@ widgetGrammar { interface, attrs } = do
       }
     sendOthers grammar = do
       let computed = computeGrammar grammar
-      io.produceable.send computed.produceable
+      io.producible.send computed.producible
       io.states.send computed.states
       io.stateIndex.send computed.stateIndex
       io.allTokens.send computed.allTokens
@@ -1149,7 +1149,7 @@ widgetInput { interface, attrs } = do
   let
     io =
       { grammar: adaptInterface grammarCodec (interface "grammar")
-      , produceable: adaptInterface produceableCodec (interface "produceable")
+      , producible: adaptInterface producibleCodec (interface "producible")
       , states: adaptInterface statesCodec (interface "states")
       , stateIndex: adaptInterface (mappy intStringCodec CA.int) (interface "stateIndex")
       , allTokens: adaptInterface (CA.array CA.codePoint) (interface "allTokens")
@@ -1187,7 +1187,7 @@ widgetInput { interface, attrs } = do
       io.validNTs.send c.validNTs
   receiver <- sideKick sendOthers io.input.receive
   initialGrammar <- fromMaybe sampleGrammar <$> io.grammar.current
-  fallbackInput <- fromMaybe' (\_ -> sampleS (withProduceable initialGrammar)) <<< Json.toString <$> attrs "input"
+  fallbackInput <- fromMaybe' (\_ -> sampleS (withProducible initialGrammar)) <<< Json.toString <$> attrs "input"
   initialInput <- fromMaybe fallbackInput <$> io.input.current
   grammarStream <- sideKick (\_ -> io.input.current >>= fromMaybe initialInput >>> sendOthers) io.grammar.receive
   let
@@ -1215,15 +1215,15 @@ widgetInput { interface, attrs } = do
       , allNTs: fromEvent io.allNTs.receive
       , validTokens: fromEvent io.validTokens.loopback
       , validNTs: fromEvent io.validNTs.loopback
-      , produceable: fromEvent io.produceable.receive
+      , producible: fromEvent io.producible.receive
       }
 
 widgets :: Object Widget
 widgets = Object.fromFoldable $ map (lmap (append "Parser."))
   [ "Grammar" /\ widgetGrammar
   , "Input" /\ widgetInput
-  , "Random" /\ withProduceableSendTokens randomComponent
-  , "Explorer" /\ withProduceableSendTokens explorerComponent
+  , "Random" /\ withProducibleSendTokens randomComponent
+  , "Explorer" /\ withProducibleSendTokens explorerComponent
   , "StateTable" /\ widgetStateTable
   , "ParseTable" /\ widgetParseTable
   ]
@@ -1234,12 +1234,12 @@ withGrammar component { interface } = do
     grammarEvent = filterMap (hush <<< decode grammarCodec) (interface "grammar").receive
   pure $ SafeNut (switcher component (bang sampleGrammar <|> fromEvent grammarEvent))
 
-withProduceableSendTokens :: (forall s m lock payload. Korok s m => SProduceable -> (Array CodePoint -> Effect Unit) -> Domable m lock payload) -> Widget
-withProduceableSendTokens component { interface } = do
+withProducibleSendTokens :: (forall s m lock payload. Korok s m => SProducible -> (Array CodePoint -> Effect Unit) -> Domable m lock payload) -> Widget
+withProducibleSendTokens component { interface } = do
   let
-    grammarEvent = filterMap (hush <<< decode produceableCodec) (interface "produceable").receive
+    grammarEvent = filterMap (hush <<< decode producibleCodec) (interface "producible").receive
     sendTokens = (interface "input").send <<< Json.fromString <<< String.fromCodePointArray
-  pure $ SafeNut (switcher (flip component sendTokens) (bang (withProduceable sampleGrammar) <|> fromEvent grammarEvent))
+  pure $ SafeNut (switcher (flip component sendTokens) (bang (withProducible sampleGrammar) <|> fromEvent grammarEvent))
 
 spotlightBeh :: forall s m a b. MonadST s m => Ord a => AnEvent m a -> ((a -> AnEvent m Boolean) -> b) -> AnEvent m b
 spotlightBeh e f = sweep (spotlightChange e) \g -> f \a ->
@@ -1286,7 +1286,7 @@ inputComponent
     , allNTs :: AnEvent m (Array NonEmptyString)
     , validTokens :: AnEvent m (Set CodePoint)
     , validNTs :: AnEvent m (Set NonEmptyString)
-    , produceable :: AnEvent m SProduceable
+    , producible :: AnEvent m SProducible
     | r
     }
   -> Domable m lock payload
@@ -1300,7 +1300,7 @@ inputComponent initialInput inputStream sendInput current =
         currentGrammarNTs = current.allNTs
         currentValidTokens = current.validTokens
         currentValidNTs = current.validNTs
-        currentProduceable = current.produceable
+        currentProducible = current.producible
 
         renderTokenHere mtok = do
           let
@@ -1317,7 +1317,7 @@ inputComponent initialInput inputStream sendInput current =
           renderTok' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (Just <$> onClick) toktext
         renderNTHere nt = do
           let
-            onClick = sampleJITE currentProduceable $ sampleJITE currentValue $ bang $ ReaderT \v -> ReaderT \prod -> do
+            onClick = sampleJITE currentProducible $ sampleJITE currentValue $ bang $ ReaderT \v -> ReaderT \prod -> do
               genned <- map (maybe "" String.fromCodePointArray) $ sequence $
                 QC.randomSampleOne <$> genNT prod.produced nt
               pushInput <> sendInput $ (v <> genned)

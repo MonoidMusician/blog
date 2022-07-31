@@ -36,7 +36,7 @@ import Data.Variant as V
 import Data.Variant as Variant
 import Foreign.Object as Object
 import Parser.Algorithms (parseDefinitions, unParseDefinition)
-import Parser.Types (CST(..), Grammar(..), Part(..), SAugmented, SCParseSteps, SCST, SCStack, SFragment, SPart, SProduceable, SState, SStateInfo, SStates, ShiftReduce(..), Zipper(..))
+import Parser.Types (CST(..), Grammar(..), Part(..), SAugmented, SCParseSteps, SCST, SCStack, SFragment, SPart, SProducible, SState, SStateInfo, SStates, ShiftReduce(..), Zipper(..))
 import Parser.Proto (ParseSteps(..), Stack(..))
 import Record as Record
 import Type.Proxy (Proxy(..))
@@ -202,8 +202,8 @@ partCodec = CAV.variantMatch
         , "NonTerminal": NonTerminal
         }
 
-produceableCodec :: JsonCodec SProduceable
-produceableCodec = CAR.object "Produceable"
+producibleCodec :: JsonCodec SProducible
+producibleCodec = CAR.object "Producible"
   { grammar: grammarCodec
   , produced: prulesCodec <~< CA.array do
       CAR.object "Produced"

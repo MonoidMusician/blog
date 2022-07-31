@@ -10,7 +10,7 @@ import Data.String as String
 import Data.Traversable (for, sequence)
 import Effect (Effect)
 import Parser.Algorithms (chooseBySize, countTs)
-import Parser.Types (Fragment, Part(..), Produceable, SProduceable, Produced, getRulesFor)
+import Parser.Types (Fragment, Part(..), Producible, SProducible, Produced, getRulesFor)
 import Random.LCG as LCG
 import Test.QuickCheck.Gen as QC
 
@@ -64,17 +64,17 @@ genNT1 grammar nt =
 
 
 
-sample :: forall nt r tok. Eq nt => Eq r => Eq tok => Produceable nt r tok -> Maybe (Array tok)
+sample :: forall nt r tok. Eq nt => Eq r => Eq tok => Producible nt r tok -> Maybe (Array tok)
 sample grammar =
   QC.evalGen <$> genNT grammar.produced grammar.grammar.entry <@>
     { size: 15, newSeed: LCG.mkSeed 12345678 }
 
-sampleS :: SProduceable -> String
+sampleS :: SProducible -> String
 sampleS = sample >>> maybe "" String.fromCodePointArray
 
-sampleE :: forall nt r tok. Eq nt => Eq r => Eq tok => Produceable nt r tok -> Effect (Maybe (Array tok))
+sampleE :: forall nt r tok. Eq nt => Eq r => Eq tok => Producible nt r tok -> Effect (Maybe (Array tok))
 sampleE grammar = sequence $
   QC.randomSampleOne <$> genNT grammar.produced grammar.grammar.entry
 
-sampleSE :: SProduceable -> Effect String
+sampleSE :: SProducible -> Effect String
 sampleSE = sampleE >>> map (maybe "" String.fromCodePointArray)

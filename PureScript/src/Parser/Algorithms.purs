@@ -56,23 +56,23 @@ chooseBySize i as =
           NEA.groupAllBy (compare `on` fst <> compare `on` (snd >>> _.rule >>> Array.length)) sized
       Just as' -> map snd as'
 
-withProduceable
+withProducible
   :: forall nt r tok
    . Eq nt
   => Eq r
   => Eq tok
   => Augmented nt r tok
-  -> Produceable nt r tok
-withProduceable = { grammar: _, produced: _ } <*> (produceable <<< _.augmented)
+  -> Producible nt r tok
+withProducible = { grammar: _, produced: _ } <*> (producible <<< _.augmented)
 
-produceable
+producible
   :: forall nt r tok
    . Eq nt
   => Eq r
   => Eq tok
   => Grammar nt r tok
   -> Array (Produced nt r tok)
-produceable (MkGrammar initialRules) = produceAll []
+producible (MkGrammar initialRules) = produceAll []
   where
   produceOne produced (NonTerminal nt) =
     Array.find (_.production >>> _.pName >>> eq nt) produced <#> _.produced
