@@ -469,7 +469,7 @@ Why not include it as a property we care about having or respecting?
 The first clue is what we saw above with addition: when we added two monotonic representative functions (with slope $1/6$ and $-1/2$), the result wasnʼt monotonic anymore, it went up and down and up and down, although in a nicely repeating pattern.
 So our naïve definition of addition did not preserve monotonicity.^[Note that the plain definition of multiplication _does_ preserve monotonicity!]
 
-However, you can in fact take any representative function and make it monotonic by only a bounded difference – but with one big catch: you have to know up front whether the slope is zero, positive, or negative,— and that property is [undecidable](https://en.wikipedia.org/wiki/Computable_set).
+However, you can in fact take any representative function and make it monotonic by only a bounded difference – but with one big catch: you have to know up front whether the slope is zero, positive, or negative,— and that property is [undecidable](https://en.wikipedia.org/wiki/Decision_problem).
 
 So it just seems more fussy and complicated to require the representative functions be monotonic, even though it could be done without resulting in a different theory.
 
