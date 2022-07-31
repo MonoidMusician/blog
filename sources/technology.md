@@ -4,6 +4,8 @@ author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
 ---
 
+The source can be found at [MonoidMusician/blog](https://github.com/MonoidMusician/blog) on GitHub.
+
 ## Fonts
 [Cormorant](https://github.com/CatharsisFonts/Cormorant)
   : I fell in love with this font upon seeing its [Bēhance gallery page](https://www.behance.net/gallery/28579883/Cormorant-an-open-source-display-font-family).
@@ -81,8 +83,8 @@ author:
 
     At first I thought I would be able to use the Google Fonts hosted version, but due to the same reason as above that did not work out due to the lack of OpenType features.
     I needed finer control over the ligatures Fira Code was using.
-    In particular, PureScript uses the backwards fat arrow `<=`{style='font-feature-settings: "ss02" 1'} for class declarations, which Fira Code can render like that but by default renders as a less-than-or-equals sign `<=`{style='font-feature-settings: "ss02" 0'}.
-    This is controlled with stylistic set `ss02`, so I set `font-feature-settings: "ss02" 1` on this blog, since I think `<=`{style='font-feature-settings: "ss02" 1'} is less confusing than `<=`{style='font-feature-settings: "ss02" 0'} – but of course a context-sensitive approach would be better.
+    In particular, PureScript uses the backwards fat arrow `<=`{style='font-feature-settings: "cv20" 1'} for class declarations, which Fira Code can render like that but by default renders as a less-than-or-equals sign `<=`{style='font-feature-settings: "cv20" 0'}.
+    This is controlled with stylistic set `cv20`, so I set `font-feature-settings: "cv20" 1` on this blog, since I think `<=`{style='font-feature-settings: "cv20" 1'} is less confusing than `<=`{style='font-feature-settings: "cv20" 0'} – but of course a context-sensitive approach would be better.
 
     I am also tempted to make my own version of the font with visible spaces, but I donʼt yet have enough experience with the font building tools to do that yet.
 
@@ -129,17 +131,59 @@ I also implemented SSR for some of my extensions.
     Uses [parse5](https://parse5.js.org/) to parse the [raw HTML](https://pandoc.org/lua-filters.html#type-rawblock) embedded in the Pandoc and the node [canvas](https://www.npmjs.com/package/canvas) library (based on [Cairo](https://www.cairographics.org/)!) to run the canvas.
     It renders to a default size based on the attributes, e.g. `<canvas data-graph="[x => x]" class="pixelated" width="1000" height="500" style="width: 100%;"></canvas>`.
 
-Soon I will add SSR for the Deku widgets.
+Soon I will add SSR for the [Deku widgets][Widgets with PureScript Deku].
 I might convert the canvas to PureScript too, depending on how easy it will be to make that compatible with SSR.
 
-## PureScript Widgets
+## Widgets with PureScript Deku
 
 I wanted Pandoc/Markdown content to be primary, but I also wanted to make interactive blog posts with embedded widgets.
+
+I decided to try [@mikesol](https://github.com/mikesol)ʼs new framework, [purescript-deku](https://github.com/mikesol/purescript-deku).
+It took me a few weeks to get the hang of it, but then I was cruising!
+Huge thanks to him for supporting this effort and creating the cool library.
+Iʼve found that it has a well-thought-out and clever integration of events into the DOM, and when I needed a performance boost on the FRP side, Mike had already given me the answers in the form of helpers like `memoize`{.haskell} and `mailboxed`{.haskell} to avoid excessive subscriptions.
+
+### Embedding into posts
+
+The widgets are embedded with Pandocʼs [fenced divs](https://pandoc.org/MANUAL.html#extension-fenced_divs) (which embed unknown attributes as data attributes) and then they are instantiated with a PS helper that scans for the selector `[data-widget]`{.css}.
+Widgets are wired up to shared datasources based on the provided `data-widget-datakey`{.er}, making it nice and modular across a whole page:
+
+```markdown
+:::: widget-group
+::: {widget="Widget.Control" widget-datakey="main"}
+:::
+::: {.widget widget="Parser.Grammar" widget-datakey="default" widget-loading="true"}
+:::
+::::
+```
+
+The dashboard mode is implemented all in CSS, and is the first time Iʼve actually used `{display: contents}`{.css} to reach inside elements.
+In particular, we need to peek through `<section>`{.html} tags and `.widgets`{.css} and `.widget-group`{.css} classes and gather their children to throw directly into the top-level `{display: grid}`{.css} container (usually the `<body class="focus-mode">`{.html} element).
 
 ## CSS
 I like [Sass](https://sass-lang.com/), most significantly for the [color manipulation functions](https://sass-lang.com/documentation/modules/color) and also the syntax.
 Of course the nested selectors in Sass/SCSS is a huge convenience for DRY, plus I find the braceless syntax of Sass a little nicer to work with quickly, but syntax support in editors seems abysmal for some reason I donʼt understand.
 Maybe SCSS support is better just because the syntax definitions could be based on CSS and extended.
 
+### Quirks
+
+Some weird quirks and anti-quirks Iʼve run into while implementing stuff:
+
+1. The most annoying one I do not have a workaround for:
+  I implemented floating vertical _and_ horizontal headers for one of the [parsing tables](parser.html#table-of-parse-actions-for-each-state).
+  It works great in dashboard mode, but in the blogpost mode I have to set `{overflow: auto hidden}`{.css} so that it scrolls horizontally but not vertically in the body of the post.
+  Unfortunately, due to how scroll containers work in CSS, this makes only the horizontal scrolling move the headers, not the vertical scrolling, which is kind of annoying 😒.
+  I donʼt know what to do about it.
+1. Tiny thing: Only Chrome seems to implement `border-image`{.kw} tweening at the moment.
+  Itʼs a long story why Iʼm using it in the first place (for info boxes), but I like it both with and without.
+1. Good news: Iʼm so happy that `:focus-visible`{.css} is actually supported now.
+  I swear the last time I was doing this stuff I was going to have to implement it myself.
+1. Bugbear: I like using the `<label><input></label>`{.html} pattern, to avoid having to generate an `id`{.er} for the `<input>`{.html}, but that doesnʼt work when the `<input>`{.html} needs to control the visibility of elements with its `:checked`{.css} status.
+  Nobody else seems to like doing this anyways …
+1. Workaround: Safari on iOS wanted to open the background image^[In light theme, I have a subtle background texture.] on long-press^[Erm, I think itʼs actually called 3D Touch].
+  It was very annoying when scrolling and pausing, so I had to have a fake `{background-image: linear-gradient(transparent, transparent), …}`{.css} appear before the actual background image, since iOS does not want to open up a `linear-gradient`{.fu} image.
+
+<!--
 ## Makefile
 Of course, what good project doesnʼt need a Makefile?
+-->

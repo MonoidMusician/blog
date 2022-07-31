@@ -60,7 +60,7 @@ Skip to [Widgets] below to start using! Or click this button to see them on thei
 Right now I donʼt have much helpful content below, but I will slowly add more posts.
 I am finally ready to start writing explanatory content now, after working a lot on the behind-the-scenes code to animate it.
 
-Along the way Iʼll also blog about the technologies Iʼve used to create it.
+Along the way Iʼll also blog about the [technologies](technology.html) Iʼve used to create it.
 Big shoutout to [@mikesol](https://github.com/mikesol) for creating the framework Iʼm using, [purescript-deku](https://github.com/mikesol/purescript-deku).
 
 ### Topics

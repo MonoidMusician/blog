@@ -29,12 +29,22 @@ h2, h3, h4, h5
 h3
   border-bottom-color: $text
 
-
+code
+  @if not $light
+    background-color: #0005
+    box-shadow: 0.5px 0.5px 3px #fff2, 0.5px 0.5px 2px inset #0001
+  @else
+    background-color: #fff5
+    box-shadow: 0.5px 0.5px 3px #0002, 0.5px 0.5px 2px inset rgb(224 249 255 / 35%)
 pre
   @if not $light
     background-color: #00000070
   @else
     background-color: #fff8eb5e
+  & > code
+    background: none
+    box-shadow: none
+
 
 
 
@@ -189,7 +199,7 @@ code span.al, code.al
 // Annotation
 code span.an, code.an
   color: #0066ff
-  font-weight: bold
+  font-weight: 500
   font-style: italic
 // Attribute
 code span.at, code.at
@@ -203,7 +213,7 @@ code span.bu, code.bu
 // ControlFlow
 code span.cf, code.cf
   color: #43a8ed
-  font-weight: bold
+  font-weight: 500
 // Constant
 code span.cn, code.cn
   color: inherit
@@ -220,8 +230,11 @@ code span.dv, code.dv
   color: #44aa43
 // Error
 code span.er, code.er
-  color: #ffff00
-  font-weight: bold
+  @if not $light
+    color: #ffff00
+  @else
+    color: #ff7517
+  font-weight: 500
 // Extension
 code span.ex, code.ex
   color: inherit
@@ -234,11 +247,10 @@ code span.im, code.im
 // Information
 code span.in, code.in
   color: #0066ff
-  font-weight: bold
-  font-style: italic
+  font-weight: 500
 // Preprocessor
 code span.pp, code.pp
-  font-weight: bold
+  font-weight: 500
 // Variable
 code span.va, code.va
   color: inherit
@@ -248,7 +260,7 @@ code span.vs, code.vs
 // Warning
 code span.wa, code.wa
   color: #ffff00
-  font-weight: bold
+  font-weight: 500
 
 
 
