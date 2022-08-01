@@ -65,12 +65,12 @@ Big shoutout to [@mikesol](https://github.com/mikesol) for creating the framewor
 
 ### Topics
 
-- Using this tool by example
-- Terminology reference
-- Basics: What are grammars (BNF)
+- TODO: [Using this tool by example](parser_by_example.html)
+- TODO: [Terminology reference](parser_terminology)
+- WIP: [Basics: What are grammars](parser_basics.html) (BNF, RegExp)
   1. Nonterminals and terminals
   1. Sequencing and alternation (regexes)
-- Uses of grammars:
+- WIP: [Uses of grammars](parser_applications.html):
   1. Generators: nondeterministically generate strings in the grammar by following the rules as state transitions
   1. Recognition: recognize which strings belong to the grammar and which do not
   1. Syntax highlighting: cursed.

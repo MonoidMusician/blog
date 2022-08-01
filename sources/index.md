@@ -42,3 +42,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 
 ## Series
 - [Interactive Parser Explanations](parser.html)
+  1. TODO: [Parsing By Example](parser_by_example.html)
+  1. TODO: [Terminology Reference](parser_terminology)
+  1. WIP: [Basics: What Are Grammars](parser_basics.html)
+  1. WIP: [Uses of Grammars](parser_applications.html)
