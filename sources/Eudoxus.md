@@ -615,7 +615,7 @@ To give more details, notice how we can bound the fraction like so
 $$\frac{(m+n+2)C}{mn} = \frac{C}{n} + \frac{C}{m} + \frac{2C}{mn} < \frac{2C}{N} + \frac{2C}{N^2} < \frac{4C}{N},$$
 since $m, n > N$ and $N^2 > N$.
 
-So now to get $4C/N$ to be less than $\epsilon$, we need $N > 4C/\epsilon$, i.e. $N > 4C/\epsilon$.
+So now to get $4C/N$ to be less than $\epsilon$, we need $N > 4C/\epsilon$.
 So as $\epsilon$ gets really tiny and close to $0$, $N$ has to grow very large in response.
 But this is fine: it exists by the [Archimedean property](https://en.wikipedia.org/wiki/Archimedean_property), completing our proof.
 :::
