@@ -1,5 +1,5 @@
 ---
-title: Basics: What Are Grammars
+title: "Basics: What Are Grammars"
 subtitle: "[Interactive Parser Explanations](parser.html)"
 author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
