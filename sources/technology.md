@@ -183,6 +183,16 @@ Some weird quirks and anti-quirks Iʼve run into while implementing stuff:
 1. Workaround: Safari on iOS wanted to open the background image^[In light theme, I have a subtle background texture.] on long-press^[Erm, I think itʼs actually called 3D Touch].
   It was very annoying when scrolling and pausing, so I had to have a fake `{background-image: linear-gradient(transparent, transparent), …}`{.css} appear before the actual background image, since iOS does not want to open up a `linear-gradient`{.fu} image.
 
+## KaTeX
+
+### Quirks
+
+1. https://github.com/KaTeX/KaTeX/issues/3168
+
+## LilyPond
+
+Coming soon??
+
 <!--
 ## Makefile
 Of course, what good project doesnʼt need a Makefile?

@@ -8,6 +8,14 @@ This blog will be more focused on programming and mathematics, while my more per
 
 Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/blog) and my account of the [technologies](technology.html) that go into this blog.
 
+## Series
+- [Interactive Parser Explanations](parser.html)
+  1. TODO: [Parsing By Example](parser_by_example.html)
+  1. TODO: [Terminology Reference](parser_terminology)
+  1. WIP: [Basics: What Are Grammars](parser_basics.html)
+  1. WIP: [Uses of Grammars](parser_applications.html)
+  1. WIP: [Basics of LR(1) Parsing](parser_lr1.html)
+
 ## Posts
 - [Interactive Parser Explanations](parser.html)
 
@@ -38,11 +46,3 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 - Typeclasses:
   - Fundeps: how they affect defining instances and instance resolution
   - Coercible redesign
-
-
-## Series
-- [Interactive Parser Explanations](parser.html)
-  1. TODO: [Parsing By Example](parser_by_example.html)
-  1. TODO: [Terminology Reference](parser_terminology)
-  1. WIP: [Basics: What Are Grammars](parser_basics.html)
-  1. WIP: [Uses of Grammars](parser_applications.html)

@@ -17,13 +17,13 @@ The differences manifest on both sides:
 Weʼll mainly be talking about formal uses of grammars that require algorithms.
 Using grammars as a kind of informal communication, like in semiformal language/data specifications, are very common but not discussed here.
 
-The two main uses are recognition and parsing, as mentioned above, but there are some more ways to actually make use of grammars.
+The two main formal uses are recognition and parsing, as mentioned above, but there are some more ways to actually make use of grammars.
 
 In rough order of difficulty the distinct uses of grammars are:
 
 1. Generators: Nondeterministically generate strings in the grammar by following the rules as state transitions.
 
-    This task is really simple because thereʼs basically no algorithmic difficulty, just following some rules until youʼre bored.
+    This task is really simple because thereʼs basically no algorithmic difficulty, just following some rules until you reach an end state: a concrete string that belongs to the grammar.
 2. Recognition: Recognize which strings belong to the grammar and which do not.
 
     Simply put, it is to construct a function `String -> Boolean` for a grammar.
@@ -37,7 +37,8 @@ In rough order of difficulty the distinct uses of grammars are:
 4. Parsing: Find an unambiguous parse tree for all inputs that belong to the grammar, and errors for inputs that do not belong to the grammar.
 
     Weʼre talking about parsing it to the level that you can run a compiler or interpreter.
-    This is the most work obviously, since it incorporates recognition but needs to be unambiguous and actually produce a parse tree.
+    It would look like a function `String -> Either Error AST`.
+    This is the most difficult, since it incorporates recognition but needs to be unambiguous and actually produce a parse tree.
 
 ## Generating from a grammar
 
@@ -49,6 +50,7 @@ The rules of the game are simple:
 2. Replace any nonterminal you see with any of its production rules.
 3. Repeat step 2 as necessary.
 4. You are done when there are only terminals left.
+  That is, youʼve produced a concrete string that belongs to the grammar.
 
 Pretty simple, no?
 However, thereʼs one catch, as I learned when implementing it!
@@ -67,8 +69,8 @@ There are two modes of failure:
     ::: Note
     In my example framework this isnʼt an issue, since the list of nonterminals is collected from the production rules.
     So nothing is parsed as a nonterminal that doesnʼt have a production rule.
-    Restated without the double negative:
-    _Everything that is parsed as a nonterminal has a production rule._
+    Or, restated without the double negative:
+    Everything that is parsed as a nonterminal has a production rule.
     :::
 
 02. Cyclic dependency: Every production rule for a nonterminal depends on first producing that nonterminal.
@@ -76,7 +78,7 @@ There are two modes of failure:
     In the game this means you would always be forced into an infinite loop, being able to apply a rule to the problematic nonterminal but always ending up back at it after one or more steps.
 
     ::: Example
-    If there is only a single rule [EXPR]{.non-terminal} [:]{.meta} [(]{.terminal}[EXPR]{.non-terminal}[)]{.terminal}, then [EXPR]{.non-terminal} has a cyclic dependency on itself.
+    For example, if a nonterminal has _only a single rule_ [EXPR]{.non-terminal} [:]{.meta} [(]{.terminal}[EXPR]{.non-terminal}[)]{.terminal}, then [EXPR]{.non-terminal} has a cyclic dependency on itself.
     It must produce itself before it can produce itself!
     Therefore it is stuck and can never be produced.
 
@@ -106,8 +108,11 @@ producible (MkGrammar initialRules) = produceAll initiallyProduced
 
 ```
 
-1. Seed: Start by saying that all nonterminals with a production rule that _only consists of terminals_ is producible.
-  If there are no production rules that are all terminals, then nothing in the grammar can be produced!
+1.  Seed: Start by saying that all nonterminals with a production rule that _only consists of terminals_ is producible.
+
+    ::: {.Key_Idea box-name="Key Point"}
+    If there are no production rules that are all terminals, then nothing in the grammar can be produced!
+    :::
 
     ```haskell
     initiallyProduced :: Array (Produced nt r tok)
@@ -153,13 +158,20 @@ producible (MkGrammar initialRules) = produceAll initiallyProduced
 
 ::: {.Bonus box-name="Aside"}
 I realized when implementing this algorithm that in fact the seed can literally be the empty set.
-The logic for `initiallyProduced`{.haskell} is just the logic for `produceMore []`!
+The logic for `initiallyProduced`{.haskell} is just the logic for `produceMore []`{.haskell}!
 :::
 
 This is the only algorithmic difficulty, however.
 With that out of the way, all that is left is to determine how you want to represent nondeterminism.
 
 ### Nondeterminism
+
+I want to take this opportunity to address what “nondeterminism” means, since it is notoriously tricky to pin down and often confusing.
+Might as well talk about it while we have a nice context to discuss it.
+Feel free to skip this section if you want.
+
+Is “nondeterminism” a buzzword?
+Not really …
 
 You can make an arbitrary choice (random or pseudorandom or otherwise), or you can keep a (potentially infinite) list of all possible choices that you could have made.
 (Of course you can later pick an arbitrary item from the list.)

@@ -75,7 +75,7 @@ Big shoutout to [@mikesol](https://github.com/mikesol) for creating the framewor
   1. Recognition: recognize which strings belong to the grammar and which do not
   1. Syntax highlighting: cursed.
   1. Parsing: find an unambiguous parse tree for inputs that belong to the grammar
-- Basics of LR(1) parsing
+- WIP: [Basics of LR(1) Parsing](parser_lr1.html)
   1. States
   1. State transitions
   1. Closure of states
