@@ -1,8 +1,18 @@
 ---
-title: Why you should believe in HoTT Path Induction as a (Haskell) Programmer
+title: Why You Should Believe in HoTT Path Induction as a (Haskell) Programmer
 author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
 ---
+
+## Outline
+
+There are two tasks:
+
+1. Accepting that isomorphism is the right notion of equality (!) for types.
+  Yes I do mean equality -- nothing less.
+2. That programs you write with `subst` obey the equations specified by \(J\).
+  In particular, the version you wrote for one type is the same as the version wrote for the other type with coercions inserted.
+  Or maybe itʼs the other way, the one you wrote with explicit coercions could have all just been identities in some parallel universe.
 
 ## The Situation
 

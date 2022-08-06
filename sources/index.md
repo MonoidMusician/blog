@@ -8,14 +8,6 @@ This blog will be more focused on programming and mathematics, while my more per
 
 Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/blog) and my account of the [technologies](technology.html) that go into this blog.
 
-## Series
-- [Interactive Parser Explanations](parser.html)
-  1. TODO: [Parsing By Example](parser_by_example.html)
-  1. TODO: [Terminology Reference](parser_terminology)
-  1. WIP: [Basics: What Are Grammars](parser_basics.html)
-  1. WIP: [Uses of Grammars](parser_applications.html)
-  1. WIP: [Basics of LR(1) Parsing](parser_lr1.html)
-
 ## Posts
 - [Interactive Parser Explanations](parser.html)
 
@@ -29,19 +21,27 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   >
   > The construction weʼll be talking about is my favorite esoteric construction of real numbers: the _[Eudoxus real numbers](https://ncatlab.org/nlab/show/Eudoxus+real+number)_.
 
+## Series
+- [Interactive Parser Explanations](parser.html)
+  1. TODO: [Parsing By Example](parser_by_example.html)
+  1. TODO: [Terminology Reference](parser_terminology)
+  1. WIP: [Basics: What Are Grammars](parser_basics.html)
+  1. WIP: [Uses of Grammars](parser_applications.html)
+  1. WIP: [Basics of LR(1) Parsing](parser_lr1.html)
+
 ## Ideas/WIP
 - Interactive type theory!
 - Paradigms:
-  - [Why you should believe in HoTT Path Induction as a (Haskell) Programmer](programming_paths.html)
+  - WIP: [Why you should believe in HoTT Path Induction as a (Haskell) Programmer](programming_paths.html)
   - Passive stability:
 
     > Imperative code has no passive stability: all global state is mutable, and small perturbations (say, modifying a prototype) can cause unpredictably large effects down the line, if not carefully managed. Untyped code is especially bad. Carefully managed imperative code may be stable, but this is active stability: it is not inherent to the framework but imposed on top.
     >
-    > Functional code on the other hand is not only passively stable, it is anchored down solid. Each building block is given a static, local denotation, and they compose together. You may still need nonlocal knowledge of the code to understand the intent of what everything represents (ahem, boolean blindness), but the local meaning is denotationally clear.
+    > Functional code on the other hand is not only passively stable, it is anchored down solid. Each building block is given a static, local denotation, and they compose together. You may still need nonlocal knowledge of the code to understand the intent of what everything represents (ahem, [boolean blindness](https://existentialtype.wordpress.com/2011/03/15/boolean-blindness/)), but the local meaning is denotationally clear.
 
 - Data:
   - The Anatomy of ADTs
-  - Subtypes/Quotients: Lies told in defense of the Truth
+  - WIP: [Subtypes/Quotients: Lies Told in Defense of the Truth](adt_lies_for_truth.html)
   - Quotients: Lets us have nice cake and eat things too.
 - Typeclasses:
   - Fundeps: how they affect defining instances and instance resolution

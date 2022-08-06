@@ -574,7 +574,9 @@ button
   &.bonus
     @include button(#e86db7)
 
-label:not(.sidenote-number):not(.margin-toggle)
+label:not([for]):not(.sidenote-number):not(.margin-toggle)
+  @extend .input-wrapper
+.input-wrapper
   margin: 2px
   position: relative
   display: inline-block
@@ -583,7 +585,11 @@ label:not(.sidenote-number):not(.margin-toggle)
   vertical-align: bottom
   transform: translateY(0.1em)
 
-  & > span:not(.error)
+  & > span:not(.error), & > label
+    margin: 0
+    border-radius: 0
+    vertical-align: initial
+    transform: none
     font-family: "Amaranth"
     font-weight: 400
     font-style: italic
@@ -682,6 +688,9 @@ label:not(.sidenote-number):not(.margin-toggle)
       border: none
       padding: 0
       height: auto
+
+    &::placeholder
+      opacity: 0.4
 
   &.invalid > input
     border-color: #ff004daa

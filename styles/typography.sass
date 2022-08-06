@@ -33,6 +33,7 @@ code
   padding-left: 3px
   padding-right: 3px
   padding-top: 2px
+  padding-bottom: 1px
   margin-left: -1px
   margin-right: -1px
 pre > code
@@ -205,3 +206,6 @@ a[href]:visited
 
 .co .visible-space::before
   display: none
+
+pre > code .visible-space[data-whitespace]::before
+  top: -0.2ex

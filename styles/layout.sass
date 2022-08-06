@@ -43,10 +43,12 @@ body > header > p:not(:last-child)
   & + p
     margin-top: 0
 
-pre
+pre > code
+  display: block
   position: relative
   overflow: scroll
-  padding: 0.5em
+  padding: 0.75em
+  line-height: 1.5
   padding-bottom: 0.7em
   margin-left: -0.5em
   margin-right: -0.5em
@@ -63,6 +65,35 @@ pre
 
 code
   position: relative
+
+@if true
+  pre.sourceCode
+    position: relative
+  pre.sourceCode::before
+    font-family: 'Fira Code'
+    position: absolute
+    transform: rotate(90deg)
+    transform-origin: top left
+    left: -1ex
+    /*top: 2ex*/
+    font-size: 80%
+    background-clip: text
+    -webkit-background-clip: text
+    color: transparent
+    @if not $light
+      background-image: linear-gradient(black, #151515a0)
+    @else
+      background-image: linear-gradient(#aed4e3, #d9edf485)
+  pre.sourceCode.haskell::before
+    content: "Haskell"
+  pre.sourceCode.agda::before
+    content: "Agda"
+  pre.sourceCode.css::before
+    content: "CSS"
+  pre.sourceCode.html::before
+    content: "HTML"
+  pre.sourceCode.markdown::before
+    content: "Markdown"
 
 pre:hover
   /*box-shadow: inset 0px 0px 4px 1px #e010105c, -1px -1px 3px 0px #4362b114;*/
@@ -150,10 +181,10 @@ blockquote
   padding: 8px
   position: relative
 
-  & > .sourceCode > pre
+  & > .sourceCode > pre > code
     margin-left: -6px
     margin-right: -6px
-    padding: 4px
+    padding: 6px
 
   &:not(details) > :first-child, &:not(:not(details)) > :nth-child(2)
     margin-top: 0
