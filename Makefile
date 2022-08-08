@@ -25,10 +25,10 @@ clean :
 sass : $(BUILDIR)/styles/bundles.css
 
 watch-sass :
-	sass -w styles/bundled.sass $(BUILDIR)/styles/bundled.css
+	sass -w styles/bundled.sass:$(BUILDIR)/styles/bundled.css styles/bundled_light.sass:$(BUILDIR)/styles/bundled_light.css
 
 $(BUILDIR)/styles/bundles.css : styles/*.sass
-	sass styles/bundled.sass $(BUILDIR)/styles/bundled.css
+	sass styles/bundled.sass:$(BUILDIR)/styles/bundled.css styles/bundled_light.sass:$(BUILDIR)/styles/bundled_light.css
 
 $(BUILDIR) :
 	mkdir -p $(BUILDIR)
