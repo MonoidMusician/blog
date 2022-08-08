@@ -1,4 +1,5 @@
 @use "sass:selector"
+@use "sass:meta"
 
 // https://css-tricks.com/snippets/sass/str-replace-function/
 
@@ -17,7 +18,28 @@
 
   @return $string
 
-// https://sass-lang.com/documentation/style-rules/parent-selector#advanced-nesting
-@mixin unify-parent($child)
-  @at-root #{selector.unify(&, $child)}
+// based on https://sass-lang.com/documentation/style-rules/parent-selector#advanced-nesting
+@mixin unify-parent($selectors)
+  $all: unify-beneath(&, $selectors)
+  @if $all
+    @at-root #{$all}
+      @content
+
+@mixin whether($cond, $true, $false)
+  @include unify-parent(($cond: $true, ":not(#{$cond})": $false))
     @content
+
+@function unify-beneath($parent, $selectors)
+  $all: null
+  @each $here, $nest in $selectors
+    $where: $parent
+    @if $here
+      $where: selector.unify($where, $here)
+    @if $where and $nest
+      $where: selector.nest($where, $nest)
+    @if $where
+      @if not $all
+        $all: $where
+      @else
+        $all: $all, $where
+  @return $all

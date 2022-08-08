@@ -43,6 +43,18 @@ body > header > p:not(:last-child)
   & + p
     margin-top: 0
 
+code
+  border-radius: 6px
+  padding-left: 3px
+  padding-right: 3px
+  padding-top: 2px
+  padding-bottom: 1px
+  margin-left: -1px
+  margin-right: -1px
+pre > code
+  border-radius: 0
+  padding: 0
+  margin: 0
 pre > code
   display: block
   position: relative
@@ -55,6 +67,8 @@ pre > code
   border-radius: 6px
   @if not $light
     text-shadow: 0.5px 0.5px 1px #000
+  @else
+    text-shadow: none
 
   @if not $light
     box-shadow: inset 0px 0px 3px 0px #ffffff1e, -1px -1px 3px 0px #4362b114
@@ -66,10 +80,9 @@ pre > code
 code
   position: relative
 
-@if true
-  pre.sourceCode
-    position: relative
-  pre.sourceCode::before
+pre.sourceCode
+  position: relative
+  &::before
     font-family: 'Fira Code'
     position: absolute
     transform: rotate(90deg)
@@ -77,22 +90,23 @@ code
     left: -3.2ex
     top: -2.2ex
     font-size: 80%
-    background-clip: text
-    -webkit-background-clip: text
-    color: transparent
-    @if not $light
-      background-image: linear-gradient(black, #151515a0)
-    @else
-      background-image: linear-gradient(#aed4e3, #d9edf485)
-  pre.sourceCode.haskell::before
+    opacity: 0.4
+    transition: opacity 0.6s ease-in
+  &:hover::before
+    opacity: 0.6
+  &.haskell::before
     content: "Haskell"
-  pre.sourceCode.agda::before
+  &.agda::before
     content: "Agda"
-  pre.sourceCode.css::before
+  &.css::before
     content: "CSS"
-  pre.sourceCode.html::before
+  &.scss::before
+    content: "SCSS"
+  &.sass::before
+    content: "Sass"
+  &.html::before
     content: "HTML"
-  pre.sourceCode.markdown::before
+  &.markdown::before
     content: "Markdown"
 
 pre:hover
@@ -186,7 +200,7 @@ blockquote
     margin-right: -6px
     padding: 6px
 
-  &:not(details) > :first-child, &:not(:not(details)) > :nth-child(2)
+  & > summary:first-child + *, & > :not(summary):first-child
     margin-top: 0
 
   & > :last-child
@@ -195,7 +209,7 @@ blockquote
   &:not(details)[data-box-name]::before
     content: attr(data-box-name)
 
-  &:not(details)::before, &:not(:not(details)) > summary
+  @include whether("details", "& > summary", "&::before")
     font-family: "Amaranth"
     font-weight: 400
     font-style: italic
@@ -205,7 +219,7 @@ blockquote
     padding: 0 4px
   &:not(details)::before
     display: block
-  &:not(:not(details)) > summary
+  @include unify-parent(("details": "& > summary"))
     cursor: pointer
     user-select: none
 body section > .Box
@@ -344,16 +358,17 @@ h2, h3, h4, h5, h6
   & > .anchor::before
     content: '§'
     display: inline-block
-    opacity: 0.03
+    opacity: 0.1
     @media (pointer:coarse)
-      opacity: 0.1
+      opacity: 0.2
     font-weight: 200
 
     width: 0.65em
     margin-left: -0.65em
+    transition: opacity 0.4s
 
   section:hover > & > .anchor::before
-    opacity: 0.1
+    opacity: 0.2
 
   &:hover > .anchor::before, section:hover > &:hover > .anchor::before
     opacity: 0.4

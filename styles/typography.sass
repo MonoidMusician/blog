@@ -28,18 +28,6 @@ code
   hyphens: none
 .sidenote code
   font-size: 0.75em
-code
-  border-radius: 6px
-  padding-left: 3px
-  padding-right: 3px
-  padding-top: 2px
-  padding-bottom: 1px
-  margin-left: -1px
-  margin-right: -1px
-pre > code
-  border-radius: 0
-  padding: 0
-  margin: 0
 
 mjx-container[jax="CHTML"], .katex, span.katex
   font-size: 1em !important
@@ -49,6 +37,8 @@ mjx-container[jax="CHTML"], .katex, span.katex
 section p, section li
   @if not $light
     text-shadow: 1px 1px 1px #0000005e
+  @else
+    text-shadow: none
 
   font-feature-settings: "ss02" 1
   line-height: 1.4
@@ -82,6 +72,8 @@ h1
   font-weight: 300
   @if not $light
     text-shadow: 2px 2px 2px #000000b3
+  @else
+    text-shadow: none
 
   font-feature-settings: "ss01" 1
   /*
@@ -97,6 +89,8 @@ h2, h3, h4, h5
   font-weight: 500
   @if not $light
     text-shadow: 2px 2px 2px #000000b3
+  @else
+    text-shadow: none
 
   font-feature-settings: "ss01" 1
 
@@ -160,52 +154,30 @@ a[href]:visited
 
 .visible-space
   position: relative
+  &::before
+    position: absolute
+    top: 0
+    color: #509e9e99
+    text-shadow: none
+    pointer-events: none
 
 .visible-space[data-whitespace="0x20"]::before
   content: "·"
   transform: scale(0.8)
   opacity: 0.4
-  position: absolute
-  top: 0
-  color: #509e9e99
-  text-shadow: none
-  pointer-events: none
 
 
 .visible-space[data-whitespace="0xa"]::before
   content: "¶"
   transform: scale(0.7)
   opacity: 0.3
-  position: absolute
-  top: 0
-  color: #509e9e99
-  text-shadow: none
-  pointer-events: none
 
 
-.st .visible-space[data-whitespace="0x20"]::before
-  content: "·"
-  transform: scale(0.8)
-  opacity: 0.4
-  position: absolute
-  top: 0
+.st .visible-space::before
   color: inherit
-  text-shadow: none
-  pointer-events: none
-
-
-.st .visible-space[data-whitespace="0xa"]::before
-  content: "¶"
-  transform: scale(0.7)
-  opacity: 0.3
-  position: absolute
-  top: 0
-  color: inherit
-  text-shadow: none
-  pointer-events: none
 
 .co .visible-space::before
-  display: none
+  content: initial
 
 pre > code .visible-space[data-whitespace]::before
   top: -0.2ex
