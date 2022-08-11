@@ -62,6 +62,16 @@ function rect(f, x, y, w, h) {
   ctx.rect(x - w/2, y - h/2, w, h);
   f();
 }
+function line(f, x, y, w, h) {
+  ctx.beginPath();
+  x = dim(x, size);
+  y = dim(y, size);
+  w = dim(w, size);
+  h = dim(h, size);
+  ctx.moveTo(x, y);
+  ctx.lineTo(x+w, y+h);
+  f();
+}
 function crispRect(f, x, y, w, h) {
   ctx.beginPath();
   x = Math.round(dim(x, size));
@@ -89,7 +99,7 @@ function squareGrid(xs, ys, primary, secondary) {
 function squareGridAlt(xs, ys, primary) {
   for (var yi = 0; yi <= ys; yi += 1) {
     var y = yi/ys;
-    for (var xi = (yi % 2) / 2; xi <= xs; xi += 1) {
+    for (var xi = -(yi % 2) / 2; xi <= xs; xi += 1) {
       var x = xi/xs;
       primary(x, y, 1/xs, 1/ys);
     }
@@ -103,6 +113,18 @@ function filter(i) {
 function color(c, a) {
   var cf = Array.from(c).map(i => filter(Number.parseInt(i, 16)).toString(16)).join("");
   return "#"+cf+a.toString(16);
+}
+function pad(s, l) {
+  while (s.length < l) s = "0" + s;
+  return s;
+}
+function Color(c, a) {
+  var cf = Array.from(c).map(i => filter(Number.parseInt(i, 16)).toString(16)).join("");
+  console.log(cf, pad(Math.round(a).toString(16), 2));
+  return "#"+cf+pad(Math.round(a).toString(16), 2);
+}
+function mask(a_norm) {
+  return "#000"+Math.round(a_norm * 0xF).toString(16);
 }
 
 function siny(p) {
@@ -127,37 +149,144 @@ function saw(p, r) {
   return p * r % r;
 }
 
-var n = Math.round(50/1500*size / 2) * 2;
-var s = 2;
-ctx.globalAlpha = 0.1;
-squareGridAlt(n, n, function(x, y, d) {
-  ctx.strokeStyle = color("700", 0xb);
-  ctx.lineWidth = s;
-  circle(() => ctx.stroke(), x, y, [d * 0.9, -s/2], 20, 0.5);
-  ctx.strokeStyle = color("b00", 0x3);
-  ctx.lineWidth = s*3;
-  circle(() => ctx.stroke(), x, y, [d * 0.7, -s/2*3], 5, 0.25, 3*x+2*y);
-  ctx.strokeStyle = color("700", 0x5);
-  ctx.lineWidth = s;
-  circle(() => ctx.stroke(), x, y, [d * 0.3, s/2], 5, 0.3, x);
-  ctx.fillStyle = color("700", 0x1);
-  circle(() => ctx.fill(), x, y, d * 0.15);
-}, function(x, y, d) {
-  ctx.fillStyle = color("700", 0x2);
-  circle(() => ctx.fill(), x, y, d * 0.15);
-});
+function circleFill() {
+  var n = Math.round(40/1500*size / 2) * 2;
+  var s = 2;
+  ctx.globalAlpha = 0.15;
+  squareGridAlt(n, n, function(x, y, d) {
+    ctx.strokeStyle = color("700", 0xb);
+    ctx.lineWidth = s;
+    circle(() => ctx.stroke(), x, y, [d * 0.9, -s/2], 20, 0.5);
+    ctx.strokeStyle = color("b00", 0x3);
+    ctx.lineWidth = s*3;
+    circle(() => ctx.stroke(), x, y, [d * 0.7, -s/2*3], 5, 0.25, 3*x+2*y);
+    ctx.strokeStyle = color("700", 0x5);
+    ctx.lineWidth = s;
+    circle(() => ctx.stroke(), x, y, [d * 0.3, s/2], 5, 0.3, x);
+    ctx.fillStyle = color("700", 0x1);
+    circle(() => ctx.fill(), x, y, d * 0.15);
+  }, function(x, y, d) {
+    ctx.fillStyle = color("700", 0x2);
+    circle(() => ctx.fill(), x, y, d * 0.15);
+  });
 
-console.log(n);
-//ctx.fillStyle = "#000"; ctx.fillRect(0, 0, width, height);
+  console.log(n);
+  //ctx.globalAlpha = 1; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, width, height);
 
-squareGridAlt(n, n, function(x, y, d) {
-  var sc = v => 0.1 + 0.4 * v;
+  squareGridAlt(n, n, function(x, y, d) {
+    var sc = v => 0.1 + 0.4 * v;
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.fillStyle = "#000";
+    rect(() => ctx.fill(), x, y, [d * sc(siny(saw(x, 4) + 0.5 + siny(saw(y, 2)))), 0], [d * sc(0.2+0.4*siny(saw(y, 4))), 0]);
+  });
+  squareGrid(n, n, function(x, y, d) {
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.fillStyle = mask(0.2 * (siny(x + 4*y)));
+    rect(() => ctx.fill(), x, y, d, d);
+  });
+}
+
+function diagonal() {
+  var n = Math.round(50/1500*size / 2) * 2;
+  squareGridAlt(n, n, function(x, y, d) {
+    console.log(x, y, d);
+    ctx.globalAlpha = 0.5;
+    var ralpha = () => 0x0A + (0x13 - 0x0A) * Math.random();
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'square';
+    d /= 1.25;
+    ctx.strokeStyle = Color("AA0000", ralpha());
+    line(() => ctx.stroke(), x, y, +d/3, d/2);
+    ctx.strokeStyle = Color("AA0000", ralpha());
+    line(() => ctx.stroke(), x, y, -d/3, d/2);
+    ctx.strokeStyle = Color("AA0000", ralpha());
+    line(() => ctx.stroke(), x+d/3.5, y+d/2, -d/3.5, d/3);
+    ctx.strokeStyle = Color("AA0000", ralpha());
+    line(() => ctx.stroke(), x-d/3.5, y+d/2, +d/3.5, d/3);
+    ctx.strokeStyle = Color("AA0000", ralpha());
+    line(() => ctx.stroke(), x+d/3.5/2, y+d/2/2, -d/3.5, d/3);
+    ctx.strokeStyle = Color("AA0000", ralpha());
+    line(() => ctx.stroke(), x-d/3.5/2, y+d/2/2, +d/3.5, d/3);
+    ctx.fillStyle = "#0002";
+    circle(() => ctx.fill(), x, y+d/2+d/3, d * 0.15);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "#0000220C";
+    ctx.strokeStyle = Color("000022", 0.6*ralpha());
+    line(() => ctx.stroke(), x, y-d/1.2, d/1.7, d*1.2);
+    ctx.strokeStyle = Color("000022", 0.6*ralpha());
+    line(() => ctx.stroke(), x, y-d/1.2, -d/1.7, d*1.2);
+    ctx.fillStyle = "#0001";
+    rect(() => ctx.fill(), x, y - d/4, d/4, d/4);
+  });
+
   ctx.globalAlpha = 1;
-  ctx.globalCompositeOperation = "source-over";
-  ctx.fillStyle = "#fff";
-  crispRect(() => ctx.fill(), x, y, [d * sc(siny(saw(x, 4) + 0.5 + siny(saw(y, 2)))), 0], [d * sc(0.2+0.4*siny(saw(y, 4))), 0]);
-  ctx.globalCompositeOperation = "xor";
+  //ctx.fillStyle = "#000"; ctx.fillRect(0, 0, width, height);
+
+  squareGridAlt(n, n, function(x, y, d) {
+    var sc = v => 0.1 + 0.4 * v;
+    var sc = v => v;
+    ctx.globalAlpha = 0.5;
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.fillStyle = "#0008";
+    crispRect(() => ctx.fill(), x, y, [d * sc(siny(saw(x, 4) + 0.5 + siny(saw(y, 2)))), 0], [d * sc(siny(saw(y, 4))), 0]);
+  });
+  squareGrid(n, n, function(x, y, d) {
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.fillStyle = mask(0.3 * (siny(x + 4*y)));
+    rect(() => ctx.fill(), x, y, d, d);
+  });
+}
+
+function diagonal2() {
+  var n = Math.round(30/1500*size / 2) * 2;
+  squareGridAlt(n, n, function(x, y, d) {
+    ctx.globalAlpha = 0.5;
+    var ralpha = () => 0x13 + (0x17 - 0x13) * Math.random();
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'square';
+    ctx.strokeStyle = Color("AA0000", ralpha());
+    line(() => ctx.stroke(), x, y, +d/3, d/2);
+    ctx.strokeStyle = Color("AA0000", ralpha());
+    line(() => ctx.stroke(), x, y, -d/3, d/2);
+    ctx.strokeStyle = Color("AA0000", ralpha());
+    line(() => ctx.stroke(), x+d/3.5, y+d/2, -d/3.5, d/3);
+    ctx.strokeStyle = Color("AA0000", ralpha());
+    line(() => ctx.stroke(), x-d/3.5, y+d/2, +d/3.5, d/3);
+    ctx.strokeStyle = Color("AA0000", ralpha());
+    line(() => ctx.stroke(), x+d/3.5/2, y+d/2/2, -d/3.5, d/3);
+    ctx.strokeStyle = Color("AA0000", ralpha());
+    line(() => ctx.stroke(), x-d/3.5/2, y+d/2/2, +d/3.5, d/3);
+
+    ctx.strokeStyle = Color("AA0000", ralpha());
+    line(() => ctx.stroke(), x+d/3.5, y+d/2 - d/40, d-d/3.5*2, 0);
+    ctx.strokeStyle = Color("AA0000", ralpha());
+    line(() => ctx.stroke(), x + d/2, y - d/6, 0, d + d/6);
+
+    ctx.fillStyle = "#0001";
+    circle(() => ctx.fill(), x, y+d/2+d/3, d * 0.15);
+  });
+
   ctx.globalAlpha = 1;
-  ctx.fillStyle = "#000";
-  crispRect(() => ctx.fill(), x, y, [d * sc(siny(saw(x, 4) + 0.5 + siny(saw(y, 2)))), 0], [d * sc(0.2+0.4*siny(saw(y, 4))), 0]);
-});
+  //ctx.fillStyle = "#000"; ctx.fillRect(0, 0, width, height);
+
+  squareGridAlt(n, n, function(x, y, d) {
+    var sc = v => 0.1 + 0.4 * v;
+    var sc = v => v;
+    ctx.globalAlpha = 0.5;
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.fillStyle = "#0008";
+    crispRect(() => ctx.fill(), x, y, [d * sc(siny(saw(x, 4) + 0.5 + siny(saw(y, 2)))), 0], [d * sc(siny(saw(y, 4))), 0]);
+  });
+  squareGrid(n, n, function(x, y, d) {
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.fillStyle = mask(0.3 * (siny(x + 4*y)));
+    rect(() => ctx.fill(), x, y, d, d);
+  });
+}
+
+circleFill();
+//diagonal2();
