@@ -5,11 +5,10 @@ import Prelude
 import Control.Monad.Reader (ReaderT(..))
 import Data.Foldable (traverse_)
 import Data.Newtype (unwrap)
-import Deku.Core (class Korok)
 import Effect.AVar as AVarE
 import Effect.Aff.AVar as AVar
 import Effect.Class (class MonadEffect, liftEffect)
-import FRP.Event (AnEvent, Event, fromEvent, makeEvent, subscribe, toEvent)
+import FRP.Event (Event, makeEvent, subscribe)
 import Type.Equality (class TypeEquals, to)
 
 -- | Samples the first event JIT when the second event is actually used.
@@ -36,11 +35,11 @@ withSample2 (ReaderT cont) = \var ->
 withSampleE :: forall n a. MonadEffect n => Event (a -> n Unit) -> Event (ReaderT (AVar.AVar a) n Unit)
 withSampleE = map withSample
 
-sampleJITR :: forall s m a b n. Korok s m => AnEvent m a -> AnEvent m (ReaderT (AVar.AVar a) n b) -> AnEvent m (n b)
-sampleJITR e ae = fromEvent $ sampleJIT (toEvent e) (toEvent (unwrap <$> ae))
+sampleJITR :: forall a b n. Event a -> Event (ReaderT (AVar.AVar a) n b) -> Event (n b)
+sampleJITR e ae =  sampleJIT e (unwrap <$> ae)
 
-sampleJITE :: forall s m a n. MonadEffect n => Korok s m => AnEvent m a -> AnEvent m (ReaderT a n Unit) -> AnEvent m (n Unit)
-sampleJITE e ae = fromEvent $ sampleJIT (toEvent e) (toEvent (withSample2 <$> ae))
+sampleJITE :: forall a n. MonadEffect n =>  Event a -> Event (ReaderT a n Unit) -> Event (n Unit)
+sampleJITE e ae = sampleJIT e (withSample2 <$> ae)
 
 class ReadersT i o where
   readersT :: i -> o

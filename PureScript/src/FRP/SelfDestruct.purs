@@ -2,11 +2,12 @@ module FRP.SelfDestruct where
 
 import Prelude
 
-import Control.Monad.ST.Class (class MonadST, liftST)
+import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Internal as Ref
-import FRP.Event (AnEvent, makeEvent, subscribe)
+import Effect (Effect)
+import FRP.Event (Event, makeEvent, subscribe)
 
-selfDestruct :: forall s m a. MonadST s m => (a -> Boolean) -> m Unit -> AnEvent m a -> AnEvent m a
+selfDestruct :: forall a. (a -> Boolean) -> Effect Unit -> Event a -> Event a
 selfDestruct pred onEnd e = makeEvent \k -> do
   s <-liftST $ Ref.new (pure unit)
   u <- subscribe e \a -> do

@@ -13,15 +13,14 @@ import Data.Tuple (fst, snd)
 import Data.Tuple.Nested ((/\), type (/\))
 import Data.Variant (Variant)
 import Data.Variant as Variant
-import Deku.Control (switcher)
-import Bolson.Core (dyn, fixed)
-import Deku.Core (bus, class Korok, Domable, insert, remove)
+import Deku.Control (dyn_, fixed_, switcher_)
+import Deku.Core (Domable, bus, insert_, remove)
 import Deku.DOM as D
 import Effect (Effect)
 import FRP.Deku.Component (ComponentSpec)
-import FRP.Event (AnEvent, bang, keepLatest, sampleOn)
+import FRP.Event (Event, keepLatest, sampleOn)
 import FRP.Helpers (counter)
-import FRP.Memoize (memoBangFold)
+import FRP.Memoize (memopureFold)
 import Type.Proxy (Proxy(..))
 
 
@@ -35,25 +34,24 @@ type ListicleEvent a = Variant (add :: a, remove :: Int)
 -- | Start from an initial value, listen for external add events, internal remove events,
 -- | raise messages on change, and return the current value on finalize.
 listicle
-  :: forall s m lock payload a
-   . Korok s m
-  => Show a
+  :: forall lock payload a
+   . Show a
   => { initial :: Array a -- initial value
-     , addEvent :: AnEvent m a -- external add events
+     , addEvent :: Event a -- external add events
 
-     , remove :: Maybe (Effect Unit -> Domable m lock payload) -- remove button
-     , finalize :: Maybe (AnEvent m (Array a) -> Domable m lock payload) -- finalize button
+     , remove :: Maybe (Effect Unit -> Domable lock payload) -- remove button
+     , finalize :: Maybe (Event (Array a) -> Domable lock payload) -- finalize button
 
-     , renderItem :: a -> Domable m lock payload
-     , begin :: Maybe (Domable m lock payload)
-     , end :: Maybe (Domable m lock payload)
-     , separator :: Maybe (Domable m lock payload)
+     , renderItem :: a -> Domable lock payload
+     , begin :: Maybe (Domable lock payload)
+     , end :: Maybe (Domable lock payload)
+     , separator :: Maybe (Domable lock payload)
      }
-  -> ComponentSpec m lock payload (Array a)
+  -> ComponentSpec lock payload (Array a)
 listicle desc = keepLatest $ bus \pushRemove removesEvent ->
   let
     addEvent = counter desc.addEvent <#> \(v /\ i) -> (i + Array.length desc.initial) /\ v
-    initialEvent = oneOfMap bang initialValue
+    initialEvent = oneOfMap pure initialValue
 
     initialValue :: Array (Int /\ a)
     initialValue = mapWithIndex (/\) desc.initial
@@ -67,7 +65,7 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
       Variant.inj (Proxy :: Proxy "add") <$> addEvent
         <|> Variant.inj (Proxy :: Proxy "remove") <$> removesEvent
   in
-    memoBangFold performChange changesEvent initialValue \currentValue ->
+    memopureFold performChange changesEvent initialValue \currentValue ->
       let
         intro = case desc.begin of
           Nothing -> []
@@ -83,16 +81,16 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
           Nothing -> []
           Just v -> [ v ]
 
-        withRemover :: Domable m lock payload -> Int -> Array (Domable m lock payload)
+        withRemover :: Domable lock payload -> Int -> Array (Domable lock payload)
         withRemover item idx = case desc.remove of
           Nothing -> [ item ]
           Just remover ->
             [ item, remover (pushRemove idx) ]
 
-        renderOne :: Int /\ a -> Array (Domable m lock payload)
+        renderOne :: Int /\ a -> Array (Domable lock payload)
         renderOne (idx /\ item) = withRemover (desc.renderItem item) idx
 
-        dropComma :: Int -> AnEvent m Boolean
+        dropComma :: Int -> Event Boolean
         dropComma idx = filter identity
           $
             -- `currentValue` may or may not have updated before this `sampleOn` fires,
@@ -108,15 +106,15 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
                 ||
                   ((fst <$> (vs !! 0)) == Just idx)
 
-        element = fixed $
+        element = fixed_ D.div $
           let
             renderItems = sampleOn (Array.length <$> currentValue) $
               (initialEvent <|> addEvent) <#> \(idx /\ item) len ->
-                ( bang $ insert $ fixed $ append
-                    (if len > 0 && idx /= 0 then [ switcher (fixed <<< if _ then [] else sep) (bang false <|> dropComma idx) ] else [])
+                ( pure $ insert_ $ fixed_ D.div $ append
+                    (if len > 0 && idx /= 0 then [ switcher_ D.div (fixed_ D.div <<< if _ then [] else sep) (pure false <|> dropComma idx) ] else [])
                     (renderOne (idx /\ item))
                 ) <|> filter (eq idx) removesEvent $> remove
           in
-            intro <> [ D.span_ [ dyn renderItems ] ] <> extro <> fin
+            intro <> [  dyn_ D.span renderItems  ] <> extro <> fin
       in
         { element, value: map snd <$> currentValue }

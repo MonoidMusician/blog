@@ -5,18 +5,15 @@ import Prelude
 import Control.Alt ((<|>))
 import Data.Codec.Argonaut as CA
 import Data.Maybe (fromMaybe)
-import Data.Traversable (for_, oneOf, traverse_)
-import Deku.Control (text, text_)
-import Deku.Core (bussed)
+import Data.Traversable (for_, oneOf)
+import Deku.Control (text)
 import Deku.DOM as D
-import FRP.Deku ((!:=), (<:=>))
-import FRP.Event (bang, fromEvent)
-import FRP.Helpers (toggle)
+import FRP.Deku ((!:=))
 import Web.DOM.DOMTokenList as TL
-import Web.DOM.Element (classList, setClassName)
+import Web.DOM.Element (classList)
 import Web.HTML (window)
 import Web.HTML.HTMLDocument (body)
-import Web.HTML.HTMLElement (toElement, toNode)
+import Web.HTML.HTMLElement (toElement)
 import Web.HTML.Window (document)
 import Widget (Widget, adaptInterface)
 import Widget.Types (SafeNut(..))
@@ -38,5 +35,5 @@ controlWidget { interface } = do
             , D.Class !:= "big bonus"
             ]
           )
-          [ text $ (bang false <|> fromEvent focus_mode.loopback) <#> if _ then "Leave dashboard mode" else "Enter dashboard mode" ]
+          [ text $ (pure false <|> focus_mode.loopback) <#> if _ then "Leave dashboard mode" else "Enter dashboard mode" ]
       ]

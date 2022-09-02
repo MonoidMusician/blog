@@ -26,8 +26,7 @@ import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
-import FRP.Event (Event, create, filterMap, keepLatest, makeEvent, subscribe, sweep)
-import FRP.Event.Class (bang)
+import FRP.Event (Event, create, filterMap, keepLatest, makeEvent, subscribe, mailboxed)
 import Foreign.Object (Object)
 import Foreign.Object as Object
 import Foreign.Object.ST (STObject)
@@ -58,7 +57,7 @@ disconnected =
   { send: mempty
   , receive: empty
   , loopback: empty
-  , mailbox: bang (const empty)
+  , mailbox: pure (const empty)
   , current: pure Nothing
   }
 
@@ -94,7 +93,7 @@ createBehavioral = do
     { send: write <> upstream.push
     , receive: downstream
     , loopback: downstream
-    , mailbox: sweep downstream identity
+    , mailbox: mailboxed (map {payload: unit, address: _} downstream) identity
     , current: liftST (STRef.read ref)
     }
 
@@ -115,7 +114,7 @@ getInterface share k = do
       { send: \v -> int.send (i /\ v)
       , receive: receive
       , loopback: int.receive <#> snd
-      , mailbox: sweep receive identity
+      , mailbox: mailboxed (map { payload: unit, address: _ } receive) identity
       , current: int.current <#> map \(_ /\ v) -> v
       }
 
@@ -123,8 +122,8 @@ adaptInterface :: forall f a b. Foldable f => BasicCodec f a b -> Interface a ->
 adaptInterface codec interface =
   { send: interface.send <<< encode codec
   , mailbox: interface.mailbox <#> (_ <<< encode codec)
-  , receive: keepLatest $ oneOfMap bang <<< decode codec <$> interface.receive
-  , loopback: keepLatest $ oneOfMap bang <<< decode codec <$> interface.loopback
+  , receive: keepLatest $ oneOfMap pure <<< decode codec <$> interface.receive
+  , loopback: keepLatest $ oneOfMap pure <<< decode codec <$> interface.loopback
   , current: interface.current <#> bindFlipped
       (decode codec >>> last)
   }

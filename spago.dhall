@@ -16,7 +16,6 @@ to generate this file without the comments in this block.
   , "argonaut"
   , "arrays"
   , "avar"
-  , "behaviors"
   , "bifunctors"
   , "bolson"
   , "codec"
@@ -29,7 +28,7 @@ to generate this file without the comments in this block.
   , "effect"
   , "either"
   , "enums"
-  , "event"
+  , "hyrule"
   , "filterable"
   , "foldable-traversable"
   , "foreign"
@@ -72,5 +71,6 @@ to generate this file without the comments in this block.
   , "web-uievents"
   ]
 , packages = ./packages.dhall
+, backend = "purs-backend-es build"
 , sources = [ "PureScript/src/**/*.purs" ]
 }

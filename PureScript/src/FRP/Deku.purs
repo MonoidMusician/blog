@@ -7,17 +7,17 @@ import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
 import Deku.Attribute (class Attr, Attribute, Cb, cb, (:=))
 import Effect (Effect)
-import FRP.Event (AnEvent, bang)
+import FRP.Event (Event)
 import Web.Event.Event (target)
 import Web.HTML.HTMLInputElement (fromEventTarget, value)
 
-bangAttr :: forall m a b e. Applicative m => Attr e a b => a -> b -> AnEvent m (Attribute e)
-bangAttr a b = bang (a := b)
+pureAttr :: forall a b e. Attr e a b => a -> b -> Event (Attribute e)
+pureAttr a b = pure (a := b)
 
-infixr 5 bangAttr as !:=
+infixr 5 pureAttr as !:=
 
-maybeAttr :: forall m a b e. Applicative m => Attr e a b => a -> Maybe b -> AnEvent m (Attribute e)
-maybeAttr a (Just b) = bang (a := b)
+maybeAttr :: forall a b e. Attr e a b => a -> Maybe b -> Event (Attribute e)
+maybeAttr a (Just b) = pure (a := b)
 maybeAttr _ Nothing = empty
 
 infix 5 maybeAttr as ?:=

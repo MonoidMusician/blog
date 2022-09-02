@@ -6,7 +6,6 @@ import Control.Plus (empty, (<|>))
 import Data.Argonaut (Json)
 import Data.Argonaut as Json
 import Data.Array as Array
-import Data.Bifunctor (bimap)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (unwrap)
@@ -17,17 +16,13 @@ import Data.Tuple.Nested ((/\))
 import Bolson.Core (envy, fixed)
 import Effect (Effect)
 import Effect.Ref as Ref
-import Effect.Unsafe (unsafePerformEffect)
-import FRP.Event (Event, fromEvent, makeEvent, subscribe)
-import FRP.Event.Class (bang)
+import FRP.Event (Event, makeEvent, subscribe)
 import Foreign (unsafeToForeign)
 import Foreign.Object (Object)
 import Foreign.Object as Object
-import Parsing (ParseError(..), Parser, runParser)
-import URI.Common (URIPartParseError(..))
+import Parsing (runParser)
 import URI.Extra.QueryPairs as QueryPairs
 import URI.Query as Query
-import Unsafe.Coerce (unsafeCoerce)
 import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
 import Web.HTML (window)
 import Web.HTML.Event.PopStateEvent.EventTypes (popstate)
@@ -82,7 +77,7 @@ queryChanges = makeEvent \push -> do
   pure $ removeEventListener popstate e false (Window.toEventTarget w)
 
 widgetFromEvent :: forall a. Event a -> SafeNut
-widgetFromEvent e = SafeNut (envy (fixed empty <$ fromEvent e))
+widgetFromEvent e = SafeNut (envy (fixed empty <$ e))
 
 sideInterface :: String -> Array { key :: String, io :: Interface Json } -> Event (Object Json)
 sideInterface prefix interfaces = makeEvent \k -> do
@@ -93,7 +88,7 @@ sideInterface prefix interfaces = makeEvent \k -> do
     subscribe io.receive \value -> do
       setQueryKeys (Object.singleton (prefix <> key) value)
       Ref.modify_ (Object.insert key value) ref
-  sub2 <- subscribe (bang initial <|> queryChanges) \kvs -> do
+  sub2 <- subscribe (pure initial <|> queryChanges) \kvs -> do
     for_ interfaces \{ key, io } -> do
       for_ (Object.lookup (prefix <> key) kvs) \value -> do
         io.current >>= case _ of

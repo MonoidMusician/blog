@@ -3,7 +3,7 @@ module FRP.Helpers where
 import Prelude
 
 import Control.Alt ((<|>))
-import Control.Monad.ST.Class (class MonadST, liftST)
+import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Internal as STRef
 import Control.Plus (empty)
 import Data.Array ((..))
@@ -16,25 +16,25 @@ import Data.Maybe (Maybe(..))
 import Data.Monoid as Monoid
 import Data.Newtype (unwrap)
 import Data.Tuple.Nested ((/\), type (/\))
-import FRP.Event (class IsEvent, AnEvent, bang, filterMap, keepLatest, makeEvent, mapAccum, subscribe, sweep, withLast)
-import FRP.Memoize (bangFold)
+import FRP.Event (class IsEvent, Event, filterMap, keepLatest, mailboxed, makeEvent, mapAccum, subscribe, withLast)
+import FRP.Memoize (pureFold)
 import Unsafe.Reference (unsafeRefEq)
 
-counter :: forall s m a. MonadST s m => AnEvent m a → AnEvent m (a /\ Int)
+counter :: forall a. Event a → Event (a /\ Int)
 counter event = mapAccum f event 0
   where
   f a b = (b + 1) /\ (a /\ b)
 
-toggle :: forall s m a b. HeytingAlgebra b => MonadST s m => b -> AnEvent m a → AnEvent m b
-toggle start event = bangFold (\_ x -> not x) event start
+toggle :: forall a b. HeytingAlgebra b => b -> Event a → Event b
+toggle start event = pureFold (\_ x -> not x) event start
 
 withLast' :: forall event a. IsEvent event => event a -> event { last :: a, now :: a }
 withLast' = filterMap (\{ last, now } -> last <#> { last: _, now }) <<< withLast
 
-dedup :: forall s m a. Eq a => Applicative m => MonadST s m => AnEvent m a -> AnEvent m a
+dedup :: forall a. Eq a => Event a -> Event a
 dedup = dedupOn eq
 
-dedupOn :: forall s m a. (a -> a -> Boolean) -> Applicative m => MonadST s m => AnEvent m a -> AnEvent m a
+dedupOn :: forall a. (a -> a -> Boolean) -> Event a -> Event a
 dedupOn feq e = compact $
   mapAccum (\a b -> let ja = Just a in ja /\ (if (feq <$> b <*> ja) == Just true then Nothing else Just a)) e Nothing
 
@@ -45,32 +45,32 @@ interpolate i j | i > j = j .. (i - 1)
 interpolate i j | i < j = i .. (j - 1)
 interpolate _ _ = []
 
-stepByStep :: forall s m r. MonadST s m => Boolean -> AnEvent m Int -> ((Int -> AnEvent m Boolean) -> r) -> AnEvent m r
+stepByStep :: forall r. Boolean -> Event Int -> ((Int -> Event Boolean) -> r) -> Event r
 stepByStep start index cb =
   let
     state = withLast' index
-    swept = keepLatest $ map (oneOfMap bang) $
+    swept = keepLatest $ map (oneOfMap pure) $
       state <#> \{ last, now } -> interpolate last now
   in
-    sweep swept \sweeper ->
+    mailboxed (map { address: _, payload: unit} swept) \sweeper ->
       let
         sweeper' = toggle start <<< sweeper
       in
         cb sweeper'
 
-spotlight :: forall a s m r. Ord a => MonadST s m => Boolean -> AnEvent m a -> ((a -> AnEvent m Boolean) -> r) -> AnEvent m r
+spotlight :: forall a r. Ord a => Boolean -> Event a -> ((a -> Event Boolean) -> r) -> Event r
 spotlight start shineAt cb =
-  sweep (spotlightChange shineAt) \sweeper ->
+  mailboxed (spotlightChange (map { address: _, payload: unit} shineAt)) \sweeper ->
     cb (toggle start <<< sweeper)
 
-spotlightChange :: forall s m a. MonadST s m => Eq a => AnEvent m a -> AnEvent m a
+spotlightChange :: forall a. Eq a => Event a -> Event a
 spotlightChange shineAt =
   keepLatest $ withLast shineAt <#> \{ now, last } ->
     if last == Just now then empty
     else
-      oneOfMap bang last <|> bang now
+      oneOfMap pure last <|> pure now
 
-sweepSave :: forall m s r a. Ord a => MonadST s m => AnEvent m a -> ((a -> AnEvent m Unit) -> r) -> AnEvent m r
+sweepSave :: forall r a. Ord a => Event a -> ((a -> Event Unit) -> r) -> Event r
 sweepSave e f = makeEvent \k1 -> do
   r <- liftST $ STRef.new Map.empty
   saved <- liftST $ STRef.new Map.empty
