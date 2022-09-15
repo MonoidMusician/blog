@@ -5,7 +5,7 @@ HTMLS=$(patsubst $(TXTDIR)/%.md, $(BUILDIR)/%.html, $(MDS))
 
 .PHONY : all
 
-all : sass pandoc build ps
+all : sass pandoc ps
 
 watch-all :
 	./watch-all.sh
@@ -41,11 +41,9 @@ $(BUILDIR)/%.html : $(TXTDIR)/%.md $(BUILDIR) pandoc/defaults.yaml pandoc/post.h
 watch-pandoc :
 	ls $(TXTDIR)/*.md pandoc/defaults.yaml pandoc/post.html | entr make pandoc
 
-build : PureScript/src packages.dhall spago.dhall
-	spago build
-
 ps : PureScript/src packages.dhall spago.dhall
+	spago -x prod.dhall build
 	purs-backend-es bundle-app --main Main --to static/widgets.js
 
 watch-ps :
-	purs-backend-es bundle-app -w --main Main --to static/widgets.js
+	spago bundle-app -w --main Main --to static/widgets.js
