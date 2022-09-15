@@ -1,4 +1,4 @@
-from: markdown+tex_math_single_backslash+footnotes+inline_notes
+from: markdown+tex_math_single_backslash+footnotes+inline_notes+autolink_bare_uris
 toc: true
 toc-depth: 5
 section-divs: true
