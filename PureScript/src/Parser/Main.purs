@@ -47,7 +47,7 @@ import Data.Traversable (mapAccumL, sequence, traverse)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Deku.Attribute (class Attr, Attribute, cb, (:=))
-import Deku.Control (dyn_, envy_, fixed_, switcher_, text, text_)
+import Deku.Control (dyn_, envy_, fixed, fixed_, switcher_, text, text_)
 import Deku.Core (Domable, Nut, bus, bussed, vbussed)
 import Deku.Core as DC
 import Deku.DOM as D
@@ -190,7 +190,7 @@ renderParseTable info (MkGrammar grammar) (States states) =
               ]
           )
           [ text_ (show s) ]
-      renderShiftReduce Nothing = fixed_ D.div []
+      renderShiftReduce Nothing = D.span_ []
       renderShiftReduce (Just (Shift s)) = D.span_ [ renderCmd mempty "s", renderStHere s ]
       renderShiftReduce (Just (Reduces rs)) =
         D.span (if NEA.length rs > 1 then D.Class !:= "conflict" else empty) $
@@ -252,11 +252,11 @@ renderStackItem (Right x) = renderASTTree x
 renderAST :: SAST -> Nut
 renderAST (Layer (_ /\ r) []) = D.span (D.Class !:= "layer") [ renderRule mempty r ]
 renderAST (Layer (_ /\ r) cs) =
-  D.span (D.Class !:= "layer")
-    [ renderMeta mempty "("
-    , renderRule mempty r
-    , fixed_ D.div $ cs # foldMap \c -> [ text_ " ", renderAST c ]
-    , renderMeta mempty ")"
+  D.span (D.Class !:= "layer") $ join
+    [ pure $ renderMeta mempty "("
+    , pure $ renderRule mempty r
+    , cs # foldMap \c -> [ text_ " ", renderAST c ]
+    , pure $ renderMeta mempty ")"
     ]
 
 renderASTTree :: SAST -> Nut
@@ -374,7 +374,7 @@ showParseSteps
   :: forall lock payload
    . SCParseSteps
   -> SuperStack (Domable lock payload)
-showParseSteps i = map (fixed_ D.div) <$> (go i)
+showParseSteps i = map (fixed D.div (D.Class !:= "parse-steps")) <$> (go i)
   where
   go =
     let
@@ -393,7 +393,7 @@ renderStateTable :: forall lock payload r. { getCurrentState :: Int -> Event Boo
 renderStateTable info (States states) = do
   let
     mkTH n 0 0 = D.th (D.Rowspan !:= show n)
-    mkTH _ _ 0 = const (fixed_ D.div [])
+    mkTH _ _ 0 = const (text_ "")
     mkTH _ _ _ = D.td_
     stateClass sName = (if _ then "active" else "") <$> info.getCurrentState sName
     renderStateHere items =
@@ -418,17 +418,17 @@ renderItem s j { pName, rName, rule: rule@(Zipper _ after), lookahead } =
   , renderMeta mempty ": "
   , renderZipper rule
   , renderLookahead (if Array.null after then " reducible" else "") lookahead
-  , fixed_ D.div [ renderMeta mempty " #", renderRule mempty rName ]
-  , case toAdvanceTo s rule of
-      Nothing -> fixed_ D.div []
-      Just s' -> fixed_ D.div [ renderMeta mempty " —> ", renderSt mempty s' ]
+  , D.span_ [ renderMeta mempty " #", renderRule mempty rName ]
+  , D.span_ case toAdvanceTo s rule of
+      Nothing -> []
+      Just s' -> [ renderMeta mempty " —> ", renderSt mempty s' ]
   ]
 
 renderZipper :: SZipper -> Nut
 renderZipper (Zipper before after) =
   D.span (D.Class !:= ("zipper" <> if Array.null after then " reducible" else ""))
     [ D.span (D.Class !:= "parsed") $ before <#> \x -> renderPart mempty x
-    , if Array.null after then fixed_ D.div empty
+    , if Array.null after then text_ ""
       else
         D.span empty $ after <#> \x -> renderPart mempty x
     ]
@@ -607,28 +607,28 @@ rulesAtFault = case _ of
   TopClash -> []
   RuleNamesUnique rules -> NEA.toArray rules
 
-parseGrammarError :: ParseGrammarError -> Nut
-parseGrammarError NoRules = text_ "Need at least one rule in the grammar."
-parseGrammarError (ReferencesEOF rules) = fixed_ D.div $
+parseGrammarError :: ParseGrammarError -> Nuts
+parseGrammarError NoRules = [ text_ "Need at least one rule in the grammar." ]
+parseGrammarError (ReferencesEOF rules) =
   [ text_ "The final token must only be referenced in the top rule, but it was also referenced in " ]
-    <> list (map (\x -> fixed_ D.div [ renderMeta mempty "#", renderRule mempty x ]) rules)
+    <> list (map (\x -> fixed_ D.span [ renderMeta mempty "#", renderRule mempty x ]) rules)
     <>
       [ text_ "." ]
-parseGrammarError (EOFNonTerminal rules) = fixed_ D.div $
+parseGrammarError (EOFNonTerminal rules) =
   [ text_ "The final token must not be a nonterminal, but it appeared in " ]
-    <> list (map (\x -> fixed_ D.div [ renderMeta mempty "#", renderRule mempty x ]) rules)
+    <> list (map (\x -> fixed_ D.span [ renderMeta mempty "#", renderRule mempty x ]) rules)
     <>
       [ text_ "." ]
-parseGrammarError (ReferencesTop rules) = fixed_ D.div $
+parseGrammarError (ReferencesTop rules) =
   [ text_ "The top nonterminal must not appear in the rest of the grammar, but it was also referenced in " ]
-    <> list (map (\x -> fixed_ D.div [ renderMeta mempty "#", renderRule mempty x ]) rules)
+    <> list (map (\x -> fixed_ D.span [ renderMeta mempty "#", renderRule mempty x ]) rules)
     <>
       [ text_ "." ]
-parseGrammarError (MissingEntry nt) = fixed_ D.div
+parseGrammarError (MissingEntry nt) =
   [ text_ "Entry point ", renderNT mempty nt, text_ " is not present as a nonterminal in the grammar." ]
-parseGrammarError TopClash = text_ "Entry point must be different from the top rule."
-parseGrammarError (RuleNamesUnique rules) = fixed_ D.div $
-  [ text_ "Rule names must be unique, but " ] <> list (map (\x -> fixed_ D.div [ renderMeta mempty "#", renderRule mempty x ]) rules) <> [ text_ " ", text_ (pl rules "was" "were"), text_ " duplicated" ]
+parseGrammarError TopClash = [ text_ "Entry point must be different from the top rule." ]
+parseGrammarError (RuleNamesUnique rules) =
+  [ text_ "Rule names must be unique, but " ] <> list (map (\x -> fixed_ D.span [ renderMeta mempty "#", renderRule mempty x ]) rules) <> [ text_ " ", text_ (pl rules "was" "were"), text_ " duplicated" ]
 
 grammarComponent
   :: forall lock payload
@@ -710,29 +710,27 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                     ]
                 , D.table (D.Class !:= "grammar")
                     [ D.tr_
-                        [ D.td_ [ switcher_ D.div (\x -> renderNT mempty x) (currentTopParsed <#> _.top) ]
+                        [ switcher_ D.td (\x -> renderNT mempty x) (currentTopParsed <#> _.top)
                         , D.td_ [ renderMeta mempty " : " ]
                         , D.td_
-                            [ D.span_ [ switcher_ D.div (maybe (text_ "—") (\x -> renderNT mempty x)) (currentTopParsed <#> _.entry) ]
-                            , D.span_ [ switcher_ D.div (\x -> renderTok mempty x) (currentTopParsed <#> _.eof) ]
+                            [ switcher_ D.span (maybe (text_ "—") (\x -> renderNT mempty x)) (currentTopParsed <#> _.entry)
+                            , switcher_ D.span (\x -> renderTok mempty x) (currentTopParsed <#> _.eof)
                             ]
                         , D.td_
                             [ renderMeta mempty " #"
-                            , D.span_ [ switcher_ D.div (\x -> renderRule mempty x) (currentTopParsed <#> _.topName) ]
+                            , switcher_ D.span (\x -> renderRule mempty x) (currentTopParsed <#> _.topName)
                             ]
                         ]
-                    , D.tbody_ $ pure $ dyn_ D.div $ map
+                    , dyn_ D.tbody $ map
                         ( \(i /\ txt) -> keepLatest $ bus \p' e' ->
                             ( pure $ Insert $ D.tr (D.Class <:=> (rulesInTrouble <#> \rit -> if Array.elem txt.rName rit then "trouble" else "")) $ map (D.td_ <<< pure) $
                                 [ renderNT mempty txt.pName
                                 , renderMeta mempty " : "
-                                , D.span_
-                                    [ switcher_ D.div
-                                        ( \nts ->
-                                            fixed_ D.div $ map (\x -> renderPart mempty x) (parseDefinition nts txt.rule)
-                                        )
-                                        currentNTs
-                                    ]
+                                , switcher_ D.span
+                                    ( \nts ->
+                                        fixed_ D.span $ map (\x -> renderPart mempty x) (parseDefinition nts txt.rule)
+                                    )
+                                    currentNTs
                                 , D.span_
                                     [ renderMeta mempty " #"
                                     , renderRule mempty txt.rName
@@ -781,7 +779,7 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                         [ text_ "Add rule" ]
                     ]
                 , D.br_ []
-                , if buttonText == "" then fixed_ D.div []
+                , if buttonText == "" then D.div_ []
                   else
                     D.div_ $ pure $ D.button
                       ( oneOf
@@ -820,14 +818,12 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                           ]
                       )
                       [ text_ buttonText ]
-                , D.div_
-                    [ changeState.errorMessage # switcher_ D.div \et -> case et of
-                        Nothing -> envy_ D.div empty
-                        Just e -> fixed_ D.div
-                          [ D.br_ []
-                          , D.div (D.Class !:= "Error") [ parseGrammarError e ]
-                          ]
-                    ]
+                , changeState.errorMessage # switcher_ D.div \et -> case et of
+                    Nothing -> D.div_ []
+                    Just e -> fixed_ D.div
+                      [ D.br_ []
+                      , D.div (D.Class !:= "Error") (parseGrammarError e)
+                      ]
                 ]
 
 type TopLevelUIAction = V
@@ -902,7 +898,7 @@ explorerComponent { produced: producedRules, grammar: { augmented: MkGrammar rul
               Nothing -> Nothing
               Just toks -> Just (sendUp toks)
         D.div_
-          [ D.span_ [ switcher_ D.div (fixed_ D.div <<< mapWithIndex renderPartHere) currentParts ]
+          [ switcher_ D.span (fixed_ D.span <<< mapWithIndex renderPartHere) currentParts
           , D.button
               ( D.Class <:=> maybe "disabled" mempty <$> send
                   <|> D.OnClick <:=> sequence_ <$> send
@@ -925,7 +921,7 @@ explorerComponent { produced: producedRules, grammar: { augmented: MkGrammar rul
                   D.tr (D.Class <:=> activity focusHere) $ map (D.td_ <<< pure) $
                     [ renderNT mempty rule.pName
                     , renderMeta mempty " : "
-                    , fixed_ D.div $ map (\x -> renderPart mempty x) rule.rule
+                    , fixed_ D.span $ map (\x -> renderPart mempty x) rule.rule
                     , D.span_
                         [ renderMeta mempty " #"
                         , renderRule mempty rule.rName
@@ -945,9 +941,9 @@ explorerComponent { produced: producedRules, grammar: { augmented: MkGrammar rul
                     , case Array.find (_.production >>> eq rule) producedRules of
                         Nothing -> text_ "Unproducible"
                         Just { produced } ->
-                          D.span_
-                            [ D.em_ [ text_ "e.g. " ]
-                            , fixed_ D.div $ map (\x -> renderTok mempty x) produced
+                          D.span_ $ join
+                            [ pure $ D.em_ [ text_ "e.g. " ]
+                            , map (\x -> renderTok mempty x) produced
                             ]
                     ]
               ]
@@ -1012,7 +1008,7 @@ randomComponent { produced: producedRules, grammar: { start: { pName: entry } } 
               )
               [ text_ "Random" ]
           ]
-      , D.ul (D.Class !:= "compact") $ pure $ switcher_ D.div (fixed_ D.div <<< map (\xs -> D.li (D.Class !:= "clickable" <|> D.OnClick !:= sendUp xs) <<< map (\x -> renderTok mempty x) $ xs))
+      , switcher_ D.div (fixed D.ul (D.Class !:= "compact") <<< map (\xs -> D.li (D.Class !:= "clickable" <|> D.OnClick !:= sendUp xs) <<< map (\x -> renderTok mempty x) $ xs))
           (pure initial <|> event.randomMany)
       ]
 
@@ -1452,6 +1448,6 @@ inputComponent initialInput inputStream sendInput current =
                                 , D.button (oneOf [ clickF $ pPush.toggleRight ])
                                     [ text_ ">" ]
                                 ]
-                          , D.div (D.Class !:= "parse-steps") [ content ]
+                          , content
                           ]
         ]
