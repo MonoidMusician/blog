@@ -115,7 +115,7 @@ $transition: 0.4s
     &:not(:hover)::marker
       color: color.change($color, $alpha: 0.4)
 
-  &::selection, & *::selection
+  &::selection, & > :not(.Box)::selection, & > :not(.Box) *::selection
     background-color: color.change($color, $alpha: 0.4)
 
   //

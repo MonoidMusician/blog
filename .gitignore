@@ -3,6 +3,7 @@ node_modules/
 .pulp-cache/
 .psci_modules/
 output/
+output-es/
 .purs*
 .psa*
 .psc*
