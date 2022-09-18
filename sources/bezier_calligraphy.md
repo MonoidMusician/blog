@@ -58,7 +58,21 @@ It took me until now to have the skills/insight/motivation to finally realize my
 
 But first, always start with the demo!
 
-<iframe width="100%" height="1028" style="background-color: white" frameborder="0" src="https://observablehq.com/embed/@monoidmusician/svg-calligraphy?cells=mainView%2CpenNib%2Cviewof+ShowThings"></iframe>
+<script src="https://cdn.jsdelivr.net/npm/path-data-polyfill@1.0.3/path-data-polyfill.min.js"></script>
+<style>
+  #superpath path:nth-child(2n) {
+    stroke: blue;
+  }
+  .annot path:hover {
+    stroke: blue;
+    fill: #0059;
+    pointer-events: stroke;
+  }
+</style>
+<div id="main-calligraphy-demo"></div>
+<script src="assets/js/quartic.js"></script>
+<script src="assets/js/calligraphy.js"></script>
+<script src="assets/js/minkowski.js"></script>
 
 <br/>
 
