@@ -13,7 +13,7 @@ import Data.Semigroup.Last (Last(..))
 import Data.String as String
 import Data.Traversable (foldMap, for_, traverse)
 import Data.Tuple.Nested ((/\))
-import Bolson.Core (envy, fixed)
+import Deku.Core (envy, fixed)
 import Effect (Effect)
 import Effect.Ref as Ref
 import FRP.Event (Event, makeEvent, subscribe)

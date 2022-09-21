@@ -1,0 +1,53 @@
+Ideas:
+- Magic expanding textboxes
+- Formatted text on entry?
+- Multiple saved grammars
+- Tokenize: if `num` always appears together …
+  - Diacritics?
+- State exploration: current state, next states, previous states
+- Encode regexes, nested rules in top-level rules
+- Input state, add token or generated nonterminal to advance
+- Add message when conflicts found
+- Example input for state
+- Actually produce tree for exploring and examples
+- State thingy …
+
+Done:
+- Generate nonterminal
+
+Shae:
+- Goal directed: start with input, make a parser for it
+- Save them
+
+MUST DONE
+- Descriptions on UI (incl. input boxes)
+- Auto-number rules
+- Shareable
+- Studio mode / layout
+- Better errors
+LATER
+- Happy precedence
+
+# Syntax as data
+
+- AST as ADT
+- tokens
+- perfect representation, no leading zeroes
+- mathematical practice
+
+# UI design notes
+- "Generate grammar" vs [disabled]"Grammar generated"
+- or .disabled has pop-up "Grammar already generated (click to regenerate)"
+
+# Purs notes
+- { [className]: boolean, … }
+- recordalt { a: ma, b: mb } = inj @a <$> ma <|> inj @b <$> mb
+- keepLatestRecord (e :: Event { a :: Event a, b :: Event b }) :: { a :: Event a, b :: Event b }
+- Staggered/rolling: the ith active subscription is delayed by i animation frames
+
+# Deku notes
+- Current callstackish
+- Skip it if unnecessary
+- Always provide a parent for dyn
+- Comments: ref opaque, cacheable
+  - Save on it?

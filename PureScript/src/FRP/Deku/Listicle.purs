@@ -13,7 +13,8 @@ import Data.Tuple (fst, snd)
 import Data.Tuple.Nested ((/\), type (/\))
 import Data.Variant (Variant)
 import Data.Variant as Variant
-import Deku.Control (dyn_, fixed_, switcher_)
+import Deku.Control (switcher)
+import Deku.Core (dyn, fixed)
 import Deku.Core (Domable, bus, insert_, remove)
 import Deku.DOM as D
 import Effect (Effect)
@@ -106,15 +107,15 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
                 ||
                   ((fst <$> (vs !! 0)) == Just idx)
 
-        element = fixed_ D.div $
+        element = fixed $
           let
             renderItems = sampleOn (Array.length <$> currentValue) $
               (initialEvent <|> addEvent) <#> \(idx /\ item) len ->
-                ( pure $ insert_ $ fixed_ D.div $ append
-                    (if len > 0 && idx /= 0 then [ switcher_ D.div (fixed_ D.div <<< if _ then [] else sep) (pure false <|> dropComma idx) ] else [])
+                ( pure $ insert_ $ fixed $ append
+                    (if len > 0 && idx /= 0 then [ switcher (fixed <<< if _ then [] else sep) (pure false <|> dropComma idx) ] else [])
                     (renderOne (idx /\ item))
                 ) <|> filter (eq idx) removesEvent $> remove
           in
-            intro <> [  dyn_ D.span renderItems  ] <> extro <> fin
+            intro <> [  dyn renderItems  ] <> extro <> fin
       in
         { element, value: map snd <$> currentValue }

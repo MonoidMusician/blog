@@ -47,8 +47,8 @@ import Data.Traversable (mapAccumL, sequence, traverse)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Deku.Attribute (class Attr, Attribute, cb, (:=))
-import Deku.Control (dyn_, envy_, fixed, fixed_, switcher_, text, text_)
-import Deku.Core (Domable, Nut, bus, bussed, vbussed)
+import Deku.Control (switcher, text, text_)
+import Deku.Core (Domable, Nut, bus, bussed, dyn, envy, fixed, insert_, vbussed)
 import Deku.Core as DC
 import Deku.DOM as D
 import Deku.Listeners (click, slider)
@@ -374,7 +374,7 @@ showParseSteps
   :: forall lock payload
    . SCParseSteps
   -> SuperStack (Domable lock payload)
-showParseSteps i = map (fixed D.div (D.Class !:= "parse-steps")) <$> (go i)
+showParseSteps i = map (D.div (D.Class !:= "parse-steps")) <$> (go i)
   where
   go =
     let
@@ -611,24 +611,24 @@ parseGrammarError :: ParseGrammarError -> Nuts
 parseGrammarError NoRules = [ text_ "Need at least one rule in the grammar." ]
 parseGrammarError (ReferencesEOF rules) =
   [ text_ "The final token must only be referenced in the top rule, but it was also referenced in " ]
-    <> list (map (\x -> fixed_ D.span [ renderMeta mempty "#", renderRule mempty x ]) rules)
+    <> list (map (\x -> fixed [ renderMeta mempty "#", renderRule mempty x ]) rules)
     <>
       [ text_ "." ]
 parseGrammarError (EOFNonTerminal rules) =
   [ text_ "The final token must not be a nonterminal, but it appeared in " ]
-    <> list (map (\x -> fixed_ D.span [ renderMeta mempty "#", renderRule mempty x ]) rules)
+    <> list (map (\x -> fixed [ renderMeta mempty "#", renderRule mempty x ]) rules)
     <>
       [ text_ "." ]
 parseGrammarError (ReferencesTop rules) =
   [ text_ "The top nonterminal must not appear in the rest of the grammar, but it was also referenced in " ]
-    <> list (map (\x -> fixed_ D.span [ renderMeta mempty "#", renderRule mempty x ]) rules)
+    <> list (map (\x -> fixed [ renderMeta mempty "#", renderRule mempty x ]) rules)
     <>
       [ text_ "." ]
 parseGrammarError (MissingEntry nt) =
   [ text_ "Entry point ", renderNT mempty nt, text_ " is not present as a nonterminal in the grammar." ]
 parseGrammarError TopClash = [ text_ "Entry point must be different from the top rule." ]
 parseGrammarError (RuleNamesUnique rules) =
-  [ text_ "Rule names must be unique, but " ] <> list (map (\x -> fixed_ D.span [ renderMeta mempty "#", renderRule mempty x ]) rules) <> [ text_ " ", text_ (pl rules "was" "were"), text_ " duplicated" ]
+  [ text_ "Rule names must be unique, but " ] <> list (map (\x -> fixed [ renderMeta mempty "#", renderRule mempty x ]) rules) <> [ text_ " ", text_ (pl rules "was" "were"), text_ " duplicated" ]
 
 grammarComponent
   :: forall lock payload
@@ -638,7 +638,7 @@ grammarComponent
   -> (SAugmented -> Effect Unit)
   -> Domable lock payload
 grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
-  (pure reallyInitialGrammar <|> forceGrammar) `flip (switcher_ D.div)` \initialGrammar ->
+  (pure reallyInitialGrammar <|> forceGrammar) `flip switcher` \initialGrammar ->
     vbussed (Proxy :: Proxy (V GrammarInputs)) \putInput inputs ->
       vbussed (Proxy :: Proxy (V GrammarAction)) \pushState changeState ->
         let
@@ -680,8 +680,8 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
           counted = add (Array.length initialRules) <$>
             (pure 0 <|> (add 1 <$> fst <$> changeState.addRule))
         in
-          envy_ D.div $ memoBeh currentTop initialTop \currentTop -> do
-            envy_ D.div $ memoBehFold changeRule ruleChanges initialRules \currentRules -> do
+          envy $ memoBeh currentTop initialTop \currentTop -> do
+            envy $ memoBehFold changeRule ruleChanges initialRules \currentRules -> do
               let
                 currentNTs = dedup $ map longestFirst $
                   biSampleOn
@@ -710,25 +710,25 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                     ]
                 , D.table (D.Class !:= "grammar")
                     [ D.tr_
-                        [ switcher_ D.td (\x -> renderNT mempty x) (currentTopParsed <#> _.top)
+                        [ D.td_ $ pure $ switcher (\x -> renderNT mempty x) (currentTopParsed <#> _.top)
                         , D.td_ [ renderMeta mempty " : " ]
                         , D.td_
-                            [ switcher_ D.span (maybe (text_ "—") (\x -> renderNT mempty x)) (currentTopParsed <#> _.entry)
-                            , switcher_ D.span (\x -> renderTok mempty x) (currentTopParsed <#> _.eof)
+                            [ switcher (maybe (text_ "—") (\x -> renderNT mempty x)) (currentTopParsed <#> _.entry)
+                            , switcher (\x -> renderTok mempty x) (currentTopParsed <#> _.eof)
                             ]
                         , D.td_
                             [ renderMeta mempty " #"
-                            , switcher_ D.span (\x -> renderRule mempty x) (currentTopParsed <#> _.topName)
+                            , switcher (\x -> renderRule mempty x) (currentTopParsed <#> _.topName)
                             ]
                         ]
-                    , dyn_ D.tbody $ map
+                    , D.tbody_ $ pure $ dyn $ map
                         ( \(i /\ txt) -> keepLatest $ bus \p' e' ->
-                            ( pure $ Insert $ D.tr (D.Class <:=> (rulesInTrouble <#> \rit -> if Array.elem txt.rName rit then "trouble" else "")) $ map (D.td_ <<< pure) $
+                            ( pure $ insert_ $ D.tr (D.Class <:=> (rulesInTrouble <#> \rit -> if Array.elem txt.rName rit then "trouble" else "")) $ map (D.td_ <<< pure) $
                                 [ renderNT mempty txt.pName
                                 , renderMeta mempty " : "
-                                , switcher_ D.span
+                                , switcher
                                     ( \nts ->
-                                        fixed_ D.span $ map (\x -> renderPart mempty x) (parseDefinition nts txt.rule)
+                                        D.span_ $ map (\x -> renderPart mempty x) (parseDefinition nts txt.rule)
                                     )
                                     currentNTs
                                 , D.span_
@@ -818,9 +818,9 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                           ]
                       )
                       [ text_ buttonText ]
-                , changeState.errorMessage # switcher_ D.div \et -> case et of
+                , changeState.errorMessage # switcher \et -> case et of
                     Nothing -> D.div_ []
-                    Just e -> fixed_ D.div
+                    Just e -> fixed
                       [ D.br_ []
                       , D.div (D.Class !:= "Error") (parseGrammarError e)
                       ]
@@ -881,11 +881,11 @@ explorerComponent
   -> Domable lock payload
 explorerComponent { produced: producedRules, grammar: { augmented: MkGrammar rules, start: { pName: entry } } } sendUp =
   vbussed (Proxy :: Proxy (V ExplorerAction)) \push event -> do
-    envy_ D.div $ memoBeh event.select [ NonTerminal entry ] \currentParts -> do
+    envy $ memoBeh event.select [ NonTerminal entry ] \currentParts -> do
       let
         firstNonTerminal = Array.head <<< foldMapWithIndex
           \i v -> maybe [] (\r -> [ i /\ r ]) (unNonTerminal v)
-      envy_ D.div $ memoBeh (event.focus <|> map firstNonTerminal currentParts) (Just (0 /\ entry)) \currentFocused -> do
+      envy $ memoBeh (event.focus <|> map firstNonTerminal currentParts) (Just (0 /\ entry)) \currentFocused -> do
         let
           activity here = here <#> if _ then "active" else "inactive"
           renderPartHere i (NonTerminal nt) =
@@ -898,7 +898,7 @@ explorerComponent { produced: producedRules, grammar: { augmented: MkGrammar rul
               Nothing -> Nothing
               Just toks -> Just (sendUp toks)
         D.div_
-          [ switcher_ D.span (fixed_ D.span <<< mapWithIndex renderPartHere) currentParts
+          [ switcher (fixed <<< mapWithIndex renderPartHere) currentParts
           , D.button
               ( D.Class <:=> maybe "disabled" mempty <$> send
                   <|> D.OnClick <:=> sequence_ <$> send
@@ -921,7 +921,7 @@ explorerComponent { produced: producedRules, grammar: { augmented: MkGrammar rul
                   D.tr (D.Class <:=> activity focusHere) $ map (D.td_ <<< pure) $
                     [ renderNT mempty rule.pName
                     , renderMeta mempty " : "
-                    , fixed_ D.span $ map (\x -> renderPart mempty x) rule.rule
+                    , fixed $ map (\x -> renderPart mempty x) rule.rule
                     , D.span_
                         [ renderMeta mempty " #"
                         , renderRule mempty rule.rName
@@ -1008,12 +1008,12 @@ randomComponent { produced: producedRules, grammar: { start: { pName: entry } } 
               )
               [ text_ "Random" ]
           ]
-      , switcher_ D.div (fixed D.ul (D.Class !:= "compact") <<< map (\xs -> D.li (D.Class !:= "clickable" <|> D.OnClick !:= sendUp xs) <<< map (\x -> renderTok mempty x) $ xs))
+      , switcher (D.ul (D.Class !:= "compact") <<< map (\xs -> D.li (D.Class !:= "clickable" <|> D.OnClick !:= sendUp xs) <<< map (\x -> renderTok mempty x) $ xs))
           (pure initial <|> event.randomMany)
       ]
 
 peas :: Array String -> Nut
-peas x = fixed_ D.div (map (D.p_ <<< pure <<< text_) x)
+peas x = fixed (map (D.p_ <<< pure <<< text_) x)
 
 computeGrammar
   :: SAugmented
@@ -1212,14 +1212,14 @@ withGrammar :: (forall lock payload. SAugmented -> Domable lock payload) -> Widg
 withGrammar component { interface } = do
   let
     grammarEvent = filterMap (hush <<< decode grammarCodec) (interface "grammar").receive
-  pure $ SafeNut (switcher_ D.div component (pure sampleGrammar <|> grammarEvent))
+  pure $ SafeNut (switcher component (pure sampleGrammar <|> grammarEvent))
 
 withProducibleSendTokens :: (forall lock payload. SProducible -> (Array CodePoint -> Effect Unit) -> Domable lock payload) -> Widget
 withProducibleSendTokens component { interface } = do
   let
     grammarEvent = filterMap (hush <<< decode producibleCodec) (interface "producible").receive
     sendTokens = (interface "input").send <<< Json.fromString <<< String.fromCodePointArray
-  pure $ SafeNut (switcher_ D.div (flip component sendTokens) (pure (withProducible sampleGrammar) <|> grammarEvent))
+  pure $ SafeNut (switcher (flip component sendTokens) (pure (withProducible sampleGrammar) <|> grammarEvent))
 
 spotlightBeh :: forall a b. Ord a => Event a -> ((a -> Event Boolean) -> b) -> Event b
 spotlightBeh e f = mailboxed (map { address: _, payload: unit } (spotlightChange e)) \g -> f \a ->
@@ -1235,7 +1235,7 @@ widgetStateTable { interface } = do
     currentGetCurrentState = spotlightBeh stateIdI.receive identity
     currentStates = filterMap (hush <<< decode statesCodec) (interface "states").receive
     currentStatesAndGetState = (sampleOn currentGetCurrentState (map (/\) currentStates))
-  pure $ SafeNut (switcher_ D.div (\(x /\ getCurrentState) -> renderStateTable { getCurrentState } x) (currentStatesAndGetState))
+  pure $ SafeNut (switcher (\(x /\ getCurrentState) -> renderStateTable { getCurrentState } x) (currentStatesAndGetState))
 
 widgetParseTable :: Widget
 widgetParseTable { interface } = do
@@ -1246,7 +1246,7 @@ widgetParseTable { interface } = do
     currentStatesAndGetState = (sampleOn currentGetCurrentState (map (/\) currentStates))
     currentGrammar = filterMap (hush <<< decode grammarCodec) (interface "grammar").receive
   initialGrammar <- fromMaybe sampleGrammar <<< join <<< map (hush <<< decode grammarCodec) <$> (interface "grammar").current
-  pure $ SafeNut (switcher_ D.div (\(grammar /\ x /\ getCurrentState) -> renderParseTable { getCurrentState: getCurrentState } grammar x) (flip sampleOn ((/\) <<< _.augmented <$> (pure initialGrammar <|> currentGrammar)) (currentStatesAndGetState)))
+  pure $ SafeNut (switcher (\(grammar /\ x /\ getCurrentState) -> renderParseTable { getCurrentState: getCurrentState } grammar x) (flip sampleOn ((/\) <<< _.augmented <$> (pure initialGrammar <|> currentGrammar)) (currentStatesAndGetState)))
 
 inputComponent
   :: forall r lock payload
@@ -1270,7 +1270,7 @@ inputComponent
   -> Domable lock payload
 inputComponent initialInput inputStream sendInput current =
   bussed \pushInput localInput ->
-    envy_ D.div $ memoBeh (inputStream <|> localInput) initialInput \currentValue -> do
+    envy $ memoBeh (inputStream <|> localInput) initialInput \currentValue -> do
       let
         currentValue' = notFrom localInput currentValue
         currentParseSteps = current.parseSteps
@@ -1304,13 +1304,14 @@ inputComponent initialInput inputStream sendInput current =
       D.div_
         [ D.div_
             [ D.span_ $ pure $
-                switcher_ D.div (\x -> fixed_ D.div $ ([ Nothing ] <> map Just x) <#> renderTokenHere) currentGrammarTokens
+                switcher (\x -> fixed $ ([ Nothing ] <> map Just x) <#> renderTokenHere) currentGrammarTokens
             , D.span_ $ pure $
-                switcher_ D.div (\x -> fixed_ D.div $ x <#> renderNTHere) currentGrammarNTs
+                switcher (\x -> fixed $ x <#> renderNTHere) currentGrammarNTs
             ]
         , D.div_
             [ D.span (D.Class !:= "terminal") [ inputC' "Source text" "" currentValue' (pushInput <> sendInput) ] ]
-        , D.div_ $ pure $ currentParseSteps `flip (switcher_ D.div)` \todaysSteps ->
+        , currentParseSteps `flip switcher` \todaysSteps ->
+            D.div_ $ pure $
             let
               contentAsMonad = showMaybeParseSteps $ todaysSteps
               -- Run the first layer of the monad, to get the number of items being rendered up-front
@@ -1348,7 +1349,7 @@ inputComponent initialInput inputStream sendInput current =
                 in
                   -- Memoize it and run it through `spotlight` to toggle each
                   -- item individually
-                  envy_ D.div $ keepLatest $ memoize currentIndex \stackIndex ->
+                  envy $ keepLatest $ memoize currentIndex \stackIndex ->
                     spotlight false (map fst stackIndex) \sweeper ->
                       let
                         content = contentAsMonad2 sweeper

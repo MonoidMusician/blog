@@ -2,8 +2,7 @@ module FRP.Deku.Component where
 
 import Prelude
 
-import Bolson.Core (envy)
-import Deku.Core (Domable)
+import Deku.Core (envy, Domable)
 import FRP.Event (Event, keepLatest, memoize)
 
 

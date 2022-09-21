@@ -2,7 +2,6 @@ module Widget where
 
 import Prelude
 
-import Bolson.Core (fixed)
 import Control.Bind (bindFlipped)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
@@ -20,6 +19,7 @@ import Data.Newtype (unwrap)
 import Data.Tuple (snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Deku.Toplevel (runInElement')
+import Deku.Core (fixed)
 import Effect (Effect)
 import Effect.Aff (Aff, Canceler(..), launchAff_, makeAff)
 import Effect.Class (liftEffect)
