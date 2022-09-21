@@ -473,8 +473,6 @@ function interactive() {
     id: "vis",
     "viewBox": [-10, -10, 20, 20],
     "style": {
-      "max-width": "calc(50% - 5px)",
-      "max-height": "calc(100vh - 5px)",
       "stroke-linecap": "round",
       "stroke-linejoin": "round",
       "fill": "#000",
@@ -629,8 +627,6 @@ function visualize(p1, p2, prec) {
     "stroke": "#000",
     "stroke-width": 0.8,
     "style": {
-      "max-width": "calc(50% - 5px)",
-      "max-height": "calc(100vh - 5px)",
       "stroke-linecap": "round",
       "stroke-linejoin": "round",
     },

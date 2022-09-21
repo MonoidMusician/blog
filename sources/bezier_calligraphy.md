@@ -16,6 +16,8 @@ If the inputs are cubic Bézier curves, is the output as well?
 
 :::: {.Bonus box-name="Jargonized"}
 Is the [Minkowski sum](https://en.wikipedia.org/wiki/Minkowski_addition) of two piecewise cubic Bézier hulls a [piecewise cubic Bézier hull](https://en.wikipedia.org/wiki/Composite_B%C3%A9zier_curve)?
+
+More specifically, is the the convolution of two cubic Béziers a cubic Bézier?
 ::::
 :::
 
@@ -57,6 +59,7 @@ It took me until now to have the skills/insight/motivation to finally realize my
 ## Demo
 
 But first, always start with the demo!
+Here you can see the musculoskeletal anatomy of a Minkowski calligraphy stroke:
 
 <script src="https://cdn.jsdelivr.net/npm/path-data-polyfill@1.0.3/path-data-polyfill.min.js"></script>
 <style>
@@ -68,6 +71,14 @@ But first, always start with the demo!
     fill: #0059;
     pointer-events: stroke;
   }
+  #main-calligraphy-demo > svg {
+    width: 50%;
+  }
+  @media (max-width: 760px) {
+    #main-calligraphy-demo > svg {
+      width: 100%;
+    }
+  }
 </style>
 <div id="main-calligraphy-demo"></div>
 <script src="assets/js/quartic.js"></script>
@@ -77,9 +88,11 @@ But first, always start with the demo!
 <br/>
 
 ::: {.Details box-name="Legend"}
-- Black – covered by the basic algorithm.
+<!-- - Black – covered by the basic algorithm. -->
+- Black – the algorithm as it current stands.
 - Red – the ideal output, approximated.
-- Green – improved algorithm.
+  (double click on the black to generate a more and more fine approximation)
+<!-- - Green – improved algorithm. -->
 :::
 
 ## Big picture
