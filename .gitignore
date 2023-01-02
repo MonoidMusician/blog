@@ -10,6 +10,7 @@ output-es/
 .spago
 /PureScript/ssr.js
 /PureScript/dist/
+/PureScript/src/scratch/
 /cache/
 /static/
 /rendered/
