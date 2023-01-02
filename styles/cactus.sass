@@ -1,0 +1,543 @@
+@use "variables.sass" as *
+@use "colors.sass" as *
+@use "PureScript.sass" as *
+
+
+/*
+ * ***** DEFAULT COLORS *****
+ */
+/* automatic / manual light mode */
+:root,
+:root.light
+  --cactus-text-color--soft: #{$text}88
+  @if not $light
+    --cactus-background-color--strong: #05212f
+  @else
+    --cactus-background-color--strong: #fff8eb
+  --cactus-border-color: hsl(0, 0%, 85%, 0.4)
+  --cactus-box-shadow-color: hsla(216.5, 49.6%, 27.3%, 0.3)
+  --cactus-button-text-color: inherit
+  --cactus-button-color: hsl(0, 0%, 80%)
+  --cactus-button-color--strong: hsl(0, 0%, 75%)
+  --cactus-button-color--stronger: hsl(0, 0%, 70%)
+  --cactus-login-form-text-color: inherit
+  /* unchanged variables */
+  --cactus-border-width: 1px
+  --cactus-border-radius: 0.4em
+  --cactus-text-color: inherit
+  --cactus-background-color: #{$background-color}
+  --cactus-error-color: red
+
+
+
+/*
+ * ***** CONTAINER *****
+ */
+/* container that contains everything */
+.cactus-container
+  display: flex
+  flex-direction: column
+  gap: 1em
+  color: var(--cactus-text-color)
+  background-color: var(--cactus-background-color)
+
+
+
+/*
+ * ***** ERROR *****
+ */
+/* error message */
+.cactus-error
+  padding: 0.5em
+  padding-inline-end: 1.5em
+  border: var(--cactus-border-width) solid var(--cactus-error-color)
+  border-radius: var(--cactus-border-radius)
+  /* for absolutely positioned close button */
+  position: relative
+
+
+/* close button */
+.cactus-error-close
+  position: absolute
+  right: 0.2em
+  top: 0em
+  color: var(--cactus-button-color)
+  /* todo: remove after using all: unset */
+  background-color: transparent
+  border: none
+
+
+.cactus-error-close-icon
+  inline-size: 20px
+  block-size: 20px
+
+
+/* error message */
+.cactus-error-text
+  color: var(--cactus-error-color)
+  font-weight: bold
+  /* todo: remove after using all: unset */
+  margin: 0
+
+
+
+/*
+ * ***** EDITOR SECTION *****
+ */
+ /* comment text field, plus send and login buttons */
+.cactus-editor
+  display: flex
+  flex-direction: column
+  gap: 0.5em
+
+
+/* todo: use a class */
+.cactus-editor > span
+  display: flex
+
+
+.cactus-editor-textarea
+  display: flex
+  flex: 1
+  height: 9em
+  padding: 0.5em
+  box-sizing: content-box
+  /* todo: remove after using all: unset */
+  background-color: transparent
+  color: inherit
+  font: inherit
+
+
+.cactus-editor-textarea::placeholder
+  text-align: center
+  line-height: 8em
+  font-size: 1em
+  color: var(--cactus-text-color--soft)
+
+
+/* login and post button */
+.cactus-editor-below
+  display: flex
+  flex-wrap: wrap
+  gap: 0.5em
+  justify-content: flex-end
+
+
+.cactus-editor-name
+  display: flex
+  flex: 1
+
+
+/* todo: use a class */
+.cactus-editor-name > span
+  display: flex
+  flex: 1
+  min-inline-size: 20ch
+  max-inline-size: 40ch
+
+
+/* todo: use a class */
+.cactus-editor-name > span > input
+  inline-size: 100%
+
+
+.cactus-editor-name > span > input::placeholder
+  color: var(--cactus-text-color--soft)
+
+
+/* div with login and send buttons  */
+.cactus-editor-buttons
+
+
+.cactus-login-button
+
+
+.cactus-logout-button
+
+
+.cactus-send-button
+
+
+/* "Use a Matrix client" button
+ when guestPostingEnabled=false and loginEnabled=false */
+.cactus-matrixdotto-only
+  align-self: center
+  /* todo: remove after using all: unset */
+  text-decoration: none
+
+
+
+/*
+ * ***** LOGIN FORM *****
+ */
+.cactus-login-form-wrapper
+  position: fixed
+  top: 0
+  bottom: 0
+  left: 0
+  right: 0
+  z-index: 1
+  display: flex
+  align-items: center
+  justify-content: center
+
+
+/* login form */
+.cactus-login-form
+  display: flex
+  flex-direction: column
+  gap: 2em
+  padding: 2em
+  border-radius: var(--cactus-border-radius)
+  background-color: var(--cactus-background-color--strong)
+  color: var(--cactus-login-form-text-color)
+  box-shadow: 0 0.5em 1em 0.5em var(--cactus-box-shadow-color)
+  box-sizing: border-box
+  inline-size: 100%
+  max-inline-size: 300px
+
+
+/* close button */
+.cactus-login-close
+  align-self: flex-end
+  position: relative
+  margin: -2em
+  padding: 0
+  color: var(--cactus-button-color)
+  scale: 2.0
+  background-color: transparent
+  border: none
+
+
+
+.cactus-login-close-icon
+  inline-size: 20px
+  block-size: 20px
+
+
+/* title */
+.cactus-login-title
+  align-self: center
+  font-size: 1.17em
+  font-weight: bold
+  /* todo: remove after using all: unset */
+  margin: 0
+
+
+/* client section */
+.cactus-login-client
+  display: flex
+  flex-direction: column
+  gap: 1em
+
+
+.cactus-login-client-title
+  font-size: 1em
+  font-weight: bold
+  /* todo: remove after using all: unset */
+  margin: 0
+
+
+/* "log in" button */
+.cactus-matrixdotto-button
+  justify-content: center
+  /* todo: remove after using all: unset */
+  text-decoration: none
+
+
+/* credentials section */
+.cactus-login-credentials
+  display: flex
+  flex-direction: column
+  gap: 1em
+
+
+.cactus-login-credentials-title
+  font-size: 1em
+  font-weight: bold
+  /* todo: remove after using all: unset */
+  margin: 0
+
+
+.cactus-login-field
+  display: flex
+  flex-direction: column
+  gap: 0.25em
+
+
+.cactus-login-label
+  font-size: 1em
+  padding-bottom: 0.25em
+  color: var(--cactus-text-color--soft)
+
+
+.cactus-login-error
+  margin: 0
+  font-size: 0.8em
+  color: var(--cactus-text-color--soft)
+
+
+
+.cactus-login-field > input::placeholder
+  color: var(--cactus-text-color--soft)
+
+
+/* "log in" button */
+.cactus-login-credentials-button
+  justify-content: center
+
+
+
+/*
+ * ***** COMMENTS LIST *****
+ */
+/* comments container */
+.cactus-comments-container
+  display: flex
+  flex-direction: column
+  gap: 1em
+
+
+/* comments list */
+.cactus-comments-list
+  display: flex
+  flex-direction: column
+  gap: 0.5em
+
+
+/* a comment */
+.cactus-comment
+  display: flex
+  flex-direction: row
+  gap: 1em
+  padding-block-end: 0.5em
+  border-block-end: var(--cactus-border-width) solid var(--cactus-border-color)
+
+
+/* avatar beside comment content */
+.cactus-comment-avatar
+  display: flex
+
+
+/* the avatar image */
+/* todo: use a class */
+.cactus-comment-avatar > *
+  width: 2.5em
+  height: 2.5em
+  border-radius: 50%
+  /* todo: remove after using all: unset */
+  margin: 0
+
+
+/* in case of no avatar */
+.cactus-comment-avatar-placeholder
+  display: flex
+  justify-content: center
+  align-items: center
+  background-color: var(--cactus-background-color--strong)
+  color: var(--cactus-text-color--soft)
+
+.cactus-comment-avatar-placeholder::before
+  content: "?"
+
+.cactus-comment-avatar-placeholder::before
+  content: "?"
+
+
+/* header and body */
+.cactus-comment-content
+  display: flex
+  flex-direction: column
+  gap: 0.5em
+
+
+/* user name and posting time */
+.cactus-comment-header
+  display: flex
+  gap: 0.5em
+  flex-wrap: wrap
+
+
+/* user name */
+.cactus-comment-displayname
+  font-weight: bold
+  cursor: pointer
+  /* todo: remove after using all: unset */
+  text-decoration: none
+  color: inherit
+
+
+/* comment posting time  */
+.cactus-comment-time
+  color: var(--cactus-text-color--soft)
+
+
+/* text or media content of comment */
+.cactus-comment-body > *
+
+
+/* body for different message types */
+.cactus-message-text
+
+
+.cactus-message-text > *:first-child
+  margin-block-start: 0em
+
+
+.cactus-message-text > *:last-child
+  margin-block-end: 0em
+
+
+.cactus-message-emote
+  padding-top: 0.5em
+  color: var(--cactus-text-color--soft)
+
+
+.cactus-message-image
+  max-width: 100%
+  height: auto
+
+
+.cactus-message-audio
+
+
+.cactus-message-file
+  line-height: 3em
+  margin-left: 1em
+
+
+.cactus-message-video
+  max-width: 100%
+
+
+/* contains the view-more button */
+.cactus-view-more
+  display: flex
+  justify-content: center
+
+
+
+/*
+ * ***** LOADING SPINNER *****
+ */
+.spinner
+  align-self: center
+  width: 2em
+  height: 2em
+  display: flex
+  gap: 0.3em
+
+
+.spinner > div
+  flex: 1
+  background-color: var(--cactus-border-color)
+  animation: sk-stretchdelay 2.4s infinite ease-in-out
+
+
+.spinner .rect2
+  animation-delay: -2.2s
+
+
+.spinner .rect3
+  animation-delay: -2.0s
+
+
+.spinner .rect4
+  animation-delay: -1.8s
+
+
+@keyframes sk-stretchdelay
+  0%,
+  40%,
+  100%
+    transform: scaleY(0.4)
+
+  20%
+    transform: scaleY(1.0)
+
+
+
+.cactus-comment-avatar-placeholder::before
+  font-size: 140%
+
+.cactus-container
+  flex-direction: column-reverse
+
+.cactus-comments-list
+  flex-direction: column-reverse
+
+.cactus-comment
+  border-block-end: none
+  border-block-start: var(--cactus-border-width) solid var(--cactus-border-color)
+  padding-block-end: 0
+  padding-block-start: 0.5em
+.cactus-comment-content
+  gap: 0
+.cactus-comment-header
+  display: block
+@import url('https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500;1,600&display=swap')
+.cactus-comment-displayname
+  font-family: "Fira Sans"
+  font-weight: 400
+  font-size: 0.9em
+  &::before
+    color: var(--cactus-text-color--soft)
+  &[href$="cofree.coffee"]::before
+    content: "./"
+.cactus-comment-time
+  margin-left: 0.6em
+  font-family: 'Cormorant Upright'
+  // font-variant-numeric: lining-nums
+.cactus-comment-avatar > *
+  width: calc(2.6em + 8px)
+  height: calc(2.6em + 8px)
+  margin: -4px
+  margin-left: -2px
+
+.cactus-button
+  @extend .big
+
+.cactus-error-close:not(:disabled):not(.disabled), .cactus-login-close:not(:disabled):not(.disabled)
+  padding: 0
+  margin: 0
+  border-radius: 100%
+  & > svg
+    display: block
+  &:hover, &:active
+    border: 0
+    box-shadow: none
+
+textarea
+  border: none
+  border-radius: 6px
+  @if not $light
+    background-color: #0005 !important
+    box-shadow: 0.5px 0.5px 3px #fff2, 0.5px 0.5px 2px inset #0001
+  @else
+    background-color: #fff5 !important
+    box-shadow: 0.5px 0.5px 3px #0002, 0.5px 0.5px 2px inset rgb(224 249 255 / 35%)
+  &:focus-visible
+    outline: 1px solid #2372ff
+
+.cactus-editor-name > span, .cactus-login-field
+  @extend .input-wrapper
+
+.cactus-login-field > label
+  background: var(--cactus-background-color--strong)
+  &:not([for]):not(.sidenote-number):not(.margin-toggle)
+    margin: 0
+    border-radius: 0
+    vertical-align: initial
+    transform: none
+    display: block
+    position: absolute
+
+input:focus-visible
+  border-color: #2372ff
+  outline: none
+
+a.cactus-button, .cactus-login-client a.cactus-button
+  @extend button
+  text-align: center
+  &:hover
+    text-decoration: none
