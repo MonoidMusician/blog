@@ -14,12 +14,10 @@ import Data.Tuple.Nested ((/\), type (/\))
 import Data.Variant (Variant)
 import Data.Variant as Variant
 import Deku.Control (switcher)
-import Deku.Core (dyn, fixed)
-import Deku.Core (Domable, bus, insert_, remove)
-import Deku.DOM as D
+import Deku.Core (dyn, fixed, Domable, bus, insert_, remove)
 import Effect (Effect)
 import FRP.Deku.Component (ComponentSpec)
-import FRP.Event (Event, keepLatest, sampleOn)
+import FRP.Event (Event, keepLatest, sampleOnRight)
 import FRP.Helpers (counter)
 import FRP.Memoize (memopureFold)
 import Type.Proxy (Proxy(..))
@@ -57,8 +55,8 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
     initialValue :: Array (Int /\ a)
     initialValue = mapWithIndex (/\) desc.initial
 
-    performChange :: ListicleEvent (Int /\ a) -> Array (Int /\ a) -> Array (Int /\ a)
-    performChange = Variant.match
+    performChange :: Array (Int /\ a) -> ListicleEvent (Int /\ a) -> Array (Int /\ a)
+    performChange = flip $ Variant.match
       { add: \(j /\ v) vs -> Array.snoc vs (j /\ v)
       , remove: \i -> Array.filter \(i' /\ _) -> i' /= i
       }
@@ -66,7 +64,7 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
       Variant.inj (Proxy :: Proxy "add") <$> addEvent
         <|> Variant.inj (Proxy :: Proxy "remove") <$> removesEvent
   in
-    memopureFold performChange changesEvent initialValue \currentValue ->
+    memopureFold performChange initialValue changesEvent \currentValue ->
       let
         intro = case desc.begin of
           Nothing -> []
@@ -99,7 +97,7 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
             -- detect both here.
             -- (in particular, for elements rendered in the initial view, it seems that
             -- their subscription beats that of `currentValue` somehow)
-            sampleOn currentValue
+            sampleOnRight currentValue
           $ removesEvent <#> \rem vs ->
               -- let _ = unsafePerformEffect (logShow { idx, rem, vs }) in
               rem == idx
@@ -109,7 +107,7 @@ listicle desc = keepLatest $ bus \pushRemove removesEvent ->
 
         element = fixed $
           let
-            renderItems = sampleOn (Array.length <$> currentValue) $
+            renderItems = sampleOnRight (Array.length <$> currentValue) $
               (initialEvent <|> addEvent) <#> \(idx /\ item) len ->
                 ( pure $ insert_ $ fixed $ append
                     (if len > 0 && idx /= 0 then [ switcher (fixed <<< if _ then [] else sep) (pure false <|> dropComma idx) ] else [])

@@ -10,7 +10,7 @@ import Control.Plus (empty)
 import Data.Argonaut (Json)
 import Data.Argonaut as Json
 import Data.Array as Array
-import Data.Codec (BasicCodec, decode, encode)
+import Data.Codec (Codec', decode, encode)
 import Data.Either (Either(..))
 import Data.Foldable (class Foldable, foldMap, for_, oneOfMap, traverse_)
 import Data.Maybe (Maybe(..))
@@ -18,8 +18,8 @@ import Data.Maybe.Last (Last(..))
 import Data.Newtype (unwrap)
 import Data.Tuple (snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import Deku.Toplevel (runInElement')
 import Deku.Core (fixed)
+import Deku.Toplevel (runInElement')
 import Effect (Effect)
 import Effect.Aff (Aff, Canceler(..), launchAff_, makeAff)
 import Effect.Class (liftEffect)
@@ -118,7 +118,7 @@ getInterface share k = do
       , current: int.current <#> map \(_ /\ v) -> v
       }
 
-adaptInterface :: forall f a b. Foldable f => BasicCodec f a b -> Interface a -> Interface b
+adaptInterface :: forall f a b. Foldable f => Codec' f a b -> Interface a -> Interface b
 adaptInterface codec interface =
   { send: interface.send <<< encode codec
   , mailbox: interface.mailbox <#> (_ <<< encode codec)

@@ -2,15 +2,13 @@ module Parser.Codecs where
 
 import Prelude
 
-import Control.Monad.Reader (ReaderT(..))
-import Control.Monad.Writer (writer)
 import Data.Argonaut as Json
 import Data.Array ((!!))
 import Data.Array as Array
-import Data.Array.NonEmpty as NEA
 import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
 import Data.Bifunctor as BF
-import Data.Codec (BasicCodec, Codec, GCodec(..), basicCodec, decode, encode, mapCodec, (~))
+import Data.Codec (Codec(..), Codec', codec, decode, encode, (~))
 import Data.Codec.Argonaut (JsonCodec, JsonDecodeError(..), (<~<))
 import Data.Codec.Argonaut as CA
 import Data.Codec.Argonaut.Record as CAR
@@ -23,12 +21,11 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Profunctor (dimap)
-import Data.Profunctor.Star (Star(..))
 import Data.Set (Set)
 import Data.Set as Set
 import Data.String as String
-import Data.String.NonEmpty as NES
 import Data.String.NonEmpty (NonEmptyString)
+import Data.String.NonEmpty as NES
 import Data.Traversable (traverse)
 import Data.Tuple (fst, snd, uncurry)
 import Data.Tuple.Nested ((/\), type (/\))
@@ -36,9 +33,10 @@ import Data.Variant as V
 import Data.Variant as Variant
 import Foreign.Object as Object
 import Parser.Algorithms (parseDefinitions, unParseDefinition)
-import Parser.Types (CST(..), Grammar(..), Part(..), SAugmented, SCParseSteps, SCST, SCStack, SFragment, SPart, SProducible, SState, SStateInfo, SStates, ShiftReduce(..), Zipper(..))
 import Parser.Proto (ParseSteps(..), Stack(..))
+import Parser.Types (CST(..), Grammar(..), Part(..), SAugmented, SCParseSteps, SCST, SCStack, SFragment, SPart, SProducible, SState, SStateInfo, SStates, ShiftReduce(..), Zipper(..))
 import Record as Record
+import Safe.Coerce (coerce)
 import Type.Proxy (Proxy(..))
 
 
@@ -55,18 +53,18 @@ intStringCodec =
 rulesCodec
   :: forall m r
    . Applicative m
-  => BasicCodec m
+  => Codec' m
        (Array { pName :: NonEmptyString, rule :: String | r })
        (Array { pName :: NonEmptyString, rule :: SFragment | r })
-rulesCodec = basicCodec
+rulesCodec = codec
   (pure <<< parseDefinitions)
   (map \r -> r { rule = unParseDefinition r.rule })
 
 lastMile
-  :: BasicCodec (Either JsonDecodeError)
+  :: Codec' (Either JsonDecodeError)
        (Array { pName :: NonEmptyString, rName :: String, rule :: SFragment })
        SAugmented
-lastMile = basicCodec
+lastMile = codec
   (fromRules)
   (unwrap <<< _.augmented)
   where
@@ -89,7 +87,7 @@ grammarCodec = lastMile <~< rulesCodec <~< CA.array do
     <*> _.rName ~ CA.index 2 CA.string
 
 _n :: forall m c d a b. Monad m => Newtype a b => Codec m c d b b -> Codec m c d a a
-_n = mapCodec (pure <<< wrap) unwrap
+_n (Codec a b) = Codec (map wrap <<< a) (coerce b)
 
 tuple :: forall a b. JsonCodec a -> JsonCodec b -> JsonCodec (a /\ b)
 tuple a b = CA.indexedArray "Tuple" $ (/\)
@@ -97,14 +95,14 @@ tuple a b = CA.indexedArray "Tuple" $ (/\)
   <*> snd ~ CA.index 1 b
 
 mappy :: forall k a. Ord k => JsonCodec k -> JsonCodec a -> JsonCodec (Map k a)
-mappy key codec = GCodec dec enc
+mappy key codec = Codec dec enc
   where
   asArray = identity :: Array ~> Array
-  dec = ReaderT \j -> map Map.fromFoldable $
+  dec = \j -> map Map.fromFoldable $
     traverse (\(k /\ j') -> BF.lmap (AtKey k) ((/\) <$> decode key (Json.fromString k) <*> decode codec j'))
       <<< asArray <<< Object.toUnfoldable
       =<< decode CA.jobject j
-  enc = Star \xs -> writer $ (/\) xs $ Json.fromObject $ Object.fromFoldable $ asArray $
+  enc = \xs -> flip (/\) xs $ Json.fromObject $ Object.fromFoldable $ asArray $
     Array.mapMaybe (\(k /\ v) -> (/\) <$> Json.toString (encode key k) <@> encode codec v) $ Map.toUnfoldable xs
 
 maybeCodec :: forall a. JsonCodec a -> JsonCodec (Maybe a)
@@ -207,7 +205,7 @@ producibleCodec = CAR.object "Producible"
   { grammar: grammarCodec
   , produced: prulesCodec <~< CA.array do
       CAR.object "Produced"
-        { produced: basicCodec (pure <<< String.toCodePointArray) String.fromCodePointArray <~< CA.string
+        { produced: codec (pure <<< String.toCodePointArray) String.fromCodePointArray <~< CA.string
         , production:
             CAR.object "GrammarItem"
               { pName: nonEmptyStringCodec
@@ -217,7 +215,7 @@ producibleCodec = CAR.object "Producible"
         }
   }
   where
-  prulesCodec = basicCodec (pure <<< smuggled) smuggle <~< rulesCodec <~< basicCodec (pure <<< smuggle) smuggled
+  prulesCodec = codec (pure <<< smuggled) smuggle <~< rulesCodec <~< codec (pure <<< smuggle) smuggled
 
 smuggle
   :: forall f a b c d

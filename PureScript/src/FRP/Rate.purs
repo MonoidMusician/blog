@@ -28,7 +28,7 @@ timeFromRate
   -> Event Seconds
   -> Event RateInfo
 timeFromRate clengthB afE = mapAccum
-  ( \{ behaviors: { clength, epochTime }, acTime } { prevTime, prevBeats } -> do
+  ( \{ prevTime, prevBeats } { behaviors: { clength, epochTime }, acTime } -> do
       let prevAC = fromMaybe (Seconds 0.0) prevTime
       let prevAJ = fromMaybe (Beats 0.0) prevBeats
       let gap = over2 Seconds (-) acTime prevAC
@@ -37,6 +37,7 @@ timeFromRate clengthB afE = mapAccum
       { prevTime: Just $ acTime, prevBeats: Just beats } /\
         { prevTime, prevBeats, time: acTime, beats, epochTime }
   )
+  { prevTime: Nothing, prevBeats: Nothing }
   ( sampleBy { behaviors: _, acTime: _ }
       ( { clength: _, epochTime: _ }
           <$> (clengthB)
@@ -44,4 +45,3 @@ timeFromRate clengthB afE = mapAccum
       )
       (afE)
   )
-  { prevTime: Nothing, prevBeats: Nothing }

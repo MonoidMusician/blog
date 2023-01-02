@@ -59,9 +59,9 @@ import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Behavior (step)
 import FRP.Deku (withValue, (!:=), (<:=>), (?:=))
-import FRP.Event (Event, filterMap, keepLatest, mailboxed, makeEvent, mapAccum, memoize, sampleOn, subscribe)
+import FRP.Event (Event, filterMap, keepLatest, mailboxed, makeEvent, mapAccum, memoize, sampleOnRight, subscribe)
 import FRP.Event.AnimationFrame (animationFrame)
-import FRP.Event.Class (biSampleOn)
+import FRP.Event.Class ((<**>))
 import FRP.Event.Time (withTime)
 import FRP.Event.VBus (V)
 import FRP.Helpers (dedup, dedupOn, spotlight, spotlightChange, toggle)
@@ -210,7 +210,7 @@ renderParseTable info (MkGrammar grammar) (States states) =
       header = D.tr_ $ mapWithIndex (\i -> D.th (col (Array.length terminals + 1) i) <<< pure) $
         [ text_ "" ] <> map renderTerminals terminals <> map renderNonTerminals nonTerminals
       clsFor s =
-        biSampleOn
+        (<**>)
           ((if _ then " active " else "") <$> info.getCurrentState s)
           $ stateHighlighted <#> \s' -> append $
               if s' == Just s then " hover " else ""
@@ -441,16 +441,16 @@ renderLookahead moreClass items = D.span (D.Class !:= append "lookahead" moreCla
 
 --------------------------------------------------------------------------------
 
-debug :: forall m a. Show a => String -> Event a -> Event a
+debug :: forall a. Show a => String -> Event a -> Event a
 debug tag = map \a -> unsafePerformEffect (a <$ (Log.info (tag <> show a)))
 
-debugJson :: forall m. String -> Event Json.Json -> Event Json.Json
+debugJson :: String -> Event Json.Json -> Event Json.Json
 debugJson tag = map \a -> unsafePerformEffect (a <$ (Log.info (tag <> Json.stringify a)))
 
-unsafeDebug :: forall m a. String -> Event a -> Event a
+unsafeDebug :: forall a. String -> Event a -> Event a
 unsafeDebug tag = map \a -> unsafePerformEffect (a <$ (Log.info tag <* Log.info (unsafeCoerce a)))
 
-silentDebug :: forall m a. String -> Event a -> Event a
+silentDebug :: forall a. String -> Event a -> Event a
 silentDebug tag = map \a -> unsafePerformEffect (a <$ Log.info tag)
 
 renderAs :: String -> String -> Nut
@@ -643,8 +643,8 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
       vbussed (Proxy :: Proxy (V GrammarAction)) \pushState changeState ->
         let
           changeRule =
-            ( \change rules ->
-                case change of
+            ( \rules ->
+                case _ of
                   Left new -> Array.snoc rules new
                   Right remove -> Array.filter (fst >>> not eq remove) rules
             )
@@ -666,34 +666,34 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                 , topName: defaultTopRName
                 }
           currentText =
-            biSampleOn (pure "" <|> inputs.pName.value)
-              $ biSampleOn (pure "" <|> inputs.rule.value)
+            (<**>) (pure "" <|> inputs.pName.value)
+              $ (<**>) (pure "" <|> inputs.rule.value)
               $
                 (pure "" <|> inputs.rName.value) <#> \rName rule pName ->
                   { rName, rule, pName }
           currentTop =
-            biSampleOn (pure initialTop.top <|> inputs.top.value)
-              $ biSampleOn (pure initialTop.entry <|> inputs.entry.value)
-              $ biSampleOn (pure initialTop.eof <|> inputs.eof.value)
-              $ biSampleOn (pure initialTop.topName <|> inputs.topName.value)
+            (<**>) (pure initialTop.top <|> inputs.top.value)
+              $ (<**>) (pure initialTop.entry <|> inputs.entry.value)
+              $ (<**>) (pure initialTop.eof <|> inputs.eof.value)
+              $ (<**>) (pure initialTop.topName <|> inputs.topName.value)
               $ pure { topName: _, eof: _, entry: _, top: _ }
           counted = add (Array.length initialRules) <$>
             (pure 0 <|> (add 1 <$> fst <$> changeState.addRule))
         in
           envy $ memoBeh currentTop initialTop \currentTop -> do
-            envy $ memoBehFold changeRule ruleChanges initialRules \currentRules -> do
+            envy $ memoBehFold changeRule initialRules ruleChanges \currentRules -> do
               let
                 currentNTs = dedup $ map longestFirst $
-                  biSampleOn
+                  (<**>)
                     (map (_.pName <<< snd) <$> currentRules)
                     (append <<< pure <<< fromMaybe defaultTopName <<< NES.fromString <<< _.top <$> currentTop)
-                currentTopParsed = biSampleOn currentRules $ currentTop <#> \r rules ->
+                currentTopParsed = (<**>) currentRules $ currentTop <#> \r rules ->
                   { top: fromMaybe defaultTopName $ NES.fromString r.top
                   , entry: NES.fromString r.entry <|> (Array.head rules <#> snd >>> _.pName)
                   , eof: fromMaybe defaultEOF $ only $ String.toCodePointArray r.eof
                   , topName: r.topName
                   }
-                currentGrammar = biSampleOn (map snd <$> currentRules) (currentTopParsed <#> parseGrammar)
+                currentGrammar = (<**>) (map snd <$> currentRules) (currentTopParsed <#> parseGrammar)
 
                 rulesInTrouble = pure [] <|> changeState.troubleRules
 
@@ -913,7 +913,7 @@ explorerComponent { produced: producedRules, grammar: { augmented: MkGrammar rul
               [ D.tbody_ $ rules <#> \rule -> do
                   let
                     focusHere = currentFocused # map (any (snd >>> eq rule.pName))
-                    replacement = sampleOn currentParts $ currentFocused <#> \mfoc parts -> do
+                    replacement = sampleOnRight currentParts $ currentFocused <#> \mfoc parts -> do
                       focused /\ nt <- mfoc
                       guard $ nt == rule.pName
                       guard $ focused <= Array.length parts
@@ -1000,7 +1000,7 @@ randomComponent { produced: producedRules, grammar: { start: { pName: entry } } 
           , D.button
               ( D.Class !:= ""
                   <|> D.OnClick <:=>
-                    ( biSampleOn (pure initialAmt <|> event.amt) $
+                    ( (<**>) (pure initialAmt <|> event.amt) $
                         ( (pure initialSize <|> event.size) <#> \sz amt ->
                             (traverse_ (push.randomMany) =<< randomProductions entry sz amt)
                         )
@@ -1176,7 +1176,7 @@ widgetInput { interface, attrs } = do
       { send: sendInput
       -- it turns out that inputComponent never actually subscribes to
       -- grammar, so we need to force `sideKick` to happen
-      , receive: sampleOn grammarStream (const <$> receiver)
+      , receive: sampleOnRight grammarStream (const <$> receiver)
       , current: io.input.current
       }
   -- For all of the other data, it might not be updated (e.g. because we only
@@ -1234,7 +1234,7 @@ widgetStateTable { interface } = do
     stateIdI = adaptInterface CA.int (interface "stateId")
     currentGetCurrentState = spotlightBeh stateIdI.receive identity
     currentStates = filterMap (hush <<< decode statesCodec) (interface "states").receive
-    currentStatesAndGetState = (sampleOn currentGetCurrentState (map (/\) currentStates))
+    currentStatesAndGetState = (sampleOnRight currentGetCurrentState (map (/\) currentStates))
   pure $ SafeNut (switcher (\(x /\ getCurrentState) -> renderStateTable { getCurrentState } x) (currentStatesAndGetState))
 
 widgetParseTable :: Widget
@@ -1243,10 +1243,10 @@ widgetParseTable { interface } = do
     stateIdI = adaptInterface CA.int (interface "stateId")
     currentGetCurrentState = spotlightBeh stateIdI.receive identity
     currentStates = filterMap (hush <<< decode statesCodec) (interface "states").receive
-    currentStatesAndGetState = (sampleOn currentGetCurrentState (map (/\) currentStates))
+    currentStatesAndGetState = (sampleOnRight currentGetCurrentState (map (/\) currentStates))
     currentGrammar = filterMap (hush <<< decode grammarCodec) (interface "grammar").receive
   initialGrammar <- fromMaybe sampleGrammar <<< join <<< map (hush <<< decode grammarCodec) <$> (interface "grammar").current
-  pure $ SafeNut (switcher (\(grammar /\ x /\ getCurrentState) -> renderParseTable { getCurrentState: getCurrentState } grammar x) (flip sampleOn ((/\) <<< _.augmented <$> (pure initialGrammar <|> currentGrammar)) (currentStatesAndGetState)))
+  pure $ SafeNut (switcher (\(grammar /\ x /\ getCurrentState) -> renderParseTable { getCurrentState: getCurrentState } grammar x) (flip sampleOnRight ((/\) <<< _.augmented <$> (pure initialGrammar <|> currentGrammar)) (currentStatesAndGetState)))
 
 inputComponent
   :: forall r lock payload
@@ -1325,18 +1325,19 @@ inputComponent initialInput inputStream sendInput current =
                   startState = pEvent.startState <|> pure Nothing
                   rate = pEvent.rate <|> pure 1.0
                   animationTick = compact $ mapAccum
-                    ( \i@(tf /\ { beats: Beats beats }) { target: Beats target' } ->
+                    ( \{ target: Beats target' } i@(tf /\ { beats: Beats beats }) ->
                         let
                           target = if tf then 0.0 else target'
                         in
                           if target > beats then ({ target: Beats target } /\ Nothing)
                           else ({ target: Beats (target + 1.0) } /\ Just i)
                     )
-                    pEvent.animationTick
                     { target: Beats 0.0 }
+                    pEvent.animationTick
                   currentIndex = dedupOn (eq `on` fst) $ pure ((nEntities - 1) /\ Initial) <|>
                     mapAccum
-                      (\(f /\ a) x -> let fx = clamp 0 (nEntities - 1) (f x) in fx /\ fx /\ a)
+                      (\x (f /\ a) -> let fx = clamp 0 (nEntities - 1) (f x) in fx /\ fx /\ a)
+                      (nEntities - 1)
                       ( oneOf
                           [ ((_ - 1) /\ Toggle) <$ pEvent.toggleLeft
                           , ((_ + 1) /\ Toggle) <$ pEvent.toggleRight
@@ -1345,7 +1346,6 @@ inputComponent initialInput inputStream sendInput current =
                           , (floor >>> const >>> (_ /\ Slider)) <$> pEvent.slider
                           ]
                       )
-                      (nEntities - 1)
                 in
                   -- Memoize it and run it through `spotlight` to toggle each
                   -- item individually
@@ -1358,7 +1358,7 @@ inputComponent initialInput inputStream sendInput current =
                           [ D.div_
                               [ D.button
                                   ( oneOf
-                                      [ (biSampleOn rate ((/\) <$> startState)) <#> \(s /\ rt) -> D.OnClick := do
+                                      [ (rate <**> ((/\) <$> startState)) <#> \(s /\ rt) -> D.OnClick := do
                                           case s of
                                             Just unsub -> do
                                               unsub
@@ -1368,8 +1368,9 @@ inputComponent initialInput inputStream sendInput current =
                                               t <- toSeconds <$> now
                                               sub <- subscribe
                                                 ( selfDestruct (\((isStart /\ _) /\ ci) -> (fst ci == (nEntities - 1) && not isStart)) (pPush.startState Nothing)
-                                                    ( sampleOn (currentIndex)
-                                                        ( (/\) <$> mapAccum (\i tf -> false /\ tf /\ i)
+                                                    ( sampleOnRight (currentIndex)
+                                                        ( (/\) <$> mapAccum (\tf i -> false /\ tf /\ i)
+                                                            true
                                                             ( timeFromRate (step rt $ pEvent.rate)
                                                                 ( _.time
                                                                     >>> toSeconds
@@ -1377,7 +1378,6 @@ inputComponent initialInput inputStream sendInput current =
                                                                     >>> Seconds <$> withTime (animationFrame)
                                                                 )
                                                             )
-                                                            true
                                                         )
                                                     )
                                                 )

@@ -21,12 +21,12 @@ import FRP.Memoize (pureFold)
 import Unsafe.Reference (unsafeRefEq)
 
 counter :: forall a. Event a → Event (a /\ Int)
-counter event = mapAccum f event 0
+counter event = mapAccum f 0 event
   where
-  f a b = (b + 1) /\ (a /\ b)
+  f b a = (b + 1) /\ (a /\ b)
 
 toggle :: forall a b. HeytingAlgebra b => b -> Event a → Event b
-toggle start event = pureFold (\_ x -> not x) event start
+toggle = pureFold (\x _ -> not x)
 
 withLast' :: forall event a. IsEvent event => event a -> event { last :: a, now :: a }
 withLast' = filterMap (\{ last, now } -> last <#> { last: _, now }) <<< withLast
@@ -36,7 +36,7 @@ dedup = dedupOn eq
 
 dedupOn :: forall a. (a -> a -> Boolean) -> Event a -> Event a
 dedupOn feq e = compact $
-  mapAccum (\a b -> let ja = Just a in ja /\ (if (feq <$> b <*> ja) == Just true then Nothing else Just a)) e Nothing
+  mapAccum (\b a -> let ja = Just a in ja /\ (if (feq <$> b <*> ja) == Just true then Nothing else Just a)) Nothing e
 
 
 
