@@ -21,8 +21,11 @@ And so the feature creep started … but the journey was _so_ worth it.
 How did I get here and what did I come up with?
 
 :::{.Key_Idea box-name="tl;dr"}
-- A novel algorithm for resolving dependency bounds to solvable versions.
-- Incorporates transitive dependency bounds for a breadth-first search.
+A novel algorithm for resolving dependency bounds to solvable versions:
+
+- Incorporates transitive dependency bounds for a breadth-first search:
+  1. What dependencies are required no matter which package version in the range we commit to?
+  2. Whatʼs the loosest bound for that dependency then?
 - By taking this intuitive approach, we gain two things:
   1. Better errors, matching what users would expect.
   2. Efficiency too, if you could believe it.
@@ -42,14 +45,14 @@ Weʼre very close to releasing it!^[No, for real this time!!]
 In the interest of maintaining a healthy ecosystem, we want the new registry to support not just package sets but also traditional version solving.
 And thatʼs where I came in.
 Something about my mathy skills being a perfect fit for getting [nerd-sniped](https://xkcd.com/356/) by a version solving algorithm.
-Oh and would you help fix the versioning issues for legacy packages while youʼre at it?
+Oh and would you help fix the [versioning issues for legacy packages](https://github.com/purescript/registry-dev/pull/580) while youʼre at it?
 Sure, sure I will.
 
 ### Version solving
 
 The challenge of version solving in a package ecosystem is coming up with particular version of packages that satisfy not only the dependencies of the current project, but their own dependencies too.
 You also want to ensure they are up-to-date by taking the latest possible versions – but sometimes those are not compatible with other declared dependencies.
-The problem is expected to be difficult and slow to solve in general, but it is possible to optimize for what package dependencies look like in practice.
+The problem is expected to be difficult and slow to solve in general, but it is possible to optimize for what package dependencies look like in practice, and that is what I have done.
 
 #### Details of versions and version ranges
 
@@ -57,17 +60,18 @@ Quick notes on conventions/terminology before we get too far in:
 
 The actual details of how versions are tagged doesnʼt matter, just that they are totally ordered.^[Actually we probably donʼt even need a total order, a partial order would work fine for it?]
 For example, it could just be flat integers for all we care.
-But usually we take them to be lexicographically-ordered lists of integers, like `5.0.3` which is less than `5.1.0`.
+But usually we take them to be lexicographically-ordered lists of integers, like `5.0.3`{.boo} which is less than `5.1.0`{.boo}.
 
 How we form _ranges_ over versions is pretty important, though, and early on the registry decided to only allow half-open intervals.
-That is, ranges have the form `>=A.B.C <X.Y.Z`, which I will use throughout this article.
+That is, ranges have the form `>=A.B.C <X.Y.Z`{.boo}, which I will use throughout this article.
 Again, it isnʼt very sensitive to details here (who cares that it is half-open?), but this does seem to be the right level of generality.
 Supporting more complex queries is asking for trouble.
 
 Finally, from a version-solving point of view, a registry contains information of what versions of packages there are, and for each package version a record of what dependencies it requires and the appropriate version ranges for those packages.
 That is, it can be represented with the following PureScript datatype:
 ```haskell
--- A list of required dependencies and their versions
+-- A list of required dependencies
+-- with their version ranges
 type Manifest = Map PackageName Range
 
 -- A list of all extant package versions
@@ -83,7 +87,7 @@ Solving means taking a manifest and finding versions for each package in it, pre
 solve
   :: RegistryIndex
   -> Manifest
-  -> Either SolverError
+  -> Either SolverErrors
       (Map PackageName Version)
 ```
 
@@ -100,10 +104,13 @@ let otherSol :: Map PackageName Version
 isASolutionFor r m (fromRight (solve r m)) &&
 -- There are no strictly better versions to be found
 ( isASolutionFor r m otherSol
-  `implies` isBetterSolutionThan otherSol (fromRight (solve r m))
+  `implies` isn'tWorseSolutionThan otherSol (fromRight (solve r m))
 )
 where
-satisfies :: Map PackageName Version -> Map PackageName Range -> Boolean
+satisfies
+  :: Map PackageName Version
+  -> Map PackageName Range
+  -> Boolean
 satisfies sol m =
   allWithIndex
     ( \package range ->
@@ -113,7 +120,11 @@ satisfies sol m =
     )
     m
 
-isASolutionFor :: RegistryIndex -> Manifest -> Map PackageName Version -> Boolean
+isASolutionFor
+  :: RegistryIndex
+  -> Manifest
+  -> Map PackageName Version
+  -> Boolean
 isASolutionFor r m sol = and
   -- All packages received a version
   [ Map.keys m `isSubsetEqOf` Map.keys sol
@@ -131,16 +142,17 @@ isASolutionFor r m sol = and
     sol
   ]
 
-isBetterSolutionThan :: Map PackageName Version -> Map PackageName Version -> Boolean
-isBetterSolutionThan other optimal =
-  allWithIndex
+isn'tWorseSolutionThan :: Map PackageName Version -> Map PackageName Version -> Boolean
+isn'tWorseSolutionThan other optimal =
+  Maps.keys optimal `isSubsetEqOf` Map.keys other
+  && not allWithIndex
     ( \package version ->
         case Map.lookup package other of
-          Nothing -> false
-          Just otherVersion ->
-            version >= otherVersion
+          Nothing -> true
+
     )
     optimal
+  -- FIXME
 ```
 </details>
 
@@ -149,32 +161,57 @@ isBetterSolutionThan other optimal =
 In particular, note that dependencies are associated with a particular _version_.
 A package _range_ doesnʼt need to have well-defined dependencies at all!
 
-This is something that we forget about when using packages in our day-to-day lives, but an algorithm needs to handle all cases we throw at it.
-
-HOWEVER, this insight is what makes my algorithm so good.
+This is something that we forget about when using packages in our day-to-day lives, but an algorithm needs to handle all cases we could throw at it.
 
 ## Depth-first backtracking algorithm
 
 As I alluded to in the intro, I started off by copying [Elmʼs version solving algorithm](https://github.com/elm/compiler/blob/0.19.1/builder/src/Deps/Solver.hs).
-Itʼs a very simple depth-first backtracking algorithm: try the latest compatible version of the package in front of you, add its dependencies and see if those all solve recursively, and backtrack to the next latest version at each failure.
+Itʼs a very simple depth-first backtracking algorithm:
+
+1. Try the latest compatible version of the package in front of you, based on the global requirements
+2. Add its dependency ranges to the global requirements^[Since we chose a particular version in the previous step, its dependency ranges are well-defined, just being given in its manifest.]
+3. Recursively see if the new global requirements can be solved
+4. Backtrack to the next latest version at each failure.
 
 Itʼs easy to see why this is worst-case exponential, and not going to hit fast cases particularly often.
 In fact, we expect the problem to remain worst-case exponential, but spoiler: we can do much better in most reasonable cases!
 
-However, the first obstacle I wrestled with was that it had no errors.
+Besides performance, the main obstacle I wrestled with was that it had no errors.
+It turns out these are related concerns:
+because the algorithm is so naïve, it isnʼt making use of available information to make smart choices, and this would reflect in the errors it could produce.
 
 ### Errors for a backtracking algorithm
 
-Thereʼs some good lore here on what I believe errors should look like, but thatʼs for another post.
-I discovered that it corresponds well to what I have been thinking about in terms of compiler/typechecker errors for the past couple years.
+I discovered that this problem of solving package versions corresponds well to what I have been thinking about in terms of compiler/typechecker errors for the past couple years.
+So thereʼs some good lore here on what I believe errors should look like, but thatʼs for another post.
 
 Basically, good errors should be a faithful reflection of the internal logic of the solver.
-The backtracking algorithm essentially corresponds to a complicated Boolean expression, a tree of various constraints joined with conjunction and disjunction.
+This is the main hint that performance and errors are linked:
+if the solver is trying too many bad options, itʼs going to generate a ton of errors for all of those choices.
+These errors are bad because they mainly reflect bad choices of the solver, not necessarily problems with the underlying data (the manifests).
+Itʼs only once _every option_ has failed that you know that the underlying manifests were not compatible.
+Our goal later, then, will be to reduce the number of choices to make and commit to errors as soon as possible.
+
+The second problem with the errors is that the naïve backtracking does a *lot* of duplicate work, in between choices of packages.
+In the worst case scenario, two package versions have the same manifests, so trying them separately will duplicate most of the work!^[
+The only difference between two versions of the same package with the same manifests is that some later requirements may constrain that packageʼs range to eliminate one or the other.
+]
+
+It is possible to deduplicate errors after the fact, but those heuristics seem complex in general, and there are two problems still:
+
+1. Youʼve already lost the performance associated with the duplicate work, and are spending more time trying to fix it
+2. You might as well write the algorithm to incorporate the deduplication in the first place!!
+
+There are some existing approaches to increase sharing/reduce duplicate work, in the context of general constraint solving and more particularly version solving with these type of bounds.
+I briefly glanced at them, but they donʼt seem to address the heart of the issue like my algorithm does.
+
+#### Algebraic errors
 
 In a solver algorithm, we write programs in terms of some error monad.
-Thinking of it as `Applicative`+`Alternative`, we see that `<*>` corresponds to conjunction `&&` and `<|>` corresponds to disjunction `||`.
+The backtracking algorithm essentially corresponds to a complicated Boolean expression, a tree of various constraints joined with conjunction and disjunction.
+Thinking of it as `Applicative`{.haskell}+`Alternative`{.haskell}, we see that `<*>`{.haskell} corresponds to conjunction `&&`{.haskell} and `<|>`{.haskell} corresponds to disjunction `||`{.haskell}.
 
-```lua
+```boo
 console >=5.0.0 <6.0.0
 
 (console == 5.0.0 && prelude >=5.0.0 <6.0.0)
@@ -185,7 +222,7 @@ An error, then, is some kind of proof that the Boolean always evaluates to false
 SAT solvers have done a great job of doing this in the general case.
 And you can think a bit about what this means.
 
-In addition to the literal Boolean clauses, we want the errors to record some additional metadata about where they came from: particular manifests and the current manifest we are trying to solve.
+In addition to the literal Boolean clauses, we want the errors to record some additional metboota about where they came from: particular manifests and the current manifest we are trying to solve.
 
 ### Drawbacks of depth-first
 
@@ -193,7 +230,7 @@ However, we can only do so much: we remain limited to the logic of the algorithm
 With a depth-first algorithm in particular, the errors donʼt convey the global picture that the user is looking for.
 
 I mean, you _can_ report these kinds of Boolean clause errors, but they are so confusing that you might as well just throw up your hands and say “I tried something and it didnʼt work.”
-Thatʼs all the user would get from the errors anyways, since thatʼs really all the algorithm did.
+Thatʼs all the user would get from the errors anyways, since thatʼs really all the algorithm did:
 It started with an essentially random package, committed to a version of it immediately, tried other things as a consequence, and eventually reported that nothing worked.
 
 So, since my goal was better errors, [my next idea](https://github.com/purescript/registry-dev/pull/496#issuecomment-1225145757) was to try to patch it to _run_ the depth-first backtracking algorithm, but create a post-mortem analysis to _report_ more sensible errors.
@@ -224,7 +261,7 @@ This is done through the use of what I have coined as [quasi-transitive dependen
 The main steps are:
 
 1. Load the slice of the registry index that we care about: package versions that are transitively reachable from the package ranges mentioned in the current manifest.
-2. Start gathering information about _quasi-transitive_ dependencies for manifests in the registry as well as the current manifest we are solving.
+2. Gather information about _quasi-transitive_ dependencies for manifests in the registry as well as the current manifest we are solving, looping until there is no more obvious information to discover.
 3. Check if the requirements have hit an error in the requirements already.
 4. If not, check if we have solved it: do all the latest versions of requirements work as a solution?
 5. Only as a last resort do we succumb to picking a package and recursively solving each of its versions, starting from the latest.
@@ -274,7 +311,7 @@ foldMap1
 instance Coercible Manifest (App (Map PackageName) Loose)
 ```
 
-Note that this is in fact not a monoid: `Map` only has an `Apply` instance (which gives the `<*>` operator to merge common keys), not `Applicative` (which would give `pure`, which does not make sense for `Map` since it would have to contain _all_ keys!).
+Note that this is in fact not a monoid: [`Map`{.haskell}](https://pursuit.purescript.org/packages/purescript-ordered-collections/docs/Data.Map#t:Map) only has an [`Apply`{.haskell}](https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Apply#t:Apply) instance (which gives the `<*>`{.haskell} operator to merge common keys), not [`Applicative`{.haskell}](https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Applicative#t:Applicative) (which would give `pure`{.haskell} but does not make sense for `Map`{.haskell} since it would have to contain _all_ keys!).
 
 As a further optimization, while we are checking package versions, we may discard those that do not solve due to an obvious conflict.
 This may seem strange: In the PureScript registry, each package will solve individually, we check that on upload.
@@ -321,6 +358,8 @@ Phrased in set theory, [Wikipedia says](https://en.wikipedia.org/wiki/Compositio
 >
 > In other words, \(R;S\subseteq X\times Z\) is defined by the rule that says \((x,z)\in R;S\) if and only if there is an element \(y\in Y\) such that \(x\,R\,y\,S\,z\) (that is, \((x,y)\in R\) and \((y,z)\in S\)).
 
+The key part here is that we take our input and our output and we ask: is there something _in the middle_ that serves to connect the input to the output?
+
 However, we arenʼt dealing with generic relations here, weʼre only dealing with half-open intervals.
 
 We can certainly think of it as an approximation.
@@ -347,10 +386,10 @@ Thereʼs no such thing as too much where semilattices are involved!
 
 #### Knowledge propagation
 
-Figuring out the correct way to propagate kept me occupied for days.
+Figuring out the correct way to propagate known requirements kept me occupied for days.
 It turns out I had done it wrong the first time, so it is good I thought it over again!
 
-As weʼre keeping our `TransitivizedRegistry` updated, we want to only calculate updates to the things that might need it.
+As weʼre keeping our `TransitivizedRegistry`{.haskell} updated, we want to only calculate updates to the things that might need it.
 Itʼs certainly the trickiest part of the whole algorithm to reason about, but there is this one nugget of insight that coalesced into the knowledge I needed to turn it into an algorithm:
 
 :::Key_Idea
@@ -391,6 +430,27 @@ majorUpdate (SemigroupMap required) (SemigroupMap orig) updated =
       { added: true } -> true
       { failedNow: true, failedAlready: false } -> true
       _ -> false
+
+-- | Update package versions in the registry with their quasi-transitive
+-- | dependencies, if their dependencies were updated in the last tick. The set
+-- | global requirements is needed here because those are elided from the
+-- | dependencies in each package version, so to tell how the local requirements
+-- | updated we need need to peek at that (see `majorUpdate`).
+exploreTransitiveDependencies :: RRU -> RRU
+exploreTransitiveDependencies lastTick = (\t -> { required: lastTick.required, updated: accumulated (fst t), registry: snd t }) $
+  lastTick.registry # traverseWithIndex \package -> traverseWithIndex \version deps ->
+    let
+      updateOne depName depRange = case Map.isEmpty (unwrap (getPackageRange lastTick.updated depName depRange)) of
+        true -> mempty
+        false -> Tuple (Disj true) (commonDependencies lastTick.registry depName depRange)
+      Tuple (Disj peek) newDeps = foldMapWithIndex updateOne deps
+      -- keep GC churn down by re-using old deps if nothing changed, maybe?
+      dependencies = if peek then deps <> newDeps else deps
+      updated = case peek && majorUpdate lastTick.required deps dependencies of
+        true -> doubleton package version dependencies
+        false -> mempty
+    in
+      Tuple updated dependencies
 ```
 
 
@@ -399,7 +459,7 @@ majorUpdate (SemigroupMap required) (SemigroupMap orig) updated =
 It turns out that the algorithm is naturally efficient, with some help.
 
 The biggest trick is using global constraints to discard redundant local constraints.
-That is, if the manifest you are solving already constrains `prelude >=6.0.0 <7.0.0`, then each package that lists that requirement or a looser one can ignore it.
+That is, if the manifest you are solving already constrains `prelude >=6.0.0 <7.0.0`{.boo}, then each package that lists that requirement or a looser one can ignore it.
 
 ```haskell
 -- | The key to efficiency: take information from the bounds of global

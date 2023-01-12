@@ -81,6 +81,8 @@ Developer experience basically sucks across the board.
 Shells/terminals suck.
 The very idea of shells mostly sucks and gets in the way.
 Terrible to teach/learn.
+<!-- `grep -F 'ERROR' | grep --invert-match 'does not exist in the storage backend\|does not exist on S3'` does not compose -- no way to get context on lines -->
+<!-- stack test match -- reports flag but cannot report actual command to run -->
 
 Editors suck.
 The basic idea of editing text is flawed, but workable.

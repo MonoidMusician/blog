@@ -34,13 +34,22 @@ h2, h3, h4, h5
 h3
   border-bottom-color: $text
 
+// TODO: abstraction
 code
   @if not $light
     background-color: #0005
     box-shadow: 0.5px 0.5px 3px #fff2, 0.5px 0.5px 2px inset #0001
+    a[href] > &
+      box-shadow: 0.5px 0.5px 3px rgb(15 232 21 / 26%), 0.5px 0.5px 2px inset rgb(0 0 0 / 7%)
+    a[href]:hover > &
+      box-shadow: 0.5px 0.5px 3px rgb(15 232 21 / 50%), 0.5px 0.5px 2px inset rgb(0 0 0 / 7%)
   @else
     background-color: #fff5
     box-shadow: 0.5px 0.5px 3px #0002, 0.5px 0.5px 2px inset rgb(224 249 255 / 35%)
+    a[href] > &
+      box-shadow: 0.5px 0.5px 3px rgb(0 109 3 / 34%), 0.5px 0.5px 2px inset rgb(224 249 255 / 35%)
+    a[href]:hover > &
+      box-shadow: 0.5px 0.5px 3px #35d62dd0, 0.5px 0.5px 2px inset rgb(224 249 255 / 35%)
 pre > code
   @if not $light
     background-color: #00000070
