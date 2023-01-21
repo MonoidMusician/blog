@@ -145,6 +145,9 @@ a[href]
     text-decoration-thickness: 0.5px
 
   text-underline-offset: 1px
+  section > p &[href^="#"]::before
+    // thin-space
+    content: "§\200A"
 
 a[href]:hover, a[href]:active
   text-decoration-line: underline

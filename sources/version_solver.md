@@ -21,11 +21,11 @@ And so the feature creep started … but the journey was _so_ worth it.
 How did I get here and what did I come up with?
 
 :::{.Key_Idea box-name="tl;dr"}
-A novel algorithm for resolving dependency bounds to solvable versions:
+A novel algorithm for resolving dependency bounds to solved versions:
 
 - Incorporates transitive dependency bounds for a breadth-first search:
   1. What dependencies are required no matter which package version in the range we commit to?
-  2. Whatʼs the loosest bound for that dependency then?
+  2. Whatʼs the loosest bound for each dependency then?
 - By taking this intuitive approach, we gain two things:
   1. Better errors, matching what users would expect.
   2. Efficiency too, if you could believe it.
@@ -37,9 +37,9 @@ A novel algorithm for resolving dependency bounds to solvable versions:
 ### The PureScript registry
 
 The PureScript community has been designing a new registry to hold PureScript packages for some time now.
-PureScript projects initially used [Bower](https://bower.io/) (a defunct npm competitor for Node.js packages), and I embarrassingly hung on to Bower until very recently.
+PureScript projects initially used [Bower](https://bower.io/) (a defunct npm competitor for Node.js packages), and I embarrassingly hung on to Bower until just last year.
 Most of the community, however, has been using [Spago](https://github.com/purescript/spago), a PureScript build tool supporting package sets (fixed versions of packages that are known to be compatible).
-Long story, but some core members have been designing a new registry to house current and historical PureScript packages.
+Long story, but some core members have been designing a [new registry](https://github.com/purescript/registry) to house current and historical PureScript packages.
 Weʼre very close to releasing it!^[No, for real this time!!]
 
 In the interest of maintaining a healthy ecosystem, we want the new registry to support not just package sets but also traditional version solving.
@@ -274,7 +274,7 @@ You can [read these steps in the code directly](https://github.com/purescript/re
 
 ### Intuitive foundations: quasi-transitive dependencies
 
-Recall what I said in [dependencies are tricky]: “A package _range_ doesnʼt need to have well-defined dependencies at all!”
+Recall what I said in [Dependencies are tricky]: “A package _range_ doesnʼt need to have well-defined dependencies at all!”
 Oh – but they often _do_ in practice.
 
 If we can get extra knowledge about requirements before committing to any particular versions,
@@ -311,7 +311,7 @@ foldMap1
 instance Coercible Manifest (App (Map PackageName) Loose)
 ```
 
-Note that this is in fact not a monoid: [`Map`{.haskell}](https://pursuit.purescript.org/packages/purescript-ordered-collections/docs/Data.Map#t:Map) only has an [`Apply`{.haskell}](https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Apply#t:Apply) instance (which gives the `<*>`{.haskell} operator to merge common keys), not [`Applicative`{.haskell}](https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Applicative#t:Applicative) (which would give `pure`{.haskell} but does not make sense for `Map`{.haskell} since it would have to contain _all_ keys!).
+Note that this is in fact not a monoid: [`Map`{.haskell}](https://pursuit.purescript.org/packages/purescript-ordered-collections/docs/Data.Map#t:Map) only has an [`Apply`{.haskell}](https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Apply#t:Apply) instance (which gives the `<*>`{.haskell} operator to merge common keys), not [`Applicative`{.haskell}](https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Applicative#t:Applicative) (which would give `pure`{.haskell} but does not make sense for `Map`{.haskell} since it would have to contain _all_ possible keys!).
 
 As a further optimization, while we are checking package versions, we may discard those that do not solve due to an obvious conflict.
 This may seem strange: In the PureScript registry, each package will solve individually, we check that on upload.
@@ -350,27 +350,46 @@ commonDependencies registry package range =
 
 #### Composing relations
 
-It looks like a familiar formula: the composition of two relations in logic.
-Phrased in set theory, [Wikipedia says](https://en.wikipedia.org/wiki/Composition_of_relations#Definition):
+This quasi-transitive dependency business looks a bit like a familiar formula: the composition of two relations in logic.
 
-> If \(R \subseteq X \times Y\) and \(S \subset Y \times Z\) are two binary relations, then their composition \(R;S\) is the relation
-> \[ R;S=\{(x,z)\in X\times Z:{\text{ there exists }}y\in Y{\text{ such that }}(x,y)\in R{\text{ and }}(y,z)\in S\}. \]
->
-> In other words, \(R;S\subseteq X\times Z\) is defined by the rule that says \((x,z)\in R;S\) if and only if there is an element \(y\in Y\) such that \(x\,R\,y\,S\,z\) (that is, \((x,y)\in R\) and \((y,z)\in S\)).
+:::Details
+Phrased in terms of set theory, [Wikipedia says](https://en.wikipedia.org/wiki/Composition_of_relations#Definition):
+
+> If \(R \subseteq X \times Y\) and \(S \subset Y \times Z\) are two binary relations, then their composition \(R;S\) . . . is defined by the rule that says \((x,z)\in R;S\) if and only if there is an element \(y\in Y\) such that \(x\,R\,y\,S\,z\) (that is, \((x,y)\in R\) and \((y,z)\in S\)).
+:::
 
 The key part here is that we take our input and our output and we ask: is there something _in the middle_ that serves to connect the input to the output?
+(Thinking of relations as boxes that connect certain inputs to certain outputs.)
 
-However, we arenʼt dealing with generic relations here, weʼre only dealing with half-open intervals.
+However, we arenʼt dealing with general relations here, weʼre only dealing with half-open intervals.
+Weʼre asking: for a version _range_, what _range_ is constructed by taking the ranges of _each version_ in the middle?
 
-We can certainly think of it as an approximation.
-That is, we know how to make intervallic dependencies a relation, so we compose them as relations and then take the largest interval that fits.
-Maybe there is a way to categorify it directly, I donʼt know.
+To be a bit more direct with this analogy, a relation \(R \subseteq X \times Y\) can equivalently be written as \(R \in \mathcal{P}(X \times Y)\).
+(\(\mathcal{P}(Z)\) here is the powerset monad \(\mathcal{P}(Z) = Z \to \textrm{Prop}\): all subsets of the given set \(Z\).)
+And by currying, this can be viewed as \(R \in X \to \mathcal{P}(Y)\).
+This construction \(X \to M(Y)\) for a monad \(M\) is called the Kleisli category.
+So now the question is: do intervals also form a monad, by taking loose bounds?
+
+The easy answer is that we can certainly think of it as an approximation on top of the underlying set-relation model.
+That is, we know how to make intervallic dependencies a relation, so we compose them as relations and then take the smallest interval that contains every interval we came across.
+
+Perhaps there is a way to categorify it directly, I donʼt know.
+We can come up with an identity, but Iʼm not so sure that associativity would hold.
+
+:::{.Details bpx-name="Clarification"}
+To see how it fits.
+Unit -> Package X range -> Package Y range
+(X depends on Y)
+
+Thatʼs only dealing with versions of a single package.
+Bundle it together.
+:::
 
 ### Implementing it
 
 The core backtracking algorithm actually still exists in the spine of the solver, but its role is greatly reduced.
 In fact, this has a funny implication for testing the algorithm:
-_the correctness is visible not in solutions of the algorithm but in its speed and errors._
+_the correctness is visible not in finding the right solutions but in the algorithmʼs efficiency and errors._
 
 The literal results of the solver were accurate all along.
 But when I finally got it working _fast_, I knew all my logic was in place for all the intermediate steps.
@@ -378,11 +397,89 @@ In particular, this means that we preempted most of the (exponential) backtracki
 
 #### Monoids, monoids everywhere
 
-Again, a topic for another blog post, but I love monoids, semilattices in particular, because they capture information gathering in ways that lend themselves to reliable implementation.
+Again, a topic for another blog post, but I love monoids, especially semilattices, because they capture information gathering in ways that lend themselves to reliable implementation.
 
 In particular, because of their idempotence, semilattices are great because you just need to make sure you cover all cases.
-If youʼre dealing with a well-behaved logical scenario, and have written your logic correctly, thereʼs no chance that you accidentally make things break.
-Thereʼs no such thing as too much where semilattices are involved!
+Thereʼs no such thing as double-counting in a semilattice computation!
+When youʼre dealing with a well-behaved logical scenario, if have written your logic correctly (i.e. each derivation is valid) and you cover all the cases (you eventually produce every result you are allowed you derive), thereʼs no chance that you accidentally make things break.^[If the logical scenario does not have a finite upper bound of information to derive, this naïve process may not terminate, but in our case it is certainly finite: the registry itself is finite, so any logical derivations from it will eventually be saturated.]
+
+We already saw our first semilattice `Semigroup (App (Map PackageName) Loose)`{.haskell} above.
+However, I left out the definition of `Loose`{.haskell} and its `Semigroup`{.haskell} instance.
+
+The _data_ contained in `Loose`{.haskell} is just a lower bound and an upper bound, and we want the lower bound to be less than the upper bound for it to be valid.
+We also pack in _metadata_ that describes where each bound came from, the `SolverPosition`{.haskell} datatype which we will discuss below in [Provenance].
+
+To achieve this, we first define a type that describes a bound with metadata packed in.
+Then we add to this operations that take the maximum and minimum of the bounds, and _aggregate_ the metadata if they were the same bound.
+Thatʼs right, **the metadata itself forms a semilattice!**^[I cannot emphasize how key this is to a lot of the work of carrying around metadata by bundling it in with data like this.]
+```haskell
+data Sourced = Sourced Version SolverPosition
+
+newtype MinSourced = MinSourced Sourced
+
+instance Semigroup MinSourced where
+  append a@(MinSourced (Sourced av as)) b@(MinSourced (Sourced bv bs)) =
+    case compare av bv of
+      LT -> a
+      GT -> b
+      EQ -> MinSourced (Sourced av (as <> bs))
+
+newtype MaxSourced = MaxSourced Sourced
+
+instance Semigroup MaxSourced where
+  append a@(MaxSourced (Sourced av as)) b@(MaxSourced (Sourced bv bs)) =
+    case compare av bv of
+      GT -> a
+      LT -> b
+      EQ -> MaxSourced (Sourced av (as <> bs))
+```
+
+Now we get both `Loose`{.haskell} and `Intersection`{.haskell} for free by the right arrangement of these types.
+Heck, we even get their coercion for free:
+```haskell
+newtype Loose = Loose
+  { lower :: MinSourced
+  , upper :: MaxSourced
+  }
+derive newtype instance Semigroup Loose
+
+newtype Intersection = Intersection
+  { lower :: MaxSourced
+  , upper :: MinSourced
+  }
+
+derive newtype instance Semigroup Intersection
+
+-- API for `Intersection`
+upperBound :: Intersection -> Version
+upperBound (Intersection { upper: MinSourced (Sourced v _) }) = v
+
+lowerBound :: Intersection -> Version
+lowerBound (Intersection { lower: MaxSourced (Sourced v _) }) = v
+
+good :: Intersection -> Boolean
+good i = lowerBound i < upperBound i
+
+satisfies
+  :: Version -> Intersection -> Boolean
+satisfies v r = v >= lowerBound r && v < upperBound r
+
+-- `Loose` has to be a valid interval
+toLoose :: Intersection -> Maybe Loose
+toLoose i | good i = Just (coerce i)
+toLoose _ = Nothing
+
+fromLoose :: Loose -> Intersection
+fromLoose = coerce
+```
+
+Why donʼt we require `Intersection`{.haskell} to be a valid interval?
+As we will talk about in the next section, `Intersection`{.haskell} is the primary way we keep track of the knowledge we have learned already.
+Being in the business of aggregating information, we want to know all we can about the situation our solver is confronted with, and we just can accumulate knowledge by throwing it into this semilattice.
+
+We could make taking the intersection of intervals a partially-defined operation (`Intersection -> Intersection -> Either Error Intersection`{.haskell}), but that means we have to bail out once a single intersection becomes invalid.
+Instead, we integrate them directly into the semilattice structure by keeping invalid intervals around and turning them into [errors] later (this is why we give them the metadata about [provenance]!).
+This gives us multiple errors emerging from one step for free, it is incredibly convenient.
 
 #### Knowledge propagation
 
@@ -395,7 +492,8 @@ Itʼs certainly the trickiest part of the whole algorithm to reason about, but t
 :::Key_Idea
 The manifests for package versions might need to update when some of their dependencies update.
 However, not all updates need to propagate like this from dependencies to their reverse dependencies.
-In particular, if a manifest is updating because its dependencies tightened, _if_ this will significantly affect its reverse dependencies they should _already_ be depending on the transitive dependencies directly and updating because of it.
+
+In particular, in the case that a manifest is updating because its dependencies tightened, _if_ this will significantly affect its reverse dependencies they should _already_ be depending on the transitive dependencies directly and updating because of it.
 This leaves us with the only major updates being because a dependency was _added_, which the parent did not know about yet so it needs to rescan its dependencies.
 
 The other case is that if a package version picks up an obvious failure, its reverse dependencies need to be notified.
@@ -458,7 +556,7 @@ exploreTransitiveDependencies lastTick = (\t -> { required: lastTick.required, u
 
 It turns out that the algorithm is naturally efficient, with some help.
 
-The biggest trick is using global constraints to discard redundant local constraints.
+The biggest trick is _using global constraints to discard redundant local constraints_.
 That is, if the manifest you are solving already constrains `prelude >=6.0.0 <7.0.0`{.boo}, then each package that lists that requirement or a looser one can ignore it.
 
 ```haskell
@@ -508,22 +606,65 @@ And a clear direction for improvement, unlike depth-first algorithms.
 
 Conflicts.
 (Conflict “clauses.”)
+The problem with backtracking was that the errors .
+Particular clauses could conflict, sure, but then you had to work out why that made the whole boolean expression fail, and what that corresponds to in the version solving model.
 
+In the new model, since we just keep adding requirements at each step to tighten bounds, the basic form of conflict is really simple: a required upper bound got pushed below a required lower bound.
+Or, we could have restricted to a range that has no registered versions.^[It turns out these are the [same check](https://github.com/purescript/registry-dev/blob/30a88ac7bd48a73bb2bcf9240b20b09a713ee0b9/lib/src/Solver.purs#L308-L311).]
+
+There are two ways we combine these errors within the logic of the solver:
+
+1. First we note that we may encounter errors in multiple requirements at the same time, so we keep a (non-empty) map of package names to their conflicts.
+  (Reporting multiple errors at once is very helpful!)
+2. Second it may be the case that a package has versions in range, but we happen to know that none of them are still solvable, they all have conflicts of their own.
+  (We actually just do a [very shallow check of this](https://github.com/purescript/registry-dev/blob/30a88ac7bd48a73bb2bcf9240b20b09a713ee0b9/lib/src/Solver.purs#L300-L304).)
+
+This gets us [this data type for errors](https://github.com/purescript/registry-dev/blob/30a88ac7bd48a73bb2bcf9240b20b09a713ee0b9/lib/src/Solver.purs#L149-L151):
+```haskell
+data SolverError
+  = Conflicts (Map PackageName Intersection)
+  | WhileSolving PackageName (Map Version SolverError)
+```
+
+This isnʼt completely faithful to the logic of the solver.
 You have to trust that the system determined these are required: it wonʼt tell you exactly what decisions led to it requiring it.
 
 But it does keep around provenance information that tells you enough about where it originated.
 
 #### Provenance
 
-Normally I like to keep full provenance.
-However, it is really slick in this domain: we only need to keep track of the endpoints.
-In particular, I keep track of which particular package version manifest(s) gave us the constraint we are talking about, and which constraints in the current manifest caused it to be required.
+Normally I like to keep full provenance to detail exactly the path a piece of data took to get through the logic.^[
+In particular, in dependently-typed languages it is really helpful to be able to trace terms through their evaluation, so that by the time you get to a type error you know exactly why those particular things popped up, not just a rough idea of where in the source they were originally found once upon a time.
+Especially because once separate terms are unified, you donʼt want to arbitrarily pick a location, you want to know both locations!
+]
+However, it is really slick in this domain: we only need to keep track of the endpoints, users donʼt exactly care about what came in between (just that it is reasonable to assume, because it is in fact correct).
+
+So in this case I keep track of which particular package version manifest(s) gave us the constraint we are talking about (`LocalSolverPosition`{.haskell}), and which constraints in the current manifest caused it to be required.
+Thereʼs some logic to combine these positions which I will not reproduce here.
+
+```haskell
+data LocalSolverPosition
+  -- | Dependency asked for in manifest
+  = Root
+  -- | Committed to a specific version
+  | Trial
+  -- | Required transitive dependency seen in said packages
+  | Solving
+      ( NonEmptySet
+          { package :: PackageName
+          , version :: Version
+          }
+      )
+
+data SolverPosition = Pos LocalSolverPosition (Set PackageName)
+```
 
 It seems that it weakens the logical connection just a bit, I donʼt know if they can be put into formal properties anymore.
 (E.g. “Deleting the mentioned constraint from the current manifest affects it in _this_ way.”)
 
-But I believe it is the information that users want to see, and certainly falls into the category of making it actionable so they can run it again to make progress.
-In particular, knowing which clauses of the current manifest led to it is crucial in answering the question, “What do I need to change to fix the error”.
+But I believe it is the information that users want to see; it certainly falls into the category of making it actionable so they can fix things and run it again to make progress.
+In the case that it is a local error, knowing which clauses of the current manifest led to it is crucial in answering the question, “What do I need to change to fix the error”.
+And sometimes it is a deeper error of outdated dependencies, so you want to know what package is responsible for that incongruous version requirement.
 
 ######## Side thought
 Itʼs interesting that nothing here required that dependencies are acyclic.

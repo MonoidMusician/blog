@@ -293,16 +293,15 @@ body
 .sidenote-number:after, .sidenote:before
   position: relative
   vertical-align: baseline
+  font-feature-settings: "sups" 1
+  letter-spacing: -1px
 
 
 .sidenote-number:after
   content: counter(sidenote-counter)
-  font-feature-settings: "sups" 1
-
 
 .sidenote:before
   content: counter(sidenote-counter) " "
-  font-feature-settings: "sups" 1
 
 
 blockquote .sidenote, blockquote .marginnote
