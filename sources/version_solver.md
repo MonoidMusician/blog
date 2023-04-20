@@ -21,16 +21,18 @@ And so the feature creep started … but the journey was _so_ worth it.
 How did I get here and what did I come up with?
 
 :::{.Key_Idea box-name="tl;dr"}
-A novel algorithm for resolving dependency bounds to solved versions:
+A [novel algorithm](https://github.com/purescript/registry-dev/blob/master/lib/src/Solver.purs) for resolving dependency bounds to solved versions:
 
-- Incorporates transitive dependency bounds for a breadth-first search:
+- Incorporates [transitive dependency bounds](#intuitive-foundations-quasi-transitive-dependencies) for a breadth-first search:
   1. What dependencies are required no matter which package version in the range we commit to?
   2. Whatʼs the loosest bound for each dependency then?
 - By taking this intuitive approach, we gain two things:
-  1. Better errors, matching what users would expect.
+  1. [Better errors](#errors), matching what users would expect.
   2. Efficiency too, if you could believe it.
-- Implemented using semilattices (monoids).
+- Implemented using semilattices ([monoids](#monoids-monoids-everywhere)).
 :::
+
+(I know youʼre probably not going to read this whole long article and [Errors] is the very last section, but please feel free to skip ahead to that one since that was the whole point of this exercise!)
 
 ## Background
 
@@ -222,7 +224,7 @@ An error, then, is some kind of proof that the Boolean always evaluates to false
 SAT solvers have done a great job of doing this in the general case.
 And you can think a bit about what this means.
 
-In addition to the literal Boolean clauses, we want the errors to record some additional metboota about where they came from: particular manifests and the current manifest we are trying to solve.
+In addition to the literal Boolean clauses, we want the errors to record some [additional metadata](#provenance) about where they came from: particular manifests and the current dependency from the manifest we are trying to solve.
 
 ### Drawbacks of depth-first
 
@@ -234,7 +236,7 @@ Thatʼs all the user would get from the errors anyways, since thatʼs really all
 It started with an essentially random package, committed to a version of it immediately, tried other things as a consequence, and eventually reported that nothing worked.
 
 So, since my goal was better errors, [my next idea](https://github.com/purescript/registry-dev/pull/496#issuecomment-1225145757) was to try to patch it to _run_ the depth-first backtracking algorithm, but create a post-mortem analysis to _report_ more sensible errors.
-For example, from the Boolean algebra perspective, you can do basic tricks to factor out common sub-expressions.^[Foreshadowing …]
+For example, from the Boolean algebra perspective, you can do basic tricks to factor out common sub-expressions, which you can combine with what you know about comparing versions to ranges.^[Foreshadowing …]
 
 I couldnʼt bring myself to write that.
 So I just wrote a novel breadth-first algorithm.
@@ -243,6 +245,7 @@ I spent a significant chunk of time writing it.
 I spent several weekends debugging its performance.
 
 And the results are amazing.
+_/me pats self on back_
 
 ## My breadth-first algorithm
 
@@ -365,7 +368,7 @@ However, we arenʼt dealing with general relations here, weʼre only dealing wit
 Weʼre asking: for a version _range_, what _range_ is constructed by taking the ranges of _each version_ in the middle?
 
 To be a bit more direct with this analogy, a relation \(R \subseteq X \times Y\) can equivalently be written as \(R \in \mathcal{P}(X \times Y)\).
-(\(\mathcal{P}(Z)\) here is the powerset monad \(\mathcal{P}(Z) = Z \to \textrm{Prop}\): all subsets of the given set \(Z\).)
+(\(\mathcal{P}(Z)\) here is the powerset monad \(\mathcal{P}(Z) = Z \to \textrm{Prop}\), which consists of all subsets of the given set \(Z\).)
 And by currying, this can be viewed as \(R \in X \to \mathcal{P}(Y)\).
 This construction \(X \to M(Y)\) for a monad \(M\) is called the Kleisli category.
 So now the question is: do intervals also form a monad, by taking loose bounds?
@@ -401,7 +404,8 @@ Again, a topic for another blog post, but I love monoids, especially semilattice
 
 In particular, because of their idempotence, semilattices are great because you just need to make sure you cover all cases.
 Thereʼs no such thing as double-counting in a semilattice computation!
-When youʼre dealing with a well-behaved logical scenario, if have written your logic correctly (i.e. each derivation is valid) and you cover all the cases (you eventually produce every result you are allowed you derive), thereʼs no chance that you accidentally make things break.^[If the logical scenario does not have a finite upper bound of information to derive, this naïve process may not terminate, but in our case it is certainly finite: the registry itself is finite, so any logical derivations from it will eventually be saturated.]
+When youʼre dealing with a well-behaved logical scenario, if have written your logic correctly (i.e. each derivation is valid) and you cover all the cases (you eventually produce every fact you are allowed to derive), thereʼs no chance that you accidentally make things break.^[
+If the logical scenario does not have a finite upper bound of information to derive, this naïve process may not terminate, but in our case it is certainly finite: the registry itself is finite, so any logical derivations from it will eventually be saturated.]
 
 We already saw our first semilattice `Semigroup (App (Map PackageName) Loose)`{.haskell} above.
 However, I left out the definition of `Loose`{.haskell} and its `Semigroup`{.haskell} instance.
@@ -486,15 +490,61 @@ This gives us multiple errors emerging from one step for free, it is incredibly 
 Figuring out the correct way to propagate known requirements kept me occupied for days.
 It turns out I had done it wrong the first time, so it is good I thought it over again!
 
-As weʼre keeping our `TransitivizedRegistry`{.haskell} updated, we want to only calculate updates to the things that might need it.
-Itʼs certainly the trickiest part of the whole algorithm to reason about, but there is this one nugget of insight that coalesced into the knowledge I needed to turn it into an algorithm:
+Our goal is to implement `solveStep`{.haskell} here using `commonDependencies`{.haskell} (see [above](#intuitive-foundations-quasi-transitive-dependencies)) and `exploreTransitiveDependencies`{.haskell}:
+```haskell
+-- Semilattice version of `Registry`
+type TransitivizedRegistry =
+  SemigroupMap PackageName
+    (SemigroupMap Version
+      (SemigroupMap PackageName Intersection)
+    )
+
+type RRU =
+  { registry :: TransitivizedRegistry
+  , required :: SemigroupMap PackageName Intersection
+  , updated :: TransitivizedRegistry
+  }
+
+-- | Discover one step of quasi transitive dependencies, for known requirements
+-- | and the rest of the registry too.
+solveStep :: RRU -> RRU
+
+-- Key piece:
+exploreTransitiveDependencies :: RRU -> RRU
+```
+
+The `registry :: TransitivizedRegistry`{.haskell} and `required :: SemigroupMap PackageName Intersection`{.haskell} represent the local dependencies for each package version and the global requirements of the initial manifest given to the solver, respectively.
+They both are purely accumulative: what goes in comes out with some more information.
+The additional information will simply be added dependencies and tightened bounds on existing dependencies.
+Provenance metadata may accumulate too (we donʼt really need to care about that, it is just along for the ride).
+
+The other field, `updated :: TransitivizedRegistry`{.haskell}, is a bit different: it does not carry over from step to step, it only talks about what changed at the last step.
+This is because as weʼre keeping `registry :: TransitivizedRegistry`{.haskell} updated, we want to only calculate updates to the things that might need it.
+
+When we first call `solveStep`{.haskell}, we treat everything as updated:
+```haskell
+solveSeed :: RR () -> RRU
+solveSeed { registry, required } = { registry, required, updated: registry }
+```
+and the process stabilizes when there are no updates:
+```haskell
+-- | Add quasi transitive dependencies until it stabilizes (no more updates).
+-- | Needs to know what was updated since it last ran.
+solveSteps :: RRU -> RR ()
+solveSteps r0 = go r0
+  where
+  go r@{ registry, required } | noUpdates r = { registry, required }
+  go r = go (solveStep r)
+```
+
+Keeping track of what was updated is certainly the trickiest part of the whole algorithm to reason about, but there is this one nugget of insight that coalesced into the knowledge I needed to turn it into an algorithm:
 
 :::Key_Idea
 The manifests for package versions might need to update when some of their dependencies update.
 However, not all updates need to propagate like this from dependencies to their reverse dependencies.
 
-In particular, in the case that a manifest is updating because its dependencies tightened, _if_ this will significantly affect its reverse dependencies they should _already_ be depending on the transitive dependencies directly and updating because of it.
-This leaves us with the only major updates being because a dependency was _added_, which the parent did not know about yet so it needs to rescan its dependencies.
+In particular, in the case that a manifest is updating because its dependencies tightened, _if_ this could affect its reverse dependencies they should _already_ be depending on the transitive dependencies directly and updating because of it.
+This leaves us with the only major updates being because a dependency was _added_, which the parent did not know about yet so it needs to rescan its dependencies to potentially add the dependency itself.
 
 The other case is that if a package version picks up an obvious failure, its reverse dependencies need to be notified.
 They may pick up a quasi-transitive dependency once this failing package version is dropped, if it was missing that particular dependency but others had it.
@@ -549,6 +599,24 @@ exploreTransitiveDependencies lastTick = (\t -> { required: lastTick.required, u
         false -> mempty
     in
       Tuple updated dependencies
+
+-- | Discover one step of quasi transitive dependencies, for known requirements
+-- | and the rest of the registry too.
+solveStep :: RRU -> RRU
+solveStep initial =
+  { required: initial.required <> moreRequired
+  , registry: moreRegistry
+  , updated: updated <> updatedOfReqs
+  }
+  where
+  -- Transitivize direct requirements
+  moreRequired = initial.required # foldMapWithIndex (commonDependencies initial.registry)
+  -- Record updates to them
+  updatedOfReqs = requirementUpdates initial moreRequired
+  -- Transitivize the rest of the registry, which should be:
+  --   (1) Pruned at the start to only reachable package versions
+  --   (2) Only touching packages that were directly updated last round
+  { updated, registry: moreRegistry } = exploreTransitiveDependencies (initial { registry = map (addFrom moreRequired) <$> initial.registry })
 ```
 
 
@@ -597,6 +665,17 @@ JavaScript performance testing is useless because it gets washed away in a sea o
 Wrap particular segments in profiling.
 
 I also needed a histogram viewer.
+
+Lots of micro optimizations.
+
+- Using a specific order of `<>`{.haskell}, since `Map`{.haskell} appends are implemented as a fold over the second argument so it should be the smaller argument.
+- Using a difflist (Cayley) representation when I know Iʼm only appending one key at a time but with mixed associativity.
+- Implementing `wouldUpdate`{.haskell} directly instead of using the semigroup operation.
+- Optimizing the `Ord Version`{.haskell} instance since it is the most common operation in this whole thing.
+
+Did they make a difference?
+I donʼt know!
+They appeared to make incremental difference as I was testing it, but once I did the big optimization above I gave up on testing that.
 
 ### Errors
 
@@ -666,6 +745,7 @@ But I believe it is the information that users want to see; it certainly falls i
 In the case that it is a local error, knowing which clauses of the current manifest led to it is crucial in answering the question, “What do I need to change to fix the error”.
 And sometimes it is a deeper error of outdated dependencies, so you want to know what package is responsible for that incongruous version requirement.
 
-######## Side thought
+:::{.Bonus box-name="Side thought"}
 Itʼs interesting that nothing here required that dependencies are acyclic.
 I actually made some tiny decisions that ensured that this would work, without causing an infinite loop for example, but it was minor things.
+:::
