@@ -10,7 +10,7 @@ The story of how I implemented calligraphy for [cubic Bézier curves](https://ww
 The problem statement:
 
 ::: {.Key_Idea box-name="Challenge"}
-Given a shape of a pen nib, what composite shape is produced when the pen is drawn along any particular path?
+Given a pen nib of some shape, what composite shape is produced when that pen is drawn along any particular path?
 
 If the inputs are cubic Bézier curves, is the output as well?
 
@@ -25,8 +25,8 @@ The catch?
 Itʼs mathematically impossible to model the output using cubic Bézier curves, as I determined after a bit of math.
 In fact, it fails already for _quadratic_ curves (the simpler companion to cubic curves, which would have simpler, more tractable solutions).
 
-The cubic in “cubic Bézier” refers to the fact that they are parametric curves modeled by _polynomials_ (one polynomial for the \(x\) coordinate and one polynomial for the \(y\) coordinate, in terms of a shared time variable \(t\)).
-Simply put, the solution for how the curves of the pen and the curves of the path interact means that the solution wonʼt be a polynomial anymore, it would at least be a [rational function](https://en.wikipedia.org/wiki/Rational_function), [i.e.]{.foreign lang=la} a polynomials divided by another polynomial.
+The cubic in “cubic Bézier” refers to the fact that they are parametric curves modeled by _cubic polynomials_ (one polynomial for the \(x\) coordinate and one polynomial for the \(y\) coordinate, in terms of a shared time variable \(t\)).
+Simply put, the solution for how the curves of the pen and the curves of the path interact means that the solution wonʼt be a polynomial anymore, it would at least be a [rational function](https://en.wikipedia.org/wiki/Rational_function), [i.e.]{.foreign lang=la} a polynomial divided by another polynomial.
 
 However, that doesnʼt prevent us from getting pretty darn close.
 Let me show you how it works out.
@@ -50,7 +50,7 @@ Plus, not only are there the mistakes of my hand being jostled by the car going 
 
 Iʼve done this for many years, since before I could drive.
 As long as Iʼve done that, Iʼve also wanted to digitize the shapes, maybe to make them into a computer font so I donʼt have to manually write things out when I want to see how full sentences look.
-(ʼTwould also be great to explore ligatures and open type features to really make a natural flowing calligraphic font …)
+(ʼTwould also be a great way to explore ligatures and open type features to really make a natural flowing calligraphic font …)
 
 As I mentioned above, the precisely stated mathematical problem says the curves we are looking for arenʼt the type of curves supported by graphics programs today.
 But why let the mathematical impossibilities get in the way of actually quite good enough?
@@ -87,17 +87,21 @@ Here you can see the musculoskeletal anatomy of a Minkowski calligraphy stroke:
 
 <br/>
 
+<label><input id="anatomy" type="checkbox"> Enable anatomy</label>
+
 ::: {.Details box-name="Legend"}
 <!-- - Black – covered by the basic algorithm. -->
-- Black – the algorithm as it current stands.
-- Red – the ideal output, approximated.
+- Black area – the algorithm as it current stands.
+- Red area – the ideal output, approximated.
   (double click on the black to generate a more and more fine approximation)
+- Green lines – the patchwork of simple segments (click to debug, double click to delete).
+- Orange lines – the special paths added via the approximate convolution algorithm.
 <!-- - Green – improved algorithm. -->
 :::
 
 ## Big picture
 
-We can take apart the pen nib and pen path into a bunch of segments and compute the composite of each segment with each segment (Cartesian product).
+We can take apart the pen nib and pen path into a bunch of segments and compute the composite of each segment with each segment ([Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product)).
 Each composite of individual segments produces a section of the result, resulting in a patchwork of sections that form the whole composite shape.
 Having a lot of overlapping sections is OK, since [e.g.]{.foreign lang=la} Inkscapeʼs builtin Boolean operations will simplify the shapes for us.^[It should be possible to only compute the outer segments and skip that step, but for now itʼs better to overapproximate it and optimize later.]
 
@@ -112,7 +116,7 @@ In fact, we will end up subdividing the original segments a bunch to produce acc
 - The pen paths need to be split at the tangents of the endpoints of the pen nib segment it is being combined with.
   <!-- TODO: explain better -->
   - This ensures that each segment either traces out the obvious thing or has a composite.
-  - Basically we want that either the tangents are disjoint or the pen nibʼs are contained in the pen pathʼs tangents.
+  - Basically we want that either the tangents are disjoint or the pen nibʼs tangents are contained in the pen pathʼs tangents.
 
 Then the task is to come up with the sections that form the patchwork:
 
@@ -123,22 +127,20 @@ Then the task is to come up with the sections that form the patchwork:
 But thatʼs the end result, letʼs see how I got to this algorithm.
 
 ### Smooth sailing
-Rake
-
 The simplest approach is to paste each path on each segment, something like this:
 ```javascript
 (Ps,Qs) => Ps.flatMap(P => Qs.flatMap(Q => [shift(Q, P[0]), shift(P, Q[0])]))
 ```
-Mathematically we would say weʼre taking the Cartesian product of the segments.
+Mathematically we would say weʼre taking the [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) of the segments.
 
 I was able to do this much in Inkscape directly: copy some segments, align them.
 You can even make linked clones so it updates altogether.
 
 But there were problems: when the paths crossed over it got way too thin.
-Basically if the pen nib wasnʼt perfectly straight it would be missing stuff.
+Basically if the pen nib wasnʼt made of perfectly straight lines, the composite stroke would be missing stuff.
 
-Essentially is simulating what you would get by stamping the pen nib in certain points, and then drawing a rake through the path to connect them with curves.
-(The rake only touching at the segmentation points of the pen nib.)
+Essentially this process is simulating what you would get by stamping the pen nib in certain points, and then drawing a rake through the path to connect them with curves.
+(The rake only touching the paper at the segmentation points of the pen nib.)
 
 It appeared that anything more complex would require algorithmic help, and oh was I right …
 There were more issues lurking with curved segments.
@@ -151,24 +153,78 @@ My first thought was what I said above: itʼs where the crossovers happen, right
 Right??
 
 However, I realized that canʼt possibly be right:
-the curves going wrong is a _local_ property, and itʼs already happened by the time the curves cross over.
+when the curves fail to cover the actual sweep of the pen, it has already separated by the time the curves actually cross over each other, and continues afterwards.
+That is, the cross-over is a symptom of the issue but not the part the delimits it.
 
-Looking at it more closely (literally) I realized it occurs when the pen path matches the tangent of one of the segments of the pen nib.
-(The sharp angles.)
+Looking at it more closely (literally) I realized that the separation occurs precisely when the path of the pen parallels the endpoint tangent of one of the curvy segments of the pen nib.
 
-Adding this .
-
+My first thought was to stamp out the problem: insert more stamps of the pen nib at these problematic tangent points where it wants to detach from the real path.
 Little did I know this was only the start of unraveling a long thread … it was not enough!
+For longer curvy segments, it was clear that the extra stamps only masked the problem and did not account for what lay between them.
+
+The main insight, which I have already spoiled for you, is that we need to find some composite of the curves of the pen nib with the curves in the pen path, a composite which is not identical to either curve.
+
+#### Need for composite curves
+
+To step back from calligraphy for a moment, consider a simpler example: drawing with a circular sponge, marker, whatever.
+Make it comically big in your mind.
+
+If you draw a straight line, the composite path is very simple:
+the two endpoints are capped by a semicircle and are connected by a rectangle.
+
+Now consider a curved path: you can quickly imagine that two semicircles joined by the exact path will not do the job.
+First of all the endpoints are wrong to connect with the endcaps, second of all the curve would look funny!
+
+If you slow down and look at some point on the curve very closely, what points on the circle are actually doing the work of drawing?
+What part of the circle is extremally far from the curve at that point?
+The part that is tangent to the curve!
+
+Thus we will end up offsetting each point on the curve by the radius perpendicular to the curveʼs tangent.
+
+::: .Bonus
+In fact, this offset curve is no longer a Bézier curve: it is an [analytic curve of degree 10](https://raphlinus.github.io/curves/2022/09/09/parallel-beziers.html).
+
+Funnily enough, although it is mathematically complicated, all graphics programs support approximating this cubic Bézier + circular pen combo: this is just the stroke width parameter of SVG Bézier curves.
+
+As far as the main topic of this post goes, the underlying mathematic impossibility should not discourage us quite yet: circles cannot be exactly captured by Bézier curves either, so our focus on cubic Bézier pen nibs may still be okay.
+(Spoiler: it is not.)
+:::
+
+This thought experiment shows that we really want to find the tangent point on the pen nib that corresponds with the tangent from the pen path.
+If we can correlate the two for each point in time, we would get a composite path that fills out the proper area, more than the rake and stamp method.
 
 ### Dead reckoning
-Find matching tangents, but these.
+Now we can find a precise curve to work towards:
+given two “nice” curves, we add up all the points where their tangents are parallel, to obtain a new curve.
+(This is called the convolution of the two curves.)
+
+We hope to solve this in the case of cubic Béziers in particular: given a tangent from one curve (the pen path), find the time when the other curve (the pen nib) has the same tangent, and add those points together.
 
 #### Death
-The solution is a rational function (ratio of two polynomials).
-Bézier curves are polynomials, not rational, so the result will not be a Bézier curve.
+Letʼs try a simpler thing first and see why it fails:
+we can keep the pen path as a cubic Bézier, but restrict the pen nib to being quadratic.
+
+Taking the tangent _vector_ of each curve decreases degree by one: the cubic Bézier has a quadratic tangent _vector_, and the quadratic Bézier has a linear tangent _vector_.
+This sounds okay so far, but recall that we want the tangents to have the same _slope_ (to be parallel).
+This makes us take fractions (see below for more details in the cubic case).
+
+So the solution is a [rational function](https://en.wikipedia.org/wiki/Rational_function) (ratio of two polynomials).
+Bézier curves are polynomials, not rational functions, so the result will not be a Bézier curve.
+
+Dealing with cubic Béziers, their tangent vector (being the derivative of their position vector) is a quadratic function.
+We want the two tangent vectors to be parallel, so we end up with a quadratic equation of one in terms of the other.
+Solving the quadratic equation introduces radicals, so it is no longer even a rational function in the cubic case.
 
 #### Reckoning
-But since it is cubic, we have another parameter to control at each place, in addition to the tangent.
+So we set about approximating the exact curve by a Bézier one.
+
+The first question to ask ourselves is: what are the tangents of the curve at the endpoints?
+This is a simple question, actually: since we are picking points from the curves where the tangents match, the tangent is simply what it was for the base curve.
+(We will work through the math below to prove why this is the case.)
+
+If we were approximating by a quadratic curve, this would be all we need to know: the last control point would be at the intersection of the tangents from the endpoints.
+
+But since it is cubic, we have two more points to pick, which should correspond abstractly to another parameter to control at each endpoint, in addition to the tangent there.
 
 Youʼd think this parameter would be curvature.
 Youʼd **think**!!
@@ -191,6 +247,9 @@ For one thing, the formula involves a complex mix of components:
 
 And then add in the complexities of the Bézier parameterization and you have a fun problem that yields non-unique solutions.
 
+The proliferation of solutions is kind of problematic since it means we need to guess what is the right solution.
+At least we know we are looking for clean-looking solutions that do not deviate too much.
+
 ::: {.Bonus box-name="Aside"}
 Itʼs funny: in order to display curvature in a geometrically meaningful way, you want it to be in units of distance, which means youʼd take its inverse \(1/\kappa\).
 This inverse is the radius of the _osculating circle_ that just barely touches the curve in the most graceful way.
@@ -207,6 +266,8 @@ It is related to the _osculating parabola_, since parabolas rotated in space can
 :::
 
 ## Details. Oh so many details
+
+In which we work through the math to compute a cubic Bézier approximation to cubic Bézier convolution, based on matching the known curvature at the endpoints of the exact convolution.
 
 ### Background and notation
 
@@ -606,6 +667,17 @@ Itʼs actually really pretty to see solutions with all signs of curvatures toget
 :::
 
 ## Implementation
+
+### Hacks
+
+Uhhh … I allowed the control points to go backwards (\(\delta_0 * \delta_1 < 0\)) and I perturbed the tangential splits due to numeric issues.
+The latter could be fixed by actually remembering those splits and not trying to solve \(q(p)\) there.
+
+## Symmetries
+
+Throughout this post, Iʼve been emphasizing “the pen nib this” and “the pen path that” for the sake of giving you a concrete image in your mind.
+But the reality of the underlying math is that there is no fundamental distinction between the two curves.
+The convolution and Minkowski sum are commutative, and do not care which curve is which.
 
 ## References
 

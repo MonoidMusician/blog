@@ -24,10 +24,15 @@ class Curve extends Array {
 }
 class Poly extends Array {
   constructor(v) {
-    super();
-    Object.assign(this, v);
+    if (typeof v === 'number') {
+      super(v);
+    } else if (v) {
+      super();
+      this.push(...v);
+    } else {
+      super();
+    }
   }
-  map(f) {return new Poly(super.map(f));}
   slice(...args) {return new Poly(super.slice(...args));}
   toString() {
     if (!this.length) return "0";
@@ -39,9 +44,11 @@ class Poly extends Array {
   }
 }
 Poly.prime = 0;
-const curveD = ps => new Curve(ps).map(p => new Vec(p));
+Vec = Curve = Poly = Array;
+const curveD = ps => Curve.from(ps).map(p => Vec.from(p));
 
 const construct_like = (d, cs) => {
+  return d;
   if (!cs.length) return d;
   var p = cs[0].__proto__;
   if (p === Array.prototype || p === Number.prototype) {
@@ -107,13 +114,15 @@ const pmul = (cs1, cs2) => sum(cs1.map((c1, i) => raise(i)(mul(c1, cs2))));
 
 const transpose = vss => {
   var rss = [];
+  const vss0 = [vss];
+  const vss1 = [...vss];
   for (let i in vss) {
     for (let j in vss[i]) {
-      rss[j] = rss[j] || construct_like([], [vss]);
+      rss[j] = rss[j] || construct_like([], vss0);
       rss[j][i] = vss[i][j];
     }
   }
-  return construct_like(rss, [...vss]);
+  return construct_like(rss, vss1);
 };
 const transposed = f => compose(map(f), transpose);
 const transposing = f => compose(transpose, map(f), transpose);
@@ -128,6 +137,7 @@ const values = vcs => t => vcs.map(cs => value(cs)(t));
 const EVAL = cvs => t => transposed(cs => value(cs)(t))(cvs);
 const deriv = cs => cs.map((v, i) => i * v).slice(1);
 const DERIV = transposing(deriv);
+const TDERIV = v => transposed(deriv)(v);
 
 const raise = n => n <= 0 ? (cs => cs) : cs => raise(n-1)(N(cs));
 const N = cs => construct_like([0].concat(cs), [cs]);
@@ -138,32 +148,40 @@ const b = ps => {
     return new Vec(bases(ps)).map(b);
   }
   // c.b(ps) === c.muldot(ps, c.b(ps.length))
-  if (ps.length <= 1) return new Poly(ps);
+  if (ps.length <= 1) return Poly.from(ps);
   return add(Y(b(ps.slice(0, -1))), N(b(ps.slice(1))));
 };
-const B = transposing(b);
+//const B = transposing(b);
+const B = function([[x0,y0],[x1,y1],[x2,y2],[x3,y3]]) {
+  return [
+    [x0,y0],
+    [-3*x0+3*x1, -3*y0+3*y1],
+    [3*x0-6*x1+3*x2, 3*y0-6*y1+3*y2],
+    [-x0+3*x1-3*x2+x3, -y0+3*y1-3*y2+y3],
+  ];
+}
 const curvature = (XX,YY,XXX,YYY) => {
   return (XX*YYY - YY*XXX)/Math.pow(XX*XX + YY*YY, 1.5);
 };
 const Bcurvature0 = ([b0,b1,b2,_]) => {
-  let b21 = [b2[0]-b1[0],b2[1]-b1[1]];
-  let d0 = [b1[0]-b0[0],b1[1]-b0[1]];
-  let d0xb21 = d0[0]*b21[1] - d0[1]*b21[0];
-  let delta = Math.sqrt(d0[0]*d0[0] + d0[1]*d0[1]);
+  const b21 = [b2[0]-b1[0],b2[1]-b1[1]];
+  const d0 = [b1[0]-b0[0],b1[1]-b0[1]];
+  const d0xb21 = d0[0]*b21[1] - d0[1]*b21[0];
+  const delta = Math.sqrt(d0[0]*d0[0] + d0[1]*d0[1]);
   return (2/3)*d0xb21/Math.pow(delta, 3);
 };
 const Bcurvature1 = ([b0,b1,b2,b3]) => -Bcurvature0([b3,b2,b1,b0]);
 const Bcurvature = C => t => {
-  let [numer, denom] = Bcurvature_polys(C).map(p => value(p)(t));
+  const [numer, denom] = Bcurvature_polys(C).map(p => value(p)(t));
   return numer/Math.pow(denom, 1.5);
 };
 const Bcurvature_polys = C => {
-  let CC = DERIV(B(C));
-  let XX = transpose(CC)[0];
-  let YY = transpose(CC)[1];
-  let CCC = DERIV(CC);
-  let XXX = transpose(CCC)[0];
-  let YYY = transpose(CCC)[1];
+  const CC = DERIV(B(C));
+  const XX = transpose(CC)[0];
+  const YY = transpose(CC)[1];
+  const CCC = DERIV(CC);
+  const XXX = transpose(CCC)[0];
+  const YYY = transpose(CCC)[1];
   return [sub(pmul(XX,YYY), pmul(YY,XXX)), add(pmul(XX,XX), pmul(YY,YY))];
 };
 const norm2 = v => v[0]*v[0] + v[1]*v[1];
@@ -171,23 +189,23 @@ const norm = v => Math.sqrt(norm2(v));
 const normalize = v => {let n = norm(v); return [v[0]/n, v[1]/n]};
 const cross2 = (v1,v2) => v1[0]*v2[1] - v1[1]*v2[0];
 const solve_quartic = cs => {
-  let rs = quartic(cs.slice().reverse());
-  var ep = 1e-9;
-  let rs2 = rs.filter(r => Math.abs(r.im) < ep).map(r => r.re);
+  const rs = quartic(cs.slice().reverse());
+  const ep = 1e-9;
+  const rs2 = rs.filter(r => Math.abs(r.im) < ep).map(r => r.re);
   return rs2;
 };
 const fit_checks = (f0,f1,d0,d1,k0,k1) => {
-  let ep = 1e-8;
-  let matches = (ki,ko) =>
+  const ep = 1e-8;
+  const matches = (ki,ko) =>
     (Math.sign(ki) === Math.sign(ko)) || (Math.abs(ki) < ep && Math.abs(ko) < ep);
-  let rs = fit(f0,f1,d0,d1,k0,k1);
-  let rrs = rs.filter(r => matches(Bcurvature0(r), k0) && matches(Bcurvature1(r), k1));
+  const rs = fit(f0,f1,d0,d1,k0,k1);
+  const rrs = rs.filter(r => matches(Bcurvature0(r), k0) && matches(Bcurvature1(r), k1));
   return rrs.length ? rrs : rs;
 };
 const fit_check = (f0,f1,d0,d1,k0,k1) => {
-  let rs = fit_checks(f0,f1,d0,d1,k0,k1);
+  const rs = fit_checks(f0,f1,d0,d1,k0,k1);
   if (rs.length <= 1) return rs[0];
-  let score = ([b0,b1,b2,b3]) => {
+  const score = ([b0,b1,b2,b3]) => {
     let d0 = sub(b1, b0);
     let d1 = sub(b3, b2);
     return norm2(d0) + norm2(d1);
@@ -196,15 +214,15 @@ const fit_check = (f0,f1,d0,d1,k0,k1) => {
 };
 const fit = (f0,f1,d0,d1,k0,k1) => {
   d0 = normalize(d0); d1 = normalize(d1);
-  let d0xd1 = cross2(d0, d1);
-  let a = sub(f1, f0);
-  let d0xa = cross2(d0, a);
-  let axd1 = cross2(a, d1);
+  const d0xd1 = cross2(d0, d1);
+  const a = sub(f1, f0);
+  const d0xa = cross2(d0, a);
+  const axd1 = cross2(a, d1);
   let δs;
   if (d0xd1 === 0) {
     δs = [Math.sqrt((2/3)*(d0xa)/k0), Math.sqrt((2/3)*(axd1)/k1)];
   } else {
-    let ep = 1e-9;
+    const ep = 1e-9;
     if (Math.abs(axd1) < ep || Math.abs(d0xa) < ep) {
       throw new Error("parallel " + [a, axd1, d0xa]);
     }
@@ -212,16 +230,16 @@ const fit = (f0,f1,d0,d1,k0,k1) => {
     /**/
     let ρs;
     //let R0 = (3/2)*(k0*axd1*axd1)/(d0xa*d0xd1*d0xd1);
-    let R0 = 1.5 * (((axd1 / d0xa) / (d0xd1 / k0)) / (d0xd1 / axd1));
+    const R0 = 1.5 * (((axd1 / d0xa) / (d0xd1 / k0)) / (d0xd1 / axd1));
     //let R1 = (3/2)*(k1*d0xa*d0xa)/(axd1*d0xd1*d0xd1);
-    let R1 = 1.5 * (((d0xa / axd1) / (d0xd1 / k1)) / (d0xd1 / d0xa));
+    const R1 = 1.5 * (((d0xa / axd1) / (d0xd1 / k1)) / (d0xd1 / d0xa));
     if (!Number.isFinite(R0) || !Number.isFinite(R1)) {
       throw new Error("NaNaNaNaNa " + [R0,R1,k0,k1] + "; " + [a, axd1, d0xa]);
     }
-    let c0 = [1-R1, -1, 2*R1*R0, 0, -R1*R0*R0];
-    let c1 = [1-R0, -1, 2*R0*R1, 0, -R0*R1*R1];
-    let ρ0s = solve_quartic(c0);
-    let ρ1s = solve_quartic(c1);
+    const c0 = [1-R1, -1, 2*R1*R0, 0, -R1*R0*R0];
+    const c1 = [1-R0, -1, 2*R0*R1, 0, -R0*R1*R1];
+    const ρ0s = solve_quartic(c0);
+    const ρ1s = solve_quartic(c1);
     ρs = [
       ρ0s.map(ρ0 => [ρ0, 1 - R0*ρ0*ρ0]),
       ρ1s.map(ρ1 => [1 - R1*ρ1*ρ1, ρ1]),
@@ -232,10 +250,13 @@ const fit = (f0,f1,d0,d1,k0,k1) => {
     }
     δs = ρs.map(([ρ0,ρ1]) => [ρ0 * axd1 / d0xd1, ρ1 * d0xa / d0xd1]);
     let δδs = δs;
-    δs = δs.filter(([δ0,δ1]) => δ0 >= 0 && δ1 >= 0);
+    δs = δδs.filter(([δ0,δ1]) => δ0 >= 0 && δ1 >= 0);
     if (!δs.length && δδs.length) {
-      throw new Error("filtered out " + δδs.join("; "));
-      //δs = δδs;
+      δs = δδs.filter(([δ0,δ1]) => δ0 >= 0 || δ1 >= 0);
+      if (!δs.length && δδs.length) {
+        throw new Error("filtered out " + δδs.join("; "));
+        δs = δδs;
+      }
     }
   }
   return δs.map(([δ0,δ1]) => [f0,add(f0, mul(δ0, d0)),sub(f1, mul(δ1, d1)),f1]);
@@ -253,7 +274,7 @@ const fit_existing_score = P => {
 }
 
 const degree = cs => {
-  var d = 0;
+  let d = 0;
   for (let i in cs) {
     if (cs[i]) d = +i;
   }
@@ -261,32 +282,32 @@ const degree = cs => {
 };
 
 const solve = eq => {
-  var d = degree(eq);
+  const d = degree(eq);
   if (d === 0) {
     if (eq[0]) return [];
     return null; // everything is a solution
   } else if (d === 1) {
     return [-eq[0]/eq[1]];
   } else if (d === 2) {
-    var disc = eq[1]*eq[1] - 4*eq[2]*eq[0];
-    var ep = 1e-10;
+    const disc = eq[1]*eq[1] - 4*eq[2]*eq[0];
+    const ep = 1e-20;
     if (Math.abs(disc) < ep) disc = 0;
     if (disc < 0) return [];
     if (disc === 0) return [-eq[1]/eq[2]/2];
-    var r = Math.sqrt(disc);
+    const r = Math.sqrt(disc);
     return [+r,-r].map(sr => (-eq[1] + sr)/eq[2]/2);
   }
   throw new Error("Cannot solve equation of degree " + d);
 };
 const solve_norm = eq => solve_norm_sgn(eq)[0];
 const solve_norm_sgn = eq => {
-  var sols = solve(eq);
+  const sols = solve(eq);
   if (sols.length === 0) {
-    var disc = eq[1]*eq[1] - 4*eq[2]*eq[0];
+    const disc = eq[1]*eq[1] - 4*eq[2]*eq[0];
     throw new Error("No solutions to " + eq + " with disc = " + disc);
   }
-  var ep = 1e-5;
-  var norm_sols = sols.filter(t => 0-ep <= t && t <= 1+ep).map(t => Math.max(0, Math.min(1, t)));
+  const ep = 1e-10;
+  const norm_sols = sols.filter(t => 0-ep <= t && t <= 1+ep).map(t => Math.max(0, Math.min(1, t)));
   if (norm_sols.length === 1) {
     return [norm_sols[0], [+1, -1][sols.findIndex(t => t == norm_sols[0])]];
   }
@@ -294,19 +315,19 @@ const solve_norm_sgn = eq => {
 };
 const solve_deriv = (eq, dq) => {
   if (degree(eq) > 2) throw Error(eq);
-  let q = solve_norm(eq);
+  const q = solve_norm(eq);
   if ((2*eq[2]*q + eq[1]) === 0) {
-    console.error("DISASTER", {eq,dq,q});
-    let rs = solve_deriv_(eq, dq);
-    console.error("DISASTER", {eq,dq,q,rs});
+    console.error("DISASTER1", {eq,dq,q});
+    const rs = solve_deriv_(eq, dq);
+    console.error("DISASTER2", {eq,dq,q,rs});
     return rs[4];
   }
   return -(dq[2]*q*q + dq[1]*q + dq[0])/(2*eq[2]*q + eq[1]);
 };
 const solve_deriv2 = (eq, dq, cq) => {
   if (degree(eq) > 2) throw Error(eq);
-  let q = solve_norm(eq);
-  let qq = solve_deriv(eq, dq);
+  const q = solve_norm(eq);
+  const qq = solve_deriv(eq, dq);
   return (-2*eq[2]*qq*qq + cq[2]*q*q + cq[1]*q + cq[0])/(2*eq[2]*q + eq[1]);
 };
 const solve_deriv_ = (eq, dq) => {
@@ -316,8 +337,8 @@ const solve_deriv_ = (eq, dq) => {
 };
 
 const T_THINGY = (P,Q) => {
-  var PP = DERIV(B(P));
-  var QQ = transpose(DERIV(B(Q)));
+  const PP = DERIV(B(P));
+  const QQ = TDERIV((B(Q)));
   return PP.map(cd => {
     return sub(mul(cd[0], QQ[1]), mul(cd[1], QQ[0]));
   });
@@ -325,49 +346,49 @@ const T_THINGY = (P,Q) => {
 // PP : p :: QQ : q
 // QQ_x(q)*PP_y(p) - QQ_y(q)*PP_x(p) = 0
 const T_IMPLICIT = (P,Q) => {
-  var PP = transpose(DERIV(B(P)));
-  var QQ = transpose(DERIV(B(Q)));
+  const PP = TDERIV((B(P)));
+  const QQ = TDERIV((B(Q)));
   return sub(dmul(QQ[1], PP[0]), dmul(QQ[0], PP[1]));
 };
 const T_SOL = (P,Q) => p => solve_norm(values(T_IMPLICIT(P,Q))(p));
 const COMP = (P,Q) => p => add(EVAL(B(P))(p), EVAL(B(Q))(T_SOL(P,Q)(p)));
 const T_DERIV = (P,Q) => p => {
   // multivariate polynomial in q,p
-  let EQ = T_IMPLICIT(P,Q);
+  const EQ = T_IMPLICIT(P,Q);
   // quadratic equation for q at p
-  let eq = values(EQ)(p);
+  const eq = values(EQ)(p);
   // derivative of eq
-  let dq = values(EQ.map(deriv))(p);
+  const dq = values(EQ.map(deriv))(p);
   return solve_deriv(eq, dq);
 };
 // c.T_DERIVS(c.ex.P, c.ex.Q)(0.36657)
 const T_DERIVS = (P,Q) => p => {
-  var q = T_SOL(P,Q)(p);
+  const q = T_SOL(P,Q)(p);
   return [ -1e-3, -1e-4, -1e-5, -1e-6, -1e-7, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3 ].map(dp => {
     return (T_SOL(P,Q)(dp+p) - q)/dp;
   });
 };
 const PQ_CURVATURE = (P,Q) => {
-  let PP = DERIV(B(P));
-  let PPE = EVAL(PP);
-  let QQ = DERIV(B(Q));
-  let QQE = EVAL(QQ);
-  let PPPE = EVAL(DERIV(PP));
-  let QQQE = EVAL(DERIV(QQ));
-  let TT = T_DERIV(P,Q);
+  const PP = DERIV(B(P));
+  const PPE = EVAL(PP);
+  const QQ = DERIV(B(Q));
+  const QQE = EVAL(QQ);
+  const PPPE = EVAL(DERIV(PP));
+  const QQQE = EVAL(DERIV(QQ));
+  const TT = T_DERIV(P,Q);
   return (p,q=undefined) => {
     if (q === undefined) q = T_SOL(P,Q)(p);
-    let PPp = PPE(p);
-    let QQq = QQE(q);
-    let PPPp = PPPE(p);
-    let QQQq = QQQE(q);
-    let R = TT(p);
-    let XX = PPp[0] + QQq[0]*R;
-    let YY = PPp[1] + QQq[1]*R;
-    let XXXYY = PPPp[0]*PPp[1] + PPPp[0]*QQq[1]*R + QQQq[0]*R*R*PPp[1] + QQQq[0]*QQq[1]*R*R*R;
-    let YYYXX = PPPp[1]*PPp[0] + PPPp[1]*QQq[0]*R + QQQq[1]*R*R*PPp[0] + QQQq[1]*QQq[0]*R*R*R;
-    let speed = Math.pow(XX*XX + YY*YY, 3/2);
-    let k = (XXXYY - YYYXX)/speed;
+    const PPp = PPE(p);
+    const QQq = QQE(q);
+    const PPPp = PPPE(p);
+    const QQQq = QQQE(q);
+    const R = TT(p);
+    const XX = PPp[0] + QQq[0]*R;
+    const YY = PPp[1] + QQq[1]*R;
+    const XXXYY = PPPp[0]*PPp[1] + PPPp[0]*QQq[1]*R + QQQq[0]*R*R*PPp[1] + QQQq[0]*QQq[1]*R*R*R;
+    const YYYXX = PPPp[1]*PPp[0] + PPPp[1]*QQq[0]*R + QQQq[1]*R*R*PPp[0] + QQQq[1]*QQq[0]*R*R*R;
+    const speed = Math.pow(XX*XX + YY*YY, 3/2);
+    const k = (XXXYY - YYYXX)/speed;
     if (!Number.isFinite(k)) {
       console.error("NaN", {k,R,speed,p,q,P,Q});
       throw new Error("NaN");
@@ -382,10 +403,10 @@ const T_VERIFY = (P,Q) => (p, q) => value(values(T_IMPLICIT(P,Q))(p))(q === unde
 const T_VERIFY2 = (P,Q) => (p, q) => value(values(T_IMPLICIT(Q,P))(q === undefined ? T_SOL(P,Q)(p) : q))(p);
 const T_VERIFYT = (P,Q) => (p, q) => {
   if (p === undefined) q = T_SOL(P,Q)(p);
-  var PPp = EVAL(DERIV(B(P)))(p);
-  var TPp = PPp[1]/PPp[0];
-  var QQq = EVAL(DERIV(B(Q)))(q);
-  var TQq = QQq[1]/QQq[0];
+  const PPp = EVAL(DERIV(B(P)))(p);
+  const TPp = PPp[1]/PPp[0];
+  const QQq = EVAL(DERIV(B(Q)))(q);
+  const TQq = QQq[1]/QQq[0];
   return [ TPp, TQq, TPp - TQq ];
 };
 const T_VERIFY3 = (P,Q) => (p, q) => {
@@ -398,14 +419,14 @@ function composite(P,Q) {
 }
 
 function compositeI(P,Q) {
-  let P0 = P[0];
-  let P1 = P[3];
-  let Qt = EVAL(B(Q));
-  let q = T_SOL(P,Q);
-  let q0 = q(0);
-  let Q0 = Qt(q0);
-  let q1 = q(1);
-  let Q1 = Qt(q1);
+  const P0 = P[0];
+  const P1 = P[3];
+  const Qt = EVAL(B(Q));
+  const q = T_SOL(P,Q);
+  const q0 = q(0);
+  const Q0 = Qt(q0);
+  const q1 = q(1);
+  const Q1 = Qt(q1);
   const f0 = add(P0, Q0);
   const f1 = add(P1, Q1);
   const d0 = sub(P[1], P[0]);
@@ -417,10 +438,11 @@ function compositeI(P,Q) {
 }
 
 function INFLXNS(P) {
-  let PP = transpose(DERIV(B(P)));
-  let PPP = transpose(DERIV(DERIV(B(P))));
-  let EQ = sub(pmul(PPP[0], PP[1]), pmul(PPP[1], PP[0]));
-  let rs = solve(EQ);
+  const TBP = transpose(B(P));
+  const PP = map(deriv)(TBP);
+  const PPP = map(compose(deriv, deriv))(TBP);
+  const EQ = sub(pmul(PPP[0], PP[1]), pmul(PPP[1], PP[0]));
+  const rs = solve(EQ);
   return rs;
 }
 
@@ -442,9 +464,9 @@ window.calligraphy = {
     let r = {};
     try {
       r.P = curveD([[7,6],[4,2],[1,2],[5,1]]);
-      r.PP = transpose(DERIV(B(r.P)));
+      r.PP = TDERIV((B(r.P)));
       r.Q = curveD([[1,3],[4,5],[6,7],[1,3]]);
-      r.QQ = transpose(DERIV(B(r.Q)));
+      r.QQ = TDERIV((B(r.Q)));
       r.t = 0.4;
       r.tt = T_SOL(r.P, r.Q)(r.t);
     } catch (e) {

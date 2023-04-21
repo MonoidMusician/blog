@@ -182,6 +182,7 @@ function time(label, fn, ...args) {
 function doTheThing(p1, p2, well) {
   var start = performance.now();
   registry = {};
+  composites = [];
   ps = getPathData(p2);
   p2 = (splitPathAtInflections(p2));
   let c2s = pathToCurves(p2);
@@ -225,6 +226,7 @@ function chop(points, t0, t1) {
   }
 }
 var registry = {};
+var composites = [];
 let lookup = path => {
   curves = pathToCurves(getPathData(path));
   for (let curve of curves) {
@@ -252,6 +254,7 @@ function doTheTask(P, Q) {
   let err = 0;
   try {
     ts.push(compositeI(P,Q));
+    composites.push(ts[2]);
     if (ts[2][1].every(p => p.every(Number.isFinite))) {
       //tts.pop();
       tts.push(
@@ -265,6 +268,24 @@ function doTheTask(P, Q) {
       T_SOL(P,Q)(1);
       //console.error(e);
       err = 1;
+      let t = Math.random();
+      try {
+        let [P0,P1] = bsplit(P, t);
+        let C0 = compositeI(P0,Q);
+        let C1 = compositeI(P1,Q);
+        ts.push(C0, C1);
+        composites.push(C0, C1);
+        console.log("New", C0, C1, "from", {P, t, Q});
+        if (ts[2][1].every(p => p.every(Number.isFinite)) && ts[3][1].every(p => p.every(Number.isFinite))) {
+          tts.push(
+            [ts[0], ts[2]],
+            [ts[1], ts[3]],
+            [ts[2], ts[3]],
+          );
+        }
+      } catch(e3) {
+        //console.log("Failed", {P, t, Q});
+      }
     } catch(e2) {
       //console.log(e);
     }
@@ -311,7 +332,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("main-calligraphy-demo").appendChild(visualize(guideS, toPath(segmentsC)));
+  document.getElementById("anatomy").checked = anatomy;
+  document.getElementById("anatomy").addEventListener("input", e => {
+    anatomy = !!e.target.checked;
+    visualize(guideS, toPath(segmentsC));
+  });
 });
+
+var anatomy = true;
 
 function listen(to, name, listener) {
   if (!to) to = document;
@@ -381,13 +409,14 @@ function draggable(node, datum=undefined, done=undefined) {
         if (debounce) clearTimeout(debounce);
         debounce = setTimeout(() => {
           done(node, false);
-        }, 50);
+        }, 30);
       }
     }, {target: null}),
     mouseup: Object.assign(e => {
       o = null;
       listeners.active = false;
       if (done) {
+        if (debounce) clearTimeout(debounce);
         done(node, true, e);
       }
     }, {target: null}),
@@ -617,7 +646,7 @@ function interactive() {
 //   and listeners for … stuff
 // - prioritizer
 
-function visualize(p1, p2, prec) {
+function visualize(p1, p2, prec=100) {
   var YEAH = doTheThing(p1, p2);
   return mkSVG({
     type: "svg",
@@ -646,7 +675,7 @@ function visualize(p1, p2, prec) {
         type: "g",
         children: YEAH.map(mkPath),
       },
-      {
+      !anatomy?{}:{
         type: "g",
         "class": "annot",
         "fill": "none",
@@ -657,7 +686,7 @@ function visualize(p1, p2, prec) {
           "d": d,
           "onclick": e => {
             let [P,Q] = lookup(e.target);
-            let cs = pathToCurves(getPathData(e.target));
+            //let cs = pathToCurves(getPathData(e.target));
             console.log(P, Q);
             try {
               console.log(calligraphy.composite(P, Q));
@@ -667,7 +696,19 @@ function visualize(p1, p2, prec) {
           },
           "ondblclick": e => {e.target.remove();e.stopPropagation()},
         })),
-      }
+      },
+      !anatomy?{}:{
+        type: "g",
+        "class": "annot",
+        "fill": "none",
+        "stroke": "#9008",
+        "stroke-width": 0.1,
+        "style": "pointer-events: none",
+        children: composites.map(d => ({
+          type: "path",
+          "d": curvesToPath([d[1]]),
+        })),
+      },
     ],
   });
 }
@@ -1055,7 +1096,8 @@ function bsplitMany(points, ts) {
 }
 
 function splitBezierAtTangents(c, tangents) {
-  return bsplitMany(c, findBezierTangents(c, tangents).map(({t}) => t));
+  let ep = 0.001;
+  return bsplitMany(c, findBezierTangents(c, tangents).map(({t}) => t).flatMap(t => [t-ep, t+ep]));
 }
 
 function splitSegAtTangents(seg, p, tangents) {
