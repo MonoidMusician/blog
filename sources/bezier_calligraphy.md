@@ -22,7 +22,7 @@ More specifically, is the the convolution of two cubic Bézier curves a cubic B�
 :::
 
 The catch?
-Itʼs mathematically impossible to model the output using cubic curves, as I determined after a bit of math.
+Itʼs mathematically impossible to model the output using cubic curves, as I determined after a bit calculus.
 In fact, it fails already for _quadratic_ curves (the simpler companion to cubic curves, which would have simpler, more tractable solutions).
 
 The cubic in “cubic Bézier curve” refers to the fact that they are parametric curves modeled by _cubic polynomials_ (one polynomial for the \(x\) coordinate and one polynomial for the \(y\) coordinate, in terms of a shared time variable \(t\)).
@@ -681,21 +681,21 @@ Itʼs actually really pretty to see solutions with all signs of curvatures toget
 I have an implementation in vanilla JavaScript of the algorithm described in this post.
 
 Of course it needs some basic theory of vectors and polynomials and Bézier curves.
-For example, `bsplit(points, t0)`{.javascript} returns a vector of two new Bézier curves that cover intervals \([0, t0]\) and \([t0, 1]\) of the input curve, respectively.
+For example, `bsplit(points, t0)`{.javascript} returns a vector of two new Bézier curves that cover intervals \([0, t_0]\) and \([t_0, 1]\) of the input curve, respectively.
 
-The important functions in `calligraphy.js` are as follows:
+The important functions in [`calligraphy.js`](https://github.com/MonoidMusician/blog/blob/main/assets/js/calligraphy.js) are as follows:
 
-- `compositeI(P,Q)`{.javascript} computes the approximate Bézier convolution of `P` with `Q`.
-- `PQ_CURVATURE(P,Q)(p,q=T_SOL(P,Q)(p))`{.javascript} computes the curvature of the exact convolution between `P` and `Q` at `(p,q)` (where `q` should be the point on `Q` corresponding to `p` on `P`, i.e. parallel).
-- `INFLXNS(P)`{.javascript} computes the inflection points of `P`.
+- [`compositeI(P,Q)`{.javascript}](https://github.com/MonoidMusician/blog/blob/4147508e0dfd2e0451ba89a5e6ed5116e9628d73/assets/js/calligraphy.js#L464-L481) computes the approximate Bézier convolution of `P` with `Q`.
+- [`PQ_CURVATURE(P,Q)(p,q=T_SOL(P,Q)(p))`{.javascript}](https://github.com/MonoidMusician/blog/blob/4147508e0dfd2e0451ba89a5e6ed5116e9628d73/assets/js/calligraphy.js#L414-L444) computes the curvature of the exact convolution between `P` and `Q` at `(p,q)` (where `q` should be the point on `Q` corresponding to `p` on `P`, i.e. parallel).
+- [`INFLXNS(P)`{.javascript}](https://github.com/MonoidMusician/blog/blob/4147508e0dfd2e0451ba89a5e6ed5116e9628d73/assets/js/calligraphy.js#L483-L490) computes the inflection points of `P`.
 
-And the full algorithm is put together (with visualization) in `minkowski.js`:
+And the full algorithm is put together (with visualization) in [`minkowski.js`](https://github.com/MonoidMusician/blog/blob/main/assets/js/minkowski.js):
 
-- `doTheThing(p1, p2)`{.javascript} does the thing, as it says.
-- `splitPathAtInflections(p2)`{.javascript} removes pathologies from the pen nib.
-- `splitBezierAtTangents(c1, getTangentsL(c2))`{.javascript} splits the pen path according to the points of interest of the pen nib.
-- `getTangentsL(c2)`{.javascript} includes both the control point tangents of the Bézier as well as the beginning-to-end tangent, to make the tangent function injective on the length of each segment.?? ??
-- `doTheTask(c1, c2)`{.javascript} creates a patch or two from two Bézier curves, which will either be the “parallelogram” formed by translating them, or will include their convolution if it exists.
+- [`doTheThing(p1, p2)`{.javascript}](https://github.com/MonoidMusician/blog/blob/4147508e0dfd2e0451ba89a5e6ed5116e9628d73/assets/js/minkowski.js#L185-L216) does the thing, as it says.
+- [`splitPathAtInflections(p2)`{.javascript}](https://github.com/MonoidMusician/blog/blob/4147508e0dfd2e0451ba89a5e6ed5116e9628d73/assets/js/minkowski.js#L1327-L1341) removes pathologies from the pen nib.
+- [`splitBezierAtTangents(c1, getTangentsL(c2))`{.javascript}](https://github.com/MonoidMusician/blog/blob/4147508e0dfd2e0451ba89a5e6ed5116e9628d73/assets/js/minkowski.js#L1264-L1267) splits the pen path according to the points of interest of the pen nib.
+- [`getTangentsL(c2)`{.javascript}](https://github.com/MonoidMusician/blog/blob/4147508e0dfd2e0451ba89a5e6ed5116e9628d73/assets/js/minkowski.js#L201-L203) includes both the control point tangents of the Bézier as well as the beginning-to-end tangent, to make the tangent function injective on the length of each segment.?? ??
+- [`doTheTask(c1, c2)`{.javascript}](https://github.com/MonoidMusician/blog/blob/4147508e0dfd2e0451ba89a5e6ed5116e9628d73/assets/js/minkowski.js#L239-L303) creates a patch or two from two Bézier curves, which will either be the “parallelogram” formed by translating them, or will include their convolution if it exists.
 
 ### Hacks
 

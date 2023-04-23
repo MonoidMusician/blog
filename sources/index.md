@@ -15,7 +15,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   > If the inputs are cubic Bézier curves, is the output as well?
   >
   > The catch?
-  > Itʼs mathematically impossible to model the output using cubic Bézier curves, as I determined after a bit of math.
+  > Itʼs mathematically impossible to model the output using cubic Bézier curves, as I determined after a bit calculus.
   > However, that doesnʼt prevent us from getting pretty darn close.
   > Let me show you how it works out.
 
