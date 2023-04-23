@@ -9,6 +9,16 @@ This blog will be more focused on programming and mathematics, while my more per
 Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/blog) and my account of the [technologies](technology.html) that go into this blog.
 
 ## Posts
+- [Impossible Bézier Calligraphy: Approximating cubic nibs drawn along cubic strokes](bezier_calligraphy.html)
+
+  > Given a pen nib of some shape, what composite shape is produced when that pen is drawn along any particular path?
+  > If the inputs are cubic Bézier curves, is the output as well?
+  >
+  > The catch?
+  > Itʼs mathematically impossible to model the output using cubic Bézier curves, as I determined after a bit of math.
+  > However, that doesnʼt prevent us from getting pretty darn close.
+  > Let me show you how it works out.
+
 - [Interactive Parser Explanations](parser.html)
 
   > I have been building this framework for explaining, analyzing, and teaching about LR(1) grammars for a couple months now.

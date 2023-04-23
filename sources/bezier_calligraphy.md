@@ -17,15 +17,15 @@ If the inputs are cubic Bézier curves, is the output as well?
 :::: {.Bonus box-name="Jargonized"}
 Is the [Minkowski sum](https://en.wikipedia.org/wiki/Minkowski_addition) of two piecewise cubic Bézier hulls a [piecewise cubic Bézier hull](https://en.wikipedia.org/wiki/Composite_B%C3%A9zier_curve)?
 
-More specifically, is the the convolution of two cubic Béziers a cubic Bézier?
+More specifically, is the the convolution of two cubic Bézier curves a cubic Bézier curve?
 ::::
 :::
 
 The catch?
-Itʼs mathematically impossible to model the output using cubic Bézier curves, as I determined after a bit of math.
+Itʼs mathematically impossible to model the output using cubic curves, as I determined after a bit of math.
 In fact, it fails already for _quadratic_ curves (the simpler companion to cubic curves, which would have simpler, more tractable solutions).
 
-The cubic in “cubic Bézier” refers to the fact that they are parametric curves modeled by _cubic polynomials_ (one polynomial for the \(x\) coordinate and one polynomial for the \(y\) coordinate, in terms of a shared time variable \(t\)).
+The cubic in “cubic Bézier curve” refers to the fact that they are parametric curves modeled by _cubic polynomials_ (one polynomial for the \(x\) coordinate and one polynomial for the \(y\) coordinate, in terms of a shared time variable \(t\)).
 Simply put, the solution for how the curves of the pen and the curves of the path interact means that the solution wonʼt be a polynomial anymore, it would at least be a [rational function](https://en.wikipedia.org/wiki/Rational_function), [i.e.]{.foreign lang=la} a polynomial divided by another polynomial.
 
 However, that doesnʼt prevent us from getting pretty darn close.
@@ -71,23 +71,22 @@ Here you can see the musculoskeletal anatomy of a Minkowski calligraphy stroke:
     fill: #0059;
     pointer-events: stroke;
   }
-  #main-calligraphy-demo > svg {
+  [id$="-calligraphy-demo"] > svg {
     width: 50%;
   }
   @media (max-width: 760px) {
-    #main-calligraphy-demo > svg {
+    [id$="-calligraphy-demo"] > svg {
       width: 100%;
     }
   }
 </style>
 <div id="main-calligraphy-demo"></div>
+<label><input id="anatomy" type="checkbox" checked> Overlay anatomy</label>
 <script src="assets/js/quartic.js"></script>
 <script src="assets/js/calligraphy.js"></script>
 <script src="assets/js/minkowski.js"></script>
 
 <br/>
-
-<label><input id="anatomy" type="checkbox"> Enable anatomy</label>
 
 ::: {.Details box-name="Legend"}
 <!-- - Black – covered by the basic algorithm. -->
@@ -136,7 +135,11 @@ Mathematically we would say weʼre taking the [Cartesian product](https://en.wik
 I was able to do this much in Inkscape directly: copy some segments, align them.
 You can even make linked clones so it updates altogether.
 
-But there were problems: when the paths crossed over it got way too thin.
+<div id="simplest-calligraphy-demo"></div>
+<label><input id="anatomy-simplest" type="checkbox" checked> Overlay anatomy</label>
+
+But there were problems: when the paths crossed over it got noticeably too thin.
+Even before then, the curves were trending too close, as you can see by double-clicking on it to reveal the red approximation.
 Basically if the pen nib wasnʼt made of perfectly straight lines, the composite stroke would be missing stuff.
 
 Essentially this process is simulating what you would get by stamping the pen nib in certain points, and then drawing a rake through the path to connect them with curves.
@@ -161,6 +164,9 @@ Looking at it more closely (literally) I realized that the separation occurs pre
 My first thought was to stamp out the problem: insert more stamps of the pen nib at these problematic tangent points where it wants to detach from the real path.
 Little did I know this was only the start of unraveling a long thread … it was not enough!
 For longer curvy segments, it was clear that the extra stamps only masked the problem and did not account for what lay between them.
+
+<div id="simple-calligraphy-demo"></div>
+<label><input id="anatomy-simple" type="checkbox" checked> Overlay anatomy</label>
 
 The main insight, which I have already spoiled for you, is that we need to find some composite of the curves of the pen nib with the curves in the pen path, a composite which is not identical to either curve.
 
@@ -198,7 +204,7 @@ Now we can find a precise curve to work towards:
 given two “nice” curves, we add up all the points where their tangents are parallel, to obtain a new curve.
 (This is called the convolution of the two curves.)
 
-We hope to solve this in the case of cubic Béziers in particular: given a tangent from one curve (the pen path), find the time when the other curve (the pen nib) has the same tangent, and add those points together.
+We hope to solve this in the case of cubic curves in particular: given a tangent from one curve (the pen path), find the time when the other curve (the pen nib) has the same tangent, and add those points together.
 
 #### Death
 Letʼs try a simpler thing first and see why it fails:
@@ -211,7 +217,7 @@ This makes us take fractions (see below for more details in the cubic case).
 So the solution is a [rational function](https://en.wikipedia.org/wiki/Rational_function) (ratio of two polynomials).
 Bézier curves are polynomials, not rational functions, so the result will not be a Bézier curve.
 
-Dealing with cubic Béziers, their tangent vector (being the derivative of their position vector) is a quadratic function.
+Dealing with cubic curves, their tangent vector (being the derivative of their position vector) is a quadratic function.
 We want the two tangent vectors to be parallel, so we end up with a quadratic equation of one in terms of the other.
 Solving the quadratic equation introduces radicals, so it is no longer even a rational function in the cubic case.
 
@@ -584,6 +590,8 @@ In our case, we are hoping that the curves we come across, although not technica
 ::: Bonus
 In fact, one cool thing about this implementation is that we can use it to find the closest Bézier curve _without a loop_ to one _with a loop_.
 (And the reverse, though I have not implemented that.)
+
+<div id="delooper-demo"></div>
 :::
 
 ##### Steps to a solution
@@ -664,9 +672,30 @@ Finally I also added a check that ensures we are getting the correct curvature o
 
 ::: Bonus
 Itʼs actually really pretty to see solutions with all signs of curvatures together:
+
+<div id="all-fits-demo"></div>
 :::
 
 ## Implementation
+
+I have an implementation in vanilla JavaScript of the algorithm described in this post.
+
+Of course it needs some basic theory of vectors and polynomials and Bézier curves.
+For example, `bsplit(points, t0)`{.javascript} returns a vector of two new Bézier curves that cover intervals \([0, t0]\) and \([t0, 1]\) of the input curve, respectively.
+
+The important functions in `calligraphy.js` are as follows:
+
+- `compositeI(P,Q)`{.javascript} computes the approximate Bézier convolution of `P` with `Q`.
+- `PQ_CURVATURE(P,Q)(p,q=T_SOL(P,Q)(p))`{.javascript} computes the curvature of the exact convolution between `P` and `Q` at `(p,q)` (where `q` should be the point on `Q` corresponding to `p` on `P`, i.e. parallel).
+- `INFLXNS(P)`{.javascript} computes the inflection points of `P`.
+
+And the full algorithm is put together (with visualization) in `minkowski.js`:
+
+- `doTheThing(p1, p2)`{.javascript} does the thing, as it says.
+- `splitPathAtInflections(p2)`{.javascript} removes pathologies from the pen nib.
+- `splitBezierAtTangents(c1, getTangentsL(c2))`{.javascript} splits the pen path according to the points of interest of the pen nib.
+- `getTangentsL(c2)`{.javascript} includes both the control point tangents of the Bézier as well as the beginning-to-end tangent, to make the tangent function injective on the length of each segment.?? ??
+- `doTheTask(c1, c2)`{.javascript} creates a patch or two from two Bézier curves, which will either be the “parallelogram” formed by translating them, or will include their convolution if it exists.
 
 ### Hacks
 
@@ -694,3 +723,4 @@ Other miscellanea on Bézier curves:
 - Special cases to [arc length reparameterization of a cubic Bézier](https://math.stackexchange.com/questions/3024630/arc-length-reparameterization-of-a-cubic-bezier-in-parts)
 - [the term for the third-derivative analog of curvature for curves is “aberrancy”](https://math.stackexchange.com/questions/3294/how-to-approximate-connect-two-continuous-cubic-b%C3%A9zier-curves-with-to-a-single-o#comment8479_3983)
 - [Bézier curvature extrema](https://math.stackexchange.com/questions/1954845/bezier-curvature-extrema/1956264#1956264)
+- … can time-parameterization cut down on the configuration space of cubic curves too?

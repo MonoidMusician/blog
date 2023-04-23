@@ -98,7 +98,7 @@ type Nutss =
 
 inputC :: String -> String -> String -> (String -> Effect Unit) -> Nut
 inputC label placeholder initialValue onInput =
-  D.label (D.Class !:= "text")
+  D.label (D.Class !:= "input-wrapper text")
     [ D.span_ [ text_ label ]
     , D.input
         ( oneOf
@@ -120,7 +120,7 @@ inputValidated
   -> (String -> Effect Unit)
   -> Domable lock payload
 inputValidated cls label placeholder initialValue valid onInput =
-  D.label (D.Class <:=> (append "text" <<< (eq "" >>> if _ then "" else " invalid")) <$> (pure "" <|> valid))
+  D.label (D.Class <:=> (append "input-wrapper text" <<< (eq "" >>> if _ then "" else " invalid")) <$> (pure "" <|> valid))
     [ D.span_ [ text_ label ]
     , D.input
         ( oneOf
@@ -136,7 +136,7 @@ inputValidated cls label placeholder initialValue valid onInput =
 
 inputC' :: forall lock payload. String -> String -> Event String -> (String -> Effect Unit) -> Domable lock payload
 inputC' label placeholder initialValue onInput =
-  D.label (D.Class !:= "text")
+  D.label (D.Class !:= "input-wrapper text")
     [ D.span_ [ text_ label ]
     , D.input
         ( oneOf
@@ -970,7 +970,7 @@ randomComponent { produced: producedRules, grammar: { start: { pName: entry } } 
       initial = genNT producedRules entry # maybe [] (QC.sample (LCG.mkSeed 1234) initialAmt)
     D.div_
       [ D.div_
-          [ D.label (D.Class !:= "range")
+          [ D.label (D.Class !:= "input-wrapper range")
               [ D.span_ [ text_ "Simple" ]
               , D.input
                   ( oneOf
@@ -983,7 +983,7 @@ randomComponent { produced: producedRules, grammar: { start: { pName: entry } } 
                   []
               , D.span_ [ text_ "Complex" ]
               ]
-          , D.label (D.Class !:= "range")
+          , D.label (D.Class !:= "input-wrapper range")
               [ D.span_ [ text_ "Few" ]
               , D.input
                   ( oneOf
@@ -1394,8 +1394,8 @@ inputComponent initialInput inputStream sendInput current =
                               ]
                           , D.div_
                               [ text_ "Speed"
-                              , D.span_ $ join $ map
-                                  ( \(n /\ l) ->
+                              , D.span_ $ map
+                                  ( \(n /\ l) -> D.label_
                                       [ D.input
                                           ( oneOfMap pure
                                               [ D.Xtype := "radio"
@@ -1406,7 +1406,7 @@ inputComponent initialInput inputStream sendInput current =
                                               ]
                                           )
                                           []
-                                      , D.label_ [ text_ l ]
+                                      , text_ l
                                       ]
                                   )
                                   [ 1.0 /\ "1x", (1.0 / e) /\ "ex", (1.0 / pi) /\ "pix" ]

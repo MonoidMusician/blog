@@ -212,6 +212,46 @@ const fit_check = (f0,f1,d0,d1,k0,k1) => {
   };
   return rs.sort((a, b) => score(a) - score(b))[0];
 };
+const fit_all = (f0,f1,d0,d1,k0,k1) => {
+  d0 = normalize(d0); d1 = normalize(d1);
+  const d0xd1 = cross2(d0, d1);
+  const a = sub(f1, f0);
+  const d0xa = cross2(d0, a);
+  const axd1 = cross2(a, d1);
+  let δs;
+  if (d0xd1 === 0) {
+    δs = [Math.sqrt((2/3)*(d0xa)/k0), Math.sqrt((2/3)*(axd1)/k1)];
+  } else {
+    const ep = 1e-9;
+    if (Math.abs(axd1) < ep || Math.abs(d0xa) < ep) {
+      throw new Error("parallel " + [a, axd1, d0xa]);
+    }
+    // https://herbie.uwplse.org/
+    /**/
+    let ρs;
+    //let R0 = (3/2)*(k0*axd1*axd1)/(d0xa*d0xd1*d0xd1);
+    const R0 = 1.5 * (((axd1 / d0xa) / (d0xd1 / k0)) / (d0xd1 / axd1));
+    //let R1 = (3/2)*(k1*d0xa*d0xa)/(axd1*d0xd1*d0xd1);
+    const R1 = 1.5 * (((d0xa / axd1) / (d0xd1 / k1)) / (d0xd1 / d0xa));
+    if (!Number.isFinite(R0) || !Number.isFinite(R1)) {
+      throw new Error("NaNaNaNaNa " + [R0,R1,k0,k1] + "; " + [a, axd1, d0xa]);
+    }
+    const c0 = [1-R1, -1, 2*R1*R0, 0, -R1*R0*R0];
+    const c1 = [1-R0, -1, 2*R0*R1, 0, -R0*R1*R1];
+    const ρ0s = solve_quartic(c0);
+    const ρ1s = solve_quartic(c1);
+    ρs = [
+      ρ0s.map(ρ0 => [ρ0, 1 - R0*ρ0*ρ0]),
+      ρ1s.map(ρ1 => [1 - R1*ρ1*ρ1, ρ1]),
+      ρ0s.flatMap(ρ0 => ρ1s.map(ρ1 => [ρ0, ρ1])),
+    ][1].filter(p => p.every(Number.isFinite));
+    if (!ρs.length) {
+      throw new Error("no quartic solutions " + [c0, ρ0s, c1, ρ1s].join("; "));
+    }
+    δs = ρs.map(([ρ0,ρ1]) => [ρ0 * axd1 / d0xd1, ρ1 * d0xa / d0xd1]);
+  }
+  return δs.map(([δ0,δ1]) => [f0,add(f0, mul(δ0, d0)),sub(f1, mul(δ1, d1)),f1]);
+};
 const fit = (f0,f1,d0,d1,k0,k1) => {
   d0 = normalize(d0); d1 = normalize(d1);
   const d0xd1 = cross2(d0, d1);
@@ -262,7 +302,10 @@ const fit = (f0,f1,d0,d1,k0,k1) => {
   return δs.map(([δ0,δ1]) => [f0,add(f0, mul(δ0, d0)),sub(f1, mul(δ1, d1)),f1]);
 };
 const fit_existing = P => {
-  return fit_check(P[0], P[3], sub(P[1], P[0]), sub(P[3], P[2]), Bcurvature0(P), Bcurvature1(P));
+  return fit_check(...from_existing(P));
+};
+const from_existing = P => {
+  return [P[0], P[3], sub(P[1], P[0]), sub(P[3], P[2]), Bcurvature0(P), Bcurvature1(P)];
 };
 const fit_existing_score = P => {
   let Q = fit_existing(P);
@@ -271,7 +314,7 @@ const fit_existing_score = P => {
     P0: Bcurvature0(P), P1: Bcurvature1(P),
     Q0: Bcurvature0(Q), Q1: Bcurvature1(Q),
   };
-}
+};
 
 const degree = cs => {
   let d = 0;
@@ -458,7 +501,7 @@ window.calligraphy = {
   T_DERIV, T_DERIVS, COMP, INFLXNS,
   curvature, Bcurvature, Bcurvature_polys, Bcurvature0, Bcurvature1,
   composite, compositeI,
-  fit, fit_check, fit_existing, fit_existing_score,
+  fit, fit_check, fit_existing, fit_existing_score, from_existing, fit_all,
   raise, pmul, norm, normalize,
   ex: (function() {
     let r = {};

@@ -25,6 +25,9 @@ function toPath(segs) {
   }
   return r;
 }
+function singleCurve(points) {
+  return [{type:"M", values:points[0]}, {type:"C", values:points.slice(1).flatMap(x => x)}];
+}
 
 var curves = (function(segs) {
   if (!segs.length) return "";
@@ -179,7 +182,11 @@ function time(label, fn, ...args) {
   return r;
 }
 
-function doTheThing(p1, p2, well) {
+function doTheThing(p1, p2, mode) {
+  if (mode === "simplest" || mode === "simple") {
+    p1 = startingAt(calligraphy.add(getOrigin(p1), getOrigin(p2)), p1);
+    return (mode === "simplest" ? fillProduct : fullFillProduct)(p1, p2);
+  }
   var start = performance.now();
   registry = {};
   composites = [];
@@ -197,17 +204,11 @@ function doTheThing(p1, p2, well) {
   let allKeys = [];
   for (let c2 of c2s) {
     let tangents = getTangentsL(c2);
-    let c1s2 = c1s.flatMap(c1 => splitBezierAtTangents(c1, well === 2 ? allTangents : tangents));
+    let c1s2 = c1s.flatMap(c1 => splitBezierAtTangents(c1, tangents));
     for (let c1 of c1s2) {
       let r = doTheTask(c1, c2);
       rs.push(...r.map(curvesToPath));
       allKeys.push(c1[0], c1[3]);
-    }
-  }
-  if (well) {
-    allKeys = uniqBy(allKeys, x => x.toString());
-    for (let [dx,dy] of allKeys) {
-      rs.push(curvesToPath(c2s.map(c2 => c2.map(([x,y]) => ([x+dx,y+dy])))));
     }
   }
   console.log((performance.now() - start).toFixed(2));
@@ -302,6 +303,7 @@ function doTheTask(P, Q) {
 }
 
 function guesstimate(curves) {
+  const {Curve,sub,Bcurvature0,Bcurvature1,fit_check} = calligraphy;
   if (curves.length === 1) return new Curve(curves[0]);
   const c0 = curves[0]; const c1 = curves[curves.length-1];
   const f0 = c0[0];
@@ -328,14 +330,36 @@ function center(path) {
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("main-calligraphy-demo").appendChild(interactive());
+  document.getElementById("simplest-calligraphy-demo").appendChild(interactive("simplest"));
+  document.getElementById("simple-calligraphy-demo").appendChild(interactive("simple"));
 });
 
 document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("main-calligraphy-demo").appendChild(visualize(guideS, toPath(segmentsC)));
+  document.getElementById("delooper-demo").appendChild(delooper());
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("all-fits-demo").appendChild(all_fits());
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("main-calligraphy-demo").appendChild(visualize(guideS, toPath(segmentsCModes[""])));
+  document.getElementById("simplest-calligraphy-demo").appendChild(visualize(guideS, toPath(segmentsCModes["simplest"]), 0, "simplest"));
+  document.getElementById("simple-calligraphy-demo").appendChild(visualize(guideS, toPath(segmentsCModes["simple"]), 0, "simple"));
   document.getElementById("anatomy").checked = anatomy;
   document.getElementById("anatomy").addEventListener("input", e => {
     anatomy = !!e.target.checked;
-    visualize(guideS, toPath(segmentsC));
+    visualize(guideS, toPath(segmentsCModes[""]));
+  });
+  document.getElementById("anatomy-simplest").checked = anatomy;
+  document.getElementById("anatomy-simplest").addEventListener("input", e => {
+    anatomy = !!e.target.checked;
+    visualize(guideS, toPath(segmentsCModes["simplest"]), 0, "simplest");
+  });
+  document.getElementById("anatomy-simple").checked = anatomy;
+  document.getElementById("anatomy-simple").addEventListener("input", e => {
+    anatomy = !!e.target.checked;
+    visualize(guideS, toPath(segmentsCModes["simple"]), 0, "simple");
   });
 });
 
@@ -430,7 +454,11 @@ function draggable(node, datum=undefined, done=undefined) {
   mkListeners(listeners);
   return node;
 }
-var segmentsC = [[[-1.8889230491002778,3.5185821502848356],[0.14815082738041596,1.2963197395786246],[1.4444705669590405,0.3703770684510346]],[[2.370413238086627,-0.5555656026765536],[4.5926756487928415,-1.8518853422551782],[4.222298580341807,-3.148205081833801]],[[2.1852247038611097,-2.2222624107062128],[1.2592820327335232,-2.40745094493173],[-0.4074147752961359,-1.2963197395786246]],[[-2.4444886517768296,-0.18518853422551906],[-3.000054254453385,0.7407541369020691],[-2.6296771860023505,2.0370738764806937]]];
+var segmentsCModes = {
+  "": [[[-1.8889230491002778,3.5185821502848356],[0.14815082738041596,1.2963197395786246],[1.4444705669590405,0.3703770684510346]],[[2.370413238086627,-0.5555656026765536],[4.5926756487928415,-1.8518853422551782],[4.222298580341807,-3.148205081833801]],[[2.1852247038611097,-2.2222624107062128],[1.2592820327335232,-2.40745094493173],[-0.4074147752961359,-1.2963197395786246]],[[-2.4444886517768296,-0.18518853422551906],[-3.000054254453385,0.7407541369020691],[-2.6296771860023505,2.0370738764806937]]],
+  "simplest": [[[-1.8889230491002778,3.5185821502848356],[0.14815082738041596,1.2963197395786246],[1.4444705669590405,0.3703770684510346]],[[2.370413238086627,-0.5555656026765536],[4.5926756487928415,-1.8518853422551782],[4.222298580341807,-3.148205081833801]],[[2.1852247038611097,-2.2222624107062128],[1.2592820327335232,-2.40745094493173],[-0.4074147752961359,-1.2963197395786246]],[[-2.4444886517768296,-0.18518853422551906],[-3.000054254453385,0.7407541369020691],[-2.6296771860023505,2.0370738764806937]]],
+  "simple": [[[-1.8889230491002778,3.5185821502848356],[0.14815082738041596,1.2963197395786246],[1.4444705669590405,0.3703770684510346]],[[2.370413238086627,-0.5555656026765536],[4.5926756487928415,-1.8518853422551782],[4.222298580341807,-3.148205081833801]],[[2.1852247038611097,-2.2222624107062128],[1.2592820327335232,-2.40745094493173],[-0.4074147752961359,-1.2963197395786246]],[[-2.4444886517768296,-0.18518853422551906],[-3.000054254453385,0.7407541369020691],[-2.6296771860023505,2.0370738764806937]]],
+};
 var INPUT = {
   nib: {
     value: [],
@@ -455,7 +483,9 @@ function toRadians (angle) {
 function roundAngle(angle) {
   return toRadians((Math.round(toDegrees(angle) + 45 + 360) % 90) - 45);
 }
-function interactive() {
+function interactive(mode) {
+  var segmentsC = segmentsCModes[mode||""];
+  var suffix = mode ? "-"+mode : "";
   var path = mkPath(toPath(segmentsC));
   var copySegments = () => segmentsC.map(ps => ps.map(p => p.map(xy => xy)));
   var mutateSegments = (fn,against) => {
@@ -474,22 +504,22 @@ function interactive() {
   var rotating = f => ([x,y]) => {
     return rotate(f(rotate([x,y], angle)), -angle);
   };
-  let update = () => requestAnimationFrame(() => visualize(guideS, toPath(segmentsC)));
+  let update = () => requestAnimationFrame(() => visualize(guideS, toPath(segmentsC), 0, mode));
   let update2 = (_, reallyDone) => {
     mkSVG({
       type: "g",
-      id: "superpath",
+      id: "superpath"+suffix,
       fill: "none",
-      children: pathToCurves(splitPathAtInflections(toPath(segmentsC))).map(c => mkPath(curvesToPath([c]))),
+      //children: pathToCurves(splitPathAtInflections(toPath(segmentsC))).map(c => mkPath(curvesToPath([c]))),
     });
     if (reallyDone) update();
   };
   let angle = toRadians(1 ? -44 : -37);
   var superpath = mkSVG({
     type: "g",
-    id: "superpath",
+    id: "superpath"+suffix,
     fill: "none",
-    children: pathToCurves(splitPathAtInflections(toPath(segmentsC))).map(c => mkPath(curvesToPath([c]))),
+    //children: pathToCurves(splitPathAtInflections(toPath(segmentsC))).map(c => mkPath(curvesToPath([c]))),
   });
   let arcs = [
     "M 0 9.95 A 10 10 0 0 0 2 9.75 M 0 9.95 A 10 10 0 0 1 -2 9.75",
@@ -499,7 +529,7 @@ function interactive() {
   ]
   return mkSVG({
     type: "svg",
-    id: "vis",
+    id: "vis"+suffix,
     "viewBox": [-10, -10, 20, 20],
     "style": {
       "stroke-linecap": "round",
@@ -606,9 +636,9 @@ function interactive() {
             path.setAttribute("d", renderPathData(toPath(segmentsC)));
             mkSVG({
               type: "g",
-              id: "superpath",
+              id: "superpath"+suffix,
               fill: "none",
-              children: pathToCurves(splitPathAtInflections(toPath(segmentsC))).map(c => mkPath(curvesToPath([c]))),
+              //children: pathToCurves(splitPathAtInflections(toPath(segmentsC))).map(c => mkPath(curvesToPath([c]))),
             });
           }, update)
         ),
@@ -640,17 +670,153 @@ function interactive() {
   });
 }
 
+function delooper() {
+  var scale = 1;
+  var points = [[-1.8889230491002778,3.5185821502848356],[4.185463659147869,-0.1309915413533833],[-4.364160401002507,-0.6573073308270683],[2.8320802005012524,3.8539708646616546]].map(p => p.map(c => c*scale));
+  var path = mkPath(singleCurve(points));
+  var delooped = mkPath(singleCurve(calligraphy.fit_existing(points)));
+  return mkSVG({
+    type: "svg",
+    "viewBox": [-5, -5, 10, 10],
+    "style": {
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round",
+      "fill": "#000",
+      "stroke": "#444",
+      "stroke-width": 0.2,
+      "max-width": "350px",
+      "max-height": "350px",
+      "display": "block",
+      "margin": "auto",
+      "background-color": "#0005",
+    },
+    children: [
+      {
+        type: "g",
+        "style": {
+          "mix-blend-mode": "hard-light",
+          "fill": "none",
+        },
+        children: [
+          {type:"g",style:{"stroke":"#00F9"},children:[path]},
+          {type:"g",style:{"fill":"none","stroke":"#F007"},children:[delooped]},
+        ],
+      },
+      {
+        type: "g",
+        children: points.map(p =>
+          draggable(p.node = mkSVG({
+            type: "circle",
+            "cx": p[0],
+            "cy": p[1],
+            "r": .15,
+            "fill": "gray",
+            "stroke": "lightgray",
+            "stroke-width": 0.05,
+          }), (node, current, start) => {
+            p[0] = current.x;
+            p[1] = current.y;
+            node.setAttribute("cx", current.x);
+            node.setAttribute("cy", current.y);
+            path.setAttribute("d", renderPathData(singleCurve(points)));
+            delooped.setAttribute("d", renderPathData(singleCurve(calligraphy.fit_existing(points))));
+          }, () => false&&console.log(JSON.stringify(points)))
+        ),
+      },
+    ],
+  });
+}
+
+function all_fits() {
+  var scale = 1;
+  var points = [[2.8,0.6316964285714288],[2.4000000000000004,-2.711160714285714],[-2.142857142857143,-2.711160714285714],[-2.4857142857142858,0.4888392857142856]].map(p => p.map(c => c*scale));
+  function render() {
+    return [
+      mkSVG({
+        type: "g",
+        id: "all-fits-handles",
+        "style": {
+          "fill": "none",
+          "stroke": "#76cbe79e",
+          "stroke-width": 0.05,
+          "stroke-dasharray": 20/21*1/5,
+          "stroke-linecap": "butt",
+        },
+        children: points.flatMap((p1,i) => {
+          if (i == 0) return [];
+          let p0 = points[i-1];
+          return [
+            mkSVG({
+              type: "line",
+              x1: p0[0], x2: p1[0], y1: p0[1], y2: p1[1],
+            })
+          ];
+        }),
+      }),
+      mkSVG({
+        type: "g",
+        id: "all-fits",
+        "style": {
+          "fill": "none",
+          "stroke": "#0006",
+        },
+        children: calligraphy.fit_all(...calligraphy.from_existing(points)).map(curve => mkPath(singleCurve(curve))),
+      }),
+    ];
+  }
+  return mkSVG({
+    type: "svg",
+    "viewBox": [-5, -5, 10, 10],
+    "style": {
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round",
+      "fill": "#000",
+      "stroke": "#444",
+      "stroke-width": 0.2,
+      "max-width": "350px",
+      "max-height": "350px",
+      "display": "block",
+      "margin": "auto",
+      "overflow": "visible"
+    },
+    children: [
+      ...render(),
+      {
+        type: "g",
+        children: points.map(p =>
+          draggable(p.node = mkSVG({
+            type: "circle",
+            "cx": p[0],
+            "cy": p[1],
+            "r": .15,
+            "fill": "gray",
+            "stroke": "lightgray",
+            "stroke-width": 0.05,
+          }), (node, current, start) => {
+            p[0] = current.x;
+            p[1] = current.y;
+            node.setAttribute("cx", current.x);
+            node.setAttribute("cy", current.y);
+            render();
+          }, () => false&&console.log(JSON.stringify(points)))
+        ),
+      },
+    ],
+  });
+}
+
 // easySVG
 // - drag n drop
 // - underlying re-coordinator
 //   and listeners for … stuff
 // - prioritizer
 
-function visualize(p1, p2, prec=100) {
-  var YEAH = doTheThing(p1, p2);
+function visualize(p1, p2, prec=100, mode) {
+  var suffix = mode ? "-"+mode : "";
+  var YEAH = doTheThing(p1, p2, mode);
   return mkSVG({
     type: "svg",
-    id: "PREVIEW",
+    id: "PREVIEW"+suffix,
     "viewBox": [30, 85, 50, 50],
     "fill": "#000",
     "stroke": "#000",
@@ -661,7 +827,7 @@ function visualize(p1, p2, prec=100) {
     },
     "ondblclick": () => {
       if (!prec || prec < 500) {
-        visualize(p1, p2, (prec || 00) + 100);
+        visualize(p1, p2, (prec || 00) + 100, mode);
       }
     },
     children: [
@@ -697,7 +863,7 @@ function visualize(p1, p2, prec=100) {
           "ondblclick": e => {e.target.remove();e.stopPropagation()},
         })),
       },
-      !anatomy?{}:{
+      !anatomy||mode?{}:{
         type: "g",
         "class": "annot",
         "fill": "none",
