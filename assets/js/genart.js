@@ -14,7 +14,7 @@ var initialStyle = canvas.style.toString();
 textarea.value = localStorage.getItem(prefix+localStorage.getItem("genart-active")) || "";
 render();
 if (localStorage.getItem("genart-active") === "default" && !textarea.value) {
-  fetch("/assets/js/genart/default.js").then(r => r.text()).then(v => {
+  fetch("./assets/js/genart/default.js").then(r => r.text()).then(v => {
     textarea.value = v;
     render();
   });
