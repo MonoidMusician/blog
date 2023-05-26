@@ -4,16 +4,17 @@ var textarea = document.getElementById('textarea');
 var color = document.getElementById('color');
 var ctx = canvas.getContext('2d');
 var prefix = "genart-code-";
+var items = Array.from(localStorage).map((_, i) => localStorage.key(i)).filter(k => k.startsWith(prefix)).map(k => k.slice(prefix.length));
 if (!localStorage.getItem("genart-active")) {
   localStorage.setItem("genart-active", "default");
 }
 var active = document.getElementById('active');
 active.value = localStorage.getItem("genart-active");
-var initialStyle = canvas.style.toString();
+var initialStyle = canvas.style.cssText;
 
 textarea.value = localStorage.getItem(prefix+localStorage.getItem("genart-active")) || "";
 render();
-if (localStorage.getItem("genart-active") === "default" && !textarea.value) {
+if (localStorage.getItem("genart-active") === "default" && (!textarea.value || (items.length === 1 && items[0] === "default"))) {
   fetch("./assets/js/genart/default.js").then(r => r.text()).then(v => {
     textarea.value = v;
     render();

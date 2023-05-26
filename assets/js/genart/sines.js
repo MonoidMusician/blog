@@ -1,5 +1,5 @@
 //ctx.canvas.style.backgroundColor = '#4d0536';
-//document.body.style.backgroundColor = '#1f232b';
+document.body.style.backgroundColor = '#1f232b';
 
 let {width, height} = ctx.canvas;
 let dim = [0, 0, width, height];
@@ -93,3 +93,4 @@ gradient.addColorStop(0.75, '#4d053600');
 gradient.addColorStop(1, '#4d053677');
 ctx.fillStyle = gradient;
 ctx.fillRect(...dim);
+

@@ -1,5 +1,5 @@
 ---
-title: Simple Gen Art Studio
+title: Gen Art Scratchpad
 subtitle: A really simple editor for generative art in JS
 author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
@@ -55,7 +55,7 @@ author:
 ::::
 
 :::: {}
-  <canvas id="canvas" style="display:block;margin:auto;max-width:100%" width="500px" height="500px"></canvas>
+  <canvas id="canvas" style="display:block;margin:auto;max-width:100%" width="1500px" height="500px"></canvas>
 ::::
 :::::
 
