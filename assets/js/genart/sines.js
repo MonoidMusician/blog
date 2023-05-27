@@ -1,10 +1,34 @@
 //ctx.canvas.style.backgroundColor = '#4d0536';
-document.body.style.backgroundColor = '#1f232b';
+//document.body.style.backgroundColor = '#4d0536';
 
-let {width, height} = ctx.canvas;
+ctx.reset();
+
 let dim = [0, 0, width, height];
 let diag = [0, height, width, 0];
 let ctr = [0, height/2, width, height/2];
+
+let bounce = (radius,v=undefined) => {
+  if (v === undefined) v = frame;
+  let range = radius - 1;
+  let period = 2*range;
+  let r = v % period;
+  r = range - r;
+  r = Math.abs(r);
+  r = range - r;
+  return r;
+};
+let sbounce = (radius,v=undefined) => {
+  let range = radius - 1;
+  let r = bounce(radius, v);
+  r /= range;
+  r *= 2;
+  r -= 1;
+  r = Math.sin(r * Math.PI/2);
+  r += 1;
+  r /= 2;
+  r *= range;
+  return r;
+};
 
 var gradient = ctx.createLinearGradient(...dim);
 gradient.addColorStop(0, '#3e042cf0');
@@ -26,7 +50,7 @@ for ([ctx.strokeStyle, ctx.lineWidth, ctx.globalAlpha] of styles) {
     ctx.moveTo(x, y);
     for (let i = 0; i < 9; i += 1) {
       x += 150;
-      y = y0 + (45 + 20 * Math.sin(x * Math.PI / ctx.canvas.width)) * Math.sin((arc*k > 0 ? 1500 - x : x) / k * Math.PI) + arc * Math.sin(x * Math.PI / ctx.canvas.width);
+      y = y0 + (45 + 20 * Math.sin(x * Math.PI / ctx.canvas.width)) * Math.sin((arc*k > 0 ? 1500 - x : x) / k * Math.PI) + arc * Math.sin((x + Math.sign(arc*k) * bounce(13+i)*10) * Math.PI / ctx.canvas.width);
       ctx.lineTo(x, y);
     }
     ctx.lineTo(ctx.canvas.width, y0);
@@ -75,9 +99,10 @@ for (let [j, [x0,y0,k,a]] of placements.entries()) {
     let [x,y] = [x0, y0];
     ctx.beginPath();
     ctx.moveTo(x,y);
-    for (let i=-4; i<=154; i+=0.3) {
-      x = x0 + i*10;
-      y = y0 - Math.sin(i * k) * (a + a * Math.sin(x * Math.PI / ctx.canvas.width));
+    let step = 0.3;
+    for (let i=-4; i<=154; i+=step) {
+      x += 10*step;
+      y = y0 - Math.sin(i * k + 0.1*sbounce(52+j)) * (a + a * Math.sin((x + 5*sbounce(17)) * Math.PI / ctx.canvas.width));
       ctx.lineTo(x,y);
     }
     ctx.stroke();
@@ -93,4 +118,3 @@ gradient.addColorStop(0.75, '#4d053600');
 gradient.addColorStop(1, '#4d053677');
 ctx.fillStyle = gradient;
 ctx.fillRect(...dim);
-

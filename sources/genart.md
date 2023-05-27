@@ -5,6 +5,8 @@ author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
 ---
 
+Press shift-space and <button id="enjoy" class="add">enjoy</button> \^.\^
+
 ## Editor
 
 <style>
@@ -55,13 +57,16 @@ author:
 ::::
 
 :::: {}
-  <canvas id="canvas" style="display:block;margin:auto;max-width:100%" width="1500px" height="500px"></canvas>
+  <div><canvas class="fullscreen" id="canvas" style="display:block;margin:auto;max-width:100%" width="1500px" height="500px"></canvas><style></style></div>
+  <div class="Error" id="error" style="margin-top: 0.75em; font-family: monospace;"></div>
 ::::
 :::::
 
 ::::: {#bar}
 <input id="active"></input>
 <input id="color" type="color"></input>
+<button id="fullscreen">Fullscreen</button>
+<span id="frame"></span>
 :::::
 ::::::
 <script src="assets/js/genart.js"></script>
@@ -79,8 +84,14 @@ Changing it will load whatever is at the label, or save to it if it is blank (ct
 
 The color input component live replaces whatever selection you have in the text area with the chosen hex color of the form `#RRGGBB`.
 
-The canvas size is currently fixed to 500x500.
+The canvas size is currently fixed to 1500x500.
 (TODO: make configurable.)
+
+Press on the canvas to advance frames.
+Shift-click to keep/stop animating, or spacebar.
+(Shift+spacebar to enter/leave fullscreen as well.)
+
+TODO: upscaling
 
 TODO: make more interactive components.
 
