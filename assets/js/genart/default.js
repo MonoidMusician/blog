@@ -1,4 +1,4 @@
-let transpose = true;
+let transpose = false;
 let widescreen = true;
 
 //ctx.canvas.style.backgroundColor = '#4d0536';
