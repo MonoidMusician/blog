@@ -14,8 +14,37 @@ active.value = localStorage.getItem("genart-active");
 var styling = document.querySelector('#canvas + style');
 var initialStyle = canvas.style.cssText;
 
+function loadScript(src) {
+  var script = document.querySelector(`[src='${src}']`);
+  if (script) return script;
+  return document.head.appendChild(Object.assign(document.createElement("script"), {src}));
+}
+async function downloadFrames() {
+  let zip = new JSZip();
+  for (let i in framestore) {
+    let z = `${i}`;
+    while (z.length < 4) z = "0"+z;
+    zip.file(`frame${z}.png`, framestore[i]);
+  }
+  let blob = await zip.generateAsync({
+    type:"blob",
+    compression: "DEFLATE",
+    compressionOptions: {
+        level: 9
+    }
+  });
+  console.log(blob);
+  let U = URL.createObjectURL(blob);
+
+  let A = document.createElement("a");
+  A.href = U; A.click();
+
+  URL.revokeObjectURL(U);
+}
+
 var frame = 0;
 var last_code = "";
+window.framestore = [];
 
 textarea.value = localStorage.getItem(prefix+localStorage.getItem("genart-active")) || "";
 render();
@@ -33,6 +62,7 @@ function render() {
   } else {
     last_code = textarea.value;
     frame = 0;
+    framestore = [];
     canvas.width = canvas.width;
     canvas.style = initialStyle;
   }
@@ -61,6 +91,17 @@ function render() {
     styling.textContent = `#canvas::backdrop { background: ${getComputedStyle(document.body).background} }`
   }
   localStorage.setItem(prefix+localStorage.getItem("genart-active"), textarea.value);
+  if (document.getElementById('framestore').checked) {
+    framestore[frame] = "";
+    (async () => {
+      framestore[frame] = await (await fetch(canvas.toDataURL('image/png'))).blob();
+    })();
+    if (renderloop && frame+1 === 3600) {
+      clearInterval(renderloop); renderloop = undefined;
+      downloadFrames();
+    }
+  }
+  document.getElementById('framesstored').textContent = framestore.length;
 }
 
 let fps = 30;
@@ -163,6 +204,13 @@ document.getElementById('fullscreen').addEventListener('click', () => {
     frame -= 1;
     render();
   });
+});
+document.getElementById('download').addEventListener('click', () => {
+  clearInterval(renderloop); renderloop = undefined;
+  downloadFrames();
+});
+document.getElementById('framestore').addEventListener('click', () => {
+  loadScript("./assets/js/lib/jszip.min.js");
 });
 canvas.addEventListener('fullscreenchange', () => {
   if (document.fullscreenElement) return;

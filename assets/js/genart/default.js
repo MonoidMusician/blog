@@ -1,20 +1,36 @@
+let transpose = true;
+let widescreen = true;
+
 //ctx.canvas.style.backgroundColor = '#4d0536';
 document.body.style.background = document.fullscreenElement ? '#4d0536' : '';
 if (document.fullscreenElement) {
-  document.body.style.background = 'linear-gradient(to right, #3e042c, #4d0536)';
+  document.body.style.background =
+    transpose
+    ? 'linear-gradient(to bottom, #3e042c, #4d0536)'
+    : 'linear-gradient(to right, #3e042c, #4d0536)';
+}
+ctx.canvas.width = width = 1500;
+ctx.canvas.height = height = width*(widescreen ? 9/16 : 1/3);
+if (transpose) {
+  [ctx.canvas.height, ctx.canvas.width] = [ctx.canvas.width, ctx.canvas.height];
 }
 
 ctx.reset();
+if (transpose) {
+  ctx.rotate(Math.PI / 2);
+  ctx.scale(1, -1);
+}
 
 let dim = [0, 0, width, height];
 let diag = [0, height, width, 0];
 let ctr = [0, height/2, width, height/2];
 
-frame /= 6/5;
+let oo = 3600;
+let looped = p => (oo/2)/Math.round((oo/2)/p);
 
-let bounce = (radius,v=undefined) => {
+let bounce = (range,v=undefined) => {
   if (v === undefined) v = frame;
-  let range = radius - 1;
+  range = looped(range);
   let period = 2*range;
   let r = v % period;
   r = range - r;
@@ -22,9 +38,9 @@ let bounce = (radius,v=undefined) => {
   r = range - r;
   return r;
 };
-let sbounce = (radius,v=undefined) => {
-  let range = radius - 1;
-  let r = bounce(radius, v);
+let sbounce = (range,v=undefined) => {
+  range = looped(range);
+  let r = bounce(range, v);
   r /= range;
   r *= 2;
   r -= 1;
@@ -47,18 +63,18 @@ let styles = [
 ];
 for ([ctx.strokeStyle, ctx.lineWidth, ctx.globalAlpha] of styles) {
   for (let arc of [100, -120])
-  for (let k of [173, -177, -135, 133, 151, -105]) {
+  for (let [j, k] of [173, -177, -135, 133, 151, -105].entries()) {
     ctx.beginPath();
     k += 4 * (arc > 0);
-    let [x,y] = [0, 250];
+    let [x,y] = [0, height/2];
     let [x0, y0] = [x, y];
     ctx.moveTo(x, y);
     for (let i = 0; i < 9; i += 1) {
-      x += 150;
-      y = y0 + (45 + 20 * Math.sin(x * Math.PI / ctx.canvas.width)) * Math.sin((arc*k > 0 ? 1500 - x : x) / k * Math.PI) + arc * Math.sin((x + Math.sign(arc*k) * bounce(13+i, frame/3)*10) * Math.PI / ctx.canvas.width);
+      x += width/10;
+      y = y0 + (45 + 20 * Math.sin(x * Math.PI / width)) * Math.sin((arc*k > 0 ? 1500 - x : x) / k * Math.PI) + arc * Math.sin((x + Math.sign(arc*k) * bounce(3*(13+i))*3) * Math.PI / width);
       ctx.lineTo(x, y);
     }
-    ctx.lineTo(ctx.canvas.width, y0);
+    ctx.lineTo(width, y0);
     ctx.stroke();
   }
 }
@@ -77,18 +93,11 @@ let strokes = [
   '#0aef5c33',
   '#0aef5c33',
 ];
-/*strokes = [
-  '#fff9',
-  '#2d72c033',
-  '#2f568d33',
-  '#2f568d22',
-  '#0a7d9133',
-];/**/
 
 ctx.globalCompositeOperation = 'hard-light';
 
 const step = 0.091*Math.PI;
-let placements = [[0, 250, step, 50]];
+let placements = [[0, height/2, step, 50]];
 for (let i = 1; i < 5; i += 1) {
   let placement = [...placements[placements.length - 1]];
   placement[0] -= 10;
@@ -106,11 +115,11 @@ for (let [j, [x0,y0,k,a]] of placements.entries()) {
     ctx.moveTo(x,y);
     let step = 0.5;
     for (let i=-2; i<=152; i+=step) {
-      x += 10*step;
-      y = y0 - Math.sin(i * k + 0.1*sbounce(52+j)) * (a*.75 + a*1.75 * Math.sin((x + 3*sbounce(17)) * Math.PI / ctx.canvas.width));
+      x += width/150*step;
+      y = y0 - Math.sin(i * k + 0.1*sbounce(52+j)) * (a*.75 + a*1.75 * Math.sin((x + 3*sbounce(17)) * Math.PI / width));
       let pct = 0.8;
-      let n = x/canvas.width*2-1;
-      let phi = (Math.sin(n*Math.PI/2*pct)/Math.sin(Math.PI/2*pct)+1)/2*canvas.width;
+      let n = x/width*2-1;
+      let phi = (Math.sin(n*Math.PI/2*pct)/Math.sin(Math.PI/2*pct)+1)/2*width;
       ctx.lineTo(phi,y);
     }
     ctx.stroke();

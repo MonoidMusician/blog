@@ -57,7 +57,7 @@ Press shift-space and <button id="enjoy" class="add">enjoy</button> \^.\^
 ::::
 
 :::: {}
-  <div><canvas class="fullscreen" id="canvas" style="display:block;margin:auto;max-width:100%" width="1500px" height="500px"></canvas><style></style></div>
+  <div><canvas class="fullscreen" id="canvas" style="display:block;margin:auto;max-width:100%; max-height: 100vh" width="1500px" height="500px"></canvas><style></style></div>
   <div class="Error" id="error" style="margin-top: 0.75em; font-family: monospace;"></div>
 ::::
 :::::
@@ -67,6 +67,9 @@ Press shift-space and <button id="enjoy" class="add">enjoy</button> \^.\^
 <input id="color" type="color"></input>
 <button id="fullscreen">Fullscreen</button>
 <span id="frame"></span>
+<br/>
+<label><input type="checkbox" id="framestore"/> Store frames</label>
+<button id="download" class="bonus">Download framestore (<span id="framesstored">0</span> frames)</button>
 :::::
 ::::::
 <script src="assets/js/genart.js"></script>
@@ -98,3 +101,7 @@ TODO: make more interactive components.
 TODO: autocomplete for names
 
 TODO: proper JS editor???
+
+```bash
+ffmpeg -framerate 30 -i 'frame%04d.png' -vf scale=844:1500 -c:v libx264 -preset slow -crf 16 -profile:v high -pix_fmt yuv420p out.mp4
+```
