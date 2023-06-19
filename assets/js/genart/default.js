@@ -1,5 +1,5 @@
 let transpose = false;
-let widescreen = true;
+let widescreen = false;
 
 //ctx.canvas.style.backgroundColor = '#4d0536';
 document.body.style.background = document.fullscreenElement ? '#4d0536' : '';
@@ -11,6 +11,7 @@ if (document.fullscreenElement) {
 }
 ctx.canvas.width = width = 1500;
 ctx.canvas.height = height = width*(widescreen ? 9/16 : 1/3);
+let scale = width / 1500;
 if (transpose) {
   [ctx.canvas.height, ctx.canvas.width] = [ctx.canvas.width, ctx.canvas.height];
 }
@@ -58,8 +59,8 @@ ctx.fillStyle = gradient;
 ctx.fillRect(...dim);
 
 let styles = [
-  ['#f26db7', 15, 0.08],
-  ['#ffe0f2', 1, 0.5],
+  ['#f26db7', 15*scale, 0.08],
+  ['#ffe0f2', 1*scale, 0.5],
 ];
 for ([ctx.strokeStyle, ctx.lineWidth, ctx.globalAlpha] of styles) {
   for (let arc of [100, -120])
@@ -71,7 +72,7 @@ for ([ctx.strokeStyle, ctx.lineWidth, ctx.globalAlpha] of styles) {
     ctx.moveTo(x, y);
     for (let i = 0; i < 9; i += 1) {
       x += width/10;
-      y = y0 + (45 + 20 * Math.sin(x * Math.PI / width)) * Math.sin((arc*k > 0 ? 1500 - x : x) / k * Math.PI) + arc * Math.sin((x + Math.sign(arc*k) * bounce(3*(13+i))*3) * Math.PI / width);
+      y = y0 + scale * (45 + 20 * Math.sin(x * Math.PI / width)) * Math.sin((arc*k > 0 ? width - x : x) / scale / k * Math.PI) + scale * arc * Math.sin((x + scale * Math.sign(arc*k) * bounce(3*(13+i))*3) * Math.PI / width);
       ctx.lineTo(x, y);
     }
     ctx.lineTo(width, y0);
@@ -100,7 +101,7 @@ const step = 0.091*Math.PI;
 let placements = [[0, height/2, step, 50]];
 for (let i = 1; i < 5; i += 1) {
   let placement = [...placements[placements.length - 1]];
-  placement[0] -= 10;
+  placement[0] -= 10*scale;
   placement[2] *= 1.1236 - i/200;
   placement[3] -= 2 + i;
   placements.push(placement);
@@ -109,14 +110,14 @@ for (let [j, [x0,y0,k,a]] of placements.entries()) {
   for (let [i, stroke] of Array.from(strokes.entries()).reverse()) {
     ctx.globalAlpha = Math.min(1.0, 1-j/placements.length/1.1);
     ctx.strokeStyle = stroke;
-    ctx.lineWidth = 4*i+1;
+    ctx.lineWidth = (4*i+1)*scale;
     let [x,y] = [x0, y0];
     ctx.beginPath();
     ctx.moveTo(x,y);
-    let step = 0.5;
+    let step = 0.3;
     for (let i=-2; i<=152; i+=step) {
       x += width/150*step;
-      y = y0 - Math.sin(i * k + 0.1*sbounce(52+j)) * (a*.75 + a*1.75 * Math.sin((x + 3*sbounce(17)) * Math.PI / width));
+      y = y0 - scale * Math.sin(i * k + 0.1*sbounce(52+j)) * (a*.75 + a*1.75 * Math.sin((x + 3*sbounce(17)*scale) * Math.PI / width));
       let pct = 0.8;
       let n = x/width*2-1;
       let phi = (Math.sin(n*Math.PI/2*pct)/Math.sin(Math.PI/2*pct)+1)/2*width;
@@ -135,3 +136,4 @@ gradient.addColorStop(0.75, '#4d053600');
 gradient.addColorStop(1, '#4d053677');
 ctx.fillStyle = gradient;
 ctx.fillRect(...dim);
+

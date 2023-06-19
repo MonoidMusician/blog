@@ -3,7 +3,7 @@ var canvas = document.getElementById('canvas');
 var textarea = document.getElementById('textarea');
 var color = document.getElementById('color');
 var error = document.getElementById('error');
-var ctx = canvas.getContext('2d');
+var ctx = canvas.getContext('webgl') || canvas.getContext('2d');
 var prefix = "genart-code-";
 var items = Array.from(localStorage).map((_, i) => localStorage.key(i)).filter(k => k.startsWith(prefix)).map(k => k.slice(prefix.length));
 if (!localStorage.getItem("genart-active")) {
@@ -58,7 +58,9 @@ if (localStorage.getItem("genart-active") === "default" && (!textarea.value || (
 function render() {
   if (textarea.value === last_code) {
     frame += 1;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (ctx instanceof CanvasRenderingContext2D) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
   } else {
     last_code = textarea.value;
     frame = 0;
@@ -104,7 +106,7 @@ function render() {
   document.getElementById('framesstored').textContent = framestore.length;
 }
 
-let fps = 30;
+let fps = 60;
 let renderloop;
 let click = false;
 canvas.addEventListener('mousedown', (e) => {

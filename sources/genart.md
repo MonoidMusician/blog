@@ -72,6 +72,8 @@ Press shift-space and <button id="enjoy" class="add">enjoy</button> \^.\^
 <button id="download" class="bonus">Download framestore (<span id="framesstored">0</span> frames)</button>
 :::::
 ::::::
+<script src="assets/js/genart/webgl/webgl-utils.js"></script>
+<script src="assets/js/genart/webgl/index.js"></script>
 <script src="assets/js/genart.js"></script>
 
 ## Instructions
