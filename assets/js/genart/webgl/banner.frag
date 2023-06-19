@@ -1,3 +1,8 @@
+if (!frame) [canvas.width, canvas.height] = [1500, 500];
+document.body.style.background =
+  document.fullscreenElement ?
+  'linear-gradient(to right, #3e042c, #4d0536)' : '';
+renderFragment(`
 #define PI 3.141592653589793
 #define HPI 1.5707963267948966
 
@@ -47,10 +52,41 @@ void main()
     float x0 = 0.0;
     float pct = 0.8;
     vec3 colour = vec3(0.0, 0.0, 0.0);
+    vec3 white = vec3(255.0, 255.0, 255.0);
 
+//    gl_FragColor = vec4(0.30196078431372547, 0.0196078431372549, 0.21176470588235294, 1.0);
     vec4 start = vec4(0.30196078431372547, 0.0196078431372549, 0.21176470588235294, 0.9411764705882353);
     vec4 end = vec4(0.24313725490196078, 0.01568627450980392, 0.17254901960784313, 0.8156862745098039);
     gl_FragColor = end + length(v_texCoord) * (start - end) / length(vec2(1, 1));
+
+    float arcs[2];
+    arcs[0] = 100.0;
+    arcs[1] = -120.0;
+    float ks[6];
+    ks[0] = 173.0;
+    ks[1] = -177.0;
+    ks[2] = -135.0;
+    ks[3] = 133.0;
+    ks[4] = 151.0;
+    ks[5] = -105.0;
+
+    for (float j = 0.0; j < 12.0; j += 1.0) {
+        float arc = arcs[int(mod(j, 2.0))];
+        float k = ks[int(j / 2.0)];
+
+        float height = 1.0;
+        float expected = height/2.0;
+        for (float i = 1.0; i < 10.0; i += 1.0) {
+            float x = i/10.0;
+            float pct = 5.0 * max(0.0, 1.0 - abs(v_texCoord.x - x)*10.0);
+            // scale * (45 + 20 * Math.sin(x * Math.PI / width)) * Math.sin((arc*k > 0 ? width - x : x) / scale / k * Math.PI) + scale * arc * Math.sin((x + scale * Math.sign(arc*k) * bounce(3*(13+i))*3) * Math.PI / width)
+            expected += pct * scale * (45.0 + 20.0 * sin(x * PI)) * sin(PI * (arc*k > 0.0 ? 1.0 - x : x) / scale / k);
+            expected += pct * scale * arc * sin(PI * (x + sign(arc*k) * 2.0 * scale * bounce(3.0*(13.0+i))*3.0));
+        }
+
+        gl_FragColor += vec4(0.9490196078431372, 0.42745098039215684, 0.7176470588235294, 1.0) * 0.08 * max(0.0, 1.0 - abs(v_texCoord.y - expected)*500.0/15.0);
+        gl_FragColor += vec4(1, 0.8784313725490196, 0.9490196078431372, 1.0) * 0.25 * max(0.0, 1.0 - abs(v_texCoord.y - expected)*500.0);
+    }
 
     for (float j = 0.0; j < 5.0; j += 1.0) {
         //freqs[1] = 0.07 - j * 0.01;
@@ -73,3 +109,4 @@ void main()
         gl_FragColor += vec4(min(vec3(1.0, 1.0, 1.0), vec3(freqs[0], freqs[1], freqs[2] * 2.0) * max(d * freqs[3] * 0.01, 1.0))*alpha, alpha);
     }
 }
+`, frame);
