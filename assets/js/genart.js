@@ -3,7 +3,9 @@ var canvas = document.getElementById('canvas');
 var textarea = document.getElementById('textarea');
 var color = document.getElementById('color');
 var error = document.getElementById('error');
-var ctx = canvas.getContext('webgl') || canvas.getContext('2d');
+var ctx = canvas.getContext('webgl', {
+  premultipliedAlpha: false
+}) || canvas.getContext('2d');
 var prefix = "genart-code-";
 var items = Array.from(localStorage).map((_, i) => localStorage.key(i)).filter(k => k.startsWith(prefix)).map(k => k.slice(prefix.length));
 if (!localStorage.getItem("genart-active")) {
