@@ -28,7 +28,7 @@ void main()
     uv.x *= 2.0;
     float freqs[4];
     freqs[0] = 0.5;
-    freqs[1] = 0.15;
+    freqs[1] = 0.07;
     freqs[2] = 0.4;
     freqs[3] = 0.1;
 
@@ -45,6 +45,7 @@ void main()
     vec3 white = vec3(255.0, 255.0, 255.0);
 
     for (float j = 0.0; j < 5.0; j += 1.0) {
+        freqs[1] = 0.07 - j * 0.002;
         float pct = 0.8;
         float phi = x;
         phi = norm(phi/width);
@@ -53,11 +54,12 @@ void main()
 
         float expected = -25.0 * scale * sin((phi - x0)*(150.0/width) * k + 0.1*sbounce(52.0+j)) * (a * 0.75 + a * 1.75 * sin((phi + 3.0*sbounce(17.0)*scale) * PI / width));
 
-        d = (5.0 - j*0.6) / pow(abs(uv.x - expected), 1.5);
+        d = 10.0 * (5.0 - j*0.6) / pow(abs(uv.x - expected), 1.0);
+        d = 7.0 * (5.0 - j*0.6) / pow(abs(uv.x - expected), 1.2);
 
         k *= 1.1236 - j/200.0;
         a -= 2.0 + j;
         x0 -= 10.0*scale;
-        gl_FragColor += vec4(vec3(freqs[0], freqs[1], freqs[2] * 2.0) * d * freqs[3] * 0.01, (max(5.0 - j, 0.0)/5.0) * min(d / 255.0 / max(3.0 - j * 0.5, 1.0), 1.0));
+        gl_FragColor += vec4(vec3(freqs[0], freqs[1], freqs[2] * 2.0) * d * freqs[3] * 0.01, (max(5.0 - j, 0.0)/5.0) * min(d / 255.0 / max(2.5 - j * 0.5, 1.0), (5.0 - j)/5.0));
     }
 }
