@@ -118,7 +118,7 @@ for (let [j, [x0,y0,k,a]] of placements.entries()) {
     for (let i=-2; i<=152; i+=step) {
       x += width/150*step;
       y = y0 - scale * Math.sin(i * k + 0.1*sbounce(52+j)) * (a*.75 + a*1.75 * Math.sin((x + 3*sbounce(17)*scale) * Math.PI / width));
-      let pct = 0.8;
+      let pct = 0.7 + j * 0.03;
       let n = x/width*2-1;
       let phi = (Math.sin(n*Math.PI/2*pct)/Math.sin(Math.PI/2*pct)+1)/2*width;
       ctx.lineTo(phi,y);
