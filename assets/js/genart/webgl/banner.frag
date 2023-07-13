@@ -1,8 +1,3 @@
-if (!frame) [canvas.width, canvas.height] = [1500, 500];
-document.body.style.background =
-  document.fullscreenElement ?
-  'linear-gradient(to right, #3e042c, #4d0536)' : '';
-renderFragment(`
 #define PI 3.141592653589793
 #define HPI 1.5707963267948966
 
@@ -109,4 +104,3 @@ void main()
         gl_FragColor += vec4(min(vec3(1.0, 1.0, 1.0), vec3(freqs[0], freqs[1], freqs[2] * 2.0) * max(d * freqs[3] * 0.01, 1.0))*alpha, alpha);
     }
 }
-`, frame);

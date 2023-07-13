@@ -14,19 +14,25 @@ MacOS SIGINFO: Ctrl+T, https://stuff-things.net/2016/04/06/that-one-stupid-dd-tr
 - `git push --set-upstream origin $(git branch --show-current)`{.bash}
 - View history of file (commits + patches): `git log -p -- foo.sh`{.bash}
 - Local/private version of `.gitignore`: `.git/info/exclude`
+- Remove untracked and/or ignored files via [`git clean`{.bash}](https://git-scm.com/docs/git-clean):
+  - Untracked: `git clean -f`{.bash}, dry-run: `git clean -n`{.bash}
+  - Ignored: `git clean -fX`{.bash}, dry-run: `git clean -nX`{.bash}
+  - Both: `git clean -fx`{.bash}, dry-run: `git clean -nx`{.bash}
 
-## Applications
+## GUI
 
 ### VSCode
 
-- [Right click to add file in same parent folder](https://github.com/microsoft/vscode/issues/83693#issuecomment-782810618)
+- [Right click to add file in same parent folder](https://github.com/microsoft/vscode/issues/83693#issuecomment-782810618) (extension)
+- Alt+up/down to reorder lines
+- Alt+click for multiselect
 
 ### ffplay
 
 - `p`{.key}/`Space`{.key} to pause
 - `s`{.key} to step to next frame
 
-## Formats
+## Data Formats/Parsers
 
 - https://gchq.github.io/CyberChef/
 - https://www.onlinemp4parser.com/
