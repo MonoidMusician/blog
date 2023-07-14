@@ -94,21 +94,21 @@ pre.sourceCode
     transition: opacity 0.6s ease-in
   &:hover::before
     opacity: 0.6
-  &.haskell::before
+  &:not(.fake).haskell::before
     content: "Haskell"
-  &.agda::before
+  &:not(.fake).agda::before
     content: "Agda"
-  &.javascript::before
+  &:not(.fake).javascript::before
     content: "JS"
-  &.css::before
+  &:not(.fake).css::before
     content: "CSS"
-  &.scss::before
+  &:not(.fake).scss::before
     content: "SCSS"
-  &.sass::before
+  &:not(.fake).sass::before
     content: "Sass"
-  &.html::before
+  &:not(.fake).html::before
     content: "HTML"
-  &.markdown::before
+  &:not(.fake).markdown::before
     content: "Markdown"
 
 pre:hover

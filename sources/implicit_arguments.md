@@ -66,8 +66,109 @@ In fact, these are the easiest to parse, and the best source of examples.
 
 We can also flip the tables and infer implicits if we start in _chk_ mode in the first place!
 
-### Inferring patterns of _syn/chk_
+In fact, this is strictly better: if we are typing the (partially-applied, or not) binding in _chk_, we know the types of the arguments _and_ the return type.
+
+Thus the main improvement in this case is (wait for it): emulating mixed-mode typing for functions.
+(Having some arguments in _syn_, and determining some information from the expected type `T` of the whole partially applied function `f a b : T`.)
+
+Which is why you shouldn’t even be using bidirectional typing in the first place! Urgh!
+(Unification handles this exact problem more elegantly. And it forces you to make your coercions coherent!)
+
+Thus we’ve already gone from “let’s add implicits to bidirectional typing” to “let’s emulate unification except worse”.
+
+In particular, one way that it is worse is that we have to commit to modes up-front: we can’t decide to _try_ infering this argument as _syn_, then fall back to infering something else and returning to _chk_ it, etc.
+
+The other way that it is worse is that we can’t provide partial types to anything.
+
+So we’ll see what we’re able to make of it.
+
+### Inferring patterns of _syn/chk_ for arguments
+
+Examples:
+
+```{.agda .fake}
+id {A : Type} : ~syn:A → ~syn:A
+iter {A : Type} : ~chk:(n : Nat) → ~syn:(A → A) → ~syn:(A → A)
+
+const_Tt {A : Type} : Π ~chk:(B : Type), ~syn:A → ~syn:(B → A)
+const_tT {A : Type} : ~syn:A → ~syn:(Π (B : Type), (B → A))
+const_t {A B : Type} : ~chk:(A → B → A)
+const_tt {A B : Type} : ~syn:A → ~syn:B → ~syn:A
+
+compose {A B C : Type} : ~syn:(B → C) → ~syn:(A → B) → ~syn:(A → C)
+compose {P Q R : Poly} : ~syn:(Q ⇒ R) → ~syn:(P ⇒ Q) → ~syn:(P ⇒ R)
+compose : ~syn:Poly → ~chk:Poly → ~syn:Poly
+
+
+```
+
+```{.agda .fake}
+~syn:(A → B)
+===============
+~chk:A → ~syn:B
+```
+
+Rule -1: if an argument mentions none of the implicit parameters, it is in _chk_.
+Rule 0: we typecheck strictly from left to right
+
+#### Starting in _syn_
+
+#### Starting in _chk_
+
+As mentioned above, we have more flexibility in _chk_ mode.
 
 ### Picking apart types
 
+One word: injectivity.
+
+#### Dependent types
+
+Eurgh.
+
+#### Faking it
+
+For some implicits, they may not be used directly.
+E.g. `(a -> b) -> (fin n -> a) -> (fin n -> b)`.
+Ugh but that gets weird semantically though.
+Parameters.
+
+Sounds like open research.
+
+Or QTT (Quantitative Type Theory), with quantity 0.
+
 ### Overloads
+
+Now that we’re picking apart types, we might as well throw in overloads.
+
+```{.agda .fake}
+compose {A B C : Type}
+  : ~syn:(B → C) → ~syn:(A → B) → ~syn:(A → C)
+  : ~syn:(B → C) → ~chk:(A → B) → ~chk:(A → C)
+  : ~chk:((B → C) → (A → B) → (A → C))
+compose {P Q R : Poly}
+  : ~syn:(Q ⇒ R) → ~syn:(P ⇒ Q) → ~syn:(P ⇒ R)
+  : ~syn:(Q ⇒ R) → ~chk:(P ⇒ Q) → ~chk:(P ⇒ R)
+  : ~chk:((Q ⇒ R) → (P ⇒ Q) ⇒ (P ⇒ R))
+compose
+  : ~syn:Poly → ~chk:Poly → ~syn:Poly
+  : ~chk:Poly → ~chk:Poly → ~chk:Poly
+  : ~chk:(Poly → Poly → Poly)
+```
+
+The main rule is that before we are able to narrow down the overload, we must be able to tell what mode to run in.
+
+Then we want to narrow it down in a sensible way.
+Either we want to outlaw overlapping instances, or we want to match in order of most specific to least (toposort the partially-order DAG).
+Certainly by the end of matching, we want to be left with one unambiguous thing.
+
+In this case, if we are checking a partially-applied `compose`{.agda .fake} in _syn_ mode, we know that the first argument needs to be _syn_​ed, regardless of which overload.
+If it ends up having type `Poly`{.agda .fake}, we can actually _chk_ the next argument against `Poly`{.agda .fake} (and synthesize `Poly`{.agda .fake} for the return type).
+If it is one of the other overloads, the next argument needs to be _syn_​ed as well (to cover the missing implicit `A`{.agda .fake} or `P`{.agda .fake}),^[This is where mixed-mode would be especially handy lol: we could tell the typechecker we are expecting a function or polynomial morphism respectively (one bit of info), and in particular a function into type `B`{.agda .fake} or polynomial morphism into poly `Q`{.agda .fake} respectively (second bit of info).] at which point we know enough to synthesize the return type.
+
+## Implementation
+
+## Philosophy
+
+### Mixed-mode
+
+Where I rant about unification.
