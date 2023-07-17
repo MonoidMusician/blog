@@ -34,6 +34,11 @@ mjx-container[jax="CHTML"], .katex, span.katex
   overflow-y: hidden
   -webkit-font-smoothing: antialiased
 
+// Fix bug where inline KaTeX wants to wrap on either side, even if there is
+// punctuation there.
+.katex .base
+  display: inline
+
 section p, section li
   @if not $light
     text-shadow: 1px 1px 1px #0000005e
