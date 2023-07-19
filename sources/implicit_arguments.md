@@ -12,7 +12,7 @@ However, it is quite useful, especially for quickly getting started with a type 
 It has a specific philosophical tack, which is commendable (“redexes need annotations”).
 And it supports some nice features.
 
-In particular it lets you hack in cheap overloads and coercions (both fake and real) – but in a limited manner.^[By fake coercion, I mean a coercion that happens only in the elaborator for specific syntax – “elaboration hacks” IOW. Real coercions operate on arbitary terms, when actual and expected types are different but coercible, but these require more systematic incorporation into the theory.]
+In particular it lets you hack in cheap overloads and coercions (both fake and real) – but in a limited manner.^[By fake coercion, I mean a coercion that happens only in the elaborator for specific syntax – “elaboration hacks” in other words. Real coercions operate on arbitary terms, when actual and expected types are different but coercible, but these require more systematic incorporation into the theory.]
 
 Overloads, in this context, include operators that morally take implicit arguments.
 Of course, for builtins, the typechecker can do whatever it want, but a common feature is that it is used for resolving types that would be implemented as implicit arguments.
@@ -84,11 +84,31 @@ So we’ll see what we’re able to make of it.
 
 ### Inferring patterns of _syn/chk_ for arguments
 
-Examples:
+We write `~mode1:I → ~mode0:O`{.agda .fake} for a non-dependent function `I → O`{.agda .fake} that, when typechecked in _mode0_, typechecks its argument in _mode1_.
+We write the dependent version as `Π ~mode1:(i : I), ~mode0:O(i)`.
+
+Since normal function applications _chk_ their argument, we have this equation for reasoning about modes (the only equation I can think of?):
+
+```{.agda .fake}
+~syn:(A → B)
+===============
+~chk:A → ~syn:B
+
+~syn:(Π (a : A), B(a))
+===============
+Π ~chk:(a : A), ~syn:B(a)
+
+
+```
+
+That is, if we can _syn_ a function type (in result position), it is equivalent to _chk_​ing its arguments and _syn_​ing its result.
+Thus the argument does not need to be provided, and so we will prefer the first notation to indicate that.
+
+It’s instructive to consider a bunch of examples to get our bearings:
 
 ```{.agda .fake}
 id {A : Type} : ~syn:A → ~syn:A
-iter {A : Type} : ~chk:(n : Nat) → ~syn:(A → A) → ~syn:(A → A)
+iter {A : Type} : Π ~chk:(n : Nat), ~syn:(A → A) → ~syn:(A → A)
 
 const_Tt {A : Type} : Π ~chk:(B : Type), ~syn:A → ~syn:(B → A)
 const_tT {A : Type} : ~syn:A → ~syn:(Π (B : Type), (B → A))
@@ -102,28 +122,40 @@ compose : ~syn:Poly → ~chk:Poly → ~syn:Poly
 
 ```
 
-```{.agda .fake}
-~syn:(A → B)
-===============
-~chk:A → ~syn:B
-```
+And we come up with some rules for figuring out the modes of each argument:
 
-Rule -1: if an argument mentions none of the implicit parameters, it is in _chk_.
-Rule 0: we typecheck strictly from left to right
+- Rule 1: We typecheck strictly from left to right (this could be improved with fancy heuristics but eh).
+- Rule 2: If an argument’s type mentions none of the remaining implicit parameters, it is in _chk_.
+- Rule 3: Based on types we know (if the result is in _chk_ they we know that up front, otherwise we will be _syn_​ing arguments), we fill in the implicits that can be uniquely determined in that argument’s type.
+  See [picking apart types] for more details.
+- Rule 4: We have to know all of the implicits by the end of this process.
+  If there are implicits that are not uniquely determined from the types of the explicit arguments, they cannot be implicits.
+
+An important edge case to keep in mind: there will be some times where an argument needs to be synthesized, because we don’t know all of its implicits, but yet it does not uniquely determine any implicits (e.g. if there is a complex type function based on the implicit).
 
 #### Starting in _syn_
+
+If the type of the whole application is in _syn_, then we have to determine the implicits by synthesizing some arguments, and the rest can be in _chk_.
 
 #### Starting in _chk_
 
 As mentioned above, we have more flexibility in _chk_ mode.
 
+First of all, it should be the case that you can _chk_ the whole type (with nothing applied) to fill in implicits.
+
 ### Picking apart types
 
 One word: injectivity.
 
+Injective type constructors uniquely determine their arguments.
+
 #### Dependent types
 
 Eurgh.
+
+Actually I don’t think it’s quite so bad.
+
+But still have the obvious issue of data in types.
 
 #### Faking it
 
@@ -153,12 +185,15 @@ compose
   : ~syn:Poly → ~chk:Poly → ~syn:Poly
   : ~chk:Poly → ~chk:Poly → ~chk:Poly
   : ~chk:(Poly → Poly → Poly)
+
+
 ```
 
 The main rule is that before we are able to narrow down the overload, we must be able to tell what mode to run in.
 
 Then we want to narrow it down in a sensible way.
-Either we want to outlaw overlapping instances, or we want to match in order of most specific to least (toposort the partially-order DAG).
+In particular, we want to outlaw overlapping instances.
+(It would be feasible to match in order of most specific to least (toposort the partially-order DAG), but this means that new overloads could change the meaning of code checked under previously-defined overloads.)
 Certainly by the end of matching, we want to be left with one unambiguous thing.
 
 In this case, if we are checking a partially-applied `compose`{.agda .fake} in _syn_ mode, we know that the first argument needs to be _syn_​ed, regardless of which overload.
@@ -167,8 +202,19 @@ If it is one of the other overloads, the next argument needs to be _syn_​ed as
 
 ## Implementation
 
+
+
 ## Philosophy
 
 ### Mixed-mode
 
 Where I rant about unification.
+
+Like, consider overloaded numeric literals and operators.
+`0 + n`{.agda .fake} is going to fail without an annotation, but `n + 0`{.agda .fake} would succeed.
+Thus the operator is commutative, but typechecking it isn’t!
+(Yeah, yeah, depending on how you implement `+` that’ll be a beta-redex, but the point stands.
+The same issue occurs with `= {A : Type} : A → A → Type`, for example.)
+
+It’s really tempting to do speculative typechecking, and trying to _syn_ an argument but fall back to _syn_​ing another if it is not a _syn_​able argument.
+But that just gets to be ridiculous.
