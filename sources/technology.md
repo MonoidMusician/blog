@@ -188,8 +188,6 @@ Even notice how `&`{.sass} is not highlighted as an operator inside `selector.un
 
   @include unify-parent("select")
     /* ... */
-
-
 ```
 
 In general thereʼs a deeper discussion to be had here about how parts of a syntax definition correspond to types in their interpretation.

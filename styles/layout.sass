@@ -80,7 +80,7 @@ pre > code
 code
   position: relative
 
-pre.sourceCode
+div.sourceCode
   position: relative
   &::before
     font-family: 'Fira Code'
@@ -94,22 +94,24 @@ pre.sourceCode
     transition: opacity 0.6s ease-in
   &:hover::before
     opacity: 0.6
-  &:not(.fake).haskell::before
+  &:not([data-lang]).haskell::before
     content: "Haskell"
-  &:not(.fake).agda::before
+  &:not([data-lang]).agda::before
     content: "Agda"
-  &:not(.fake).javascript::before
+  &:not([data-lang]).javascript::before
     content: "JS"
-  &:not(.fake).css::before
+  &:not([data-lang]).css::before
     content: "CSS"
-  &:not(.fake).scss::before
+  &:not([data-lang]).scss::before
     content: "SCSS"
-  &:not(.fake).sass::before
+  &:not([data-lang]).sass::before
     content: "Sass"
-  &:not(.fake).html::before
+  &:not([data-lang]).html::before
     content: "HTML"
-  &:not(.fake).markdown::before
+  &:not([data-lang]).markdown::before
     content: "Markdown"
+  &[data-lang]::before
+    content: attr(data-lang)
 
 pre:hover
   /*box-shadow: inset 0px 0px 4px 1px #e010105c, -1px -1px 3px 0px #4362b114;*/
@@ -143,7 +145,7 @@ blockquote
     float: right
     margin-right: -0.4em
 
-.foreign[lang]
+.foreign[data-lang]
   font-style: italic
 
 .katex-display

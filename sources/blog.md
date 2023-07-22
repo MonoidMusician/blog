@@ -27,8 +27,6 @@ greet :: String -> String
 greet name = "Hello,\n...long•· drumroll...\n" <> name <> "!"
 
 main = const (log (greet "World")) (Tuple 'c' 1)
-
-
 ```
 
 ```javascript
@@ -88,8 +86,6 @@ if (document.readyState === 'complete') {
     makeVisibleSpaces();
   });
 }
-
-
 ```
 
 ```css
@@ -114,8 +110,6 @@ if (document.readyState === 'complete') {
 pre, code {
   position: relative;
 }
-
-
 ```
 
 Typography test

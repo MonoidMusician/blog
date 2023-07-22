@@ -169,10 +169,10 @@ This `checkConsistency` function was sufficient for Dhall as currently standardi
 
 Simplified [function application rule](https://github.com/dhall-lang/dhall-lang/blob/master/standard/type-inference.md#functions):
 
-```
+```{.agda data-lang=TT}
 f : forall (x : A) -> B
 a : A
-__________
+_______________________
 f a : B[x := a]
 ```
 

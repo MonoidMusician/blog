@@ -84,12 +84,12 @@ So we’ll see what we’re able to make of it.
 
 ### Inferring patterns of _syn/chk_ for arguments
 
-We write `~mode1:I → ~mode0:O`{.agda .fake} for a non-dependent function `I → O`{.agda .fake} that, when typechecked in _mode0_, typechecks its argument in _mode1_.
+We write `~mode1:I → ~mode0:O`{.agda data-lang=Pseudo} for a non-dependent function `I → O`{.agda data-lang=Pseudo} that, when typechecked in _mode0_, typechecks its argument in _mode1_.
 We write the dependent version as `Π ~mode1:(i : I), ~mode0:O(i)`.
 
 Since normal function applications _chk_ their argument, we have this equation for reasoning about modes (the only equation I can think of?):
 
-```{.agda .fake}
+```{.agda data-lang=Pseudo}
 ~syn:(A → B)
 ===============
 ~chk:A → ~syn:B
@@ -97,8 +97,6 @@ Since normal function applications _chk_ their argument, we have this equation f
 ~syn:(Π (a : A), B(a))
 ===============
 Π ~chk:(a : A), ~syn:B(a)
-
-
 ```
 
 That is, if we can _syn_ a function type (in result position), it is equivalent to _chk_​ing its arguments and _syn_​ing its result.
@@ -106,7 +104,7 @@ Thus the argument does not need to be provided, and so we will prefer the first 
 
 It’s instructive to consider a bunch of examples to get our bearings:
 
-```{.agda .fake}
+```{.agda data-lang=Pseudo}
 id {A : Type} : ~syn:A → ~syn:A
 iter {A : Type} : Π ~chk:(n : Nat), ~syn:(A → A) → ~syn:(A → A)
 
@@ -118,8 +116,6 @@ const_tt {A B : Type} : ~syn:A → ~syn:B → ~syn:A
 compose {A B C : Type} : ~syn:(B → C) → ~syn:(A → B) → ~syn:(A → C)
 compose {P Q R : Poly} : ~syn:(Q ⇒ R) → ~syn:(P ⇒ Q) → ~syn:(P ⇒ R)
 compose : ~syn:Poly → ~chk:Poly → ~syn:Poly
-
-
 ```
 
 And we come up with some rules for figuring out the modes of each argument:
@@ -172,7 +168,7 @@ Or QTT (Quantitative Type Theory), with quantity 0.
 
 Now that we’re picking apart types, we might as well throw in overloads.
 
-```{.agda .fake}
+```{.agda data-lang=Pseudo}
 compose {A B C : Type}
   : ~syn:(B → C) → ~syn:(A → B) → ~syn:(A → C)
   : ~syn:(B → C) → ~chk:(A → B) → ~chk:(A → C)
@@ -185,8 +181,6 @@ compose
   : ~syn:Poly → ~chk:Poly → ~syn:Poly
   : ~chk:Poly → ~chk:Poly → ~chk:Poly
   : ~chk:(Poly → Poly → Poly)
-
-
 ```
 
 The main rule is that before we are able to narrow down the overload, we must be able to tell what mode to run in.
@@ -196,9 +190,9 @@ In particular, we want to outlaw overlapping instances.
 (It would be feasible to match in order of most specific to least (toposort the partially-order DAG), but this means that new overloads could change the meaning of code checked under previously-defined overloads.)
 Certainly by the end of matching, we want to be left with one unambiguous thing.
 
-In this case, if we are checking a partially-applied `compose`{.agda .fake} in _syn_ mode, we know that the first argument needs to be _syn_​ed, regardless of which overload.
-If it ends up having type `Poly`{.agda .fake}, we can actually _chk_ the next argument against `Poly`{.agda .fake} (and synthesize `Poly`{.agda .fake} for the return type).
-If it is one of the other overloads, the next argument needs to be _syn_​ed as well (to cover the missing implicit `A`{.agda .fake} or `P`{.agda .fake}),^[This is where mixed-mode would be especially handy lol: we could tell the typechecker we are expecting a function or polynomial morphism respectively (one bit of info), and in particular a function into type `B`{.agda .fake} or polynomial morphism into poly `Q`{.agda .fake} respectively (second bit of info).] at which point we know enough to synthesize the return type.
+In this case, if we are checking a partially-applied `compose`{.agda data-lang=Pseudo} in _syn_ mode, we know that the first argument needs to be _syn_​ed, regardless of which overload.
+If it ends up having type `Poly`{.agda data-lang=Pseudo}, we can actually _chk_ the next argument against `Poly`{.agda data-lang=Pseudo} (and synthesize `Poly`{.agda data-lang=Pseudo} for the return type).
+If it is one of the other overloads, the next argument needs to be _syn_​ed as well (to cover the missing implicit `A`{.agda data-lang=Pseudo} or `P`{.agda data-lang=Pseudo}),^[This is where mixed-mode would be especially handy lol: we could tell the typechecker we are expecting a function or polynomial morphism respectively (one bit of info), and in particular a function into type `B`{.agda data-lang=Pseudo} or polynomial morphism into poly `Q`{.agda data-lang=Pseudo} respectively (second bit of info).] at which point we know enough to synthesize the return type.
 
 ## Implementation
 
@@ -211,10 +205,10 @@ If it is one of the other overloads, the next argument needs to be _syn_​ed as
 Where I rant about unification.
 
 Like, consider overloaded numeric literals and operators.
-`0 + n`{.agda .fake} is going to fail without an annotation, but `n + 0`{.agda .fake} would succeed.
+`0 + n`{.agda data-lang=PolyTT} is going to fail without an annotation, but `n + 0`{.agda data-lang=PolyTT} would succeed.
 Thus the operator is commutative, but typechecking it isn’t!
-(Yeah, yeah, depending on how you implement `+` that’ll be a beta-redex, but the point stands.
-The same issue occurs with `= {A : Type} : A → A → Type`, for example.)
+(Yeah, yeah, depending on how you implement `+`{.agda data-lang=PolyTT} that’ll be a beta-redex, but the point stands.
+The same issue occurs with `= {A : Type} : A → A → Type`{.agda data-lang=PolyTT}, for example.)
 
 It’s really tempting to do speculative typechecking, and trying to _syn_ an argument but fall back to _syn_​ing another if it is not a _syn_​able argument.
 But that just gets to be ridiculous.

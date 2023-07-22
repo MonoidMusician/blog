@@ -27,8 +27,6 @@ newtype Leibniz a b = EquiConvertable (forall f. f a -> f b)
 
 data x :~: y where
   Refl :: z :~: z
-
-
 ```
 
 Unfortunately, we really need dependent types to explain HoTT, so we canʼt just stick with Haskell and I will invoke Agda as necessary.
@@ -43,8 +41,6 @@ data _≡_ (x : Type) : Type -> Type where
 
 data _≡_ : Type -> Type -> Type where
   refl : (x : Type) -> x ≡ x
-
-
 ```
 
 ### Coercible
@@ -70,8 +66,6 @@ J :
   (y : Type) ->
   (p : x ≡ y) ->
   P y p
-
-
 ```
 
 This says:

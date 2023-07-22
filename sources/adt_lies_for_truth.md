@@ -74,8 +74,6 @@ data Quotient (t :: Type) (r :: t -> t -> Prop)
 
 -- Property: `r x y` implies `mk x = mk y :: Quotient t r`
 mk :: forall t r. t -> Quotient t r
-
-
 ```
 
 ```agda
@@ -94,8 +92,6 @@ elim :
   (f : t -> z)
   (forall (x y : t) -> r x y -> f x = f y) ->
   quot t r -> z
-
-
 ```
 
 #### Cubical type theory
@@ -126,8 +122,6 @@ data Squash (a :: Boolean) (b :: Boolean) where
   Squash :: forall a b. Squash a b
 
 type Squashed = Quotient Boolean Squash
-
-
 ```
 
 
@@ -144,8 +138,6 @@ data Set a    = Bin {-# UNPACK #-} !Size !a !(Set a) !(Set a)
               | Tip
 
 type Size     = Int
-
-
 ```
 
 And PureScriptʼs [`Data.Map.Map`](https://github.com/purescript/purescript-ordered-collections/blob/v3.0.0/src/Data/Map/Internal.purs#L70-L73) (since `Data.Set.Set k`{.haskell} is just `Data.Map.Map k Unit`{.haskell}):
@@ -155,8 +147,6 @@ data Map k v
   = Leaf
   | Two (Map k v) k v (Map k v)
   | Three (Map k v) k v (Map k v) k v (Map k v)
-
-
 ```
 
 Which we can specialize to `v = Unit`{.haskell}:
@@ -166,8 +156,6 @@ data Set k
   = Leaf
   | Two (Set k) k (Set k)
   | Three (Set k) k (Set k) k (Set k)
-
-
 ```
 
 They look different: Haskell implements balanced _binary_ trees, while PureScript implements 2–3 trees I believe?
@@ -192,8 +180,6 @@ member = go
       LT -> go x l
       GT -> go x r
       EQ -> True
-
-
 ```
 
 ::: {.Bonus box-name="Aside"}

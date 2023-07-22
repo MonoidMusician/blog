@@ -36,8 +36,6 @@ instance Semigroup (ShiftReduce s r) where
   append (Reduces rs) (Reduces rs') = Reduces (rs <> rs')
   append (ShiftReduces s rs) (Reduces rs') = ShiftReduces s (rs <> rs')
   append (Reduces rs) (ShiftReduces s rs') = ShiftReduces s (rs <> rs')
-
-
 ```
 
 Thatʼs my big complaint: thereʼs too many numbers floating around in traditional explanations of LR(1) tables, without any indication of what they mean or how they tie together.

@@ -6,7 +6,11 @@ author:
 
 ## CLI
 
-MacOS SIGINFO: Ctrl+T, https://stuff-things.net/2016/04/06/that-one-stupid-dd-trick-and-the-ballad-of-siginfo/
+- MacOS SIGINFO: Ctrl+T, https://stuff-things.net/2016/04/06/that-one-stupid-dd-trick-and-the-ballad-of-siginfo/
+- Print side-by-side: `pr -mtw $(tput cols)`{.bash}
+  - not a great way to do it
+  - will cut off long lines
+  - does not automatically size
 
 ### Git
 

@@ -104,8 +104,6 @@ producible
   -> Array (Produced nt r tok)
 producible (MkGrammar initialRules) = produceAll initiallyProduced
   where
-
-
 ```
 
 1.  Seed: Start by saying that all nonterminals with a production rule that _only consists of terminals_ is producible.
