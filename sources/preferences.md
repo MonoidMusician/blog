@@ -19,6 +19,7 @@ Note: website will flash while loading styles, sorry.
 
 - User styles:
   <div class="sourceCode css"><pre><code><textarea id="user" style="min-height: 200px"></textarea></code></pre></div>
+  <input id="color" type="color"></input>
 
 <script>
 var els = document.querySelectorAll('input[type="checkbox"][value]');
@@ -52,6 +53,14 @@ user.onchange = function() {
   style['user'] = user.value;
   loadStyle(style);
 }
+
+var color = document.querySelector('input#color');
+color.addEventListener('input', (e) => {
+  user.setRangeText(color.value);
+  var style = getStyle();
+  style['user'] = user.value;
+  loadStyle(style);
+});
 </script>
 
 ## TODO
