@@ -16,19 +16,22 @@ $endif$
   <title>$if(title-prefix)$$title-prefix$ – $endif$$pagetitle$</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <script src="https://cdn.jsdelivr.net/npm/katex@0.13.23/dist/contrib/copy-tex.min.js" integrity="sha384-Ep9Es0VCjVn9dFeaN2uQxgGcGmG+pfZ4eBaHxUpxXDORrrVACZVOpywyzvFRGbmv" crossorigin="anonymous"></script>
-  <script src="assets/js/scroll.js"></script>
-  <script src="assets/js/canvas.js"></script>
-  <script src="assets/js/visible_space.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.13.23/dist/contrib/copy-tex.min.js" integrity="sha384-Ep9Es0VCjVn9dFeaN2uQxgGcGmG+pfZ4eBaHxUpxXDORrrVACZVOpywyzvFRGbmv" crossorigin="anonymous" defer></script>
+  <script src="assets/js/scroll.js" defer></script>
+  <script src="assets/js/canvas.js" defer></script>
+  <script src="assets/js/visible_space.js" defer></script>
+  <script src="assets/js/style_settings.js" defer></script>
   <script src="widgets.js" defer></script>
   <style type="text/css">
 $if(quotes)$
       q { quotes: "“" "”" "‘" "’"; }
 $endif$
   </style>
+  <link rel="stylesheet" href="styles/bundled.css" />
 $for(css)$
-  <link rel="stylesheet" href="$css$" />
+  <link rel="stylesheet" href="$css$" defer />
 $endfor$
+  <script src="assets/js/style.js"></script>
 $if(math)$
   $math$
 $endif$

@@ -8,7 +8,8 @@ $code-font-size: calc(15*$main-font-size/18)
 // Basic font sizes and weights
 body
   font-size: $font-size
-  font-weight: 500
+  @if not $sans
+    font-weight: 500
 
 header .author
   font-family: 'Cormorant Upright'
@@ -20,7 +21,8 @@ header .subtitle
   font-size: 28px
 
 strong
-  text-decoration: underline
+  @if not $sans
+    text-decoration: underline
 
 code
   font-size: 0.75em
@@ -31,6 +33,8 @@ code
 
 mjx-container[jax="CHTML"], .katex, span.katex
   font-size: 1em !important
+  @if $sans
+    font-size: 1.14em !important
   overflow-y: hidden
   -webkit-font-smoothing: antialiased
 
@@ -42,6 +46,8 @@ mjx-container[jax="CHTML"], .katex, span.katex
 section p, section li
   @if not $light
     text-shadow: 1px 1px 1px #0000005e
+    & .icon > svg
+      filter: drop-shadow(2px 2px 2px #0000005e)
   @else
     text-shadow: none
 
@@ -77,6 +83,8 @@ h1
   font-weight: 300
   @if not $light
     text-shadow: 2px 2px 2px #000000b3
+    & .icon > svg
+      filter: drop-shadow(2px 2px 2px #000000b3)
   @else
     text-shadow: none
 
@@ -94,6 +102,8 @@ h2, h3, h4, h5
   font-weight: 500
   @if not $light
     text-shadow: 2px 2px 2px #000000b3
+    & .icon > svg
+      filter: drop-shadow(2px 2px 2px #000000b3)
   @else
     text-shadow: none
 

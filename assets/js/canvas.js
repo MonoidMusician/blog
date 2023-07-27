@@ -94,10 +94,10 @@ function loadPixelGraphs() {
   }
   if (typeof document === 'undefined') return;
   if (document.readyState === 'complete') {
-    loadPixelGraphs();
+    setTimeout(loadPixelGraphs, 15);
   } else {
     window.addEventListener('load', () => {
-      loadPixelGraphs();
+      setTimeout(loadPixelGraphs, 15);
     });
   }
 })();

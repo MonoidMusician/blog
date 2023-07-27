@@ -77,6 +77,24 @@ pre > code
 
   transition: 0.3s box-shadow
 
+  & > textarea
+    margin: -0.75em
+    margin-bottom: calc(-1.45em + 4px)
+    padding: 0.75em
+    resize: vertical
+    font: inherit
+    background: none
+    border: none
+    width: 100%
+    height: auto
+    color: inherit
+    &:focus-visible
+      outline: none
+      @if not $light
+        background: #000a
+      @else
+        background: #fffa
+
 code
   position: relative
 
@@ -294,9 +312,13 @@ body
 
 .sidenote-number:after, .sidenote:before
   position: relative
-  vertical-align: baseline
-  font-feature-settings: "sups" 1
-  letter-spacing: -1px
+  @if not $sans
+    vertical-align: baseline
+    font-feature-settings: "sups" 1
+    letter-spacing: -1px
+  @else
+    vertical-align: super
+    font-size: 65%
 
 
 .sidenote-number:after

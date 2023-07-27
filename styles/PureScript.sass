@@ -152,7 +152,7 @@ html
   color: #2c9f9b
 
 .state
-  font-family: "Cormorant"
+  //font-family: "Cormorant"
   font-variant-numeric: lining-nums tabular-nums
   @if not $light
     color: #ccb11c
@@ -565,7 +565,7 @@ table.grammar .trouble
     background-clip: text
     -webkit-background-clip: text
 
-button
+button:not(.icon)
   @include button(#2372ff)
   &.delete
     @include button(#ff004d)

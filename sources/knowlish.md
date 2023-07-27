@@ -10,7 +10,7 @@ author:
 - Print side-by-side: `pr -mtw $(tput cols)`{.bash}
   - not a great way to do it
   - will cut off long lines
-  - does not automatically size
+  - does not automatically size to content, just console widith
 
 ### Git
 

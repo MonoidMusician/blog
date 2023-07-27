@@ -7,7 +7,10 @@ author:
 The source can be found at [MonoidMusician/blog](https://github.com/MonoidMusician/blog) on GitHub.
 
 ## Fonts
-[Cormorant](https://github.com/CatharsisFonts/Cormorant)
+<!-- TODO link other regions of fonts -->
+<!-- TODO fix links -->
+
+[Cormorant](https://github.com/CatharsisFonts/Cormorant){style='font-family: Cormorant'}
   : I fell in love with this font upon seeing its [Bēhance gallery page](https://www.behance.net/gallery/28579883/Cormorant-an-open-source-display-font-family).
     Turns out, my friend and I had also already settled on it for their website!
     Itʼs a modern, more angular/precise cut of the classic Garamond family.
@@ -23,7 +26,7 @@ The source can be found at [MonoidMusician/blog](https://github.com/MonoidMusici
     > At the time of writing, non-essential OpenType features aren’t included in web fonts served via Google Fonts’ API; however, the OpenType features are still present in the downloadable fonts, which can then be [self-hosted](https://fonts.google.com/knowledge/using_type/self_hosting_web_fonts).
     :::
 
-[EB Garamond (Ελληνικά)](https://fonts.google.com/specimen/EB+Garamond?subset=greek){style='font-family: EB Garamond'}
+[EB Garamond ([Ελληνικά]{style='font-family: EB Garamond GR'})](https://fonts.google.com/specimen/EB+Garamond?subset=greek){style='font-family: EB Garamond'}
   : I used this purely to supplement Cormorant with Greek characters, which otherwise only contains Latin and Cyrillic.
 
     <details class="Details" data-box-name="CSS">
@@ -33,12 +36,12 @@ The source can be found at [MonoidMusician/blog](https://github.com/MonoidMusici
 
     ```css
     body {
-      font-family: "EB Garamond", "Cormorant", "Apple Color Emoji";
+      font-family: "EB Garamond GR", "Cormorant", "Apple Color Emoji";
     }
 
     /* greek-ext */
     @font-face {
-      font-family: "EB Garamond";
+      font-family: "EB Garamond GR";
       font-style: italic;
       font-weight: 400;
       font-display: swap;
@@ -47,7 +50,7 @@ The source can be found at [MonoidMusician/blog](https://github.com/MonoidMusici
     }
     /* greek */
     @font-face {
-      font-family: "EB Garamond";
+      font-family: "EB Garamond GR";
       font-style: italic;
       font-weight: 400;
       font-display: swap;
@@ -56,7 +59,7 @@ The source can be found at [MonoidMusician/blog](https://github.com/MonoidMusici
     }
     /* greek-ext */
     @font-face {
-      font-family: "EB Garamond";
+      font-family: "EB Garamond GR";
       font-style: normal;
       font-weight: 400;
       font-display: swap;
@@ -65,7 +68,7 @@ The source can be found at [MonoidMusician/blog](https://github.com/MonoidMusici
     }
     /* greek */
     @font-face {
-      font-family: "EB Garamond";
+      font-family: "EB Garamond GR";
       font-style: normal;
       font-weight: 400;
       font-display: swap;
@@ -76,6 +79,18 @@ The source can be found at [MonoidMusician/blog](https://github.com/MonoidMusici
 
     (Notice how the `greek` and `greek-ext` URLs only differ by 1 or 2 characters – ask me how I learned that^[{-} (The hard way)].)
     </details>
+
+[Mulish](https://fonts.google.com/specimen/Mulish){style='font-family: Mulish'}
+  : I donʼt have a favorite sans-serif font.
+    I do like Libertinus Sans, but it isnʼt appropriate for most situations.
+    But this seems like a nice modern, legible sans-serif font.
+
+[Fira Sans ([Ελληνικά]{style='font-family: Fira Sans GR'})](https://fonts.google.com/specimen/Fira+Sans?subset=greek){style='font-family: Fira Sans'}
+  : Same story as the other Greek supplement font.
+    Same trick.
+    <!--
+    Mulish actually does contain a few Greek characters, like [&pi;]{style='font-family: Mulish'} (compare [&pi;]{style='font-family: Fira Sans'} in Fira Sans)
+    -->
 
 [Fira Code](https://github.com/tonsky/FiraCode){style='font-family: Fira Code'}
   : Iʼve been using [Hasklig](https://github.com/i-tu/Hasklig) for a couple years for my personal coding, but as I was looking for a good font for this blog I found Fira Code on Google Fonts.

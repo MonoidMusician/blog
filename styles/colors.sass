@@ -3,16 +3,20 @@
 @use "functions.sass" as *
 
 $background-color: #043147
+@if $highcontrast
+  $background-color: #021119
 $background-image: null
-$background: $background-color
 $text: #f0e8d4
 $text2: #faffe5
 $stark: white
 $selection: rgb(3 182 140)
 
 @if $light
-  $background-color: #fff4e0
-  $background-image: url("../assets/images/circle_texture.png") 0 0 / 150px 150px
+  @if not $highcontrast
+    $background-color: #fff4e0
+    $background-image: url("../assets/images/circle_texture.png") 0 0 / 150px 150px
+  @else
+    $background-color: white
   $text: #210b06
   $text2: #390c03
   $stark: black
@@ -26,10 +30,14 @@ $background: $background-color
 body
   background: $background
   color: $text
+  @if $highcontrast
+    color: $stark
 
 
 h2, h3, h4, h5
   color: $text2
+  @if $highcontrast
+    color: $stark
 
 h3
   border-bottom-color: $text
