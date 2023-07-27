@@ -47,7 +47,7 @@ Array.prototype.forEach.call(els, el => {
 });
 
 var user = document.querySelector('textarea#user');
-user.value = style_choice['user'];
+user.value = style_choice['user'] || "";
 user.onchange = function() {
   var style = getStyle();
   style['user'] = user.value;
