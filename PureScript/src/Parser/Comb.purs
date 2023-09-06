@@ -8,6 +8,8 @@ import Data.Array (head, length, splitAt, zipWith, (!!))
 import Data.Compactable (class Compactable, compact, separateDefault)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe(..))
+import Data.String (CodePoint)
+import Data.String as String
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import Parser.Algorithms (addEOF'', getResultCM, indexStates, statesNumberedBy, toTable)
@@ -42,6 +44,7 @@ newtype Comb nt tok a = Comb
     , resultant :: CResultant nt tok a
     }
   }
+type SCComb = Comb String CodePoint
 
 -- | Parses an array (of CSTs), expecting a certain number of elements.
 -- | It may still return failure early, though.
@@ -77,6 +80,8 @@ parse name parser = do
     -- Apply the function that parses from the CST to the desired result type
     matchRule (rules <#> _.resultant) cst
 
+parseString :: forall nt a. Ord nt => nt -> Comb nt CodePoint a -> (String -> Maybe a)
+parseString name parser = parse name parser <<< String.toCodePointArray
 
 derive instance functorComb :: Functor (Comb nt tok)
 instance applyComb :: Apply (Comb nt tok) where
@@ -125,6 +130,15 @@ tokens toks = Comb
         _ -> Nothing
     }
   }
+
+char :: forall nt. Char -> Comb nt CodePoint Char
+char c = c <$ codePoint (String.codePointFromChar c)
+
+codePoint :: forall nt. CodePoint -> Comb nt CodePoint CodePoint
+codePoint = token
+
+string :: forall nt. String -> Comb nt CodePoint String
+string s = s <$ tokens (String.toCodePointArray s)
 
 -- | Name a nonterminal production, this allows recursion.
 namedRec :: forall nt tok a. nt -> (Comb nt tok a -> Comb nt tok a) -> Comb nt tok a
