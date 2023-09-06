@@ -138,30 +138,33 @@ blockquote
   font-style: italic
   margin-left: 1em
   margin-right: 1em
-  p:only-child
+  width: fit-content
+  em
+    font-style: normal
+  & > p:only-child
     width: fit-content
     margin-left: auto
     margin-right: auto
-  p:first-child
+  & > p:first-child
     margin-top: 0.2em
-  p:last-child
-    margin-bottom: 0
-    & > .katex-display
-      margin-bottom: 0
-  em
-    font-style: normal
-  p::before
+  & > p::before
     content: "“"
     font-size: 1.6em
     line-height: 0.9
     float: left
     margin-left: -0.5em
-  p:last-child::after
-    content: "”"
-    font-size: 1.6em
-    line-height: 0.9
-    float: right
-    margin-right: -0.4em
+  & > ul:last-child, & > ol:last-child
+    margin-bottom: 0
+  & > p:last-child, & > ul:last-child > li:last-child, & > ol:last-child > li:last-child
+    margin-bottom: 0
+    & > .katex-display
+      margin-bottom: 0
+    &::after
+      content: "”"
+      font-size: 1.6em
+      line-height: 0.9
+      float: right
+      margin-right: -0.4em
 
 .foreign[data-lang]
   font-style: italic

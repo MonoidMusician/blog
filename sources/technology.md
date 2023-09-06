@@ -146,17 +146,9 @@ I also implemented SSR for some of my extensions.
     Uses [parse5](https://parse5.js.org/) to parse the [raw HTML](https://pandoc.org/lua-filters.html#type-rawblock) embedded in the Pandoc and the node [canvas](https://www.npmjs.com/package/canvas) library (based on [Cairo](https://www.cairographics.org/)!) to run the canvas.
     It renders to a default size based on the attributes, e.g. `<canvas data-graph="[x => x]" class="pixelated" width="1000" height="500" style="width: 100%;"></canvas>`{.html}.
 
-Soon I will add SSR for the [Deku widgets][Widgets with PureScript Deku].
-I might convert the canvas to PureScript too, depending on how easy it will be to make that compatible with SSR.
+## Widgets
 
-## Widgets with PureScript Deku
-
-I wanted Pandoc/Markdown content to be primary, but I also wanted to make interactive blog posts with embedded widgets.
-
-I decided to try [@mikesol](https://github.com/mikesol)ʼs new framework, [purescript-deku](https://github.com/mikesol/purescript-deku).
-It took me a few weeks to get the hang of it, but then I was cruising!
-Huge thanks to him for supporting this effort and creating the cool library.
-Iʼve found that it has a well-thought-out and clever integration of events into the DOM, and when I needed a performance boost on the FRP side, Mike had already given me the answers in the form of helpers like `memoize`{.haskell} and `mailboxed`{.haskell} to avoid excessive subscriptions.
+I wanted Pandoc/Markdown content to be primary, but I also wanted to make interactive blog posts with embedded widgets written in PureScript.
 
 ### Embedding into posts
 

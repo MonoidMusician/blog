@@ -160,7 +160,7 @@ a[href]
     text-decoration-thickness: 0.5px
 
   text-underline-offset: 1px
-  &[href^="#"]::before
+  &[href^="#"]:not([aria-hidden])::before
     p &, ol li &, ul li &
       section > &, section > div > &
         // thin-space

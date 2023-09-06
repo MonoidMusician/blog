@@ -1,24 +1,3 @@
----
-title: Cofree Collective Blog
-subtitle: |
-  [Looking for [Solomonʼs
-  blog](https://cofree.coffee/~solomon/)?]{.nowrap}
-subtitle: ""
----
-
-Introduction
-------------
-
-Welcome to our new collective blog for the
-`cofree.coffee`{style="font-weight: 700;"} programming community! Weʼre
-a bunch of programmers who hang out on Matrix, talk about functional
-programming, programming languages, and more. Particular topics we tend
-to discuss include methods for doing parsing & testing as well as the
-design and implementation of programming languages. We believe that
-through collaboration we can bring out the best in each other, and with
-such a wealth of knowledge in our community, weʼre excited to share some
-things weʼve learned and discussed with you.
-
 ```haskell
 import Prelude
 import Effect.Console (log)
@@ -115,7 +94,7 @@ pre, code {
 Typography test
 ---------------
 
-[Welcome to our lovely "blog" here! ñéŪ ]{.main}[ᾍδης
+[Welcome to this lovely "blog" here! ñéŪ ]{.main}[ᾍδης
 ᾇβγδζσπ]{.greek} and
 then `this.do(the_thing') ᾍδης ᾇβγδζσπ <= => >= => := ::`\
 Math would be $\infty-co^ol$ too.
