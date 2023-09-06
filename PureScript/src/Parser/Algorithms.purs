@@ -277,8 +277,8 @@ numberStatesBy
   => (Int -> s)
   -> Grammar nt r tok
   -> Array (State nt r tok)
-  -> Either (Array (StateItem nt r tok)) (States s nt r tok)
-numberStatesBy ix grammar states = map States $ states #
+  -> Either (Array (StateItem nt r tok)) (s /\ States s nt r tok)
+numberStatesBy ix grammar states = map (\s -> ix 0 /\ States s) $ states #
   traverseWithIndex \i items ->
     let
       findState seed = note seed $ map ix $
@@ -304,10 +304,10 @@ statesNumberedBy
   => (Int -> s)
   -> Grammar nt r tok
   -> nt
-  -> States s (Maybe nt) (Maybe r) (Maybe tok)
+  -> s /\ States s (Maybe nt) (Maybe r) (Maybe tok)
 statesNumberedBy ix initial entry =
   let { augmented: grammar, start } = fromSeed initial entry in
-  either (const (States [])) identity $ numberStatesBy ix grammar $
+  either (const (ix 0 /\ States [])) identity $ numberStatesBy ix grammar $
     calculateStates grammar start
 
 toAdvance :: forall nt tok. Zipper nt tok -> Maybe (Part nt tok)
@@ -507,7 +507,10 @@ closeStates grammar states =
 
 
 indexStates :: forall s nt r tok. Ord s => States s nt r tok -> StateIndex s
-indexStates (States states) =
+indexStates states = Map.lookup <@> indexStates' states
+
+indexStates' :: forall s nt r tok. Ord s => States s nt r tok -> Map s Int
+indexStates' (States states) =
   Map.fromFoldable $ mapWithIndex (\i { sName } -> sName /\ i) states
 
 toTable
@@ -521,7 +524,7 @@ toTable
   -> Proto.Table s (nt /\ r) tok (CST (nt /\ r) tok)
 toTable (States states) tabulated =
   let
-    lookupState s = Map.lookup s tabulated >>= Array.index states
+    lookupState s = tabulated s >>= Array.index states
     lookupAction tok { advance: SemigroupMap m } = Map.lookup tok m
     lookupReduction (p /\ r) { items: State items } = items # oneOfMap case _ of
       { rule: Zipper parsed [], pName, rName } | pName == p && rName == r ->
@@ -562,7 +565,7 @@ toTable'
   -> Proto.Table s (nt /\ r) tok (Either tok (AST (nt /\ r)))
 toTable' (States states) tabulated =
   let
-    lookupState s = Map.lookup s tabulated >>= Array.index states
+    lookupState s = tabulated s >>= Array.index states
     lookupAction tok { advance: SemigroupMap m } = Map.lookup tok m
     lookupReduction (p /\ r) { items: State items } = items # oneOfMap case _ of
       { rule: Zipper parsed [], pName, rName } | pName == p && rName == r ->

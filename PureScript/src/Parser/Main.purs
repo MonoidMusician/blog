@@ -32,6 +32,7 @@ import Data.Int (floor)
 import Data.Int as Int
 import Data.Lazy (defer, force)
 import Data.List (List)
+import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust, fromMaybe, fromMaybe', isJust, maybe)
 import Data.Newtype (unwrap)
@@ -72,12 +73,12 @@ import FRP.SampleJIT (readersT, sampleJITE)
 import FRP.SelfDestruct (selfDestruct)
 import Foreign.Object (Object)
 import Foreign.Object as Object
-import Parser.Algorithms (addEOF', calculateStates, fromSeed', fromString', gatherNonTerminals', gatherNonTerminals_, gatherTokens', gatherTokens_, getResultC, indexStates, longestFirst, numberStatesBy, parseDefinition, parseIntoGrammar, toAdvanceTo, toTable, withProducible)
+import Parser.Algorithms (addEOF', calculateStates, fromSeed', fromString', gatherNonTerminals', gatherNonTerminals_, gatherTokens', gatherTokens_, getResultC, indexStates', longestFirst, numberStatesBy, parseDefinition, parseIntoGrammar, toAdvanceTo, toTable, withProducible)
 import Parser.Codecs (grammarCodec, intStringCodec, listCodec, mappy, maybeCodec, nonEmptyStringCodec, parseStepsCodec, producibleCodec, setCodec, stateInfoCodec, statesCodec)
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps, topOf)
 import Parser.Random (genNT, sampleS)
 import Parser.Samples (defaultEOF, defaultTopName, defaultTopRName)
-import Parser.Types (AST(..), CST(..), Grammar(..), Part(..), SAST, SAugmented, SCParseSteps, SCST, SCStack, SFragment, SGrammar, SProducible, SState, SStateIndex, SStateInfo, SStateItem, SStates, SZipper, ShiftReduce(..), State(..), States(..), Zipper(..), prune, unNonTerminal, unSPart, unTerminal)
+import Parser.Types (AST(..), CST(..), Grammar(..), Part(..), SAST, SAugmented, SCParseSteps, SCST, SCStack, SFragment, SGrammar, SProducible, SState, SStateInfo, SStateItem, SStates, SZipper, ShiftReduce(..), State(..), States(..), Zipper(..), prune, unNonTerminal, unSPart, unTerminal)
 import Partial.Unsafe (unsafePartial)
 import Random.LCG as LCG
 import Test.QuickCheck.Gen as QC
@@ -1019,15 +1020,15 @@ computeGrammar
   :: SAugmented
   -> { producible :: SProducible
      , states :: SStates
-     , stateIndex :: SStateIndex
+     , stateIndex :: Map Int Int
      , allTokens :: Array CodePoint
      , allNTs :: Array NonEmptyString
      }
 computeGrammar grammar =
   let
     _producible = withProducible grammar
-    _states = either (const (States [])) identity $ numberStatesBy (add 1) grammar.augmented (calculateStates grammar.augmented grammar.start)
-    _stateIndex = indexStates _states
+    _states = either (const (States [])) snd $ numberStatesBy (add 1) grammar.augmented (calculateStates grammar.augmented grammar.start)
+    _stateIndex = indexStates' _states
     _allTokens = gatherTokens' grammar.augmented
     _allNTs = gatherNonTerminals' grammar.augmented
   in
@@ -1042,7 +1043,7 @@ computeInput
   :: forall r
    . { grammar :: SAugmented
      , states :: SStates
-     , stateIndex :: SStateIndex
+     , stateIndex :: Map Int Int
      | r
      }
   -> String
@@ -1057,7 +1058,7 @@ computeInput
 computeInput { grammar, states, stateIndex } =
   let
     _tokenize' = fromString' grammar
-    table = toTable states stateIndex
+    table = toTable states (Map.lookup <@> stateIndex)
   in
     \value ->
       let

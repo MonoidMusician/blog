@@ -239,7 +239,7 @@ prune :: forall r tok. CST r tok -> Either tok (AST r)
 prune (Leaf tok) = Left tok
 prune (Branch r rec) = Right (Layer r (Array.mapMaybe (hush <<< prune) rec))
 
-type StateIndex s = Map s Int
+type StateIndex s = s -> Maybe Int
 type SStateIndex = StateIndex Int
 
 type SCTable = Proto.Table Int (NonEmptyString /\ String) CodePoint SCST
