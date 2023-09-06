@@ -12,9 +12,14 @@ import Data.String (CodePoint)
 import Data.String as String
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
+import Debug (spy)
+import Effect.Console (error, log)
+import Effect.Unsafe (unsafePerformEffect)
 import Parser.Algorithms (addEOF'', getResultCM, indexStates, statesNumberedBy, toTable)
 import Parser.Proto as Proto
-import Parser.Types (CST(..), Fragment, Grammar(..), Part(..))
+import Parser.Types (CST(..), Fragment, Grammar(..), Part(..), States(..))
+import Unsafe.Coerce (unsafeCoerce)
+import Unsafe.Reference (unsafeRefEq)
 
 type Rule nt = Tuple nt Int
 type CGrammar nt tok = Grammar nt (Rule nt) tok
@@ -67,20 +72,20 @@ data PartialResult a
 
 -- | Parse an input. You should partially apply it, and reuse that same
 -- | partially applied function for multiple inputs.
-parse :: forall nt tok a. Ord nt => Ord tok => nt -> Comb nt tok a -> (Array tok -> Maybe a)
+parse :: forall nt tok a. Show nt => Show tok => Ord nt => Ord tok => nt -> Comb nt tok a -> (Array tok -> Maybe a)
 parse name parser = do
   -- First we build the LR(1) parsing table
   let Comb { grammar, rules } = named name parser
-  let Tuple initialState states = statesNumberedBy identity grammar name
+  let Tuple initialState states@(States s) = statesNumberedBy identity grammar name
   let table = toTable states Just
   -- Then we run it on an input
   addEOF'' >>> \input -> do
-    stack <- Proto.parse table initialState input
-    cst <- getResultCM stack
+    stack <- nope "Failed to parse" $ Proto.parse table initialState input
+    cst <- nope "Failed to extract result" $ getResultCM stack
     -- Apply the function that parses from the CST to the desired result type
-    matchRule (rules <#> _.resultant) cst
+    nope "Failed to match rule" $ matchRule name (rules <#> _.resultant) cst
 
-parseString :: forall nt a. Ord nt => nt -> Comb nt CodePoint a -> (String -> Maybe a)
+parseString :: forall nt a. Show nt => Ord nt => nt -> Comb nt CodePoint a -> (String -> Maybe a)
 parseString name parser = parse name parser <<< String.toCodePointArray
 
 derive instance functorComb :: Functor (Comb nt tok)
@@ -150,7 +155,7 @@ namedRec name rec =
         { rule: pure (NonTerminal name)
         , resultant: component \cst ->
             let Comb borrowed = recursive in
-            matchRule (borrowed.rules <#> _.resultant) cst
+            matchRule name (borrowed.rules <#> _.resultant) cst
         }
       }
     Comb produced = recursive
@@ -161,20 +166,25 @@ namedRec name rec =
       }
   in Comb
     { grammar: produced.grammar <> newRules
-    , rules: pure
+    -- Need to figure out how to do this, without introducing new layers??
+    , rules: konst produced.rules $ pure
         { rule: pure (NonTerminal name)
-        , resultant: component $ matchRule (produced.rules <#> _.resultant)
+        , resultant: component2 (unsafeCoerce name) $ matchRule name (produced.rules <#> _.resultant)
         }
     }
+
+konst :: forall a. a -> a -> a
+konst = const
 
 named :: forall nt tok a. nt -> Comb nt tok a -> Comb nt tok a
 named name = namedRec name <<< const
 
-matchRule :: forall nt tok a. Array (CResultant nt tok a) -> CCST nt tok -> Maybe a
-matchRule resultants (Branch (Tuple _name i) children) = do
-  resultant <- resultants !! i
-  resultFrom resultant children
-matchRule _ _ = Nothing
+matchRule :: forall nt tok a. nt -> Array (CResultant nt tok a) -> CCST nt tok -> Maybe a
+matchRule name resultants (Branch (Tuple _name i) children) = do
+  assertM "names" (unsafeRefEq _name name)
+  resultant <- nope "missing from resultants" $ resultants !! i
+  nope "failed to apply" $ resultFrom resultant children
+matchRule _ _ _ = Nothing
 
 derive instance functorResultant :: Functor (Resultant i)
 instance applyResultant :: Apply (Resultant i) where
@@ -201,6 +211,14 @@ component c = Resultant
   { length: 1
   , result: \is ->
       case head is of
+        Nothing -> Partial
+        Just i -> compact (Result (c i))
+  }
+component2 :: forall i a. String -> (i -> Maybe a) -> Resultant i a
+component2 name c = Resultant
+  { length: 1
+  , result: \is ->
+      case head (spy (name <> ".is") is) of
         Nothing -> Partial
         Just i -> compact (Result (c i))
   }
@@ -233,3 +251,14 @@ instance compactablePartialResult :: Compactable PartialResult where
 --   alt l Failed = l
 --   alt Partial _ = Partial
 --   alt l@(Result _) _ = l
+
+nope :: String -> Maybe ~> Maybe
+nope _ v = v
+nope s Nothing = unsafePerformEffect (Nothing <$ log s)
+
+assert :: forall a. String -> Boolean -> a -> a
+assert msg false v = unsafePerformEffect (v <$ error msg)
+assert _ _ v = v
+
+assertM :: forall m. Applicative m => String -> Boolean -> m Unit
+assertM msg b = assert msg b (pure unit)
