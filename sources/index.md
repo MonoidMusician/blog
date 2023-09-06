@@ -53,13 +53,18 @@ Itʼs not a real blog though since it doesnʼt have RSS yet …
   >
   > The construction weʼll be talking about is my favorite esoteric construction of real numbers: the _[Eudoxus real numbers](https://ncatlab.org/nlab/show/Eudoxus+real+number)_.
 
-<!-- ## Series
+## Series
 - [Interactive Parser Explanations](parser.html)
   1. TODO: [Parsing By Example](parser_by_example.html)
   1. TODO: [Terminology Reference](parser_terminology.html)
   1. WIP: [Basics: What Are Grammars](parser_basics.html)
   1. WIP: [Uses of Grammars](parser_applications.html)
-  1. WIP: [Basics of LR(1) Parsing](parser_lr1.html) -->
+  1. WIP: [Basics of LR(1) Parsing](parser_lr1.html)
+
+### Miniseries
+- [Knowlish](knowlish.html) – A list of little things I have learned.
+- Co-search – nothing yet, but the idea is that I will put up requests for information, and maybe passers-by can tell me what I seek
+- Don’t make me invent it – in which I finally ask for help & references for prior art, instead of just plunging in confident that I can figure it out
 
 ## Ideas/WIP
 I post these for a few reasons.
