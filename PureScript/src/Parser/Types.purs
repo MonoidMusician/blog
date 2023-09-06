@@ -24,6 +24,8 @@ newtype Grammar nt r tok = MkGrammar
   (Array (GrammarRule nt r tok))
 derive newtype instance showGrammar :: (Show nt, Show r, Show tok) => Show (Grammar nt r tok)
 derive instance newtypeGrammar :: Newtype (Grammar nt r tok) _
+derive newtype instance semigroupGrammar :: Semigroup (Grammar nt r tok)
+derive newtype instance monoidGrammar :: Monoid (Grammar nt r tok)
 
 type GrammarRule nt r tok =
   { pName :: nt -- nonterminal / production rule name

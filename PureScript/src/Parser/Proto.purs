@@ -3,8 +3,9 @@ module Parser.Proto where
 import Prelude
 
 import Data.Either (Either(..))
+import Data.Foldable (class Foldable)
 import Data.Generic.Rep (class Generic)
-import Data.List (List(..), (:))
+import Data.List (List(..), fromFoldable, (:))
 import Data.Maybe (Maybe(..))
 import Data.Show.Generic (genericShow)
 
@@ -74,3 +75,11 @@ parseSteps table inputs initialState =
       Left Nothing -> Error step
       Left (Just v) -> Complete step v
       Right { next: step', action } -> Step step action (go step')
+
+parse :: forall f state rule i o. Foldable f => Table state rule i o -> state -> f i -> Maybe (Stack state o)
+parse table initialState inputs = parseSteps table (fromFoldable inputs) initialState # finished
+
+finished :: forall rule i stack. ParseSteps rule i stack -> Maybe stack
+finished (Step _ _ more) = finished more
+finished (Error _) = Nothing
+finished (Complete _ stack) = Just stack

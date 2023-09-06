@@ -9,7 +9,7 @@ import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray(..))
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
-import Data.Either (Either(..), hush, note)
+import Data.Either (Either(..), either, hush, note)
 import Data.Filterable (filterMap)
 import Data.Foldable (elem, foldMap, oneOfMap, sum)
 import Data.Function (on)
@@ -180,6 +180,14 @@ getResultC :: forall x y z. Stack x (CST y z) -> Maybe (CST y z)
 getResultC (Snoc (Snoc (Zero _) result@(Branch _ _) _) (Leaf _) _) = Just result
 getResultC _ = Nothing
 
+getResultCM :: forall w x y z. Stack w (CST (x /\ Maybe y) (Maybe z)) -> Maybe (CST y z)
+getResultCM = getResultC >=> revertCST
+
+revertCST :: forall x y z. CST (x /\ Maybe y) (Maybe z) -> Maybe (CST y z)
+revertCST (Leaf t) = Leaf <$> t
+revertCST (Branch r cs) = Branch <$> snd r <*> traverse revertCST cs
+
+
 parseIntoGrammar
   :: forall t
    . Array
@@ -250,6 +258,9 @@ addEOF' grammar e =
   if grammar.eof `elem` e then e
   else e <> pure grammar.eof
 
+addEOF'' :: forall tok. Array tok -> Array (Maybe tok)
+addEOF'' i = map Just i <> [ Nothing ]
+
 fromString' :: SAugmented -> String -> Maybe (List CodePoint)
 fromString' grammar = String.toCodePointArray
   >>> Array.toUnfoldable
@@ -258,7 +269,7 @@ fromString' grammar = String.toCodePointArray
 
 
 
-numberStates
+numberStatesBy
   :: forall s nt r tok
    . Ord nt
   => Eq r
@@ -267,7 +278,7 @@ numberStates
   -> Grammar nt r tok
   -> Array (State nt r tok)
   -> Either (Array (StateItem nt r tok)) (States s nt r tok)
-numberStates ix grammar states = map States $ states #
+numberStatesBy ix grammar states = map States $ states #
   traverseWithIndex \i items ->
     let
       findState seed = note seed $ map ix $
@@ -284,6 +295,20 @@ numberStates ix grammar states = map States $ states #
           , advance: shifts <> reductions
           , receive
           }
+
+statesNumberedBy
+  :: forall s nt r tok
+   . Ord nt
+  => Eq r
+  => Ord tok
+  => (Int -> s)
+  -> Grammar nt r tok
+  -> nt
+  -> States s (Maybe nt) (Maybe r) (Maybe tok)
+statesNumberedBy ix initial entry =
+  let { augmented: grammar, start } = fromSeed initial entry in
+  either (const (States [])) identity $ numberStatesBy ix grammar $
+    calculateStates grammar start
 
 toAdvance :: forall nt tok. Zipper nt tok -> Maybe (Part nt tok)
 toAdvance (Zipper _ after) = Array.head after

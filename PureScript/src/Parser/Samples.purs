@@ -11,7 +11,7 @@ import Data.String as String
 import Data.String.NonEmpty (NonEmptyString)
 import Data.String.NonEmpty as NES
 import Data.Tuple.Nested (type (/\))
-import Parser.Algorithms (fromSeed, fromSeed', generate, generate', indexStates, numberStates, parseIntoGrammar, toTable, toTable', verifyTokens)
+import Parser.Algorithms (fromSeed, fromSeed', generate, generate', indexStates, numberStatesBy, parseIntoGrammar, toTable, toTable', verifyTokens)
 import Parser.Types (AST, Augmented, CST, Grammar(..), Part(..), SATable, SAugmented, SCTable, SGrammar, State, States)
 import Parser.Proto as Proto
 import Parser.ProtoG8 as G8
@@ -56,11 +56,11 @@ exGenerated _ = generate' defaultTopName defaultTopRName defaultEOF exGrammar (u
 
 g8States :: forall a. a -> States Int (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
 g8States a = fromRight' (\_ -> unsafeCrashWith "state generation did not work")
-  (numberStates (add 1) g8Seed.augmented (g8Generated a))
+  (numberStatesBy (add 1) g8Seed.augmented (g8Generated a))
 
 exStates :: forall t. t -> States Int NonEmptyString String CodePoint
 exStates a = fromRight' (\_ -> unsafeCrashWith "state generation did not work")
-  (numberStates (add 1) exSeed.augmented (exGenerated a))
+  (numberStatesBy (add 1) exSeed.augmented (exGenerated a))
 
 g8Table :: forall a. a -> Proto.Table Int (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok) (CST (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok))
 g8Table = apply toTable indexStates <<< g8States

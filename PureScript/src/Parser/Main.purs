@@ -72,7 +72,7 @@ import FRP.SampleJIT (readersT, sampleJITE)
 import FRP.SelfDestruct (selfDestruct)
 import Foreign.Object (Object)
 import Foreign.Object as Object
-import Parser.Algorithms (addEOF', calculateStates, fromSeed', fromString', gatherNonTerminals', gatherNonTerminals_, gatherTokens', gatherTokens_, getResultC, indexStates, longestFirst, numberStates, parseDefinition, parseIntoGrammar, toAdvanceTo, toTable, withProducible)
+import Parser.Algorithms (addEOF', calculateStates, fromSeed', fromString', gatherNonTerminals', gatherNonTerminals_, gatherTokens', gatherTokens_, getResultC, indexStates, longestFirst, numberStatesBy, parseDefinition, parseIntoGrammar, toAdvanceTo, toTable, withProducible)
 import Parser.Codecs (grammarCodec, intStringCodec, listCodec, mappy, maybeCodec, nonEmptyStringCodec, parseStepsCodec, producibleCodec, setCodec, stateInfoCodec, statesCodec)
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps, topOf)
 import Parser.Random (genNT, sampleS)
@@ -1026,7 +1026,7 @@ computeGrammar
 computeGrammar grammar =
   let
     _producible = withProducible grammar
-    _states = either (const (States [])) identity $ numberStates (add 1) grammar.augmented (calculateStates grammar.augmented grammar.start)
+    _states = either (const (States [])) identity $ numberStatesBy (add 1) grammar.augmented (calculateStates grammar.augmented grammar.start)
     _stateIndex = indexStates _states
     _allTokens = gatherTokens' grammar.augmented
     _allNTs = gatherNonTerminals' grammar.augmented
