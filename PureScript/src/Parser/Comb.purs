@@ -49,7 +49,7 @@ newtype Comb nt tok a = Comb
     , resultant :: CResultant nt tok a
     }
   }
-type SCComb = Comb String CodePoint
+type Combs = Comb String CodePoint
 
 -- | Parses an array (of CSTs), expecting a certain number of elements.
 -- | It may still return failure early, though.

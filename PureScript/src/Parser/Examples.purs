@@ -16,13 +16,13 @@ import Data.Tuple (snd)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Console (log, logShow)
-import Parser.Comb (Comb(..), SCComb, codePoint, named, namedRec, parseString)
+import Parser.Comb (Comb(..), Combs, codePoint, named, namedRec, parseString)
 import Parser.Types (Fragment, Grammar(..), Part(..))
 
-mk :: forall a. SCComb a -> (String -> Maybe a)
+mk :: forall a. Combs a -> (String -> Maybe a)
 mk = parseString "top"
 
-print :: forall a. SCComb a -> Effect Unit
+print :: forall a. Combs a -> Effect Unit
 print (Comb { grammar: MkGrammar grammar }) = grammar # traverse_ \rule ->
   log $ rule.pName <> "." <> show (snd rule.rName) <> " ::= " <> showFragment rule.rule
 
@@ -40,11 +40,11 @@ coalesce (Terminal x : Terminal y : zs) = coalesce (Terminal y : zs)
 coalesce (z : zs) = z : coalesce zs
 coalesce Nil = Nil
 
-digit :: SCComb Int
+digit :: Combs Int
 digit = named "digit" $ oneOf $ mapWithIndex (<$) $
   codePoint <$> String.toCodePointArray "0123456789"
 
-number :: SCComb Int
+number :: Combs Int
 number = namedRec "number" \numberRec ->
   digit <|> ado
     ds <- numberRec
@@ -61,7 +61,7 @@ testData =
   , "1234"
   ]
 
-test :: forall a. Show a => SCComb a -> Effect Unit
+test :: forall a. Show a => Combs a -> Effect Unit
 test parser = do
   print parser
   let doParse = mk parser
@@ -69,7 +69,7 @@ test parser = do
 
 main :: Effect Unit
 main = do
-  test (empty :: SCComb Int)
+  test (empty :: Combs Int)
   test (pure "hi")
   test digit
   test number
