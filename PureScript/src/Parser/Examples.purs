@@ -4,7 +4,8 @@ import Prelude
 
 import Control.Alt ((<|>))
 import Control.Plus (empty)
-import Data.Array (fromFoldable, toUnfoldable)
+import Data.Array (fromFoldable, nub, toUnfoldable)
+import Data.Either (Either(..))
 import Data.Foldable (intercalate, oneOf, traverse_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), (:))
@@ -19,12 +20,14 @@ import Effect.Console (log, logShow)
 import Parser.Comb (Comb(..), Combs, codePoint, named, namedRec, parseString)
 import Parser.Types (Fragment, Grammar(..), Part(..))
 
+topName = "top"
+
 mk :: forall a. Combs a -> (String -> Maybe a)
-mk = parseString "top"
+mk = parseString topName
 
 print :: forall a. Combs a -> Effect Unit
-print (Comb { grammar: MkGrammar grammar }) = grammar # traverse_ \rule ->
-  log $ rule.pName <> "." <> show (snd rule.rName) <> " ::= " <> showFragment rule.rule
+print (Comb { grammar: MkGrammar grammar }) = nub grammar # traverse_ \rule ->
+  log $ rule.pName <> "." <> show rule.rName <> " ::= " <> showFragment rule.rule
 
 showFragment :: Fragment String CodePoint -> String
 showFragment =
@@ -54,16 +57,16 @@ number = namedRec "number" \numberRec ->
 testData :: Array String
 testData =
   [ ""
-  , "0"
-  , "1"
-  , "10"
-  , "01"
+  , "6"
+  , "7"
+  , "80"
+  , "09"
   , "1234"
   ]
 
 test :: forall a. Show a => Combs a -> Effect Unit
 test parser = do
-  print parser
+  print (named topName parser)
   let doParse = mk parser
   traverse_ (\s -> logShow (s /\ doParse s)) testData
 
@@ -73,3 +76,6 @@ main = do
   test (pure "hi")
   test digit
   test number
+  test (Left <$> digit <|> (map Right <<< (/\)) <$> digit <*> digit)
+  test (Left <$> digit <|> Right <$> number)
+  test (Right <$> number <|> Left <$> digit)

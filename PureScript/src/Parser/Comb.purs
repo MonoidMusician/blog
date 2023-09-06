@@ -5,6 +5,7 @@ import Prelude
 import Control.Alternative (class Alternative)
 import Control.Plus (class Alt, class Plus, empty, (<|>))
 import Data.Array (head, length, splitAt, zipWith, (!!))
+import Data.Array as Array
 import Data.Compactable (class Compactable, compact, separateDefault)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe(..))
@@ -12,19 +13,17 @@ import Data.String (CodePoint)
 import Data.String as String
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
-import Debug (spy)
 import Effect.Console (error, log)
 import Effect.Unsafe (unsafePerformEffect)
 import Parser.Algorithms (addEOF'', getResultCM, statesNumberedBy, toTable)
 import Parser.Proto as Proto
-import Parser.Types (CST(..), Fragment, Grammar(..), Part(..), States(..))
+import Parser.Types (CST(..), Fragment, Grammar(..), Part(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Reference (unsafeRefEq)
 
-type Rule nt = Tuple nt Int
-type CGrammar nt tok = Grammar nt (Rule nt) tok
+type CGrammar nt tok = Grammar nt Int tok
 type CFragment nt tok = Fragment nt tok
-type CCST nt tok = CST (Rule nt) tok
+type CCST nt tok = CST (Tuple nt Int) tok
 
 -- | An applicative parser combinator that builds a grammar and parses a CST.
 -- |
@@ -75,15 +74,18 @@ data PartialResult a
 parse :: forall nt tok a. Show nt => Show tok => Ord nt => Ord tok => nt -> Comb nt tok a -> (Array tok -> Maybe a)
 parse name parser = do
   -- First we build the LR(1) parsing table
-  let Comb { grammar, rules } = named name parser
-  let Tuple initialState states@(States s) = statesNumberedBy identity grammar name
+  -- This is a bit ugly right now ...
+  let Comb { rules: cases } = parser
+  let Comb { grammar: MkGrammar initial } = named name parser
+  let grammar = MkGrammar (Array.nub initial)
+  let Tuple initialState states = statesNumberedBy identity grammar name
   let table = toTable states Just
   -- Then we run it on an input
   addEOF'' >>> \input -> do
     stack <- nope "Failed to parse" $ Proto.parse table initialState input
     cst <- nope "Failed to extract result" $ getResultCM stack
     -- Apply the function that parses from the CST to the desired result type
-    nope "Failed to match rule" $ matchRule name (rules <#> _.resultant) cst
+    nope "Failed to match rule" $ matchRule name (cases <#> _.resultant) cst
 
 parseString :: forall nt a. Show nt => Ord nt => nt -> Comb nt CodePoint a -> (String -> Maybe a)
 parseString name parser = parse name parser <<< String.toCodePointArray
@@ -161,20 +163,16 @@ namedRec name rec =
     Comb produced = recursive
     newRules = MkGrammar $ produced.rules # mapWithIndex \i { rule } ->
       { pName: name
-      , rName: Tuple name i
+      , rName: i
       , rule
       }
   in Comb
-    { grammar: produced.grammar <> newRules
-    -- Need to figure out how to do this, without introducing new layers??
-    , rules: konst produced.rules $ pure
+    { grammar: newRules <> produced.grammar
+    , rules: pure
         { rule: pure (NonTerminal name)
         , resultant: component2 (unsafeCoerce name) $ matchRule name (produced.rules <#> _.resultant)
         }
     }
-
-konst :: forall a. a -> a -> a
-konst = const
 
 named :: forall nt tok a. nt -> Comb nt tok a -> Comb nt tok a
 named name = namedRec name <<< const
@@ -218,7 +216,7 @@ component2 :: forall i a. String -> (i -> Maybe a) -> Resultant i a
 component2 name c = Resultant
   { length: 1
   , result: \is ->
-      case head (spy (name <> ".is") is) of
+      case head is of
         Nothing -> Partial
         Just i -> compact (Result (c i))
   }

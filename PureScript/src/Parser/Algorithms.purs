@@ -8,6 +8,7 @@ import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
+import Data.Bitraversable (bisequence)
 import Data.Either (Either(..), either, hush, note)
 import Data.Filterable (filterMap)
 import Data.Foldable (elem, foldMap, oneOfMap, sum)
@@ -180,12 +181,12 @@ getResultC :: forall x y z. Stack x (CST y z) -> Maybe (CST y z)
 getResultC (Snoc (Snoc (Zero _) result@(Branch _ _) _) (Leaf _) _) = Just result
 getResultC _ = Nothing
 
-getResultCM :: forall w x y z. Stack w (CST (x /\ Maybe y) (Maybe z)) -> Maybe (CST y z)
+getResultCM :: forall w x y z. Stack w (CST (Maybe x /\ Maybe y) (Maybe z)) -> Maybe (CST (x /\ y) z)
 getResultCM = getResultC >=> revertCST
 
-revertCST :: forall x y z. CST (x /\ Maybe y) (Maybe z) -> Maybe (CST y z)
+revertCST :: forall x y z. CST (Maybe x /\ Maybe y) (Maybe z) -> Maybe (CST (x /\ y) z)
 revertCST (Leaf t) = Leaf <$> t
-revertCST (Branch r cs) = Branch <$> snd r <*> traverse revertCST cs
+revertCST (Branch r cs) = Branch <$> bisequence r <*> traverse revertCST cs
 
 
 parseIntoGrammar
