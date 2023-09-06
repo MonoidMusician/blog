@@ -1,12 +1,11 @@
 module Parser.Algorithms where
 
-import Parser.Types
 import Prelude
 
 import Control.Alt ((<|>))
 import Data.Array (mapWithIndex)
 import Data.Array as Array
-import Data.Array.NonEmpty (NonEmptyArray(..))
+import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..), either, hush, note)
@@ -23,7 +22,7 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.String (CodePoint)
 import Data.String as String
-import Data.String.NonEmpty (NonEmptyString(..))
+import Data.String.NonEmpty (NonEmptyString)
 import Data.String.NonEmpty as NES
 import Data.Traversable (traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
@@ -31,6 +30,7 @@ import Data.Tuple (fst, snd)
 import Data.Tuple.Nested ((/\), type (/\))
 import Parser.Proto (Stack(..), topOf)
 import Parser.Proto as Proto
+import Parser.Types (AST(..), Augmented, CST(..), Fragment, Grammar(..), Lookahead, Part(..), Produced, Producible, SAugmented, SFragment, ShiftReduce(..), State(..), StateIndex, StateInfo, StateItem, States(..), Zipper(..), decide, isNonTerminal, isTerminal, minimizeState, unNonTerminal, unShift, unTerminal)
 import Partial.Unsafe (unsafeCrashWith)
 
 
@@ -200,6 +200,17 @@ parseIntoGrammar = compose MkGrammar $
   Array.mapMaybe (\r -> NES.fromString r.pName <#> \p -> r { pName = p })
     >>> parseDefinitions
 
+parseDefinitions :: forall t719.
+  Array
+    { pName :: NonEmptyString
+    , rule :: String
+    | t719
+    }
+  -> Array
+       { pName :: NonEmptyString
+       , rule :: Array (Part NonEmptyString CodePoint)
+       | t719
+       }
 parseDefinitions grammar =
   let
     nts = longestFirst (grammar <#> _.pName)

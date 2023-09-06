@@ -36,7 +36,7 @@ showPart (Terminal tok) = "\"" <> tok <> "\""
 showPart (NonTerminal nt) = nt
 
 coalesce :: List (Part String String) -> List (Part String String)
-coalesce (Terminal x : Terminal y : zs) = coalesce (Terminal y : zs)
+coalesce (Terminal x : Terminal y : zs) = coalesce (Terminal (x <> y) : zs)
 coalesce (z : zs) = z : coalesce zs
 coalesce Nil = Nil
 

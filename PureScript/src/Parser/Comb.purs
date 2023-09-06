@@ -15,7 +15,7 @@ import Data.Tuple (Tuple(..))
 import Debug (spy)
 import Effect.Console (error, log)
 import Effect.Unsafe (unsafePerformEffect)
-import Parser.Algorithms (addEOF'', getResultCM, indexStates, statesNumberedBy, toTable)
+import Parser.Algorithms (addEOF'', getResultCM, statesNumberedBy, toTable)
 import Parser.Proto as Proto
 import Parser.Types (CST(..), Fragment, Grammar(..), Part(..), States(..))
 import Unsafe.Coerce (unsafeCoerce)
