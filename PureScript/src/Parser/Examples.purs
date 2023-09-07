@@ -13,21 +13,27 @@ import Data.Maybe (Maybe)
 import Data.String (CodePoint)
 import Data.String as CP
 import Data.String as String
-import Data.Tuple (snd)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
-import Effect.Console (log, logShow)
-import Parser.Comb (Comb(..), Combs, codePoint, named, namedRec, parseString)
+import Effect.Console (log)
+import Parser.Comb (Comb(..), Combs, codePoint, named, namedRec, parseString, printSyntax, string)
 import Parser.Types (Fragment, Grammar(..), Part(..))
 
-topName = "top"
+mainName :: String
+mainName = "main"
 
 mk :: forall a. Combs a -> (String -> Maybe a)
-mk = parseString topName
+mk = parseString mainName
 
-print :: forall a. Combs a -> Effect Unit
-print (Comb { grammar: MkGrammar grammar }) = nub grammar # traverse_ \rule ->
+printBNF :: forall a. Combs a -> Effect Unit
+printBNF (Comb { grammar: MkGrammar grammar }) = nub grammar # traverse_ \rule ->
   log $ rule.pName <> "." <> show rule.rName <> " ::= " <> showFragment rule.rule
+
+printPretty :: forall a. Combs a -> Effect Unit
+printPretty (Comb { prettyGrammar }) = nub prettyGrammar #
+  traverse_ \(name /\ msyntax) ->
+    msyntax # traverse_ \syntax ->
+      log $ name <> " ::= " <> printSyntax showFragment syntax
 
 showFragment :: Fragment String CodePoint -> String
 showFragment =
@@ -64,11 +70,18 @@ testData =
   , "1234"
   ]
 
+parseNumber :: String -> Maybe Int
+parseNumber = mk number
+
 test :: forall a. Show a => Combs a -> Effect Unit
 test parser = do
-  print (named topName parser)
+  log ""
+  log "Grammar:"
+  printPretty (named mainName parser)
   let doParse = mk parser
-  traverse_ (\s -> logShow (s /\ doParse s)) testData
+  log ""
+  log "Examples:"
+  traverse_ (\s -> log (show s <> " --> " <> show (doParse s))) testData
 
 main :: Effect Unit
 main = do
@@ -79,3 +92,7 @@ main = do
   test (Left <$> digit <|> (map Right <<< (/\)) <$> digit <*> digit)
   test (Left <$> digit <|> Right <$> number)
   test (Right <$> number <|> Left <$> digit)
+
+  log ""
+  printPretty $ named mainName $
+    (string "abc" <|> string "123") *> (string "xyz" <|> string "789")
