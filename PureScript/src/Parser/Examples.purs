@@ -27,13 +27,13 @@ mk = parseString mainName
 
 printBNF :: forall a. Combs a -> Effect Unit
 printBNF (Comb { grammar: MkGrammar grammar }) = nub grammar # traverse_ \rule ->
-  log $ rule.pName <> "." <> show rule.rName <> " ::= " <> showFragment rule.rule
+  log $ rule.pName <> "." <> show rule.rName <> " = " <> showFragment rule.rule <> " ."
 
 printPretty :: forall a. Combs a -> Effect Unit
 printPretty (Comb { prettyGrammar }) = nub prettyGrammar #
   traverse_ \(name /\ msyntax) ->
     msyntax # traverse_ \syntax ->
-      log $ name <> " ::= " <> printSyntax showFragment syntax
+      log $ name <> " = " <> printSyntax showFragment syntax <> " ."
 
 showFragment :: Fragment String CodePoint -> String
 showFragment =
