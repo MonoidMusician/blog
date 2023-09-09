@@ -15,11 +15,11 @@ import Data.Maybe (Maybe(..))
 import Data.String (CodePoint)
 import Data.Traversable (foldl, intercalate, sequence)
 import Data.Tuple (Tuple(..), snd)
+import Data.Tuple.Nested (type (/\))
 import Effect.Console (error, log)
 import Effect.Unsafe (unsafePerformEffect)
 import Parser.Algorithms (getResultCM, statesNumberedBy)
-import Parser.Lexing (class Token, guessBest, lexingParse, (?))
-import Parser.Proto (Stack)
+import Parser.Lexing (class Token, type (~), Best, Rawr, Similar(..), bestRegexOrString, lexingParse, longest, rawr, (?))
 import Parser.Types (CST(..), Fragment, Grammar(..), OrEOF(..), Part(..))
 import Unsafe.Reference (unsafeRefEq)
 
@@ -124,26 +124,41 @@ data PartialResult a
 
 -- | Parse an input. You should partially apply it, and reuse that same
 -- | partially applied function for multiple inputs.
-parse ::
+parseWith ::
   forall nt cat i o a.
     Ord nt =>
     Ord cat =>
     Token cat i o =>
-    nt -> Comb nt cat o a -> (i -> Either String a)
-parse name parser = do
+    { best :: Best Int (Maybe nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
+    } -> nt -> Comb nt cat o a -> (i -> Either String a)
+parseWith conf name parser = do
   -- First we build the LR(1) parsing table
   -- This is a bit ugly right now ...
   let Comb { rules: cases } = parser
   let Comb { grammar: MkGrammar initial } = named name parser
   let grammar = MkGrammar (Array.nub initial)
   let states = statesNumberedBy identity grammar name
-  let compiled = lexingParse { best: guessBest } states :: OrEOF i -> Either (Tuple _ String) (Stack Int (CST (Tuple (Maybe nt) (Maybe Int)) (OrEOF o)))
+  let compiled = lexingParse conf states
   -- Then we run it on an input
   \(input :: i) -> do
     stack <- lmap snd $ compiled (Continue input)
     cst <- "Failed to extract result"? getResultCM stack
     -- Apply the function that parses from the CST to the desired result type
     "Failed to match rule"? matchRule name (cases <#> _.resultant) cst
+
+parse ::
+  forall nt cat i o a.
+    Ord nt =>
+    Ord cat =>
+    Token cat i o =>
+    nt -> Comb nt cat o a -> (i -> Either String a)
+parse = parseWith { best: longest }
+
+parseRegex ::
+  forall nt a.
+    Ord nt =>
+    nt -> Comb nt (Similar String Rawr) String a -> (String -> Either String a)
+parseRegex = parseWith { best: bestRegexOrString }
 
 derive instance functorComb :: Functor (Comb nt cat o)
 instance applyComb :: Apply (Comb nt cat o) where
@@ -200,6 +215,13 @@ token cat = Comb
         _ -> Nothing
     }
   }
+
+tokenRawr :: forall nt. String -> Comb nt (String ~ Rawr) String String
+tokenRawr = rawr >>> Right >>> Similar >>> token
+
+tokenStr :: forall nt. String -> Comb nt (String ~ Rawr) String String
+tokenStr = Left >>> Similar >>> token
+
 tokens :: forall nt cat o. Array cat -> Comb nt cat o (Array o)
 tokens toks = Comb
   { grammar: mempty

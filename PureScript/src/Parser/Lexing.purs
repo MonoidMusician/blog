@@ -7,33 +7,41 @@ import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
-import Data.Either (Either(..), note)
+import Data.Either (Either(..), either, isLeft, note)
 import Data.Either.Nested (type (\/))
 import Data.Foldable (class Foldable, oneOfMap)
 import Data.List (List)
 import Data.List as List
 import Data.Map (SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Newtype (class Newtype)
+import Data.Semigroup.Foldable (maximum)
 import Data.String (CodePoint)
 import Data.String as String
 import Data.String.CodeUnits as CU
 import Data.String.Regex (Regex)
 import Data.String.Regex as Regex
+import Data.String.Regex.Flags (unicode)
+import Data.String.Regex.Unsafe (unsafeRegex)
 import Data.Traversable (class Traversable)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import Debug (traceM)
 import Parser.Algorithms (indexStates)
 import Parser.Proto (Stack(..), topOf)
 import Parser.Types (CST(..), OrEOF(..), Part(..), ShiftReduce, State(..), StateInfo, States(..), Zipper(..), decide)
 import Partial.Unsafe (unsafeCrashWith)
-import Unsafe.Coerce (unsafeCoerce)
 
 data Scanning i = Scanning Int i
 derive instance functorScanning :: Functor Scanning
 derive instance foldableScanning :: Foldable Scanning
 derive instance traversableScanning :: Traversable Scanning
+
+newtype Similar a b = Similar (Either a b)
+infixr 9 type Similar as ~
+derive newtype instance eqSimilar :: (Eq a, Eq b) => Eq (Similar a b)
+derive newtype instance ordSimilar :: (Ord a, Ord b) => Ord (Similar a b)
+derive newtype instance showSimilar :: (Show a, Show b) => Show (Similar a b)
 
 -- | Typeclass for generic length of things
 class Len i where
@@ -96,13 +104,22 @@ instance fromStringString :: FromString String where
   fromString = identity
 
 
+newtype Rawr = Rawr Regex
+derive instance newtypeRawr :: Newtype Rawr _
+instance eqRaw :: Eq Rawr where
+  eq (Rawr r1) (Rawr r2) = show r1 == show r2
+instance ordRaw :: Ord Rawr where
+  compare (Rawr r1) (Rawr r2) = show r1 `compare` show r2
+rawr :: String -> Rawr
+rawr source = Rawr (unsafeRegex source unicode)
+
 -- TODO: this isn't right:
 -- - doesn't handle lookaround since we dropped the start of the string
 -- - I think the behavior of flags on the regex will do weird things
 -- - fucking terrible API
 -- - why does every high-level regex API suck ;.;
-instance tokenRegex :: Token Regex String String where
-  recognize re current = do
+instance tokenRawr :: Token Rawr String String where
+  recognize (Rawr re) current = do
     groups <- Regex.match re current
     matched <- NEA.head groups
     pure (Tuple matched (CU.drop (CU.length matched) current))
@@ -110,6 +127,11 @@ instance tokenRegex :: Token Regex String String where
 instance tokenOrEOF :: Token cat i o => Token (OrEOF cat) (OrEOF i) (OrEOF o) where
   recognize EOF (Continue i) | len i == 0 = Just (EOF /\ EOF)
   recognize (Continue cat) (Continue i) = bimap Continue Continue <$> recognize cat i
+  recognize _ _ = Nothing
+
+else instance tokenOrEOFPeek :: Token cat i o => Token (OrEOF cat) i (OrEOF o) where
+  recognize EOF i | len i == 0 = Just (EOF /\ i)
+  recognize (Continue cat) i = lmap Continue <$> recognize cat i
   recognize _ _ = Nothing
 
 instance tokenEither ::
@@ -120,6 +142,12 @@ instance tokenEither ::
       lmap Left <$> recognize prefix current
     recognize (Right prefix) current =
       lmap Right <$> recognize prefix current
+
+instance tokenSimilar ::
+  ( Token cat1 i o
+  , Token cat2 i o
+  ) => Token (Similar cat1 cat2) i o where
+    recognize (Similar e) = either recognize recognize e
 
 instance tokenTuple ::
   ( Token cat1 i1 o1
@@ -145,9 +173,26 @@ type Best s r cat i o =
   NonEmptyArray ((cat /\ ShiftReduce s r) /\ o /\ i) ->
   Maybe (Either s (cat /\ r) /\ o /\ i)
 
+prioritize :: forall a score. Ord score => (a -> score) -> NonEmptyArray a -> NonEmptyArray a
+prioritize f as =
+  let
+    scored = (Tuple <*> f) <$> as
+    scores = snd <$> scored
+    winner = maximum scores
+    winners = fst <$> NEA.filter (snd >>> eq winner) scored
+  in fromMaybe as $ NEA.fromArray winners
+
 guessBest :: forall s r cat i o. Best s r cat i o
-guessBest opts = case NEA.toArray opts of
+guessBest options = case NEA.toArray options of
   [ (cat /\ sr) /\ d ] -> decide sr <#> map (Tuple cat) >>> (_ /\ d)
+  _ -> Nothing
+
+longest :: forall s r cat i o. Len i => Best s r cat i o
+longest = guessBest <<< prioritize \(_ /\ _ /\ i) -> negate (len i)
+
+bestRegexOrString :: forall s r. Best s r (OrEOF (Similar String Rawr)) (OrEOF String) (OrEOF String)
+bestRegexOrString = guessBest <<< prioritize case _ of
+  ((Continue (Similar cat) /\ _) /\ _ /\ Continue i) -> Just $ Tuple (isLeft cat) (negate (len i))
   _ -> Nothing
 
 lexingParse ::
