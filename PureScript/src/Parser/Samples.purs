@@ -15,7 +15,7 @@ import Data.Tuple.Nested (type (/\))
 import Parser.Algorithms (fromSeed, fromSeed', generate, generate', indexStates, numberStatesBy, parseIntoGrammar, toTable, toTable', verifyTokens)
 import Parser.Proto as Proto
 import Parser.ProtoG8 as G8
-import Parser.Types (AST, Augmented, CST, Grammar(..), Part(..), SATable, SAugmented, SCTable, SGrammar, State, States)
+import Parser.Types (AST, Augmented, CST, Grammar(..), OrEOF, Part(..), SATable, SAugmented, SCTable, SGrammar, State, States)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 
 g8Grammar :: Grammar G8.Sorts G8.Rule G8.Tok
@@ -34,7 +34,7 @@ exGrammar = parseIntoGrammar
   , { pName: "L", rName: "L2", rule: "L,E" }
   ]
 
-g8Seed :: Augmented (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
+g8Seed :: Augmented (Maybe G8.Sorts) (Maybe G8.Rule) (OrEOF G8.Tok)
 g8Seed = fromSeed g8Grammar G8.RE
 
 defaultTopName :: NonEmptyString
@@ -49,13 +49,13 @@ defaultEOF = (codePointFromChar '␄')
 exSeed :: SAugmented
 exSeed = fromSeed' defaultTopName defaultTopRName defaultEOF exGrammar (unsafePartial (fromJust (NES.fromString "E")))
 
-g8Generated :: forall a. a -> Array (State (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok))
+g8Generated :: forall a. a -> Array (State (Maybe G8.Sorts) (Maybe G8.Rule) (OrEOF G8.Tok))
 g8Generated _ = generate g8Grammar G8.RE
 
 exGenerated :: forall t. t -> Array (State NonEmptyString String CodePoint)
 exGenerated _ = generate' defaultTopName defaultTopRName defaultEOF exGrammar (unsafePartial (fromJust (NES.fromString "E")))
 
-g8States :: forall a. a -> States Int (Maybe G8.Sorts) (Maybe G8.Rule) (Maybe G8.Tok)
+g8States :: forall a. a -> States Int (Maybe G8.Sorts) (Maybe G8.Rule) (OrEOF G8.Tok)
 g8States a = snd $ fromRight' (\_ -> unsafeCrashWith "state generation did not work")
   (numberStatesBy (add 1) g8Seed.augmented (g8Generated a))
 
@@ -63,13 +63,13 @@ exStates :: forall t. t -> States Int NonEmptyString String CodePoint
 exStates a = snd $ fromRight' (\_ -> unsafeCrashWith "state generation did not work")
   (numberStatesBy (add 1) exSeed.augmented (exGenerated a))
 
-g8Table :: forall a. a -> Proto.Table Int (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok) (CST (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok))
+g8Table :: forall a. a -> Proto.Table Int (Maybe G8.Sorts /\ Maybe G8.Rule) (OrEOF G8.Tok) (CST (Maybe G8.Sorts /\ Maybe G8.Rule) (OrEOF G8.Tok))
 g8Table = apply toTable indexStates <<< g8States
 
 exTable :: forall t. t -> SCTable
 exTable = apply toTable indexStates <<< exStates
 
-g8Table' :: forall a. a -> Proto.Table Int (Maybe G8.Sorts /\ Maybe G8.Rule) (Maybe G8.Tok) (Either (Maybe G8.Tok) (AST (Maybe G8.Sorts /\ Maybe G8.Rule)))
+g8Table' :: forall a. a -> Proto.Table Int (Maybe G8.Sorts /\ Maybe G8.Rule) (OrEOF G8.Tok) (Either (OrEOF G8.Tok) (AST (Maybe G8.Sorts /\ Maybe G8.Rule)))
 g8Table' = apply toTable' indexStates <<< g8States
 
 exTable' :: forall t. t -> SATable

@@ -31,7 +31,7 @@ import Data.Tuple (fst, snd)
 import Data.Tuple.Nested ((/\), type (/\))
 import Parser.Proto (Stack(..), topOf)
 import Parser.Proto as Proto
-import Parser.Types (AST(..), Augmented, CST(..), Fragment, Grammar(..), Lookahead, Part(..), Produced, Producible, SAugmented, SFragment, ShiftReduce(..), State(..), StateIndex, StateInfo, StateItem, States(..), Zipper(..), decide, isNonTerminal, isTerminal, minimizeState, unNonTerminal, unShift, unTerminal)
+import Parser.Types (AST(..), Augmented, CST(..), Fragment, Grammar(..), Lookahead, OrEOF(..), Part(..), Produced, Producible, SAugmented, SFragment, ShiftReduce(..), State(..), StateIndex, StateInfo, StateItem, States(..), Zipper(..), decide, isNonTerminal, isTerminal, minimizeState, notEOF, unNonTerminal, unShift, unTerminal)
 import Partial.Unsafe (unsafeCrashWith)
 
 
@@ -98,19 +98,19 @@ fromSeed
   :: forall nt r tok
    . Grammar nt r tok
   -> nt
-  -> Augmented (Maybe nt) (Maybe r) (Maybe tok)
+  -> Augmented (Maybe nt) (Maybe r) (OrEOF tok)
 fromSeed (MkGrammar rules) entry =
   let
-    rule0 = { pName: Nothing, rName: Nothing, rule: [ NonTerminal (Just entry), Terminal Nothing ] }
+    rule0 = { pName: Nothing, rName: Nothing, rule: [ NonTerminal (Just entry), Terminal EOF ] }
     rules' = rules <#> \{ pName, rName, rule } ->
       { pName: Just pName
       , rName: Just rName
-      , rule: bimap Just Just <$> rule
+      , rule: bimap Just Continue <$> rule
       }
   in
     { augmented: MkGrammar ([ rule0 ] <> rules')
     , start: { pName: Nothing, rName: Nothing, rule: Zipper [] rule0.rule, lookahead: [] }
-    , eof: Nothing
+    , eof: EOF
     , entry: Just entry
     }
 
@@ -149,7 +149,7 @@ generate
   => Ord tok
   => Grammar nt r tok
   -> nt
-  -> Array (State (Maybe nt) (Maybe r) (Maybe tok))
+  -> Array (State (Maybe nt) (Maybe r) (OrEOF tok))
 generate initial entry =
   let
     { augmented: grammar, start } = fromSeed initial entry
@@ -181,11 +181,11 @@ getResultC :: forall x y z. Stack x (CST y z) -> Maybe (CST y z)
 getResultC (Snoc (Snoc (Zero _) result@(Branch _ _) _) (Leaf _) _) = Just result
 getResultC _ = Nothing
 
-getResultCM :: forall w x y z. Stack w (CST (Maybe x /\ Maybe y) (Maybe z)) -> Maybe (CST (x /\ y) z)
+getResultCM :: forall w x y z. Stack w (CST (Maybe x /\ Maybe y) (OrEOF z)) -> Maybe (CST (x /\ y) z)
 getResultCM = getResultC >=> revertCST
 
-revertCST :: forall x y z. CST (Maybe x /\ Maybe y) (Maybe z) -> Maybe (CST (x /\ y) z)
-revertCST (Leaf t) = Leaf <$> t
+revertCST :: forall x y z. CST (Maybe x /\ Maybe y) (OrEOF z) -> Maybe (CST (x /\ y) z)
+revertCST (Leaf t) = Leaf <$> notEOF t
 revertCST (Branch r cs) = Branch <$> bisequence r <*> traverse revertCST cs
 
 
@@ -316,7 +316,7 @@ statesNumberedBy
   => (Int -> s)
   -> Grammar nt r tok
   -> nt
-  -> s /\ States s (Maybe nt) (Maybe r) (Maybe tok)
+  -> s /\ States s (Maybe nt) (Maybe r) (OrEOF tok)
 statesNumberedBy ix initial entry =
   let { augmented: grammar, start } = fromSeed initial entry in
   either (const (ix 0 /\ States [])) identity $ numberStatesBy ix grammar $

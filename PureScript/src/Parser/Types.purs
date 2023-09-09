@@ -20,6 +20,18 @@ import Data.Traversable (mapAccumL)
 import Data.Tuple.Nested (type (/\))
 import Parser.Proto as Proto
 
+data OrEOF a = EOF | Continue a
+derive instance eqOrEOF :: Eq a => Eq (OrEOF a)
+derive instance ordOrEOF :: Ord a => Ord (OrEOF a)
+
+instance showOrEOF :: Show a => Show (OrEOF a) where
+  show EOF = "EOF"
+  show (Continue a) = "(Continue " <> show a <> ")"
+
+notEOF :: OrEOF ~> Maybe
+notEOF EOF = Nothing
+notEOF (Continue a) = Just a
+
 newtype Grammar nt r tok = MkGrammar
   (Array (GrammarRule nt r tok))
 derive newtype instance showGrammar :: (Show nt, Show r, Show tok) => Show (Grammar nt r tok)

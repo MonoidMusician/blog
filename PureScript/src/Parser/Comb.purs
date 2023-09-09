@@ -6,20 +6,21 @@ import Control.Alternative (class Alternative)
 import Control.Plus (class Alt, class Plus, empty, (<|>))
 import Data.Array (fromFoldable, head, length, splitAt, toUnfoldable, zipWith, (!!))
 import Data.Array as Array
+import Data.Bifunctor (lmap)
 import Data.Compactable (class Compactable, compact, separateDefault)
 import Data.Either (Either(..), either)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), (:))
 import Data.Maybe (Maybe(..))
 import Data.String (CodePoint)
-import Data.String as String
 import Data.Traversable (foldl, intercalate, sequence)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), snd)
 import Effect.Console (error, log)
 import Effect.Unsafe (unsafePerformEffect)
-import Parser.Algorithms (addEOF'', getResultCM, statesNumberedBy, toTable)
-import Parser.Proto as Proto
-import Parser.Types (CST(..), Fragment, Grammar(..), Part(..))
+import Parser.Algorithms (getResultCM, statesNumberedBy)
+import Parser.Lexing (class Token, guessBest, lexingParse, (?))
+import Parser.Proto (Stack)
+import Parser.Types (CST(..), Fragment, Grammar(..), OrEOF(..), Part(..))
 import Unsafe.Reference (unsafeRefEq)
 
 data Syntax nt tok
@@ -56,9 +57,9 @@ coalesce' (z : zs) = z : coalesce' zs
 coalesce' Nil = Nil
 
 type CSyntax = Syntax
-type CGrammar nt tok = Grammar nt Int tok
-type CFragment nt tok = Fragment nt tok
-type CCST nt tok = CST (Tuple nt Int) tok
+type CGrammar nt cat = Grammar nt Int cat
+type CFragment nt cat = Fragment nt cat
+type CCST nt o = CST (Tuple nt Int) o
 
 -- | An applicative parser combinator that builds a grammar and parses a CST.
 -- |
@@ -91,16 +92,16 @@ type CCST nt tok = CST (Tuple nt Int) tok
 -- |
 -- | Invariant:
 -- | - `rules # all \{ rule, resultant } -> length rule == resultant.length`
-newtype Comb nt tok a = Comb
-  { grammar :: CGrammar nt tok
-  , pretty :: Maybe (CSyntax nt tok)
-  , prettyGrammar :: Array (Tuple nt (Maybe (CSyntax nt tok)))
+newtype Comb nt cat o a = Comb
+  { grammar :: CGrammar nt cat
+  , pretty :: Maybe (CSyntax nt cat)
+  , prettyGrammar :: Array (Tuple nt (Maybe (CSyntax nt cat)))
   , rules :: Array
-    { rule :: CFragment nt tok
-    , resultant :: CResultant nt tok a
+    { rule :: CFragment nt cat
+    , resultant :: CResultant nt o a
     }
   }
-type Combs = Comb String CodePoint
+type Combs = Comb String CodePoint CodePoint
 
 -- | Parses an array (of CSTs), expecting a certain number of elements.
 -- | It may still return failure early, though.
@@ -113,7 +114,7 @@ newtype Resultant i a = Resultant
   { length :: Int
   , result :: Array i -> PartialResult a
   }
-type CResultant nt tok = Resultant (CCST nt tok)
+type CResultant nt o = Resultant (CCST nt o)
 
 data PartialResult a
   = Failed
@@ -123,27 +124,29 @@ data PartialResult a
 
 -- | Parse an input. You should partially apply it, and reuse that same
 -- | partially applied function for multiple inputs.
-parse :: forall nt tok a. Show nt => Show tok => Ord nt => Ord tok => nt -> Comb nt tok a -> (Array tok -> Maybe a)
+parse ::
+  forall nt cat i o a.
+    Ord nt =>
+    Ord cat =>
+    Token cat i o =>
+    nt -> Comb nt cat o a -> (i -> Either String a)
 parse name parser = do
   -- First we build the LR(1) parsing table
   -- This is a bit ugly right now ...
   let Comb { rules: cases } = parser
   let Comb { grammar: MkGrammar initial } = named name parser
   let grammar = MkGrammar (Array.nub initial)
-  let Tuple initialState states = statesNumberedBy identity grammar name
-  let table = toTable states Just
+  let states = statesNumberedBy identity grammar name
+  let compiled = lexingParse { best: guessBest } states :: OrEOF i -> Either (Tuple _ String) (Stack Int (CST (Tuple (Maybe nt) (Maybe Int)) (OrEOF o)))
   -- Then we run it on an input
-  addEOF'' >>> \input -> do
-    stack <- nope "Failed to parse" $ Proto.parse table initialState input
-    cst <- nope "Failed to extract result" $ getResultCM stack
+  \(input :: i) -> do
+    stack <- lmap snd $ compiled (Continue input)
+    cst <- "Failed to extract result"? getResultCM stack
     -- Apply the function that parses from the CST to the desired result type
-    nope "Failed to match rule" $ matchRule name (cases <#> _.resultant) cst
+    "Failed to match rule"? matchRule name (cases <#> _.resultant) cst
 
-parseString :: forall nt a. Show nt => Ord nt => nt -> Comb nt CodePoint a -> (String -> Maybe a)
-parseString name parser = parse name parser <<< String.toCodePointArray
-
-derive instance functorComb :: Functor (Comb nt tok)
-instance applyComb :: Apply (Comb nt tok) where
+derive instance functorComb :: Functor (Comb nt cat o)
+instance applyComb :: Apply (Comb nt cat o) where
   apply (Comb l) (Comb r) = Comb
     { grammar: l.grammar <> r.grammar
     , pretty: Conj <$> l.pretty <*> r.pretty
@@ -156,7 +159,7 @@ instance applyComb :: Apply (Comb nt tok) where
           , resultant: x.resultant <*> y.resultant
           }
     }
-instance applicativeComb :: Applicative (Comb nt tok) where
+instance applicativeComb :: Applicative (Comb nt cat o) where
   pure a = Comb
     { grammar: mempty
     , pretty: Just Null
@@ -166,7 +169,7 @@ instance applicativeComb :: Applicative (Comb nt tok) where
       , resultant: pure a
       }
     }
-instance altComb :: Alt (Comb nt tok) where
+instance altComb :: Alt (Comb nt cat o) where
   alt (Comb l) (Comb r) = Comb
     { grammar: l.grammar <> r.grammar
     , pretty: case l.pretty, r.pretty of
@@ -177,27 +180,27 @@ instance altComb :: Alt (Comb nt tok) where
     , prettyGrammar: l.prettyGrammar <|> r.prettyGrammar
     , rules: l.rules <|> r.rules
     }
-instance plusComb :: Plus (Comb nt tok) where
+instance plusComb :: Plus (Comb nt cat o) where
   empty = Comb { grammar: mempty, pretty: Nothing, prettyGrammar: empty, rules: empty }
 -- | Distributivity follows from distributivity of `Array`
-instance alternativeComb :: Alternative (Comb nt tok)
-instance compactableComb :: Compactable (Comb nt tok) where
+instance alternativeComb :: Alternative (Comb nt cat o)
+instance compactableComb :: Compactable (Comb nt cat o) where
   compact (Comb c) = Comb c { rules = c.rules <#> \r -> r { resultant = compact r.resultant } }
   separate eta = separateDefault eta
 
-token :: forall nt tok. tok -> Comb nt tok tok
-token tok = Comb
+token :: forall nt cat o. cat -> Comb nt cat o o
+token cat = Comb
   { grammar: mempty
-  , pretty: Just $ Part $ Terminal tok
+  , pretty: Just $ Part $ Terminal cat
   , prettyGrammar: empty
   , rules: pure
-    { rule: pure (Terminal tok)
+    { rule: pure (Terminal cat)
     , resultant: component case _ of
         Leaf t -> Just t
         _ -> Nothing
     }
   }
-tokens :: forall nt tok. Array tok -> Comb nt tok (Array tok)
+tokens :: forall nt cat o. Array cat -> Comb nt cat o (Array o)
 tokens toks = Comb
   { grammar: mempty
   , pretty: Just $ foldl Conj Null (Part <<< Terminal <$> toks)
@@ -210,17 +213,8 @@ tokens toks = Comb
     }
   }
 
-char :: forall nt. Char -> Comb nt CodePoint Char
-char c = c <$ codePoint (String.codePointFromChar c)
-
-codePoint :: forall nt. CodePoint -> Comb nt CodePoint CodePoint
-codePoint = token
-
-string :: forall nt. String -> Comb nt CodePoint String
-string s = s <$ tokens (String.toCodePointArray s)
-
 -- | Name a nonterminal production, this allows recursion.
-namedRec :: forall nt tok a. nt -> (Comb nt tok a -> Comb nt tok a) -> Comb nt tok a
+namedRec :: forall nt cat o a. nt -> (Comb nt cat o a -> Comb nt cat o a) -> Comb nt cat o a
 namedRec name rec =
   let
     recursive = rec $ Comb
@@ -250,10 +244,10 @@ namedRec name rec =
         }
     }
 
-named :: forall nt tok a. nt -> Comb nt tok a -> Comb nt tok a
+named :: forall nt cat o a. nt -> Comb nt cat o a -> Comb nt cat o a
 named name = namedRec name <<< const
 
-matchRule :: forall nt tok a. nt -> Array (CResultant nt tok a) -> CCST nt tok -> Maybe a
+matchRule :: forall nt o a. nt -> Array (CResultant nt o a) -> CCST nt o -> Maybe a
 matchRule name resultants (Branch (Tuple _name i) children) = do
   assertM "names" (unsafeRefEq _name name)
   resultant <- nope "missing from resultants" $ resultants !! i
