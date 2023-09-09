@@ -19,7 +19,7 @@ import Data.Tuple.Nested (type (/\))
 import Effect.Console (error, log)
 import Effect.Unsafe (unsafePerformEffect)
 import Parser.Algorithms (getResultCM, statesNumberedBy)
-import Parser.Lexing (class Token, type (~), Best, Rawr, Similar(..), bestRegexOrString, lexingParse, longest, rawr, (?))
+import Parser.Lexing (class ToString, class Token, type (~), Best, Rawr, Similar(..), bestRegexOrString, lexingParse, longest, rawr, toString, (?))
 import Parser.Types (CST(..), Fragment, Grammar(..), OrEOF(..), Part(..))
 import Unsafe.Reference (unsafeRefEq)
 
@@ -42,7 +42,7 @@ printSyntax' f (Conj l r) =
   in join [ p l, p r ]
 printSyntax' f (Disj l r) = [ Left $ printSyntax f l <> " | " <> printSyntax f r ]
 printSyntax' _ (Part p) = [ Right [ p ] ]
-printSyntax' _ Null = mempty
+printSyntax' _ Null = [ Right [] ]
 
 printSyntax :: forall nt tok. (Fragment nt tok -> String) -> Syntax nt tok -> String
 printSyntax f syntax =
@@ -219,8 +219,8 @@ token cat = Comb
 tokenRawr :: forall nt. String -> Comb nt (String ~ Rawr) String String
 tokenRawr = rawr >>> Right >>> Similar >>> token
 
-tokenStr :: forall nt. String -> Comb nt (String ~ Rawr) String String
-tokenStr = Left >>> Similar >>> token
+tokenStr :: forall s nt. ToString s => s -> Comb nt (String ~ Rawr) String String
+tokenStr = toString >>> Left >>> Similar >>> token
 
 tokens :: forall nt cat o. Array cat -> Comb nt cat o (Array o)
 tokens toks = Comb

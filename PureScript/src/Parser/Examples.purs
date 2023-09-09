@@ -50,7 +50,7 @@ showFragmentR =
     map showPart >>> intercalate " "
 
 showPart :: Part String (String ~ Rawr) -> String
-showPart (Terminal (Similar (Left tok))) = "\"" <> tok <> "\""
+showPart (Terminal (Similar (Left tok))) = show tok
 showPart (Terminal (Similar (Right (Rawr re)))) = show re
 showPart (NonTerminal nt) = nt
 
