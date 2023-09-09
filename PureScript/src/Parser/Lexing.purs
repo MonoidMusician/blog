@@ -2,6 +2,7 @@ module Parser.Lexing where
 
 import Prelude
 
+import Control.Alternative (guard)
 import Control.Plus (empty)
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
@@ -44,6 +45,8 @@ derive newtype instance ordSimilar :: (Ord a, Ord b) => Ord (Similar a b)
 derive newtype instance showSimilar :: (Show a, Show b) => Show (Similar a b)
 
 -- | Typeclass for generic length of things
+-- |
+-- | `len mempty == 0`
 class Len i where
   len :: i -> Int
 
@@ -67,23 +70,32 @@ instance lenOrEOF :: Len i => Len (OrEOF i) where
   len (Continue i) = len i + 1
 
 -- | Typeclass for recognizing tokens based on categories.
+-- |
+-- | Law: if you recognized it, you must rerecognize it, and vice versa.
 class Len i <= Token cat i o | cat -> o where
   recognize :: cat -> i -> Maybe (o /\ i)
+  rerecognize :: cat -> o -> Maybe (i -> i)
 
 instance tokenString :: Token String String String where
   recognize prefix current =
     String.stripPrefix (String.Pattern prefix) current
       <#> Tuple prefix
+  rerecognize prefix recognized =
+    guard (prefix == recognized) $> (recognized <> _)
 
 instance tokenChar :: Token Char String Char where
   recognize c current = case CU.uncons current of
     Just { head, tail } | head == c -> pure (Tuple head tail)
     _ -> empty
+  rerecognize prefix recognized =
+    guard (prefix == recognized) $> (CU.singleton recognized <> _)
 
 instance tokenCodePoint :: Token CodePoint String CodePoint where
   recognize c current = case String.uncons current of
     Just { head, tail } | head == c -> pure (Tuple head tail)
     _ -> empty
+  rerecognize prefix recognized =
+    guard (prefix == recognized) $> (String.singleton recognized <> _)
 
 class ToString s where
   toString :: s -> String
@@ -123,16 +135,28 @@ instance tokenRawr :: Token Rawr String String where
     groups <- Regex.match re current
     matched <- NEA.head groups
     pure (Tuple matched (CU.drop (CU.length matched) current))
+  rerecognize re recognized =
+    guard (recognize re recognized == Just (Tuple recognized mempty)) $>
+      (recognized <> _)
 
-instance tokenOrEOF :: Token cat i o => Token (OrEOF cat) (OrEOF i) (OrEOF o) where
+instance tokenOrEOF :: (Monoid i, Token cat i o) => Token (OrEOF cat) (OrEOF i) (OrEOF o) where
   recognize EOF (Continue i) | len i == 0 = Just (EOF /\ EOF)
   recognize (Continue cat) (Continue i) = bimap Continue Continue <$> recognize cat i
   recognize _ _ = Nothing
+  rerecognize EOF EOF = Just (const (Continue mempty))
+  rerecognize (Continue l) (Continue r) =
+    rerecognize l r <#> case _, _ of
+      p, Continue i -> Continue (p i)
+      _, i -> i
+  rerecognize _ _ = Nothing
 
-else instance tokenOrEOFPeek :: Token cat i o => Token (OrEOF cat) i (OrEOF o) where
+else instance tokenOrEOFPeek :: (Monoid i, Token cat i o) => Token (OrEOF cat) i (OrEOF o) where
   recognize EOF i | len i == 0 = Just (EOF /\ i)
   recognize (Continue cat) i = lmap Continue <$> recognize cat i
   recognize _ _ = Nothing
+  rerecognize EOF EOF = Just (const mempty)
+  rerecognize (Continue l) (Continue r) = rerecognize l r
+  rerecognize _ _ = Nothing
 
 instance tokenEither ::
   ( Token cat1 i o1
@@ -142,12 +166,16 @@ instance tokenEither ::
       lmap Left <$> recognize prefix current
     recognize (Right prefix) current =
       lmap Right <$> recognize prefix current
+    rerecognize (Left l) (Left r) = rerecognize l r
+    rerecognize (Right l) (Right r) = rerecognize l r
+    rerecognize _ _ = Nothing
 
 instance tokenSimilar ::
   ( Token cat1 i o
   , Token cat2 i o
   ) => Token (Similar cat1 cat2) i o where
     recognize (Similar e) = either recognize recognize e
+    rerecognize (Similar e) = either rerecognize rerecognize e
 
 instance tokenTuple ::
   ( Token cat1 i1 o1
@@ -157,6 +185,10 @@ instance tokenTuple ::
       o1 /\ j1 <- recognize cat1 i1
       o2 /\ j2 <- recognize cat2 i2
       in (o1 /\ o2) /\ (j1 /\ j2)
+    rerecognize (l1 /\ l2) (r1 /\ r2) = ado
+      p1 <- rerecognize l1 r1
+      p2 <- rerecognize l2 r2
+      in \(i1 /\ i2) -> p1 i1 /\ p2 i2
 
 
 

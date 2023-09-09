@@ -2,6 +2,8 @@ module Parser.Examples where
 
 import Prelude
 
+import Ansi.Codes as Ansi
+import Ansi.Output (withGraphics)
 import Control.Alt ((<|>))
 import Data.Array (fromFoldable, nub, toUnfoldable)
 import Data.Either (Either(..), choose)
@@ -31,13 +33,13 @@ printPretty :: forall s o a. Ord s => ToString s => Comb String s o a -> Effect 
 printPretty (Comb { prettyGrammar }) = nub prettyGrammar #
   traverse_ \(name /\ msyntax) ->
     msyntax # traverse_ \syntax ->
-      log $ name <> " = " <> printSyntax showFragment syntax <> " ."
+      log $ showPart (NonTerminal name) <> " = " <> printSyntax showFragment syntax <> " ."
 
 printPrettyR :: forall o a. Comb String (String ~ Rawr) o a -> Effect Unit
 printPrettyR (Comb { prettyGrammar }) = nub prettyGrammar #
   traverse_ \(name /\ msyntax) ->
     msyntax # traverse_ \syntax ->
-      log $ name <> " = " <> printSyntax showFragmentR syntax <> " ."
+      log $ showPart (NonTerminal name) <> " = " <> printSyntax showFragmentR syntax <> " ."
 
 showFragment :: forall s. ToString s => Fragment String s -> String
 showFragment =
@@ -50,9 +52,12 @@ showFragmentR =
     map showPart >>> intercalate " "
 
 showPart :: Part String (String ~ Rawr) -> String
-showPart (Terminal (Similar (Left tok))) = show tok
-showPart (Terminal (Similar (Right (Rawr re)))) = show re
-showPart (NonTerminal nt) = nt
+showPart (Terminal (Similar (Left tok))) = colorful Ansi.Yellow $ show tok
+showPart (Terminal (Similar (Right (Rawr re)))) = colorful Ansi.Green $ show re
+showPart (NonTerminal nt) = colorful Ansi.Blue nt
+
+colorful :: Ansi.Color -> String -> String
+colorful c = withGraphics (pure (Ansi.PForeground c))
 
 coalesce :: List (Part String (String ~ Rawr)) -> List (Part String (String ~ Rawr))
 coalesce (Terminal (Similar (Left x)) : Terminal (Similar (Left y)) : zs) = coalesce (Terminal (Similar (Left (x <> y))) : zs)

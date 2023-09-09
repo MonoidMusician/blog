@@ -128,6 +128,7 @@ parseWith ::
   forall nt cat i o a.
     Ord nt =>
     Ord cat =>
+    Monoid i =>
     Token cat i o =>
     { best :: Best Int (Maybe nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
     } -> nt -> Comb nt cat o a -> (i -> Either String a)
@@ -150,6 +151,7 @@ parse ::
   forall nt cat i o a.
     Ord nt =>
     Ord cat =>
+    Monoid i =>
     Token cat i o =>
     nt -> Comb nt cat o a -> (i -> Either String a)
 parse = parseWith { best: longest }

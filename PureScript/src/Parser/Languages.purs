@@ -2,6 +2,8 @@ module Parser.Languages where
 
 import Prelude
 
+import Ansi.Codes as Ansi
+import Ansi.Output (withGraphics)
 import Control.Alt ((<|>))
 import Control.Apply (lift2)
 import Data.Argonaut (Json)
@@ -26,8 +28,8 @@ import Effect.Console (log)
 import Foreign.Object as Object
 import Parser.Comb (Comb(..), named, namedRec, parseRegex, printSyntax, tokenRawr, tokenStr)
 import Parser.Examples (coalesce, showPart)
-import Parser.Lexing (class ToString, type (~), Rawr)
-import Parser.Types (Fragment)
+import Parser.Lexing (class ToString, type (~), Rawr, Similar(..))
+import Parser.Types (Fragment, Part(..))
 
 type Comber = Comb String (String ~ Rawr) String
 
@@ -44,13 +46,13 @@ printPretty :: forall o a. Comb String (String ~ Rawr) o a -> Effect Unit
 printPretty (Comb { prettyGrammar }) = nub prettyGrammar #
   traverse_ \(name /\ msyntax) ->
     msyntax # traverse_ \syntax ->
-      log $ name <> " = " <> printSyntax showFragment syntax <> " ."
+      log $ showPart (NonTerminal name) <> " = " <> printSyntax showFragment syntax <> " ."
 
 showFragment :: Fragment String (String ~ Rawr) -> String
 showFragment =
   toUnfoldable >>> coalesce >>> fromFoldable >>>
     map showPart >>> intercalate " " >>> case _ of
-      "" -> "\"\""
+      "" -> showPart (Terminal (Similar (Left "")))
       r -> r
 
 digit :: Comber Int
@@ -62,7 +64,7 @@ int = Int.fromString <$?> rawr "\\d+"
 
 number :: Comber Number
 number = named "number" do
-  Number.fromString <$?> rawr "[-]?(0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][-+]?\\d+)?"
+  Number.fromString <$?> rawr "[-]?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][-+]?\\d+)?"
 
 compactMap :: forall f a b. Compactable f => Functor f => (a -> Maybe b) -> f a -> f b
 compactMap = map compact <<< map
@@ -89,11 +91,14 @@ test parser testData = do
   let doParse = parseRegex mainName parser
   log ""
   log "Examples:"
-  traverse_ (\s -> pure unit >>= \_ -> log (show s <> " --> " <> result (doParse s))) testData
+  traverse_ (\s -> pure unit >>= \_ -> log (colorful Ansi.BrightYellow (show s) <> "\n  " <> result (doParse s))) testData
+
+colorful :: Ansi.Color -> String -> String
+colorful c = withGraphics (pure (Ansi.PForeground c))
 
 result :: Either String String -> String
-result (Left e) = "✗ " <> e
-result (Right r) = "✓ " <> r
+result (Left e) = colorful Ansi.Red "✗ " <> e
+result (Right r) = colorful Ansi.Green "✓ " <> r
 
 main :: Effect Unit
 main = do
@@ -157,7 +162,8 @@ string = named "string" $ join delim "\"" $
       , key "t" $> "\t"
       , key "b" $> "\x8"
       , key "f" $> "\xC"
-      , key "u" *> rawr "[0-9a-fA-F]{4}" <#?> (Int.fromStringAs hexadecimal >=> toEnum >>> map String.singleton)
+      , key "u" *> rawr "[0-9a-fA-F]{4}" <#?> do
+          Int.fromStringAs hexadecimal >=> toEnum >== String.singleton
       ]
     ]
 
@@ -168,10 +174,18 @@ arrayOf value = delim "[" "]" do
 objectOf :: forall a. Comber a -> Comber (Array (String /\ a))
 objectOf value = delim "{" "}" do
   manyBaseSepBy "object_contents" ws (key ",") do
-    "object_entry"#: (Tuple <$> wsws string <* key ":" <*> value)
+    "object_entry"#: Tuple <$> wsws string <* key ":" <*> value
 
-infixr 9 named as #:
-infixr 9 namedRec as #->
+infixr 2 named as #:
+infixr 5 namedRec as #->
+
+composeMap :: forall f a b c. Functor f => (b -> c) -> (a -> f b) -> (a -> f c)
+composeMap f g = map f <<< g
+infixr 9 composeMap as ==<
+
+composeMapFlipped :: forall f a b c. Functor f => (a -> f b) -> (b -> c) -> (a -> f c)
+composeMapFlipped f g = f >>> map g
+infixr 9 composeMapFlipped as >==
 
 json :: Comber Json
 json = "value" #-> \value -> wsws $ oneOf
