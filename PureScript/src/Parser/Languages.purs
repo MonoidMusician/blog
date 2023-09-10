@@ -5,22 +5,27 @@ import Prelude
 import Ansi.Codes as Ansi
 import Ansi.Output (withGraphics)
 import Control.Alt ((<|>))
+import Control.Alternative (class Alternative)
 import Control.Apply (lift2)
 import Data.Argonaut (Json)
 import Data.Argonaut as J
 import Data.Array (fromFoldable, nub, toUnfoldable)
 import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
 import Data.Compactable (class Compactable, compact)
-import Data.Either (Either(..))
+import Data.Either (Either(..), choose)
 import Data.Enum (toEnum)
 import Data.Foldable (fold, intercalate, oneOf, traverse_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int (hexadecimal)
 import Data.Int as Int
 import Data.List (List(..))
-import Data.Maybe (Maybe)
+import Data.List.NonEmpty as NEL
+import Data.Maybe (Maybe(..))
 import Data.Number as Number
 import Data.String as String
+import Data.These (These(..))
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
@@ -76,6 +81,9 @@ infixl 1 compactMapFlipped as <#?>
 
 ws :: Comber Unit
 ws = void $ "whitespace"#: rawr "\\s*"
+
+wss :: Comber Unit
+wss = void $ "whitespace-nonempty"#: rawr "\\s+"
 
 delim :: forall s a. ToString s => s -> s -> Comber a -> Comber a
 delim x y z = key x *> z <* key y
@@ -146,6 +154,20 @@ manyBaseSepBy n b s p = map Array.fromFoldable $
   Nil <$ b <|> lift2 Cons p do
     n #-> \more -> pure Nil <|> s *> lift2 Cons p more
 
+many1 :: forall a. String -> Comber a -> Comber (NonEmptyArray a)
+many1 n p = NEA.fromFoldable1 <$> n #-> \more ->
+  lift2 NEL.cons' p (pure Nil <|> NEL.toList <$> more)
+
+many1SepBy :: forall x a. String -> Comber x -> Comber a -> Comber (NonEmptyArray a)
+many1SepBy n s p = NEA.fromFoldable1 <$> n #-> \more ->
+  lift2 NEL.cons' p (pure Nil <|> NEL.toList <$> (s *> more))
+
+opt :: forall a. Comber a -> Comber (Maybe a)
+opt a = pure Nothing <|> Just <$> a
+
+mopt :: forall a. Monoid a => Comber a -> Comber a
+mopt a = pure mempty <|> a
+
 string :: Comber String
 string = named "string" $ join delim "\"" $
   map fold $ many "string_contents" $ oneOf
@@ -186,6 +208,22 @@ infixr 9 composeMap as ==<
 composeMapFlipped :: forall f a b c. Functor f => (a -> f b) -> (b -> c) -> (a -> f c)
 composeMapFlipped f g = f >>> map g
 infixr 9 composeMapFlipped as >==
+
+infixr 5 choose as \|/
+
+tupling :: forall f a b. Applicative f => f a -> f b -> f (a /\ b)
+tupling = lift2 Tuple
+infixr 6 tupling as /|\
+
+appending :: forall f m. Applicative f => Semigroup m => f m -> f m -> f m
+appending = lift2 (<>)
+infixr 7 appending as <<>>
+
+theseing :: forall f a b. Alternative f => f a -> f b -> f (a /\/ b)
+theseing a b = This <$> a <|> That <$> b <|> Both <$> a <*> b
+infixr 6 theseing as /\\/
+infixr 6 type These as /\/
+
 
 json :: Comber Json
 json = "value" #-> \value -> wsws $ oneOf

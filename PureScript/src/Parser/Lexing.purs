@@ -23,7 +23,7 @@ import Data.String as String
 import Data.String.CodeUnits as CU
 import Data.String.Regex (Regex)
 import Data.String.Regex as Regex
-import Data.String.Regex.Flags (multiline, unicode)
+import Data.String.Regex.Flags (dotAll, multiline, sticky, unicode)
 import Data.String.Regex.Unsafe (unsafeRegex)
 import Data.Traversable (class Traversable)
 import Data.Tuple (Tuple(..), fst, snd)
@@ -123,7 +123,7 @@ instance eqRaw :: Eq Rawr where
 instance ordRaw :: Ord Rawr where
   compare (Rawr r1) (Rawr r2) = show r1 `compare` show r2
 rawr :: String -> Rawr
-rawr source = Rawr $ unsafeRegex source $ unicode <> multiline
+rawr source = Rawr $ unsafeRegex ("^(?:" <> source <> ")") $ unicode <> dotAll
 
 -- TODO: this isn't right:
 -- - doesn't handle lookaround since we dropped the start of the string
@@ -150,13 +150,13 @@ instance tokenOrEOF :: (Monoid i, Token cat i o) => Token (OrEOF cat) (OrEOF i) 
       _, i -> i
   rerecognize _ _ = Nothing
 
-else instance tokenOrEOFPeek :: (Monoid i, Token cat i o) => Token (OrEOF cat) i (OrEOF o) where
-  recognize EOF i | len i == 0 = Just (EOF /\ i)
-  recognize (Continue cat) i = lmap Continue <$> recognize cat i
-  recognize _ _ = Nothing
-  rerecognize EOF EOF = Just (const mempty)
-  rerecognize (Continue l) (Continue r) = rerecognize l r
-  rerecognize _ _ = Nothing
+-- else instance tokenOrEOFPeek :: (Monoid i, Token cat i o) => Token (OrEOF cat) i (OrEOF o) where
+--   recognize EOF i | len i == 0 = Just (EOF /\ i)
+--   recognize (Continue cat) i = lmap Continue <$> recognize cat i
+--   recognize _ _ = Nothing
+--   rerecognize EOF EOF = Just (const mempty)
+--   rerecognize (Continue l) (Continue r) = rerecognize l r
+--   rerecognize _ _ = Nothing
 
 instance tokenEither ::
   ( Token cat1 i o1
