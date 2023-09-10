@@ -79,11 +79,12 @@ compactMapFlipped :: forall f a b. Compactable f => Functor f => f a -> (a -> Ma
 compactMapFlipped = flip compactMap
 infixl 1 compactMapFlipped as <#?>
 
+-- optional whitespace needs to be optional at the LR level, not the regex level
 ws :: Comber Unit
-ws = void $ "whitespace"#: rawr "\\s*"
+ws = "ws"#: wss <|> pure unit
 
 wss :: Comber Unit
-wss = void $ "whitespace-nonempty"#: rawr "\\s+"
+wss = "wss"#: void (rawr "\\s+")
 
 delim :: forall s a. ToString s => s -> s -> Comber a -> Comber a
 delim x y z = key x *> z <* key y

@@ -10,7 +10,7 @@ import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..), either, isLeft, note)
 import Data.Either.Nested (type (\/))
-import Data.Foldable (class Foldable, oneOfMap)
+import Data.Foldable (class Foldable, length, null, oneOfMap)
 import Data.List (List)
 import Data.List as List
 import Data.Map (SemigroupMap(..))
@@ -28,10 +28,14 @@ import Data.String.Regex.Unsafe (unsafeRegex)
 import Data.Traversable (class Traversable)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
+import Effect (Effect)
+import Effect.Console (log)
+import Effect.Unsafe (unsafePerformEffect)
 import Parser.Algorithms (indexStates)
 import Parser.Proto (Stack(..), topOf)
 import Parser.Types (CST(..), OrEOF(..), Part(..), ShiftReduce, State(..), StateInfo, States(..), Zipper(..), decide)
 import Partial.Unsafe (unsafeCrashWith)
+import Unsafe.Coerce (unsafeCoerce)
 
 data Scanning i = Scanning Int i
 derive instance functorScanning :: Functor Scanning
@@ -199,6 +203,13 @@ thenNote = map <<< note
 
 infixr 9 thenNote as ?!
 
+whenFailed :: forall f a. Foldable f => f a -> Effect Unit -> f a
+whenFailed a _ | not null a = a
+whenFailed a b = unsafePerformEffect (a <$ b)
+
+infixr 9 whenFailed as ?>
+
+asdf = log <<< unsafeCoerce
 
 -- | Prioritize matches.
 type Best s r cat i o =
@@ -250,7 +261,9 @@ lexingParse { best } (initialState /\ States states) initialInput =
       possibilities <- "No action"?! NEA.fromArray $ Array.mapMaybe (matchCat input) $ Map.toUnfoldable m
       "No best action"?! best $ possibilities
     Right (cat /\ o /\ i) -> do
-      act1 <- "No repeat action"? Map.lookup cat m
+      act1 <- "No repeat action"? Map.lookup cat m ?> do
+        asdf cat
+        asdf $ Array.fromFoldable $ Map.keys m
       "No best repeat action"?! best $ NEA.singleton $ (cat /\ act1) /\ o /\ i
   matchCat input (cat /\ act) =
     recognize cat input <#> ((cat /\ act) /\ _)

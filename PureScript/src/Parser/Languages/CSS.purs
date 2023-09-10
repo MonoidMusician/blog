@@ -15,17 +15,18 @@ import Data.Maybe (Maybe(..))
 import Data.String as String
 import Data.Tuple.Nested (type (/\))
 import Effect (Effect)
-import Parser.Languages (type (/\/), Comber, delim, key, many, many1, many1SepBy, mopt, opt, rawr, test, wss, wsws, (#:), (/\\/), (/|\), (<#?>), (<<>>), (>==))
+import Parser.Languages (type (/\/), Comber, delim, key, many, many1, many1SepBy, mopt, opt, rawr, test, ws, wss, wsws, (#:), (/\\/), (/|\), (<#?>), (<<>>), (>==))
 import Unsafe.Coerce (unsafeCoerce)
 
 main :: Effect Unit
 main = do
-  test (unsafeCoerce J.stringify <$> compound_selector)
+  test (unsafeCoerce J.stringify <$> complex_selector)
     [ "::before"
     , ".haskell"
     , "h1#title"
-    , "h1 a"
+    , "h1 span"
     , "blockquote > p"
+    , "blockquote>p"
     , "body"
     ]
 
@@ -114,12 +115,14 @@ simple_selector :: Comber Select
 simple_selector = Element <$> type_selector <|> subclass_selector
 combinator :: Comber Relation
 combinator = "combinator"#: oneOf
-  [ wsws $ oneOf
+  [ Descendant <$ wss
+  -- factor out wss, since although we know it does not matter at the parser
+  -- combinator level, it still would matter at the LR level
+  , (wss <|> pure unit) *> oneOf
     [ Child <$ key ">"
     , Next <$ key "+"
     , Later <$ key "~"
-    ]
-  , Child <$ wss
+    ] <* ws
   ]
 type_selector = "type-selector"#: wq_name <|> mopt ns_prefix <<>> key "*" :: Comber String
 ns_prefix = "ns-prefix"#: mopt (ident <|> key "*") <<>> key "|" :: Comber String
