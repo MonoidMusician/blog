@@ -4,19 +4,20 @@ import Prelude
 
 import Control.Alternative (guard)
 import Control.Plus (empty)
+import Data.Array (fold)
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..), either, isLeft, note)
 import Data.Either.Nested (type (\/))
-import Data.Foldable (class Foldable, length, null, oneOfMap)
+import Data.Foldable (class Foldable, for_, length, null, oneOfMap, traverse_)
 import Data.List (List)
 import Data.List as List
 import Data.Map (SemigroupMap(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Newtype (class Newtype)
+import Data.Newtype (class Newtype, unwrap)
 import Data.Semigroup.Foldable (maximum)
 import Data.String (CodePoint)
 import Data.String as String
@@ -32,8 +33,8 @@ import Effect (Effect)
 import Effect.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
 import Parser.Algorithms (indexStates)
-import Parser.Proto (Stack(..), topOf)
-import Parser.Types (CST(..), OrEOF(..), Part(..), ShiftReduce, State(..), StateInfo, States(..), Zipper(..), decide)
+import Parser.Proto (Stack(..), statesOn, topOf)
+import Parser.Types (CST(..), OrEOF(..), Part(..), ShiftReduce(..), State(..), StateInfo, States(..), Zipper(..), decide, decisionUnique, unZipper)
 import Partial.Unsafe (unsafeCrashWith)
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -227,7 +228,11 @@ prioritize f as =
 
 guessBest :: forall s r cat i o. Best s r cat i o
 guessBest options = case NEA.toArray options of
-  [ (cat /\ sr) /\ d ] -> decide sr <#> map (Tuple cat) >>> (_ /\ d)
+  [ (cat /\ sr) /\ d ] -> do
+    let
+      _ = (guard (decisionUnique sr) :: Maybe Unit) ?> do
+        asdf sr
+    guard (decisionUnique sr) *> decide sr <#> map (Tuple cat) >>> (_ /\ d)
   _ -> Nothing
 
 longest :: forall s r cat i o. Len i => Best s r cat i o
@@ -254,24 +259,69 @@ lexingParse { best } (initialState /\ States states) initialInput =
   where
   tabulated = indexStates (States states)
   lookupState s = tabulated s >>= Array.index states
-  lookupAction :: StateInfo s nt r cat -> Either i (cat /\ o /\ i) -> Either String _
-  lookupAction { advance: SemigroupMap m } = case _ of
+  lookupAction :: Stack s (CST (nt /\ r) o) -> StateInfo s nt r cat -> Either i (cat /\ o /\ i) -> Either String _
+  lookupAction stack info@{ advance: SemigroupMap m } = case _ of
     Left input -> do
       -- traceM $ [ unsafeCoerce input ] <> Array.fromFoldable (Map.keys m)
-      possibilities <- "No action"?! NEA.fromArray $ Array.mapMaybe (matchCat input) $ Map.toUnfoldable m
-      "No best action"?! best $ possibilities
+      let actions = NEA.fromArray $ Array.mapMaybe (matchCat input) $ Map.toUnfoldable m
+      possibilities <- "No action"? actions ?> do
+        asdf input
+        traverse_ asdf (unwrap info.items)
+        let rules = Array.fromFoldable (statesOn stack) # Array.mapMaybe lookupState
+        for_ rules $ asdf <<< do
+          _.items >>> unwrap >>> map do
+            _.rule >>> \(Zipper l r) -> fold
+              [ map (unsafeCoerce _.value0 >>> _.value0) l
+              , [ "•" ]
+              , map (unsafeCoerce _.value0 >>> _.value0) r
+              ]
+        asdf $ Array.fromFoldable $ Map.keys m
+      "No best action"? best possibilities ?> do
+        let (cat /\ sr) /\ o /\ i = NEA.head possibilities
+        case sr of
+          Shift _ -> pure unit
+          Reduces _ -> pure unit
+          ShiftReduces s rs -> do
+            for_ (lookupState s) $ asdf <<< do
+              _.items >>> unwrap >>> map do
+                _.rule >>> \(Zipper l r) -> fold
+                  [ map (unsafeCoerce _.value0 >>> _.value0) l
+                  , [ "•" ]
+                  , map (unsafeCoerce _.value0 >>> _.value0) r
+                  ]
+            asdf rs
     Right (cat /\ o /\ i) -> do
-      act1 <- "No repeat action"? Map.lookup cat m ?> do
+      sr <- "No repeat action"? Map.lookup cat m ?> do
         asdf cat
         asdf $ Array.fromFoldable $ Map.keys m
-      "No best repeat action"?! best $ NEA.singleton $ (cat /\ act1) /\ o /\ i
+      "No best repeat action"? best (NEA.singleton $ (cat /\ sr) /\ o /\ i) ?> do
+        case sr of
+          Shift _ -> pure unit
+          Reduces _ -> pure unit
+          ShiftReduces s rs -> do
+            for_ (lookupState s) $ asdf <<< do
+              _.items >>> unwrap >>> map do
+                _.rule >>> \(Zipper l r) -> fold
+                  [ map (unsafeCoerce _.value0 >>> _.value0) l
+                  , [ "•" ]
+                  , map (unsafeCoerce _.value0 >>> _.value0) r
+                  ]
+            asdf rs
+        let rules = Array.fromFoldable (statesOn stack) # Array.mapMaybe lookupState
+        for_ rules $ asdf <<< do
+          _.items >>> unwrap >>> map do
+            _.rule >>> \(Zipper l r) -> fold
+              [ map (unsafeCoerce _.value0 >>> _.value0) l
+              , [ "•" ]
+              , map (unsafeCoerce _.value0 >>> _.value0) r
+              ]
   matchCat input (cat /\ act) =
     recognize cat input <#> ((cat /\ act) /\ _)
   go :: Stack s (CST (nt /\ r) o) -> Either i (cat /\ o /\ i) -> ((Stack s (CST (nt /\ r) o)) /\ String) \/ (Stack s (CST (nt /\ r) o))
   go stack (Left input) | len input == 0 = pure stack
   go stack input = do
     state <- Tuple stack "Missing state"? lookupState (topOf stack)
-    act <- lmap (Tuple stack) $ lookupAction state input
+    act <- lmap (Tuple stack) $ lookupAction stack state input
     case act of
       Left s /\ o /\ i -> do
         go (Snoc stack (Leaf o) s) (Left i)

@@ -6,6 +6,7 @@ import Data.Either (Either(..))
 import Data.Foldable (class Foldable)
 import Data.Generic.Rep (class Generic)
 import Data.List (List(..), fromFoldable, (:))
+import Data.List.NonEmpty as NEL
 import Data.Maybe (Maybe(..))
 import Data.Show.Generic (genericShow)
 
@@ -23,6 +24,12 @@ instance showStack :: (Show state, Show tok) => Show (Stack state tok) where
 topOf :: forall state tok. Stack state tok -> state
 topOf (Zero state) = state
 topOf (Snoc _ _ state) = state
+
+statesOn :: forall state tok. Stack state tok -> NEL.NonEmptyList state
+statesOn = go Nil
+  where
+  go acc (Zero state) = NEL.cons' state acc
+  go acc (Snoc more _ state) = go (Cons state acc) more
 
 newtype Table state rule i o = Table
   { step :: state -> i -> Maybe (Either state rule)

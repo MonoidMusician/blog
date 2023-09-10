@@ -34,7 +34,7 @@ import Foreign.Object as Object
 import Parser.Comb (Comb(..), named, namedRec, parseRegex, printSyntax, tokenRawr, tokenStr)
 import Parser.Examples (coalesce, showPart)
 import Parser.Lexing (class ToString, type (~), Rawr, Similar(..))
-import Parser.Types (Fragment, Part(..))
+import Parser.Types (Fragment, Part(..), Zipper(..))
 
 type Comber = Comb String (String ~ Rawr) String
 
@@ -60,6 +60,9 @@ showFragment =
       "" -> showPart (Terminal (Similar (Left "")))
       r -> r
 
+showZipper :: Zipper String (String ~ Rawr) -> String
+showZipper (Zipper l r) = intercalate " • " [ showFragment l, showFragment r ]
+
 digit :: Comber Int
 digit = named "digit" $ oneOf $ mapWithIndex (<$) $
   tokenStr <$> String.toCodePointArray "0123456789"
@@ -79,9 +82,13 @@ compactMapFlipped :: forall f a b. Compactable f => Functor f => f a -> (a -> Ma
 compactMapFlipped = flip compactMap
 infixl 1 compactMapFlipped as <#?>
 
--- optional whitespace needs to be optional at the LR level, not the regex level
+-- optional whitespace needs to be optional at the parser combinator level, not
+-- the regex level (where it would both conflict with nonempty whitespace, and
+-- more seriously allow empty parses), nor the LR level (where it would be
+-- locked behind a reduction even though the point is that it does not matter
+-- to anything consuming it)
 ws :: Comber Unit
-ws = "ws"#: wss <|> pure unit
+ws = wss <|> pure unit
 
 wss :: Comber Unit
 wss = "wss"#: void (rawr "\\s+")

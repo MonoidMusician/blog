@@ -14,13 +14,13 @@ import Data.List (List(..), (:))
 import Data.Maybe (Maybe(..))
 import Data.String (CodePoint)
 import Data.Traversable (foldl, intercalate, sequence)
-import Data.Tuple (Tuple(..), snd)
-import Data.Tuple.Nested (type (/\))
+import Data.Tuple (Tuple(..), snd, uncurry)
+import Data.Tuple.Nested (type (/\), (/\))
 import Effect.Console (error, log)
 import Effect.Unsafe (unsafePerformEffect)
 import Parser.Algorithms (getResultCM, statesNumberedBy)
 import Parser.Lexing (class ToString, class Token, type (~), Best, Rawr, Similar(..), bestRegexOrString, lexingParse, longest, rawr, toString, (?))
-import Parser.Types (CST(..), Fragment, Grammar(..), OrEOF(..), Part(..))
+import Parser.Types (CST(..), Fragment, Grammar(..), OrEOF(..), Part(..), States)
 import Unsafe.Reference (unsafeRefEq)
 
 data Syntax nt tok
@@ -130,22 +130,61 @@ parseWith ::
     Ord cat =>
     Monoid i =>
     Token cat i o =>
-    { best :: Best Int (Maybe nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
-    } -> nt -> Comb nt cat o a -> (i -> Either String a)
-parseWith conf name parser = do
+  { best :: Best Int (Maybe nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
+  } -> nt -> Comb nt cat o a -> (i -> Either String a)
+parseWith conf name parser = snd (parseWith' conf name parser)
+
+parseWith' ::
+  forall nt cat i o a.
+    Ord nt =>
+    Ord cat =>
+    Monoid i =>
+    Token cat i o =>
+  { best :: Best Int (Maybe nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
+  } -> nt -> Comb nt cat o a ->
+  (Int /\ States Int (Maybe nt) (Maybe Int) (OrEOF cat)) /\ (i -> Either String a)
+parseWith' conf name parser = do
   -- First we build the LR(1) parsing table
+  let { states, resultants } = compile name parser
+  -- Then we run it on an input
+  states /\ execute conf { states, resultants }
+
+compile ::
+  forall nt cat o a.
+    Ord nt =>
+    Ord cat =>
+  nt -> Comb nt cat o a ->
+  { states :: Int /\ States Int (Maybe nt) (Maybe Int) (OrEOF cat)
+  , resultants :: nt /\ Array (CResultant nt o a)
+  }
+compile name parser = do
   -- This is a bit ugly right now ...
   let Comb { rules: cases } = parser
   let Comb { grammar: MkGrammar initial } = named name parser
   let grammar = MkGrammar (Array.nub initial)
-  let states = statesNumberedBy identity grammar name
-  let compiled = lexingParse conf states
-  -- Then we run it on an input
+  { states: statesNumberedBy identity grammar name
+  , resultants: name /\ (cases <#> _.resultant)
+  }
+
+execute ::
+  forall nt cat i o a.
+    Ord nt =>
+    Ord cat =>
+    Monoid i =>
+    Token cat i o =>
+  { best :: Best Int (Maybe nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
+  } ->
+  { states :: Int /\ States Int (Maybe nt) (Maybe Int) (OrEOF cat)
+  , resultants :: nt /\ Array (CResultant nt o a)
+  } ->
+  (i -> Either String a)
+execute conf { states, resultants } =
+  let compiled = lexingParse conf states in
   \(input :: i) -> do
-    stack <- lmap snd $ compiled (Continue input)
-    cst <- "Failed to extract result"? getResultCM stack
-    -- Apply the function that parses from the CST to the desired result type
-    "Failed to match rule"? matchRule name (cases <#> _.resultant) cst
+      stack <- lmap snd $ compiled (Continue input)
+      cst <- "Failed to extract result"? getResultCM stack
+      -- Apply the function that parses from the CST to the desired result type
+      "Failed to match rule"? uncurry matchRule resultants cst
 
 parse ::
   forall nt cat i o a.
@@ -153,14 +192,21 @@ parse ::
     Ord cat =>
     Monoid i =>
     Token cat i o =>
-    nt -> Comb nt cat o a -> (i -> Either String a)
+  nt -> Comb nt cat o a -> (i -> Either String a)
 parse = parseWith { best: longest }
 
 parseRegex ::
   forall nt a.
     Ord nt =>
-    nt -> Comb nt (Similar String Rawr) String a -> (String -> Either String a)
+  nt -> Comb nt (Similar String Rawr) String a -> (String -> Either String a)
 parseRegex = parseWith { best: bestRegexOrString }
+
+parseRegex' ::
+  forall nt a.
+    Ord nt =>
+  nt -> Comb nt (Similar String Rawr) String a ->
+  (Int /\ States Int (Maybe nt) (Maybe Int) (OrEOF (Similar String Rawr))) /\ (String -> Either String a)
+parseRegex' = parseWith' { best: bestRegexOrString }
 
 derive instance functorComb :: Functor (Comb nt cat o)
 instance applyComb :: Apply (Comb nt cat o) where

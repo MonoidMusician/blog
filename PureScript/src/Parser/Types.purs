@@ -118,6 +118,8 @@ type SFragment = Fragment NonEmptyString CodePoint
 
 data Zipper nt tok = Zipper (Fragment nt tok) (Fragment nt tok)
 
+derive instance bifunctorZipper :: Bifunctor Zipper
+
 derive instance eqZipper :: (Eq nt, Eq tok) => Eq (Zipper nt tok)
 derive instance ordZipper :: (Ord nt, Ord tok) => Ord (Zipper nt tok)
 derive instance genericZipper :: Generic (Zipper nt tok) _
@@ -197,6 +199,11 @@ decide :: forall s r. ShiftReduce s r -> Maybe (Either s r)
 decide (Shift s) = Just (Left s)
 decide (ShiftReduces s _) = Just (Left s)
 decide (Reduces r) = if NEA.length r == 1 then Just (Right (NEA.head r)) else Nothing
+
+decisionUnique :: forall s r. ShiftReduce s r -> Boolean
+decisionUnique (Shift _) = true
+decisionUnique (ShiftReduces _ _) = false
+decisionUnique (Reduces r) = NEA.length r == 1
 
 derive instance functorShiftReduce :: Functor (ShiftReduce s)
 instance semigroupShiftReduce :: Semigroup (ShiftReduce s r) where
