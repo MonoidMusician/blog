@@ -10,12 +10,14 @@ import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bitraversable (bifoldMap, bisequence)
-import Data.BooleanAlgebra.CSS (AttrMatch(..), MatchValue(..), MatchValueType(..), Relation(..), Select(..), SomeSelectors, Vert, combineFold, distribute, ensure, printVert, selectToMatch)
+import Data.BooleanAlgebra.CSS (AttrMatch(..), MatchValue(..), MatchValueType(..), Relation(..), Select(..), SomeSelectors, Vert, combineFold, distribute, ensure, idMatch, printVert, selectToMatch)
+import Data.Either.Nested (type (\/))
 import Data.Enum (toEnum)
 import Data.Foldable (fold, foldMap, for_, oneOf, traverse_)
 import Data.Int (hexadecimal)
 import Data.Int as Int
 import Data.InterTsil (InterTsil(..))
+import Data.Lens (review)
 import Data.Maybe (Maybe(..))
 import Data.Monoid as M
 import Data.Monoid.Additive (Additive(..))
@@ -26,10 +28,13 @@ import Data.Traversable (for, sequence)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Console (log)
-import Parser.Comb (parseRegex', sourceOf)
+import Parser.Comb (parseRegex, parseRegex', sourceOf)
 import Parser.Examples (showPart)
 import Parser.Languages (Comber, colorful, delim, key, mainName, many, many1, many1SepBy, mopt, opt, printPretty, rawr, result, showZipper, ws, wss, wsws, wsws', (#->), (#:), (/\\/), (/|\), (<#?>), (>==))
 import Parser.Types (OrEOF(..), Part(..), ShiftReduce(..), States(..), Zipper(..), decisionUnique)
+
+mkCSSParser :: Unit -> String -> String \/ Array Vert
+mkCSSParser _ = parseRegex mainName selector_list
 
 test :: Comber String -> Array String -> Effect Unit
 test parser testData = do
@@ -225,15 +230,7 @@ subclass_selector = "subclass-selector"#: oneOf
   , pseudo_class_selector
   ]
 id_selector :: Comber Select
-id_selector = "id-selector"#: hash <#> \value ->
-  Attribute $ AttrMatch
-    { attr: "id"
-    , match: Just $ MatchValue
-      { matchType: Exact
-      , value
-      , insensitive: false
-      }
-    }
+id_selector = "id-selector"#: hash <#> review idMatch >>> Attribute
 class_selector :: Comber Select
 class_selector = "class-selector"#: Class <$> do key "." *> ident
 attribute_selector :: Comber AttrMatch

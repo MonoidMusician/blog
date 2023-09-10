@@ -7,6 +7,7 @@ import Effect (Effect)
 import Effect.Ref as Ref
 import Foreign.Object as Object
 import Parser.Main as Parser
+import Parser.Main.CSS as CSS
 import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
 import Web.HTML (window)
 import Web.HTML.Event.EventTypes (load)
@@ -18,7 +19,7 @@ import Widget.Query as Widget.Query
 import Widget.Widgets as Widget.Widgets
 
 widgets :: Widgets
-widgets = Parser.widgets `Object.union` Object.fromFoldable
+widgets = Parser.widgets `Object.union` CSS.widgets `Object.union` Object.fromFoldable
   [ "Widget.Query" /\ Widget.Query.widget
   , "Widget.Control" /\ Widget.Widgets.controlWidget
   ]
