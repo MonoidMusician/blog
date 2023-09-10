@@ -246,8 +246,8 @@ thenNote = map <<< note
 infixr 9 thenNote as ?!
 
 whenFailed :: forall f a. Foldable f => f a -> Effect Unit -> f a
-whenFailed a _ | not null a = a
-whenFailed a b = let _ = unsafePerformEffect b in a
+whenFailed a _ = a
+whenFailed a b | null a = let _ = unsafePerformEffect b in a
 
 infixr 9 whenFailed as ?>
 

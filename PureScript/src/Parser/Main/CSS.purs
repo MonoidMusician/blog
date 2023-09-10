@@ -2,12 +2,13 @@ module Parser.Main.CSS where
 
 import Prelude
 
-import Control.Plus (empty)
+import Control.Plus (empty, (<|>))
 import Data.Array as Array
-import Data.BooleanAlgebra.CSS (Vert, combineFold)
+import Data.BooleanAlgebra.CSS (Vert, combineFold, printVerts, subsumptite)
+import Data.Codec.Argonaut as CA
 import Data.Either (Either, hush)
 import Data.Filterable (filter, filterMap)
-import Data.Foldable (fold, foldMap, oneOf)
+import Data.Foldable (fold, foldMap, oneOf, oneOfMap)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (fromMaybe)
 import Data.Traversable (sequence)
@@ -18,12 +19,15 @@ import Deku.Control (text_)
 import Deku.Control as DC
 import Deku.Core (Domable, bussed, envy)
 import Deku.DOM as D
+import Effect.Console (log)
+import FRP.Event (Event)
 import FRP.Memoize (memoBehFold)
 import Foreign.Object (Object)
 import Foreign.Object as Object
-import Parser.Languages.CSS (mkCSSParser, printVerts)
+import Parser.Languages.CSS (mkCSSParser)
 import Parser.Main (inputValidated)
-import Widget (Widget)
+import Unsafe.Coerce (unsafeCoerce)
+import Widget (Widget, adaptInterface)
 import Widget.Types (SafeNut(..))
 
 type Parser = String -> Either String (Array Vert)
@@ -31,37 +35,66 @@ type Parser = String -> Either String (Array Vert)
 widgets :: Object Widget
 widgets = Object.fromFoldable $
   [ "Parser.Main.CSS" /\ widgetCSS
+  , "Parser.Main.CSS.Example" /\ sendExample
   ]
 
 widgetCSS :: Widget
-widgetCSS _ = pure $ SafeNut do component $ mkCSSParser unit
+widgetCSS { interface, attrs } = do
+  example <- attrs "example"
+  log $ unsafeCoerce example
+  let
+    initial = hush $ CA.decode (CA.array CA.string) example
+    resetting = oneOfMap pure initial <|> do
+      (adaptInterface (CA.array CA.string) (interface "css-example")).receive
+  pure $ SafeNut do
+    component resetting $ mkCSSParser unit
+
+sendExample :: Widget
+sendExample { interface, attrs } = do
+  let push = (interface "css-example").send
+  example <- attrs "example"
+  log $ unsafeCoerce example
+  pure $ SafeNut do
+    D.button
+      ( oneOf
+          [ D.Class !:= ""
+          , D.OnClick !:= push example
+          ]
+      )
+      [ text_ "Try this example" ]
 
 result :: Parser -> Array String -> String
-result parser = filterMap (parser >>> hush) >>> sequence >>> foldMap combineFold >>> printVerts
+result parser =
+  filterMap (parser >>> hush)
+    >>> sequence
+    >>> foldMap combineFold
+    >>> printVerts
 
 data Update
   = Update Int String
   | Delete Int
   | Add
+  | Reset (Array String)
 
-component :: forall lock payload. Parser -> Domable lock payload
-component parser =
-  bussed \pushUpdate pushedRaw' -> do
+component :: forall lock payload. Event (Array String) -> Parser -> Domable lock payload
+component resetting parser =
+  bussed \pushUpdate pushedRaw -> do
     let
       upd (_ /\ last) = case _ of
         Add -> true /\ (last <> [ "" ])
         Delete i -> true /\ (last # fromMaybe <*> Array.deleteAt i)
         Update i v -> false /\ (last # mapWithIndex \j -> if i == j then v else _)
-    envy $ memoBehFold upd (true /\ [""]) pushedRaw' \currentRaw -> do
+        Reset vs -> true /\ vs
+    envy $ memoBehFold upd (true /\ ["",""]) (Reset <$> resetting <|> pushedRaw) \currentRaw -> do
       D.div_
         [ DC.switcherFlipped (filter fst currentRaw) \(_ /\ values) ->
             fold $ values # mapWithIndex \i value ->
               D.div_
-                [ inputValidated "" "CSS selector" "" value empty
+                [ inputValidated "terminal" "CSS selector" "" value empty
                   \newValue -> pushUpdate $ Update i newValue
                 , D.button
                     ( oneOf
-                        [ D.Class !:= "delete"
+                        [ D.Class !:= "big delete"
                         , D.OnClick !:= pushUpdate (Delete i)
                         ]
                     )
@@ -73,7 +106,7 @@ component parser =
                 , D.OnClick !:= pushUpdate Add
                 ]
             )
-            [ text_ "Add rule" ]
-        , D.pre (D.Class !:= "css")
+            [ text_ "Add selector to conjunction" ]
+        , D.pre (D.Class !:= "css" <|> D.Style !:= "text-wrap: wrap")
             [ DC.text $ result parser <<< snd <$> currentRaw ]
         ]

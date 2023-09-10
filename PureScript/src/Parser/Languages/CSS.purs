@@ -10,7 +10,7 @@ import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bitraversable (bifoldMap, bisequence)
-import Data.BooleanAlgebra.CSS (AttrMatch(..), MatchValue(..), MatchValueType(..), Relation(..), Select(..), SomeSelectors, Vert, combineFold, distribute, ensure, idMatch, printVert, selectToMatch)
+import Data.BooleanAlgebra.CSS (AttrMatch(..), MatchValue(..), MatchValueType(..), Relation(..), Select(..), SomeSelectors, Vert, combineFold, distribute, ensure, idMatch, printVert, printVerts, selectToMatch)
 import Data.Either.Nested (type (\/))
 import Data.Enum (toEnum)
 import Data.Foldable (fold, foldMap, for_, oneOf, traverse_)
@@ -172,9 +172,6 @@ convSelects selects = combineFold (selectToMatch <$> selects)
 
 convRel :: InterTsil Relation (Array Select) -> Array Vert
 convRel = map distribute <<< sequence <<< map convSelects
-
-printVerts :: Array Vert -> String
-printVerts = ensure "*" <<< joinWith ", " <<< map printVert
 
 selector_list :: Comber (Array Vert)
 selector_list = "selector-list"#: complex_selector_list <#> foldMap convRel
