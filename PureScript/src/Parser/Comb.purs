@@ -3,8 +3,9 @@ module Parser.Comb where
 import Prelude
 
 import Control.Alternative (class Alternative)
+import Control.Apply (lift2)
 import Control.Plus (class Alt, class Plus, empty, (<|>))
-import Data.Array (fromFoldable, head, length, splitAt, toUnfoldable, zipWith, (!!))
+import Data.Array (fold, fromFoldable, head, length, splitAt, toUnfoldable, zipWith, (!!))
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Compactable (class Compactable, compact, separateDefault)
@@ -16,12 +17,9 @@ import Data.String (CodePoint)
 import Data.Traversable (foldl, intercalate, sequence)
 import Data.Tuple (Tuple(..), snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
-import Effect.Console (error, log)
-import Effect.Unsafe (unsafePerformEffect)
 import Parser.Algorithms (getResultCM, statesNumberedBy)
-import Parser.Lexing (class ToString, class Token, type (~), Best, Rawr, Similar(..), bestRegexOrString, lexingParse, longest, rawr, toString, (?))
-import Parser.Types (CST(..), Fragment, Grammar(..), OrEOF(..), Part(..), States)
-import Unsafe.Reference (unsafeRefEq)
+import Parser.Lexing (class ToString, class Token, class Tokenize, type (~), Best, Rawr, Similar(..), bestRegexOrString, lexingParse, longest, rawr, rerecognize, toString, (?))
+import Parser.Types (CST(..), Fragment, Grammar(..), OrEOF(..), Part(..), States, sourceCST)
 
 data Syntax nt tok
   = Conj (Syntax nt tok) (Syntax nt tok)
@@ -92,6 +90,13 @@ type CCST nt o = CST (Tuple nt Int) o
 -- |
 -- | Invariant:
 -- | - `rules # all \{ rule, resultant } -> length rule == resultant.length`
+-- |
+-- | Type parameters:
+-- | - `nt`: Names for non-terminals. Must have an `Ord` instance.
+-- | - `cat`: Categories of tokens, including literals. Also requires `Ord`.
+-- |   Commonly `Similar String Rawr` to match with literal keywords and regexes.
+-- | - `o`: Tokenize values output by the lexer. These appear in the CST.
+-- | - `a`: Parser result, can be any type.
 newtype Comb nt cat o a = Comb
   { grammar :: CGrammar nt cat
   , pretty :: Maybe (CSyntax nt cat)
@@ -124,12 +129,30 @@ data PartialResult a
 
 -- | Parse an input. You should partially apply it, and reuse that same
 -- | partially applied function for multiple inputs.
+parse ::
+  forall nt cat i o a.
+    Ord nt =>
+    Ord cat =>
+    Monoid i =>
+    Tokenize cat i o =>
+  nt -> Comb nt cat o a -> (i -> Either String a)
+parse = parseWith { best: longest }
+
+-- | Parsing optimized for regexes and string literals, where the string
+-- | literals take precedence over the regexes always (and not just when they
+-- | match a longer string).
+parseRegex ::
+  forall nt a.
+    Ord nt =>
+  nt -> Comb nt (Similar String Rawr) String a -> (String -> Either String a)
+parseRegex = parseWith { best: bestRegexOrString }
+
 parseWith ::
   forall nt cat i o a.
     Ord nt =>
     Ord cat =>
     Monoid i =>
-    Token cat i o =>
+    Tokenize cat i o =>
   { best :: Best Int (Maybe nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
   } -> nt -> Comb nt cat o a -> (i -> Either String a)
 parseWith conf name parser = snd (parseWith' conf name parser)
@@ -139,16 +162,24 @@ parseWith' ::
     Ord nt =>
     Ord cat =>
     Monoid i =>
-    Token cat i o =>
+    Tokenize cat i o =>
   { best :: Best Int (Maybe nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
   } -> nt -> Comb nt cat o a ->
   (Int /\ States Int (Maybe nt) (Maybe Int) (OrEOF cat)) /\ (i -> Either String a)
 parseWith' conf name parser = do
   -- First we build the LR(1) parsing table
   let { states, resultants } = compile name parser
-  -- Then we run it on an input
+  -- Then we can run it on an input
   states /\ execute conf { states, resultants }
 
+parseRegex' ::
+  forall nt a.
+    Ord nt =>
+  nt -> Comb nt (Similar String Rawr) String a ->
+  (Int /\ States Int (Maybe nt) (Maybe Int) (OrEOF (Similar String Rawr))) /\ (String -> Either String a)
+parseRegex' = parseWith' { best: bestRegexOrString }
+
+-- | Compile the LR(1) state table for the grammar
 compile ::
   forall nt cat o a.
     Ord nt =>
@@ -166,12 +197,13 @@ compile name parser = do
   , resultants: name /\ (cases <#> _.resultant)
   }
 
+-- | Execute the parse.
 execute ::
   forall nt cat i o a.
     Ord nt =>
     Ord cat =>
     Monoid i =>
-    Token cat i o =>
+    Tokenize cat i o =>
   { best :: Best Int (Maybe nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
   } ->
   { states :: Int /\ States Int (Maybe nt) (Maybe Int) (OrEOF cat)
@@ -185,28 +217,6 @@ execute conf { states, resultants } =
       cst <- "Failed to extract result"? getResultCM stack
       -- Apply the function that parses from the CST to the desired result type
       "Failed to match rule"? uncurry matchRule resultants cst
-
-parse ::
-  forall nt cat i o a.
-    Ord nt =>
-    Ord cat =>
-    Monoid i =>
-    Token cat i o =>
-  nt -> Comb nt cat o a -> (i -> Either String a)
-parse = parseWith { best: longest }
-
-parseRegex ::
-  forall nt a.
-    Ord nt =>
-  nt -> Comb nt (Similar String Rawr) String a -> (String -> Either String a)
-parseRegex = parseWith { best: bestRegexOrString }
-
-parseRegex' ::
-  forall nt a.
-    Ord nt =>
-  nt -> Comb nt (Similar String Rawr) String a ->
-  (Int /\ States Int (Maybe nt) (Maybe Int) (OrEOF (Similar String Rawr))) /\ (String -> Either String a)
-parseRegex' = parseWith' { best: bestRegexOrString }
 
 derive instance functorComb :: Functor (Comb nt cat o)
 instance applyComb :: Apply (Comb nt cat o) where
@@ -250,8 +260,12 @@ instance alternativeComb :: Alternative (Comb nt cat o)
 instance compactableComb :: Compactable (Comb nt cat o) where
   compact (Comb c) = Comb c { rules = c.rules <#> \r -> r { resultant = compact r.resultant } }
   separate eta = separateDefault eta
+instance semigroupComb :: Semigroup a => Semigroup (Comb nt cat o a) where
+  append = lift2 append
+instance monoidComb :: Monoid a => Monoid (Comb nt cat o a) where
+  mempty = pure mempty
 
-token :: forall nt cat o. cat -> Comb nt cat o o
+token :: forall nt cat o. Token cat o => cat -> Comb nt cat o o
 token cat = Comb
   { grammar: mempty
   , pretty: Just $ Part $ Terminal cat
@@ -259,7 +273,7 @@ token cat = Comb
   , rules: pure
     { rule: pure (Terminal cat)
     , resultant: component case _ of
-        Leaf t -> Just t
+        Leaf t | rerecognize cat t -> Just t
         _ -> Nothing
     }
   }
@@ -270,21 +284,21 @@ tokenRawr = rawr >>> Right >>> Similar >>> token
 tokenStr :: forall s nt. ToString s => s -> Comb nt (String ~ Rawr) String String
 tokenStr = toString >>> Left >>> Similar >>> token
 
-tokens :: forall nt cat o. Array cat -> Comb nt cat o (Array o)
-tokens toks = Comb
+tokens :: forall nt cat o. Token cat o => Array cat -> Comb nt cat o (Array o)
+tokens cats = Comb
   { grammar: mempty
-  , pretty: Just $ foldl Conj Null (Part <<< Terminal <$> toks)
+  , pretty: Just $ foldl Conj Null (Part <<< Terminal <$> cats)
   , prettyGrammar: empty
   , rules: pure
-    { rule: Terminal <$> toks
-    , resultant: components $ toks $> case _ of
-        Leaf t -> Just t
+    { rule: Terminal <$> cats
+    , resultant: components $ cats <#> \cat -> case _ of
+        Leaf t | rerecognize cat t -> Just t
         _ -> Nothing
     }
   }
 
 -- | Name a nonterminal production, this allows recursion.
-namedRec :: forall nt cat o a. nt -> (Comb nt cat o a -> Comb nt cat o a) -> Comb nt cat o a
+namedRec :: forall nt cat o a. Ord nt => nt -> (Comb nt cat o a -> Comb nt cat o a) -> Comb nt cat o a
 namedRec name rec =
   let
     recursive = rec $ Comb
@@ -314,15 +328,41 @@ namedRec name rec =
         }
     }
 
-named :: forall nt cat o a. nt -> Comb nt cat o a -> Comb nt cat o a
+-- | Name a parser. This may introduce ambiguity into the grammar.
+named :: forall nt cat o a. Ord nt => nt -> Comb nt cat o a -> Comb nt cat o a
 named name = namedRec name <<< const
 
-matchRule :: forall nt o a. nt -> Array (CResultant nt o a) -> CCST nt o -> Maybe a
-matchRule name resultants (Branch (Tuple _name i) children) = do
-  assertM "names" (unsafeRefEq _name name)
-  resultant <- nope "missing from resultants" $ resultants !! i
-  nope "failed to apply" $ resultFrom resultant children
+-- | Matched a named rule against a CST, with codecs for each production.
+matchRule :: forall nt o a. Ord nt => nt -> Array (CResultant nt o a) -> CCST nt o -> Maybe a
+matchRule name resultants (Branch (Tuple _name i) children) | name == _name = do
+  resultant <- resultants !! i
+  resultFrom resultant children
 matchRule _ _ _ = Nothing
+
+-- | Modify the result of the parser based on the CST fragment it receives.
+withCST :: forall nt cat o a b. (Array (CCST nt o) -> PartialResult (a -> b)) -> Comb nt cat o a -> Comb nt cat o b
+withCST f = withCST' \csts prev -> f csts <*> prev unit
+
+-- | Modify the result of the parser based on the CST fragment it receives.
+withCST' :: forall nt cat o a b. (Array (CCST nt o) -> (Unit -> PartialResult a) -> PartialResult b) -> Comb nt cat o a -> Comb nt cat o b
+withCST' f (Comb c) = Comb c
+  { rules = c.rules <#> \r@{ resultant: Resultant { length, result } } -> r
+    { resultant = Resultant
+      { length
+      , result: \csts -> f csts (\_ -> result csts)
+      }
+    }
+  }
+
+-- | Return the source parsed by the given parser, instead of whatever its
+-- | applicative result was.
+sourceOf :: forall nt cat o a. Monoid o => Comb nt cat o a -> Comb nt cat o o
+sourceOf = tokensSourceOf >>> map fold
+
+-- | Return the source tokens parsed by the given parser, instead of whatever
+-- | its applicative result was.
+tokensSourceOf :: forall nt cat o a. Comb nt cat o a -> Comb nt cat o (Array o)
+tokensSourceOf = withCST' \csts _ -> Result (sourceCST =<< csts)
 
 derive instance functorResultant :: Functor (Resultant i)
 instance applyResultant :: Apply (Resultant i) where
@@ -370,6 +410,11 @@ instance applyPartialResult :: Apply PartialResult where
   apply (Result f) (Result a) = Result (f a)
 instance applicativePartialResult :: Applicative PartialResult where
   pure = Result
+instance bindPartialResult :: Bind PartialResult where
+  bind Failed _ = Failed
+  bind Partial _ = Partial
+  bind (Result a) f = f a
+instance monadPartialResult :: Monad PartialResult
 instance compactablePartialResult :: Compactable PartialResult where
   compact (Result Nothing) = Failed
   compact (Result (Just a)) = Result a
@@ -381,14 +426,3 @@ instance compactablePartialResult :: Compactable PartialResult where
 --   alt l Failed = l
 --   alt Partial _ = Partial
 --   alt l@(Result _) _ = l
-
-nope :: String -> Maybe ~> Maybe
-nope _ v = v
-nope s Nothing = unsafePerformEffect (Nothing <$ log s)
-
-assert :: forall a. String -> Boolean -> a -> a
-assert msg false v = unsafePerformEffect (v <$ error msg)
-assert _ _ v = v
-
-assertM :: forall m. Applicative m => String -> Boolean -> m Unit
-assertM msg b = assert msg b (pure unit)

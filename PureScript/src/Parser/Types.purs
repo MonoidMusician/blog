@@ -240,6 +240,10 @@ data CST r tok
   = Leaf tok
   | Branch r (Array (CST r tok))
 
+sourceCST :: forall r tok. CST r tok -> Array tok
+sourceCST (Leaf tok) = pure tok
+sourceCST (Branch _ children) = children >>= sourceCST
+
 type SCST = CST (NonEmptyString /\ String) CodePoint
 
 derive instance genericCST :: Generic (CST r tok) _

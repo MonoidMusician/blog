@@ -4,35 +4,32 @@ import Prelude
 
 import Ansi.Codes as Ansi
 import Control.Alt ((<|>))
-import Control.Apply (lift2)
 import Control.Plus (empty)
-import Data.Argonaut as J
 import Data.Array ((!!))
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bitraversable (bifoldMap, bisequence)
-import Data.BooleanAlgebra.CSS (AttrMatch(..), MatchValue(..), MatchValueType(..), Relation(..), Select(..))
+import Data.BooleanAlgebra.CSS (AttrMatch(..), MatchValue(..), MatchValueType(..), Relation(..), Select(..), SomeSelectors, Vert, combineFold, distribute, ensure, printVert, selectToMatch)
 import Data.Enum (toEnum)
 import Data.Foldable (fold, foldMap, for_, oneOf, traverse_)
 import Data.Int (hexadecimal)
 import Data.Int as Int
-import Data.List (List(..))
-import Data.List.NonEmpty as NEL
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.InterTsil (InterTsil(..))
+import Data.Maybe (Maybe(..))
 import Data.Monoid as M
 import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (unwrap)
+import Data.String (joinWith)
 import Data.String as String
-import Data.Traversable (for)
+import Data.Traversable (for, sequence)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Console (log)
-import Parser.Comb (compile, parseRegex, parseRegex')
+import Parser.Comb (parseRegex', sourceOf)
 import Parser.Examples (showPart)
-import Parser.Languages (type (/\/), Comber, colorful, delim, key, mainName, many, many1, many1SepBy, mopt, opt, printPretty, rawr, result, showZipper, ws, wss, wsws, (#->), (#:), (/\\/), (/|\), (<#?>), (<<>>), (>==))
+import Parser.Languages (Comber, colorful, delim, key, mainName, many, many1, many1SepBy, mopt, opt, printPretty, rawr, result, showZipper, ws, wss, wsws, wsws', (#->), (#:), (/\\/), (/|\), (<#?>), (>==))
 import Parser.Types (OrEOF(..), Part(..), ShiftReduce(..), States(..), Zipper(..), decisionUnique)
-import Unsafe.Coerce (unsafeCoerce)
 
 test :: Comber String -> Array String -> Effect Unit
 test parser testData = do
@@ -40,6 +37,9 @@ test parser testData = do
   log "Grammar:"
   printPretty (mainName #: parser)
   let (_ /\ States states) /\ doParse = parseRegex' mainName parser
+  log ""
+  -- log $ show states
+  log $ show (Array.length states) <> " states"
   log ""
   log "Conflicts:"
   let
@@ -74,7 +74,7 @@ test parser testData = do
 
 main :: Effect Unit
 main = do
-  test (unsafeCoerce J.stringify <$> complex_selector_list)
+  test (printVerts <$> selector_list)
     [ "::before"
     , ".haskell"
     , "h1#title"
@@ -85,6 +85,7 @@ main = do
     , "html,body"
     , "html, body"
     , "html , body"
+    -- , ":has(> [data-lang=\"en\"])"
     ]
 
 -- Lexer definitions
@@ -103,10 +104,10 @@ ident :: Comber String
 ident = "ident"#:
   oneOf
     [ key "--"
-    , mopt (key "-") <<>>
+    , mopt (key "-") <>
       (rawr "[a-zA-Z_]" <|> const empty escape)
     ]
-  <<>> ident_continue
+  <> ident_continue
 ident_continue :: Comber String
 ident_continue = fold <$> many "ident-continue" do
   rawr "[-a-zA-Z0-9_]+" <|> const empty escape
@@ -125,9 +126,24 @@ string = "string"#: oneOf
   ]
 url :: Comber String
 url = "url"#: key "url" *> delim "(" ")" do
-  wsws $ fold <$> many "url-contents" do
+  map fold $ wsws' $ fold <$> many1 "url-contents" do
     -- TODO: non-printable
     rawr "[^\\\\\"'()\\s]+" <|> escape
+
+any_value :: Comber String
+any_value = sourceOf $ "any-value" #-> \rec ->
+  pure unit <|>
+    oneOf
+      [ void do rawr "[-a-zA-Z0-9_]+"
+      , void string
+      , void url
+      , void comment
+      , delim "(" ")" rec
+      , delim "{" "}" rec
+      , delim "[" "]" rec
+      , void do rawr "."
+      ]
+    *> rec
 
 number :: Comber String
 number = "number"#: rawr "[-+]?(?:\\d+(?:\\.\\d+)|\\.\\d+)(?:[eE][-+]?\\d+)?"
@@ -136,7 +152,7 @@ dimension :: Comber (String /\ String)
 dimension = "dimension"#: number /|\ ident
 
 percentage :: Comber String
-percentage = "percentage"#: number <<>> key "%"
+percentage = "percentage"#: number <> key "%"
 
 -- Parser definitions
 
@@ -146,24 +162,32 @@ percentage = "percentage"#: number <<>> key "%"
 many1Comma :: forall a. String -> Comber a -> Comber (NonEmptyArray a)
 many1Comma = many1SepBy <@> (key "," <* ws)
 
-selector_list :: Comber (NonEmptyArray _)
-selector_list = "selector-list"#: complex_selector_list
-complex_selector_list :: Comber (NonEmptyArray _)
+convSelects :: Array Select -> SomeSelectors
+convSelects selects = combineFold (selectToMatch <$> selects)
+
+convRel :: InterTsil Relation (Array Select) -> Array Vert
+convRel = map distribute <<< sequence <<< map convSelects
+
+printVerts :: Array Vert -> String
+printVerts = ensure "*" <<< joinWith ", " <<< map printVert
+
+selector_list :: Comber (Array Vert)
+selector_list = "selector-list"#: complex_selector_list <#> foldMap convRel
+complex_selector_list :: Comber (NonEmptyArray (InterTsil Relation (Array Select)))
 complex_selector_list = many1Comma "complex-selector-list" complex_selector
-compound_selector_list :: Comber (NonEmptyArray _)
+compound_selector_list :: Comber (NonEmptyArray (Array Select))
 compound_selector_list = many1Comma "compound-selector-list" compound_selector
-simple_selector_list :: Comber (NonEmptyArray _)
+simple_selector_list :: Comber (NonEmptyArray (Maybe Select))
 simple_selector_list = many1Comma "simple-selector-list" simple_selector
-relative_selector_list :: Comber (NonEmptyArray _)
+relative_selector_list :: Comber (NonEmptyArray (Relation /\ InterTsil Relation (Array Select)))
 relative_selector_list = many1Comma "relative-selector-list" relative_selector
-complex_selector :: Comber (NonEmptyArray _) -- FIXME
-complex_selector = (_ <* ws) $ NEA.fromFoldable1 <$> "complex-selector" #-> \more ->
-  -- lift2 NEL.cons' compound_selector (Nil <$ ws <|> NEL.toList <$> (combinator *> more))
-  lift2 (flip NEL.cons')
-    do
-      pure Nil <|> NEL.toList <$> (more <* combinator)
-    do compound_selector
-relative_selector :: Comber (Relation /\ _)
+complex_selector :: Comber (InterTsil Relation (Array Select)) -- FIXME
+complex_selector = (_ <* ws) $ "complex-selector" #-> \more ->
+  (opt (more /|\ combinator) /|\ compound_selector)
+  <#> case _ of
+    Nothing /\ s -> One s
+    Just (m /\ c) /\ s -> More m c s
+relative_selector :: Comber (Relation /\ InterTsil Relation (Array Select))
 relative_selector = "relative-selector"#: combinator /|\ complex_selector
 compound_selector :: Comber (Array Select)
 compound_selector = "compound-selector"#:
@@ -188,11 +212,11 @@ combinator = "combinator"#: oneOf
 -- Inline wq_name to avoid a shift-reduce conflict?
 type_selector :: Comber (Maybe Select)
 type_selector = "type-selector"#: oneOf
-  [ opt ns_prefix <<>> (Just <$> ident <|> Nothing <$ key "*")
+  [ opt ns_prefix <> (Just <$> ident <|> Nothing <$ key "*")
   ] <#> map Element
-ns_prefix = "ns-prefix"#: mopt (ident <|> key "*") <<>> key "|" :: Comber String
+ns_prefix = "ns-prefix"#: mopt (ident <|> key "*") <> key "|" :: Comber String
 -- Inline wq_name to avoid a shift-reduce conflict?
-wq_name = mopt ns_prefix <<>> ident :: Comber String
+wq_name = mopt ns_prefix <> ident :: Comber String
 subclass_selector :: Comber Select
 subclass_selector = "subclass-selector"#: oneOf
   [ id_selector
@@ -232,6 +256,9 @@ attr_matcher = "attr-matcher"#: oneOf
   , LangCode <$ key "|"
   ]
 pseudo_class_selector :: Comber Select
-pseudo_class_selector = "pseudo-class-selector"#: PseudoCls <$> do key ":" *> ident
+pseudo_class_selector = "pseudo-class-selector"#:
+  PseudoCls <$> do
+    key ":" *> ident
+      -- <> mopt do key "(" <> any_value <> key ")"
 pseudo_element_selector :: Comber Select
 pseudo_element_selector = "pseudo-element-selector"#: PseudoEl <$> do key "::" *> ident

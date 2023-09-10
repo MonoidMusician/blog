@@ -11,7 +11,7 @@ import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..), either, isLeft, note)
 import Data.Either.Nested (type (\/))
-import Data.Foldable (class Foldable, for_, length, null, oneOfMap, traverse_)
+import Data.Foldable (class Foldable, for_, null, oneOfMap, traverse_)
 import Data.List (List)
 import Data.List as List
 import Data.Map (SemigroupMap(..))
@@ -24,7 +24,7 @@ import Data.String as String
 import Data.String.CodeUnits as CU
 import Data.String.Regex (Regex)
 import Data.String.Regex as Regex
-import Data.String.Regex.Flags (dotAll, multiline, sticky, unicode)
+import Data.String.Regex.Flags (dotAll, unicode)
 import Data.String.Regex.Unsafe (unsafeRegex)
 import Data.Traversable (class Traversable)
 import Data.Tuple (Tuple(..), fst, snd)
@@ -34,7 +34,7 @@ import Effect.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
 import Parser.Algorithms (indexStates)
 import Parser.Proto (Stack(..), statesOn, topOf)
-import Parser.Types (CST(..), OrEOF(..), Part(..), ShiftReduce(..), State(..), StateInfo, States(..), Zipper(..), decide, decisionUnique, unZipper)
+import Parser.Types (CST(..), OrEOF(..), Part(..), ShiftReduce(..), State(..), StateInfo, States(..), Zipper(..), decide, decisionUnique)
 import Partial.Unsafe (unsafeCrashWith)
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -76,31 +76,43 @@ instance lenOrEOF :: Len i => Len (OrEOF i) where
 
 -- | Typeclass for recognizing tokens based on categories.
 -- |
--- | Law: if you recognized it, you must rerecognize it, and vice versa.
-class Len i <= Token cat i o | cat -> o where
+-- | Law: if you recognized it, you must unrecognize it, and vice versa.
+class (Token cat o, Len i) <= Tokenize cat i o | cat -> o where
   recognize :: cat -> i -> Maybe (o /\ i)
-  rerecognize :: cat -> o -> Maybe (i -> i)
+  unrecognize :: cat -> o -> Maybe (i -> i)
 
-instance tokenString :: Token String String String where
+class Token cat o | cat -> o where
+  rerecognize :: cat -> o -> Boolean
+
+instance tokenizeString :: Tokenize String String String where
   recognize prefix current =
     String.stripPrefix (String.Pattern prefix) current
       <#> Tuple prefix
-  rerecognize prefix recognized =
+  unrecognize prefix recognized =
     guard (prefix == recognized) $> (recognized <> _)
 
-instance tokenChar :: Token Char String Char where
+instance tokenString :: Token String String where
+  rerecognize = eq
+
+instance tokenizeChar :: Tokenize Char String Char where
   recognize c current = case CU.uncons current of
     Just { head, tail } | head == c -> pure (Tuple head tail)
     _ -> empty
-  rerecognize prefix recognized =
+  unrecognize prefix recognized =
     guard (prefix == recognized) $> (CU.singleton recognized <> _)
 
-instance tokenCodePoint :: Token CodePoint String CodePoint where
+instance tokenChar :: Token Char Char where
+  rerecognize = eq
+
+instance tokenizeCodePoint :: Tokenize CodePoint String CodePoint where
   recognize c current = case String.uncons current of
     Just { head, tail } | head == c -> pure (Tuple head tail)
     _ -> empty
-  rerecognize prefix recognized =
+  unrecognize prefix recognized =
     guard (prefix == recognized) $> (String.singleton recognized <> _)
+
+instance tokenCodePoint :: Token CodePoint CodePoint where
+  rerecognize = eq
 
 class ToString s where
   toString :: s -> String
@@ -123,6 +135,7 @@ instance fromStringString :: FromString String where
 
 newtype Rawr = Rawr Regex
 derive instance newtypeRawr :: Newtype Rawr _
+derive newtype instance showRawr :: Show Rawr
 instance eqRaw :: Eq Rawr where
   eq (Rawr r1) (Rawr r2) = show r1 == show r2
 instance ordRaw :: Ord Rawr where
@@ -135,66 +148,94 @@ rawr source = Rawr $ unsafeRegex ("^(?:" <> source <> ")") $ unicode <> dotAll
 -- - I think the behavior of flags on the regex will do weird things
 -- - fucking terrible API
 -- - why does every high-level regex API suck ;.;
-instance tokenRawr :: Token Rawr String String where
+instance tokenizeRawr :: Tokenize Rawr String String where
   recognize (Rawr re) current = do
     groups <- Regex.match re current
     matched <- NEA.head groups
     pure (Tuple matched (CU.drop (CU.length matched) current))
-  rerecognize re recognized =
+  unrecognize re recognized =
     guard (recognize re recognized == Just (Tuple recognized mempty)) $>
       (recognized <> _)
 
-instance tokenOrEOF :: (Monoid i, Token cat i o) => Token (OrEOF cat) (OrEOF i) (OrEOF o) where
+instance tokenRawr :: Token Rawr String where
+  rerecognize re recognized =
+    recognize re recognized == Just (Tuple recognized mempty)
+
+instance tokenizeOrEOF :: (Monoid i, Tokenize cat i o) => Tokenize (OrEOF cat) (OrEOF i) (OrEOF o) where
   recognize EOF (Continue i) | len i == 0 = Just (EOF /\ EOF)
   recognize (Continue cat) (Continue i) = bimap Continue Continue <$> recognize cat i
   recognize _ _ = Nothing
-  rerecognize EOF EOF = Just (const (Continue mempty))
-  rerecognize (Continue l) (Continue r) =
-    rerecognize l r <#> case _, _ of
+  unrecognize EOF EOF = Just (const (Continue mempty))
+  unrecognize (Continue l) (Continue r) =
+    unrecognize l r <#> case _, _ of
       p, Continue i -> Continue (p i)
       _, i -> i
-  rerecognize _ _ = Nothing
+  unrecognize _ _ = Nothing
 
--- else instance tokenOrEOFPeek :: (Monoid i, Token cat i o) => Token (OrEOF cat) i (OrEOF o) where
+instance tokenOrEOF :: (Token cat o) => Token (OrEOF cat) (OrEOF o) where
+  rerecognize EOF EOF = true
+  rerecognize (Continue l) (Continue r) = rerecognize l r
+  rerecognize _ _ = false
+
+-- else instance tokenizeOrEOFPeek :: (Monoid i, Tokenize cat i o) => Tokenize (OrEOF cat) i (OrEOF o) where
 --   recognize EOF i | len i == 0 = Just (EOF /\ i)
 --   recognize (Continue cat) i = lmap Continue <$> recognize cat i
 --   recognize _ _ = Nothing
---   rerecognize EOF EOF = Just (const mempty)
---   rerecognize (Continue l) (Continue r) = rerecognize l r
---   rerecognize _ _ = Nothing
+--   unrecognize EOF EOF = Just (const mempty)
+--   unrecognize (Continue l) (Continue r) = unrecognize l r
+--   unrecognize _ _ = Nothing
 
-instance tokenEither ::
-  ( Token cat1 i o1
-  , Token cat2 i o2
-  ) => Token (cat1 \/ cat2) i (o1 \/ o2) where
+instance tokenizeEither ::
+  ( Tokenize cat1 i o1
+  , Tokenize cat2 i o2
+  ) => Tokenize (cat1 \/ cat2) i (o1 \/ o2) where
     recognize (Left prefix) current =
       lmap Left <$> recognize prefix current
     recognize (Right prefix) current =
       lmap Right <$> recognize prefix current
+    unrecognize (Left l) (Left r) = unrecognize l r
+    unrecognize (Right l) (Right r) = unrecognize l r
+    unrecognize _ _ = Nothing
+
+instance tokenEither ::
+  ( Token cat1 o1
+  , Token cat2 o2
+   ) => Token (cat1 \/ cat2) (o1 \/ o2) where
     rerecognize (Left l) (Left r) = rerecognize l r
     rerecognize (Right l) (Right r) = rerecognize l r
-    rerecognize _ _ = Nothing
+    rerecognize _ _ = false
+
+instance tokenizeSimilar ::
+  ( Tokenize cat1 i o
+  , Tokenize cat2 i o
+  ) => Tokenize (Similar cat1 cat2) i o where
+    recognize (Similar e) = either recognize recognize e
+    unrecognize (Similar e) = either unrecognize unrecognize e
 
 instance tokenSimilar ::
-  ( Token cat1 i o
-  , Token cat2 i o
-  ) => Token (Similar cat1 cat2) i o where
-    recognize (Similar e) = either recognize recognize e
+  ( Token cat1 o
+  , Token cat2 o
+  ) => Token (Similar cat1 cat2) o where
     rerecognize (Similar e) = either rerecognize rerecognize e
 
-instance tokenTuple ::
-  ( Token cat1 i1 o1
-  , Token cat2 i2 o2
-  ) => Token (cat1 /\ cat2) (i1 /\ i2) (o1 /\ o2) where
+instance tokenizeTuple ::
+  ( Tokenize cat1 i1 o1
+  , Tokenize cat2 i2 o2
+  ) => Tokenize (cat1 /\ cat2) (i1 /\ i2) (o1 /\ o2) where
     recognize (cat1 /\ cat2) (i1 /\ i2) = ado
       o1 /\ j1 <- recognize cat1 i1
       o2 /\ j2 <- recognize cat2 i2
       in (o1 /\ o2) /\ (j1 /\ j2)
-    rerecognize (l1 /\ l2) (r1 /\ r2) = ado
-      p1 <- rerecognize l1 r1
-      p2 <- rerecognize l2 r2
+    unrecognize (l1 /\ l2) (r1 /\ r2) = ado
+      p1 <- unrecognize l1 r1
+      p2 <- unrecognize l2 r2
       in \(i1 /\ i2) -> p1 i1 /\ p2 i2
 
+instance tokenTuple ::
+  ( Token cat1 o1
+  , Token cat2 o2
+  ) => Token (cat1 /\ cat2) (o1 /\ o2) where
+    rerecognize (l1 /\ l2) (r1 /\ r2) = rerecognize l1 r1 && rerecognize l2 r2
 
 
 infixr 9 note as ?
@@ -210,6 +251,7 @@ whenFailed a b = unsafePerformEffect (a <$ b)
 
 infixr 9 whenFailed as ?>
 
+asdf :: forall t670. t670 -> Effect Unit
 asdf = log <<< unsafeCoerce
 
 -- | Prioritize matches.
@@ -249,7 +291,7 @@ lexingParse ::
     Ord nt =>
     Eq r =>
     Ord cat =>
-    Token cat i o =>
+    Tokenize cat i o =>
   { best :: Best s (nt /\ r) cat i o
   } ->
   s /\ States s nt r cat -> i ->

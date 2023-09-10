@@ -99,6 +99,12 @@ delim x y z = key x *> z <* key y
 wsws :: Comber ~> Comber
 wsws a = ws *> a <* ws
 
+wsws' :: forall a. Comber a -> Comber (Maybe a)
+wsws' a = oneOf
+  [ Nothing <$ wss
+  , Just <$> wsws a
+  ]
+
 test :: Comber String -> Array String -> Effect Unit
 test parser testData = do
   log ""
@@ -222,10 +228,6 @@ infixr 5 choose as \|/
 tupling :: forall f a b. Applicative f => f a -> f b -> f (a /\ b)
 tupling = lift2 Tuple
 infixr 6 tupling as /|\
-
-appending :: forall f m. Applicative f => Semigroup m => f m -> f m -> f m
-appending = lift2 (<>)
-infixr 7 appending as <<>>
 
 theseing :: forall f a b. Alternative f => f a -> f b -> f (a /\/ b)
 theseing a b = This <$> a <|> That <$> b <|> Both <$> a <*> b

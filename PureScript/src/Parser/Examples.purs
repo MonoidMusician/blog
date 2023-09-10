@@ -16,7 +16,7 @@ import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Console (log)
 import Parser.Comb (Comb(..), named, namedRec, parse, parseRegex, printSyntax, token, tokenRawr, tokenStr)
-import Parser.Lexing (class ToString, class Token, type (~), Rawr(..), Similar(..), rawr, recognize, toString)
+import Parser.Lexing (class ToString, class Tokenize, type (~), Rawr(..), Similar(..), rawr, recognize, toString)
 import Parser.Types (Fragment, Grammar(..), Part(..))
 
 type Combs = Comb String CodePoint CodePoint
@@ -85,7 +85,7 @@ testData =
   , "1234"
   ]
 
-test :: forall cat o a. Show a => Ord cat => ToString cat => Token cat String o => Comb String cat o a -> Effect Unit
+test :: forall cat o a. Show a => Ord cat => ToString cat => Tokenize cat String o => Comb String cat o a -> Effect Unit
 test parser = do
   log ""
   log "Grammar:"
