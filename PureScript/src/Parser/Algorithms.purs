@@ -409,7 +409,7 @@ close grammar state0 =
       let
         state = state0 <> State state'
       in
-        if state == state0 then state0 else close grammar state
+        if unwrap state == unwrap state0 then state0 else close grammar state
 
 firsts :: forall nt r tok. Eq nt => Grammar nt r tok -> Array nt -> Lookahead tok -> Lookahead tok
 firsts (MkGrammar rules0) ps0 lookahead0 = readyset rules0 ps0 lookahead0

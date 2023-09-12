@@ -1,6 +1,5 @@
 module Parser.Comb.Run where
 
-import Parser.Comb.Types (CResultant, Comb(..), matchRule)
 import Prelude
 
 import Data.Array as Array
@@ -11,6 +10,7 @@ import Data.Tuple (snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Algorithms (getResultCM, statesNumberedBy)
 import Parser.Comb.Combinators (named)
+import Parser.Comb.Types (Comb(..), CResultant, matchRule)
 import Parser.Lexing (class Tokenize, Best, Rawr, Similar, bestRegexOrString, lexingParse, longest, (?))
 import Parser.Types (Grammar(..), OrEOF(..), States)
 
@@ -76,13 +76,14 @@ compile ::
   , resultants :: nt /\ Array (CResultant nt o a)
   }
 compile name parser = do
-  -- This is a bit ugly right now ...
-  let Comb { rules: cases } = parser
   let Comb { grammar: MkGrammar initial } = named name parser
   let grammar = MkGrammar (Array.nub initial)
   { states: statesNumberedBy identity grammar name
-  , resultants: name /\ (cases <#> _.resultant)
+  , resultants: name /\ resultantsOf parser
   }
+
+resultantsOf :: forall nt cat o a. Comb nt cat o a -> Array (CResultant nt o a)
+resultantsOf (Comb { rules: cases }) = cases <#> _.resultant
 
 -- | Execute the parse.
 execute ::

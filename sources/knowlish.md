@@ -11,6 +11,7 @@ author:
   - not a great way to do it
   - will cut off long lines
   - does not automatically size to content, just console widith
+- Type decimal numbers, echo and copy hexadecimal escapes: `cat (echo "obase=16" | psub) - | bc | xargs -I % -n 1 bash -c "echo -n \\\\x% | pbcopy; echo \\\\x%"`{.fish}
 
 ### Git
 
@@ -38,6 +39,7 @@ author:
 
 ## Data Formats/Parsers
 
+- [Common MIME types](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types)
 - https://gchq.github.io/CyberChef/
 - https://www.onlinemp4parser.com/
 

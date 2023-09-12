@@ -10,7 +10,7 @@ import Data.Either (Either, hush)
 import Data.Filterable (filter, filterMap)
 import Data.Foldable (fold, foldMap, oneOf, oneOfMap)
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (Maybe, fromMaybe)
 import Data.Traversable (sequence)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested ((/\))
@@ -19,9 +19,12 @@ import Deku.Control (text_)
 import Deku.Control as DC
 import Deku.Core (Domable, bussed, envy)
 import Deku.DOM as D
+import Effect.Aff (Aff)
+import Effect.Aff as Aff
 import Effect.Console (log)
-import FRP.Event (Event)
+import FRP.Event (Event, makeEvent, memoize)
 import FRP.Memoize (memoBehFold)
+import Fetch (fetch)
 import Foreign.Object (Object)
 import Foreign.Object as Object
 import Parser.Languages.CSS (mkCSSParser)
@@ -47,7 +50,12 @@ widgetCSS { interface, attrs } = do
     resetting = oneOfMap pure initial <|> do
       (adaptInterface (CA.array CA.string) (interface "css-example")).receive
   pure $ SafeNut do
-    component resetting $ mkCSSParser unit
+    component resetting
+
+affToEvent :: forall a. Aff a -> Event (Maybe a)
+affToEvent aff = makeEvent \cb -> do
+  fiber <- Aff.runAff (cb <<< hush) aff
+  pure $ Aff.launchAff_ $ Aff.killFiber (Aff.error "event unsubscribed") fiber
 
 sendExample :: Widget
 sendExample { interface, attrs } = do
@@ -76,37 +84,41 @@ data Update
   | Add
   | Reset (Array String)
 
-component :: forall lock payload. Event (Array String) -> Parser -> Domable lock payload
-component resetting parser =
+fetchParser :: Aff String
+fetchParser = _.text =<< fetch "assets/json/css-parser-states.json" {}
+
+component :: forall lock payload. Event (Array String) -> Domable lock payload
+component resetting =
   bussed \pushUpdate pushedRaw -> do
-    let
-      upd (_ /\ last) = case _ of
-        Add -> true /\ (last <> [ "" ])
-        Delete i -> true /\ (last # fromMaybe <*> Array.deleteAt i)
-        Update i v -> false /\ (last # mapWithIndex \j -> if i == j then v else _)
-        Reset vs -> true /\ vs
-    envy $ memoBehFold upd (true /\ ["",""]) (Reset <$> resetting <|> pushedRaw) \currentRaw -> do
-      D.div_
-        [ DC.switcherFlipped (filter fst currentRaw) \(_ /\ values) ->
-            fold $ values # mapWithIndex \i value ->
-              D.div_
-                [ inputValidated "terminal" "CSS selector" "" value empty
-                  \newValue -> pushUpdate $ Update i newValue
-                , D.button
-                    ( oneOf
-                        [ D.Class !:= "big delete"
-                        , D.OnClick !:= pushUpdate (Delete i)
-                        ]
-                    )
-                    [ text_ "Delete" ]
-                ]
-        , D.button
-            ( oneOf
-                [ D.Class !:= "big add"
-                , D.OnClick !:= pushUpdate Add
-                ]
-            )
-            [ text_ "Add selector to conjunction" ]
-        , D.pre (D.Class !:= "css" <|> D.Style !:= "text-wrap: wrap")
-            [ DC.text $ result parser <<< snd <$> currentRaw ]
-        ]
+    envy $ memoize (mkCSSParser <$> affToEvent fetchParser) \getParser -> do
+      let
+        upd (_ /\ last) = case _ of
+          Add -> true /\ (last <> [ "" ])
+          Delete i -> true /\ (last # fromMaybe <*> Array.deleteAt i)
+          Update i v -> false /\ (last # mapWithIndex \j -> if i == j then v else _)
+          Reset vs -> true /\ vs
+      envy $ memoBehFold upd (true /\ ["",""]) (Reset <$> resetting <|> pushedRaw) \currentRaw -> do
+        D.div_
+          [ DC.switcherFlipped (filter fst currentRaw) \(_ /\ values) ->
+              fold $ values # mapWithIndex \i value ->
+                D.div_
+                  [ inputValidated "terminal" "CSS selector" "" value empty
+                    \newValue -> pushUpdate $ Update i newValue
+                  , D.button
+                      ( oneOf
+                          [ D.Class !:= "big delete"
+                          , D.OnClick !:= pushUpdate (Delete i)
+                          ]
+                      )
+                      [ text_ "Delete" ]
+                  ]
+          , D.button
+              ( oneOf
+                  [ D.Class !:= "big add"
+                  , D.OnClick !:= pushUpdate Add
+                  ]
+              )
+              [ text_ "Add selector to conjunction" ]
+          , D.pre (D.Class !:= "css" <|> D.Style !:= "text-wrap: wrap")
+              [ DC.text $ (\parser -> result parser <<< snd) <$> getParser <*> currentRaw ]
+          ]

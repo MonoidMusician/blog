@@ -23,6 +23,7 @@ import Data.String (CodePoint)
 import Data.String as String
 import Data.String.CodeUnits as CU
 import Data.String.Regex (Regex)
+import Data.String.Regex as Re
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags (dotAll, unicode)
 import Data.String.Regex.Unsafe (unsafeRegex)
@@ -48,6 +49,7 @@ infixr 9 type Similar as ~
 derive newtype instance eqSimilar :: (Eq a, Eq b) => Eq (Similar a b)
 derive newtype instance ordSimilar :: (Ord a, Ord b) => Ord (Similar a b)
 derive newtype instance showSimilar :: (Show a, Show b) => Show (Similar a b)
+derive instance newtypeSimilar :: Newtype (Similar a b) _
 
 -- | Typeclass for generic length of things
 -- |
@@ -142,6 +144,11 @@ instance ordRaw :: Ord Rawr where
   compare (Rawr r1) (Rawr r2) = show r1 `compare` show r2
 rawr :: String -> Rawr
 rawr source = Rawr $ unsafeRegex ("^(?:" <> source <> ")") $ unicode <> dotAll
+unRawr :: Rawr -> String
+unRawr (Rawr re) = fromMaybe (Re.source re) do
+  x <- String.stripPrefix (String.Pattern "^(?:") (Re.source re)
+  y <- String.stripSuffix (String.Pattern ")") x
+  pure y
 
 -- TODO: this isn't right:
 -- - doesn't handle lookaround since we dropped the start of the string

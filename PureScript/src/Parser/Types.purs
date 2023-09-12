@@ -140,9 +140,10 @@ instance eqState :: (Eq nt, Eq r, Eq tok) => Eq (State nt r tok) where
       State s1' = minimizeState s1
       State s2' = minimizeState s2
       State s12 = minimizeState (s1' <> s2')
+    in s1' == s12 && let
       State s21 = minimizeState (s2' <> s1')
     in
-      s1' == s12 && s2' == s21
+      s2' == s21
 
 instance ordState :: (Ord nt, Ord r, Ord tok) => Ord (State nt r tok) where
   compare (State s1) (State s2) = compare (deepSort s1) (deepSort s2)
@@ -157,12 +158,15 @@ instance showState :: (Show nt, Show r, Show tok) => Show (State nt r tok) where
 instance semigroupState :: (Eq nt, Eq r, Eq tok) => Semigroup (State nt r tok) where
   append (State s1) (State s2) = minimizeState (s1 <> s2)
 
+nubEqCat :: forall a. Eq a => Array a -> Array a -> Array a
+nubEqCat as bs = as <> Array.filter (not Array.elem <@> as) bs
+
 minimizeState :: forall nt r tok. Eq nt => Eq r => Eq tok => Array (StateItem nt r tok) -> State nt r tok
 minimizeState = compose State $ [] # Array.foldl \items newItem ->
   let
     accumulate :: Boolean -> StateItem nt r tok -> { accum :: Boolean, value :: StateItem nt r tok }
     accumulate alreadyFound item =
-      if item.rName == newItem.rName && item.rule == newItem.rule then { accum: true, value: item { lookahead = Array.nubEq (item.lookahead <> newItem.lookahead) } }
+      if item.rName == newItem.rName && item.rule == newItem.rule then { accum: true, value: item { lookahead = nubEqCat item.lookahead newItem.lookahead } }
       else { accum: alreadyFound, value: item }
     { accum: found, value: items' } =
       mapAccumL accumulate false items

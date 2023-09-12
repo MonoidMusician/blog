@@ -84,9 +84,4 @@ parseSteps table inputs initialState =
       Right { next: step', action } -> Step step action (go step')
 
 parse :: forall f state rule i o. Foldable f => Table state rule i o -> state -> f i -> Maybe (Stack state o)
-parse table initialState inputs = parseSteps table (fromFoldable inputs) initialState # finished
-
-finished :: forall rule i stack. ParseSteps rule i stack -> Maybe stack
-finished (Step _ _ more) = finished more
-finished (Error _) = Nothing
-finished (Complete _ stack) = Just stack
+parse table initialState inputs = parseMany table (fromFoldable inputs) initialState

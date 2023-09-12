@@ -5,12 +5,19 @@ import Prelude
 import Ansi.Codes as Ansi
 import Control.Alt ((<|>))
 import Control.Plus (empty)
+import Data.Argonaut as Json
 import Data.Array ((!!))
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bitraversable (bifoldMap, bisequence)
-import Data.BooleanAlgebra.CSS (AttrMatch(..), MatchValue(..), MatchValueType(..), Relation(..), Select(..), SomeSelectors, Vert, combineFold, distribute, ensure, idMatch, printVert, printVerts, selectToMatch)
+import Data.BooleanAlgebra.CSS (AttrMatch(..), MatchValue(..), MatchValueType(..), Relation(..), Select(..), SomeSelectors, Vert, combineFold, distribute, idMatch, printVerts, selectToMatch)
+import Data.Codec.Argonaut (JsonCodec)
+import Data.Codec.Argonaut as CA
+import Data.Codec.Argonaut.Common as CAC
+import Data.Codec.Argonaut.Record as CAR
+import Data.Codec.Argonaut.Variant as CAV
+import Data.Either (Either(..), either, hush)
 import Data.Either.Nested (type (\/))
 import Data.Enum (toEnum)
 import Data.Foldable (fold, foldMap, for_, oneOf, traverse_)
@@ -18,31 +25,92 @@ import Data.Int (hexadecimal)
 import Data.Int as Int
 import Data.InterTsil (InterTsil(..))
 import Data.Lens (review)
-import Data.Maybe (Maybe(..))
+import Data.Lens.Iso.Newtype (_Newtype)
+import Data.Map (Map, SemigroupMap)
+import Data.Map as Map
+import Data.Maybe (Maybe(..), maybe, maybe')
 import Data.Monoid as M
 import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (unwrap)
-import Data.String (joinWith)
+import Data.Profunctor (dimap)
 import Data.String as String
 import Data.Traversable (for, sequence)
 import Data.Tuple.Nested (type (/\), (/\))
+import Data.Variant as Variant
 import Effect (Effect)
+import Effect.Aff (launchAff_)
 import Effect.Console (log)
-import Parser.Comb (parseRegex, parseRegex', sourceOf)
+import Effect.Exception (throw)
+import Node.Encoding (Encoding(..))
+import Node.FS.Aff as FS.Aff
+import Node.FS.Sync as FS.Sync
+import Parser.Codecs (_n, mappy, nonEmptyStringCodec, shiftReduceCodec)
+import Parser.Comb (execute, parseRegex, parseRegex', sourceOf)
+import Parser.Comb.Run (resultantsOf)
 import Parser.Examples (showPart)
 import Parser.Languages (Comber, colorful, delim, key, mainName, many, many1, many1SepBy, mopt, opt, printPretty, rawr, result, showZipper, ws, wss, wsws, wsws', (#->), (#:), (/\\/), (/|\), (<#?>), (>==))
-import Parser.Types (OrEOF(..), Part(..), ShiftReduce(..), States(..), Zipper(..), decisionUnique)
+import Parser.Lexing (type (~), Rawr(..), bestRegexOrString, unRawr)
+import Parser.Lexing as Lex
+import Parser.Types (OrEOF(..), Part(..), ShiftReduce(..), State, States(..), Zipper(..), decisionUnique, notEOF)
+import Type.Proxy (Proxy(..))
 
-mkCSSParser :: Unit -> String -> String \/ Array Vert
+mkCSSParser :: Maybe String -> String -> String \/ Array Vert
+mkCSSParser (Just json)
+  | Right (Right states) <- CA.decode codec <$> Json.parseJson json =
+    execute { best: bestRegexOrString } { states, resultants: mainName /\ resultantsOf selector_list }
 mkCSSParser _ = parseRegex mainName selector_list
+
+token :: JsonCodec (OrEOF (String ~ Rawr))
+token = dimap notEOF (maybe EOF Continue) $ CAC.maybe $
+  _Newtype $ CAC.either CA.string $ dimap unRawr Lex.rawr CA.string
+
+fragmentCodec :: JsonCodec (Array (Part (Maybe String) (OrEOF (String ~ Rawr))))
+fragmentCodec = CA.array $ CAV.variantMatch
+  { "Terminal": Right token
+  , "NonTerminal": Right (CAC.maybe CA.string)
+  } # dimap
+    do
+      case _ of
+        Terminal s -> Variant.inj (Proxy :: Proxy "Terminal") s
+        NonTerminal r -> Variant.inj (Proxy :: Proxy "NonTerminal") r
+    do
+      Variant.match
+        { "Terminal": Terminal
+        , "NonTerminal": NonTerminal
+        }
+
+indexed :: forall k a. Ord k => JsonCodec k -> JsonCodec a -> JsonCodec (Map.Map k a)
+indexed k a = dimap Map.toUnfoldable Map.fromFoldable $ CA.array $ CAC.tuple k a
+
+codec :: JsonCodec (Int /\ States Int (Maybe String) (Maybe Int) (OrEOF (String ~ Rawr)))
+codec = CAC.tuple CAC.int $
+  _Newtype $ CA.array $
+    CAR.object "State"
+      { sName: CA.int
+      , items: _n $ CA.array $ CAR.object "StateItem"
+        { rName: CAC.maybe CA.int
+        , pName: CAC.maybe CA.string
+        , rule: CA.indexedArray "Zipper" $ Zipper
+            <$> (\(Zipper before _) -> before) CA.~ CA.index 0 fragmentCodec
+            <*> (\(Zipper _ after) -> after) CA.~ CA.index 1 fragmentCodec
+        , lookahead: CA.array token
+        }
+      , advance: _n $ indexed token $ shiftReduceCodec CA.int $ CAC.tuple (CAC.maybe CA.string) (CAC.maybe CA.int)
+      , receive: indexed (CAC.maybe CA.string) CA.int
+      }
 
 test :: Comber String -> Array String -> Effect Unit
 test parser testData = do
   log ""
   log "Grammar:"
   printPretty (mainName #: parser)
-  let (_ /\ States states) /\ doParse = parseRegex' mainName parser
+  -- json <- FS.Sync.readTextFile UTF8 "states.compact.json"
+  -- dat@(_ /\ States states) <- maybe' (const (throw "Could not decode file")) pure $
+  --   hush (Json.parseJson json) >>= CA.decode codec >>> hush
+  -- let doParse = execute { best: bestRegexOrString } { states: dat, resultants: mainName /\ resultantsOf parser }
+  let dat@(_ /\ States states) /\ doParse = parseRegex' mainName parser
   log ""
+  -- launchAff_ $ FS.Aff.writeTextFile UTF8 "states.compact.json" $ Json.stringify $ CA.encode codec dat
   -- log $ show states
   log $ show (Array.length states) <> " states"
   log ""
