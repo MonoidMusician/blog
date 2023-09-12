@@ -81,15 +81,12 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 - Programming Linguistics:
   - Iʼve been thinking a lot about [selective applicative functors](https://dl.acm.org/doi/10.1145/3341694) lately.
     Mostly through the perspective of two contrasting applications: [selective applicative parsers](https://cohost.org/monoidmusician/post/2588944-more-more-more-seman), and functors for [typechecking with better errors](comprehensive_errors.html).
-  - [CSS selectors as Boolean Algebra](https://github.com/MonoidMusician/purescript-free-boolean/blob/slides/scanned/Slides.pdf) (warning: 35MB PDF)
+  - [Algebra of CSS Selectors](css_selectors.html)
 
     The fun part of this work was how to interleave nested selectors.
 
-    My conclusion back then () was that fully implementing `:not()`{.css} had edge cases that were not possible.
+    My conclusion back then (2018) was that fully implementing `:not()`{.css} had edge cases that were not possible.
     But it was written before the more advanced selectors like `:has()`{.css} became standard.
-
-    Revisit this code and probably implement a CSS selector parser just to make it interactive.
-    Or maybe Iʼll co-write a parser (ask readers to write it and offer to put it up on my blog if they do).
 - Paradigms:
   - I should do a blog post on what “effects” mean in FP culture
 

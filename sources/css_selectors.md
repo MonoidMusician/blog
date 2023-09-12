@@ -1,5 +1,6 @@
 ---
 title: Algebra of CSS Selectors
+subtitle: How do you zip two nested selectors together?
 author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
 ---
@@ -8,9 +9,9 @@ A basic demo of the algebra of CSS selectors.
 Enter many selectors (they can be complex selectors), and it will compute their *conjunction*.
 (Disjunction is already given by the comma separator in CSS.)
 
-The parser takes 30s–1m to load, and this will hang your browser tab, sorry.
-I will optimize it later, and I will add better support for selectors and negation!
-Probably buggy too.
+I need to add better support for selectors and negation.
+The output can be optimized too (I know how, I just need to finish implementing it).
+The part I was not able to do originally but probably can do now is to implement negation of complex selectors.
 
 ::: {.widget widget="Parser.Main.CSS" widget-datakey="default" widget-loading="true"}
 :::
@@ -35,3 +36,6 @@ Some examples to get you started:
 
 Can you guess what the result will be?
 See if you can figure out the rules for how it works!
+
+
+[CSS selectors as Boolean Algebra](https://github.com/MonoidMusician/purescript-free-boolean/blob/slides/scanned/Slides.pdf) (warning: 35MB PDF)
