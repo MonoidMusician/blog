@@ -69,6 +69,11 @@ type Augmented nt r tok =
   , eof :: tok
   , entry :: nt
   }
+type Augmenteds nt r tok =
+  { augmented :: Grammar nt r tok
+  , eof :: tok
+  , starts :: Array (StateItem nt r tok)
+  }
 
 type SAugmented = Augmented NonEmptyString String CodePoint
 

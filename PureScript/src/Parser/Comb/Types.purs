@@ -68,6 +68,8 @@ newtype Comb nt cat o a = Comb
   }
 type Combs = Comb String CodePoint CodePoint
 
+type ParseError = String
+
 -- | Parses an array (of CSTs), expecting a certain number of elements.
 -- | It may still return failure early, though.
 -- |

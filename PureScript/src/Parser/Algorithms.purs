@@ -8,10 +8,10 @@ import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
-import Data.Bitraversable (bisequence)
+import Data.Bitraversable (bisequence, bitraverse)
 import Data.Either (Either(..), either, hush, note)
 import Data.Filterable (filterMap)
-import Data.Foldable (elem, foldMap, oneOfMap, sum)
+import Data.Foldable (class Foldable, elem, foldMap, oneOfMap, sum)
 import Data.Function (on)
 import Data.List (List)
 import Data.Map (Map, SemigroupMap(..))
@@ -31,7 +31,7 @@ import Data.Tuple (fst, snd)
 import Data.Tuple.Nested ((/\), type (/\))
 import Parser.Proto (Stack(..), topOf)
 import Parser.Proto as Proto
-import Parser.Types (AST(..), Augmented, CST(..), Fragment, Grammar(..), Lookahead, OrEOF(..), Part(..), Produced, Producible, SAugmented, SFragment, ShiftReduce(..), State(..), StateIndex, StateInfo, StateItem, States(..), Zipper(..), decide, isNonTerminal, isTerminal, minimizeState, notEOF, unNonTerminal, unShift, unTerminal)
+import Parser.Types (AST(..), Augmented, CST(..), Fragment, Grammar(..), Lookahead, OrEOF(..), Part(..), Produced, Producible, SAugmented, SFragment, ShiftReduce(..), State(..), StateIndex, StateInfo, StateItem, States(..), Zipper(..), Augmenteds, decide, isNonTerminal, isTerminal, minimizeState, notEOF, unNonTerminal, unShift, unTerminal)
 import Partial.Unsafe (unsafeCrashWith)
 
 
@@ -114,6 +114,34 @@ fromSeed (MkGrammar rules) entry =
     , entry: Just entry
     }
 
+fromSeeds ::
+  forall nt r tok.
+  Grammar nt r tok ->
+  Array nt ->
+  Augmenteds (Either nt nt) (Maybe r) (OrEOF tok)
+fromSeeds (MkGrammar rules) entries =
+  let
+    entryRules = entries <#> \entry ->
+      { pName: Left entry
+      , rName: Nothing
+      , rule: [ NonTerminal (Right entry), Terminal EOF ]
+      }
+    rules' = rules <#> \{ pName, rName, rule } ->
+      { pName: Right pName
+      , rName: Just rName
+      , rule: bimap Right Continue <$> rule
+      }
+  in
+    { augmented: MkGrammar (entryRules <> rules')
+    , eof: EOF
+    , starts: entryRules <#> \{ pName, rName, rule } ->
+      { pName
+      , rName
+      , rule: Zipper [] rule
+      , lookahead: []
+      }
+    }
+
 fromSeed'
   :: forall nt r tok
    . nt
@@ -141,6 +169,17 @@ calculateStates
   -> StateItem nt r tok
   -> Array (State nt r tok)
 calculateStates grammar start = closeStates grammar [ close grammar (minimizeState [ start ]) ]
+
+calculateStatesMany
+  :: forall nt r tok
+   . Ord nt
+  => Eq r
+  => Ord tok
+  => Grammar nt r tok
+  -> Array (StateItem nt r tok)
+  -> Array (State nt r tok)
+calculateStatesMany grammar starts = closeStates grammar $ starts <#>
+  \start -> close grammar (minimizeState [ start ])
 
 generate
   :: forall nt r tok
@@ -184,9 +223,16 @@ getResultC _ = Nothing
 getResultCM :: forall w x y z. Stack w (CST (Maybe x /\ Maybe y) (OrEOF z)) -> Maybe (CST (x /\ y) z)
 getResultCM = getResultC >=> revertCST
 
+getResultCM' :: forall w x y z. Stack w (CST (Either x x /\ Maybe y) (OrEOF z)) -> Maybe (CST (x /\ y) z)
+getResultCM' = getResultC >=> revertCST'
+
 revertCST :: forall x y z. CST (Maybe x /\ Maybe y) (OrEOF z) -> Maybe (CST (x /\ y) z)
 revertCST (Leaf t) = Leaf <$> notEOF t
 revertCST (Branch r cs) = Branch <$> bisequence r <*> traverse revertCST cs
+
+revertCST' :: forall x y z. CST (Either x x /\ Maybe y) (OrEOF z) -> Maybe (CST (x /\ y) z)
+revertCST' (Leaf t) = Leaf <$> notEOF t
+revertCST' (Branch r cs) = Branch <$> bitraverse hush identity r <*> traverse revertCST' cs
 
 
 parseIntoGrammar
@@ -289,8 +335,8 @@ numberStatesBy
   => (Int -> s)
   -> Grammar nt r tok
   -> Array (State nt r tok)
-  -> Either (Array (StateItem nt r tok)) (s /\ States s nt r tok)
-numberStatesBy ix grammar states = map (\s -> ix 0 /\ States s) $ states #
+  -> Either (Array (StateItem nt r tok)) (States s nt r tok)
+numberStatesBy ix grammar states = map States $ states #
   traverseWithIndex \i items ->
     let
       findState seed = note seed $ map ix $
@@ -319,8 +365,26 @@ statesNumberedBy
   -> s /\ States s (Maybe nt) (Maybe r) (OrEOF tok)
 statesNumberedBy ix initial entry =
   let { augmented: grammar, start } = fromSeed initial entry in
-  either (const (ix 0 /\ States [])) identity $ numberStatesBy ix grammar $
-    calculateStates grammar start
+  ix 0 /\ do
+    either (const (States [])) identity $ numberStatesBy ix grammar $
+      calculateStates grammar start
+
+statesNumberedByMany
+  :: forall f s nt r tok
+   . Foldable f
+  => Ord nt
+  => Eq r
+  => Ord tok
+  => (Int -> s)
+  -> Grammar nt r tok
+  -> f nt
+  -> Array (nt /\ s) /\ States s (Either nt nt) (Maybe r) (OrEOF tok)
+statesNumberedByMany ix initial entrief =
+  let entries = Array.fromFoldable entrief in
+  let { augmented: grammar, starts } = fromSeeds initial entries in
+  case numberStatesBy ix grammar $ calculateStatesMany grammar starts of
+    Left _ -> [] /\ States []
+    Right states -> mapWithIndex (\i nt -> nt /\ ix i) entries /\ states
 
 toAdvance :: forall nt tok. Zipper nt tok -> Maybe (Part nt tok)
 toAdvance (Zipper _ after) = Array.head after

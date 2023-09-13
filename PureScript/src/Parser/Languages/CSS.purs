@@ -10,7 +10,7 @@ import Data.Array ((!!))
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
-import Data.Bitraversable (bifoldMap, bisequence)
+import Data.Bitraversable (bifoldMap, bisequence, bitraverse)
 import Data.BooleanAlgebra.CSS (AttrMatch(..), MatchValue(..), MatchValueType(..), Relation(..), Select(..), SomeSelectors, Vert, combineFold, distribute, idMatch, printVerts, selectToMatch)
 import Data.Codec.Argonaut (JsonCodec)
 import Data.Codec.Argonaut as CA
@@ -51,7 +51,7 @@ import Parser.Examples (showPart)
 import Parser.Languages (Comber, colorful, delim, key, mainName, many, many1, many1SepBy, mopt, opt, printPretty, rawr, result, showZipper, ws, wss, wsws, wsws', (#->), (#:), (/\\/), (/|\), (<#?>), (>==))
 import Parser.Lexing (type (~), Rawr(..), bestRegexOrString, unRawr)
 import Parser.Lexing as Lex
-import Parser.Types (OrEOF(..), Part(..), ShiftReduce(..), State, States(..), Zipper(..), decisionUnique, notEOF)
+import Parser.Types (Fragment, OrEOF(..), Part(..), ShiftReduce(..), State, States(..), Zipper(..), StateItem, decisionUnique, notEOF)
 import Type.Proxy (Proxy(..))
 
 mkCSSParser :: Maybe String -> String -> String \/ Array Vert
@@ -64,10 +64,10 @@ token :: JsonCodec (OrEOF (String ~ Rawr))
 token = dimap notEOF (maybe EOF Continue) $ CAC.maybe $
   _Newtype $ CAC.either CA.string $ dimap unRawr Lex.rawr CA.string
 
-fragmentCodec :: JsonCodec (Array (Part (Maybe String) (OrEOF (String ~ Rawr))))
+fragmentCodec :: JsonCodec (Array (Part (Either String String) (OrEOF (String ~ Rawr))))
 fragmentCodec = CA.array $ CAV.variantMatch
   { "Terminal": Right token
-  , "NonTerminal": Right (CAC.maybe CA.string)
+  , "NonTerminal": Right (CAC.either CA.string CA.string)
   } # dimap
     do
       case _ of
@@ -82,21 +82,21 @@ fragmentCodec = CA.array $ CAV.variantMatch
 indexed :: forall k a. Ord k => JsonCodec k -> JsonCodec a -> JsonCodec (Map.Map k a)
 indexed k a = dimap Map.toUnfoldable Map.fromFoldable $ CA.array $ CAC.tuple k a
 
-codec :: JsonCodec (Int /\ States Int (Maybe String) (Maybe Int) (OrEOF (String ~ Rawr)))
+codec :: JsonCodec (Int /\ States Int (Either String String) (Maybe Int) (OrEOF (String ~ Rawr)))
 codec = CAC.tuple CAC.int $
   _Newtype $ CA.array $
     CAR.object "State"
       { sName: CA.int
       , items: _n $ CA.array $ CAR.object "StateItem"
         { rName: CAC.maybe CA.int
-        , pName: CAC.maybe CA.string
+        , pName: CAC.either CA.string CA.string
         , rule: CA.indexedArray "Zipper" $ Zipper
             <$> (\(Zipper before _) -> before) CA.~ CA.index 0 fragmentCodec
             <*> (\(Zipper _ after) -> after) CA.~ CA.index 1 fragmentCodec
         , lookahead: CA.array token
         }
-      , advance: _n $ indexed token $ shiftReduceCodec CA.int $ CAC.tuple (CAC.maybe CA.string) (CAC.maybe CA.int)
-      , receive: indexed (CAC.maybe CA.string) CA.int
+      , advance: _n $ indexed token $ shiftReduceCodec CA.int $ CAC.tuple (CAC.either CA.string CA.string) (CAC.maybe CA.int)
+      , receive: indexed (CAC.either CA.string CA.string) CA.int
       }
 
 test :: Comber String -> Array String -> Effect Unit
@@ -116,10 +116,12 @@ test parser testData = do
   log ""
   log "Conflicts:"
   let
+    normal :: Fragment (Either _ _) _ -> Maybe (Fragment _ _)
     normal frag = for frag case _ of
       Terminal (Continue a) -> Just (Terminal a)
-      NonTerminal (Just a) -> Just (NonTerminal a)
+      NonTerminal (Right a) -> Just (NonTerminal a)
       _ -> Nothing
+    showItems :: String -> State (Either _ _) (Maybe _) (OrEOF _) -> _
     showItems pre items =
       for_ (unwrap items) \{ pName, rName, rule: Zipper l' r' } -> do
         for_ (normal l' /|\ normal r') \(l /\ r) ->
@@ -132,7 +134,7 @@ test parser testData = do
           log "  Shift to"
           showItems "  -> " st.items
           log "  Or reduce"
-          for_ rs $ bisequence >>> traverse_ \(name /\ num) -> do
+          for_ rs $ bitraverse hush identity >>> traverse_ \(name /\ num) -> do
             log $ "  <- " <> showPart (NonTerminal name) <> "." <> show num
         _ -> pure unit
       log "  With items"
