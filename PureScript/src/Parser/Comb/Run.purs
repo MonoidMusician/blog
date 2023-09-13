@@ -2,10 +2,9 @@ module Parser.Comb.Run where
 
 import Prelude
 
-import Data.Array (findMap)
 import Data.Array as Array
 import Data.Bifunctor (lmap)
-import Data.Either (Either(..))
+import Data.Either (Either(..), note)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
@@ -13,7 +12,7 @@ import Data.Tuple (fst, snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Algorithms (getResultCM', statesNumberedByMany)
 import Parser.Comb.Combinators (named)
-import Parser.Comb.Types (CGrammar, CResultant, Comb(..), ParseError, Rec(..), matchRule)
+import Parser.Comb.Types (CGrammar, CResultant, Comb(..), ParseError, Rec(..), matchRule, withRec)
 import Parser.Lexing (class Tokenize, Best, Rawr, Similar, bestRegexOrString, lexingParse, longest, (?))
 import Parser.Types (Grammar(..), OrEOF(..), States)
 
@@ -61,7 +60,7 @@ parseWith' ::
     Monoid i =>
     Tokenize cat i o =>
   CConf nt cat i o -> nt -> Comb (Rec nt (OrEOF i) o) nt cat o a ->
-  (Int /\ CStates nt cat) /\ (i -> Either ParseError a)
+  (Map nt Int /\ Int /\ CStates nt cat) /\ (i -> Either ParseError a)
 parseWith' conf name parser = do
   -- First we build the LR(1) parsing table
   let { states, resultants } = compile name parser
@@ -72,7 +71,7 @@ parseRegex' ::
   forall nt a.
     Ord nt =>
   nt -> Comb (Rec nt (OrEOF String) String) nt (Similar String Rawr) String a ->
-  (Int /\ CStates nt (Similar String Rawr)) /\ (String -> Either ParseError a)
+  (Map nt Int /\ Int /\ CStates nt (Similar String Rawr)) /\ (String -> Either ParseError a)
 parseRegex' = parseWith' { best: bestRegexOrString }
 
 -- | Compile the LR(1) state table for the grammar
@@ -81,14 +80,16 @@ compile ::
     Ord nt =>
     Ord cat =>
   nt -> Comb rec nt cat o a ->
-  { states :: Int /\ CStates nt cat
+  { states :: Map nt Int /\ Int /\ CStates nt cat
   , resultants :: nt /\ Array (CResultant rec nt o a)
   }
 compile name parser = do
   let Comb { grammar: MkGrammar initial } = named name parser
   let grammar = MkGrammar (Array.nub initial)
-  { states: lmap (findMap (lookupTuple name) >>> fromMaybe 0) $
-      statesNumberedByMany identity grammar [ name ]
+  let stateAssoc /\ generated = statesNumberedByMany identity grammar [ name ]
+  let stateMap = Map.fromFoldable stateAssoc
+  let tgt = Map.lookup name stateMap # fromMaybe 0
+  { states: stateMap /\ tgt /\ generated
   , resultants: name /\ resultantsOf parser
   }
 
@@ -108,19 +109,19 @@ execute ::
     Tokenize cat i o =>
   { best :: Best Int (Either nt nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
   } ->
-  { states :: Int /\ States Int (Either nt nt) (Maybe Int) (OrEOF cat)
+  { states :: Map nt Int /\ Int /\ States Int (Either nt nt) (Maybe Int) (OrEOF cat)
   , resultants :: nt /\ Array (CResultant (Rec nt (OrEOF i) o) nt o a)
   } ->
   (i -> Either ParseError a)
-execute conf { states, resultants } = do
+execute conf { states: stateMap /\ tgt /\ states, resultants } = do
   let
-    compiled = lexingParse conf states
-    rec = Rec \input -> do
-      stack <- lmap snd $ compiled input
+    rec = Rec \name input -> do
+      state <- "Could not find parser in table"? Map.lookup name stateMap
+      stack <- lmap snd $ lexingParse conf (state /\ states) input
       "Failed to extract result"? getResultCM' stack
   \(input :: i) -> do
-    let Rec ap = rec
-    cst <- ap (Continue input)
+    stack <- lmap snd $ lexingParse conf (tgt /\ states) (Continue input)
+    cst <- "Failed to extract result"? getResultCM' stack
     -- Apply the function that parses from the CST to the desired result type
     "Failed to match rule"? uncurry (matchRule rec) resultants cst
 
@@ -169,7 +170,7 @@ coll name parser@(Comb c) = Coll
           Left "Internal error: Failed to find entrypoint for parser"
         Just state ->
           \conf -> execute conf
-            { states: state /\ states
+            { states: entrypoints /\ state /\ states
             , resultants: name /\ resultantsOf parser
             }
   }
@@ -189,3 +190,22 @@ collect conf (Coll { grammar: MkGrammar initial, entrypoints, compilation }) = d
     { entrypoints: Map.fromFoldable (fst states)
     , states: snd states
     } conf
+
+
+
+
+withReparser ::
+  forall nt cat i o a b c.
+    Ord nt =>
+  nt ->
+  Comb (Rec nt (OrEOF i) o) nt cat o a ->
+  Comb (Rec nt (OrEOF i) o) nt cat o b ->
+  ((i -> Either ParseError a) -> b -> c) ->
+  Comb (Rec nt (OrEOF i) o) nt cat o c
+withReparser name aux cb f = do
+  let ca = named name aux
+  ca *> flip withRec cb \(Rec rec) ->
+    f \input ->
+      rec name (Continue input) >>=
+        matchRule (Rec rec) name (resultantsOf aux) >>>
+          note "Error in reparser"

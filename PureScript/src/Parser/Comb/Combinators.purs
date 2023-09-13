@@ -10,9 +10,9 @@ import Data.Maybe (Maybe(..))
 import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..))
 import Parser.Comb.Syntax (Syntax(..))
-import Parser.Comb.Types (Comb(..), PartialResult(..), Rec(..), ParseError, component, components, matchRule, withCST')
+import Parser.Comb.Types (Comb(..), PartialResult(..), component, components, matchRule, withCST')
 import Parser.Lexing (class ToString, class Token, type (~), Rawr, Similar(..), rawr, rerecognize, toString)
-import Parser.Types (CST(..), Grammar(..), OrEOF, Part(..), sourceCST)
+import Parser.Types (CST(..), Grammar(..), Part(..), sourceCST)
 
 token :: forall rec nt cat o. Token cat o => cat -> Comb rec nt cat o o
 token cat = Comb
@@ -81,12 +81,6 @@ namedRec name parseRec =
 named :: forall rec nt cat o a. Ord nt => nt -> Comb rec nt cat o a -> Comb rec nt cat o a
 named name = namedRec name <<< const
 
--- withReparser :: forall nt cat i o a b. Ord nt => nt -> Comb (Rec nt (OrEOF i) o) nt cat o a -> ((i -> Either ParseError a) -> Either ParseError b) -> Comb (Rec nt (OrEOF i) o) nt cat o b
--- withReparser name (Comb c) f =
---   Comb
---     {
---     }
-
 -- | Return the source parsed by the given parser, instead of whatever its
 -- | applicative result was.
 sourceOf :: forall rec nt cat o a. Monoid o => Comb rec nt cat o a -> Comb rec nt cat o o
@@ -95,4 +89,4 @@ sourceOf = tokensSourceOf >>> map fold
 -- | Return the source tokens parsed by the given parser, instead of whatever
 -- | its applicative result was.
 tokensSourceOf :: forall rec nt cat o a. Comb rec nt cat o a -> Comb rec nt cat o (Array o)
-tokensSourceOf = withCST' \csts _ -> Result (sourceCST =<< csts)
+tokensSourceOf = withCST' \_ csts _ -> Result (sourceCST =<< csts)

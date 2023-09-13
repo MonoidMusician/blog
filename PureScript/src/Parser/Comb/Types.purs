@@ -77,7 +77,7 @@ rerec f (Comb c) = Comb c
   }
 
 -- Can be abstracted into a new type parameter for `Comb` if necessary
-newtype Rec nt i o = Rec (i -> Either ParseError (CCST nt o))
+newtype Rec nt i o = Rec (nt -> i -> Either ParseError (CCST nt o))
 
 type ParseError = String
 
@@ -155,18 +155,21 @@ matchRule _ _ _ _ = Nothing
 
 -- | Modify the result of the parser based on the CST fragment it receives.
 withCST :: forall rec nt cat o a b. (Array (CCST nt o) -> PartialResult (a -> b)) -> Comb rec nt cat o a -> Comb rec nt cat o b
-withCST f = withCST' \csts prev -> f csts <*> prev unit
+withCST f = withCST' \_ csts prev -> f csts <*> prev unit
 
 -- | Modify the result of the parser based on the CST fragment it receives.
-withCST' :: forall rec nt cat o a b. (Array (CCST nt o) -> (Unit -> PartialResult a) -> PartialResult b) -> Comb rec nt cat o a -> Comb rec nt cat o b
+withCST' :: forall rec nt cat o a b. (rec -> Array (CCST nt o) -> (Unit -> PartialResult a) -> PartialResult b) -> Comb rec nt cat o a -> Comb rec nt cat o b
 withCST' f (Comb c) = Comb c
   { rules = c.rules <#> \r@{ resultant: Resultant { length, result } } -> r
     { resultant = Resultant
       { length
-      , result: \rec csts -> f csts (\_  -> result rec csts)
+      , result: \rec csts -> f rec csts (\_  -> result rec csts)
       }
     }
   }
+
+withRec :: forall rec nt cat o a b. (rec -> a -> b) -> Comb rec nt cat o a -> Comb rec nt cat o b
+withRec f = withCST' \rec _ prev -> pure <<< f rec =<< prev unit
 
 derive instance functorResultant :: Functor (Resultant i r)
 derive instance profunctorResultant :: Profunctor (Resultant i)

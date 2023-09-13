@@ -11,7 +11,9 @@ import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bitraversable (bifoldMap, bisequence, bitraverse)
+import Data.BooleanAlgebra.CSS (Atom(..), AttrMatch(..), MatchValue(..), MatchValueType(..), Relation(..), Select(..), Several(..), Single(..), SomeSelectors, Vert, combineFold, distribute, fromNF, idMatch, printVerts, selectToMatch)
 import Data.BooleanAlgebra.CSS (AttrMatch(..), MatchValue(..), MatchValueType(..), Relation(..), Select(..), SomeSelectors, Vert, combineFold, distribute, idMatch, printVerts, selectToMatch)
+import Data.BooleanAlgebra.NormalForm (NormalForm, free)
 import Data.Codec.Argonaut (JsonCodec)
 import Data.Codec.Argonaut as CA
 import Data.Codec.Argonaut.Common as CAC
@@ -20,7 +22,9 @@ import Data.Codec.Argonaut.Variant as CAV
 import Data.Either (Either(..), either, hush)
 import Data.Either.Nested (type (\/))
 import Data.Enum (toEnum)
-import Data.Foldable (fold, foldMap, for_, oneOf, traverse_)
+import Data.Foldable (all, and, any, fold, foldMap, for_, oneOf, or, traverse_)
+import Data.FoldableWithIndex (allWithIndex, foldMapWithIndex)
+import Data.HeytingAlgebra (tt)
 import Data.Int (hexadecimal)
 import Data.Int as Int
 import Data.InterTsil (InterTsil(..))
@@ -46,7 +50,7 @@ import Node.FS.Aff as FS.Aff
 import Node.FS.Sync as FS.Sync
 import Parser.Codecs (_n, mappy, nonEmptyStringCodec, shiftReduceCodec)
 import Parser.Comb (execute, parseRegex, parseRegex', sourceOf)
-import Parser.Comb.Run (resultantsOf)
+import Parser.Comb.Run (Parsing, resultantsOf, withReparser)
 import Parser.Examples (showPart)
 import Parser.Languages (Comber, colorful, delim, key, mainName, many, many1, many1SepBy, mopt, opt, printPretty, rawr, result, showZipper, ws, wss, wsws, wsws', (#->), (#:), (/\\/), (/|\), (<#?>), (>==))
 import Parser.Lexing (type (~), Rawr(..), bestRegexOrString, unRawr)
@@ -82,8 +86,8 @@ fragmentCodec = CA.array $ CAV.variantMatch
 indexed :: forall k a. Ord k => JsonCodec k -> JsonCodec a -> JsonCodec (Map.Map k a)
 indexed k a = dimap Map.toUnfoldable Map.fromFoldable $ CA.array $ CAC.tuple k a
 
-codec :: JsonCodec (Int /\ States Int (Either String String) (Maybe Int) (OrEOF (String ~ Rawr)))
-codec = CAC.tuple CAC.int $
+codec :: JsonCodec (Map String Int /\ Int /\ States Int (Either String String) (Maybe Int) (OrEOF (String ~ Rawr)))
+codec = CAC.tuple (indexed CA.string CA.int) $ CAC.tuple CAC.int $
   _Newtype $ CA.array $
     CAR.object "State"
       { sName: CA.int
@@ -108,7 +112,7 @@ test parser testData = do
   -- dat@(_ /\ States states) <- maybe' (const (throw "Could not decode file")) pure $
   --   hush (Json.parseJson json) >>= CA.decode codec >>> hush
   -- let doParse = execute { best: bestRegexOrString } { states: dat, resultants: mainName /\ resultantsOf parser }
-  let dat@(_ /\ States states) /\ doParse = parseRegex' mainName parser
+  let dat@(_ /\ _ /\ States states) /\ doParse = parseRegex' mainName parser
   log ""
   -- launchAff_ $ FS.Aff.writeTextFile UTF8 "states.compact.json" $ Json.stringify $ CA.encode codec dat
   -- log $ show states
@@ -237,14 +241,56 @@ percentage = "percentage"#: number <> key "%"
 many1Comma :: forall a. String -> Comber a -> Comber (NonEmptyArray a)
 many1Comma = many1SepBy <@> (key "," <* ws)
 
-convSelects :: Array Select -> SomeSelectors
-convSelects selects = combineFold (selectToMatch <$> selects)
+type ParseCompoundSelectors =
+  -- (Parsing String ((NonEmptyArray (InterTsil Relation (Array Select)))))
+  Parsing String (NonEmptyArray (Array Select))
 
-convRel :: InterTsil Relation (Array Select) -> Array Vert
-convRel = map distribute <<< sequence <<< map convSelects
+convSelects :: ParseCompoundSelectors -> Array Select -> NormalForm Select
+convSelects parser selects = all (selectToMatch'' parser) selects
+
+selectToMatch'' :: ParseCompoundSelectors -> Select -> NormalForm Select
+selectToMatch'' parser (PseudoCls cls) | Just negated <- parseNegated parser cls = do
+  not negated
+selectToMatch'' _ sel = atomToNFSelect (selectToMatch sel)
+
+atomToNFSelect :: Atom -> NormalForm Select
+atomToNFSelect (Atom a) = and
+  [ single Element a.element
+  , several Class a.classes
+  , several PseudoCls a.pseudoCls
+  , several Attribute a.attrs
+  , single PseudoEl a.pseudoEl
+  ]
+  where
+  invertIf true = not
+  invertIf false = identity
+  single :: forall a. (a -> Select) -> Single a -> NormalForm Select
+  single f (Single (Just { inverted, value })) =
+    invertIf inverted (free (f value))
+  single f (Single Nothing) = tt
+  several :: forall a. Ord a => (a -> Select) -> Several a -> NormalForm Select
+  several f (Several items) =
+    items # allWithIndex \value inverted -> single f (Single (Just { inverted, value }))
+
+parseNegated :: ParseCompoundSelectors -> String -> Maybe (NormalForm Select)
+parseNegated parser = parser >>> hush >== any (convSelects parser)
+
+convRel :: ParseCompoundSelectors -> InterTsil Relation (Array Select) -> Array Vert
+convRel parser = map distribute <<< sequence <<< map (fromNF <<< convSelects parser)
+
+not_aux :: Comber (NonEmptyArray (Array Select))
+not_aux = ado
+  key ":"
+  key "not"
+  key "("
+  r <- compound_selector_list
+  key ")"
+  in r
 
 selector_list :: Comber (Array Vert)
-selector_list = "selector-list"#: complex_selector_list <#> foldMap convRel
+selector_list = "selector-list"#:
+  withReparser "not_aux" not_aux complex_selector_list
+    \parser -> foldMap (convRel parser)
 complex_selector_list :: Comber (NonEmptyArray (InterTsil Relation (Array Select)))
 complex_selector_list = many1Comma "complex-selector-list" complex_selector
 compound_selector_list :: Comber (NonEmptyArray (Array Select))
@@ -264,6 +310,7 @@ relative_selector = "relative-selector"#: combinator /|\ complex_selector
 compound_selector :: Comber (Array Select)
 compound_selector = "compound-selector"#:
   type_selector
+    -- TODO: permutations???
     /\\/ many1 "subclass_selectors" subclass_selector
     /\\/ many1 "pseudo_selectors"
       ( "pseudo_selector"#: pseudo_element_selector
@@ -323,6 +370,6 @@ pseudo_class_selector :: Comber Select
 pseudo_class_selector = "pseudo-class-selector"#:
   PseudoCls <$> do
     key ":" *> ident
-      -- <> mopt do key "(" <> any_value <> key ")"
+      <> mopt do key "(" <> any_value <> key ")"
 pseudo_element_selector :: Comber Select
 pseudo_element_selector = "pseudo-element-selector"#: PseudoEl <$> do key "::" *> ident
