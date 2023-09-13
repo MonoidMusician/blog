@@ -16,11 +16,12 @@ import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Console (log)
 import Parser.Comb (Comb(..), named, namedRec, parse, parseRegex, printSyntax, token, tokenRawr, tokenStr)
+import Parser.Comb.Types (rerec)
 import Parser.Lexing (class ToString, class Tokenize, type (~), Rawr(..), Similar(..), rawr, recognize, toString)
 import Parser.Types (Fragment, Grammar(..), Part(..))
 
-type Combs = Comb String CodePoint CodePoint
-type Comber = Comb String (String ~ Rawr) String
+type Combs = Comb Unit String CodePoint CodePoint
+type Comber = Comb Unit String (String ~ Rawr) String
 
 mainName :: String
 mainName = "main"
@@ -29,13 +30,13 @@ printBNF :: forall a. Combs a -> Effect Unit
 printBNF (Comb { grammar: MkGrammar grammar }) = nub grammar # traverse_ \rule ->
   log $ rule.pName <> "." <> show rule.rName <> " = " <> showFragment rule.rule <> " ."
 
-printPretty :: forall s o a. Ord s => ToString s => Comb String s o a -> Effect Unit
+printPretty :: forall s o a. Ord s => ToString s => Comb Unit String s o a -> Effect Unit
 printPretty (Comb { prettyGrammar }) = nub prettyGrammar #
   traverse_ \(name /\ msyntax) ->
     msyntax # traverse_ \syntax ->
       log $ showPart (NonTerminal name) <> " = " <> printSyntax showFragment syntax <> " ."
 
-printPrettyR :: forall o a. Comb String (String ~ Rawr) o a -> Effect Unit
+printPrettyR :: forall o a. Comb Unit String (String ~ Rawr) o a -> Effect Unit
 printPrettyR (Comb { prettyGrammar }) = nub prettyGrammar #
   traverse_ \(name /\ msyntax) ->
     msyntax # traverse_ \syntax ->
@@ -85,12 +86,12 @@ testData =
   , "1234"
   ]
 
-test :: forall cat o a. Show a => Ord cat => ToString cat => Tokenize cat String o => Comb String cat o a -> Effect Unit
+test :: forall cat o a. Show a => Ord cat => ToString cat => Tokenize cat String o => Comb Unit String cat o a -> Effect Unit
 test parser = do
   log ""
   log "Grammar:"
   printPretty (named mainName parser)
-  let doParse = parse mainName parser
+  let doParse = parse mainName (rerec (const unit) parser)
   log ""
   log "Examples:"
   traverse_ (\s -> pure unit >>= \_ -> log (show s <> " --> " <> result (doParse s))) testData
@@ -100,7 +101,7 @@ testR parser = do
   log ""
   log "Grammar:"
   printPrettyR (named mainName parser)
-  let doParse = parseRegex mainName parser
+  let doParse = parseRegex mainName (rerec (const unit) parser)
   log ""
   log "Examples:"
   traverse_ (\s -> pure unit >>= \_ -> log (show s <> " --> " <> result (doParse s))) testData

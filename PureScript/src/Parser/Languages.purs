@@ -32,11 +32,12 @@ import Effect (Effect)
 import Effect.Console (log)
 import Foreign.Object as Object
 import Parser.Comb (Comb(..), named, namedRec, parseRegex, printSyntax, tokenRawr, tokenStr)
+import Parser.Comb.Types (Rec)
 import Parser.Examples (coalesce, showPart)
 import Parser.Lexing (class ToString, type (~), Rawr, Similar(..))
-import Parser.Types (Fragment, Part(..), Zipper(..))
+import Parser.Types (Fragment, OrEOF, Part(..), Zipper(..))
 
-type Comber = Comb String (String ~ Rawr) String
+type Comber = Comb (Rec String (OrEOF String) String) String (String ~ Rawr) String
 
 rawr :: String -> Comber String
 rawr = tokenRawr
@@ -47,7 +48,7 @@ key = tokenStr
 mainName :: String
 mainName = "main"
 
-printPretty :: forall o a. Comb String (String ~ Rawr) o a -> Effect Unit
+printPretty :: forall o a. Comb (Rec String (OrEOF String) String) String (String ~ Rawr) o a -> Effect Unit
 printPretty (Comb { prettyGrammar }) = nub prettyGrammar #
   traverse_ \(name /\ msyntax) ->
     msyntax # traverse_ \syntax ->

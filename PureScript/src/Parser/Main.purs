@@ -1027,7 +1027,7 @@ computeGrammar
 computeGrammar grammar =
   let
     _producible = withProducible grammar
-    _states = either (const (States [])) snd $ numberStatesBy (add 1) grammar.augmented (calculateStates grammar.augmented grammar.start)
+    _states = either (const (States [])) identity $ numberStatesBy (add 1) grammar.augmented (calculateStates grammar.augmented grammar.start)
     _stateIndex = indexStates' _states
     _allTokens = gatherTokens' grammar.augmented
     _allNTs = gatherNonTerminals' grammar.augmented

@@ -10,7 +10,6 @@ import Data.String (CodePoint, codePointFromChar)
 import Data.String as String
 import Data.String.NonEmpty (NonEmptyString)
 import Data.String.NonEmpty as NES
-import Data.Tuple (snd)
 import Data.Tuple.Nested (type (/\))
 import Parser.Algorithms (fromSeed, fromSeed', generate, generate', indexStates, numberStatesBy, parseIntoGrammar, toTable, toTable', verifyTokens)
 import Parser.Proto as Proto
@@ -56,11 +55,11 @@ exGenerated :: forall t. t -> Array (State NonEmptyString String CodePoint)
 exGenerated _ = generate' defaultTopName defaultTopRName defaultEOF exGrammar (unsafePartial (fromJust (NES.fromString "E")))
 
 g8States :: forall a. a -> States Int (Maybe G8.Sorts) (Maybe G8.Rule) (OrEOF G8.Tok)
-g8States a = snd $ fromRight' (\_ -> unsafeCrashWith "state generation did not work")
+g8States a = fromRight' (\_ -> unsafeCrashWith "state generation did not work")
   (numberStatesBy (add 1) g8Seed.augmented (g8Generated a))
 
 exStates :: forall t. t -> States Int NonEmptyString String CodePoint
-exStates a = snd $ fromRight' (\_ -> unsafeCrashWith "state generation did not work")
+exStates a = fromRight' (\_ -> unsafeCrashWith "state generation did not work")
   (numberStatesBy (add 1) exSeed.augmented (exGenerated a))
 
 g8Table :: forall a. a -> Proto.Table Int (Maybe G8.Sorts /\ Maybe G8.Rule) (OrEOF G8.Tok) (CST (Maybe G8.Sorts /\ Maybe G8.Rule) (OrEOF G8.Tok))

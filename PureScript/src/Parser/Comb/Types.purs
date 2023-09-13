@@ -7,12 +7,14 @@ import Control.Apply (lift2)
 import Control.Plus (class Alt, class Plus, empty, (<|>))
 import Data.Array (head, length, splitAt, zipWith, (!!))
 import Data.Compactable (class Compactable, compact, separateDefault)
+import Data.Either (Either)
 import Data.Maybe (Maybe(..))
+import Data.Profunctor (class Profunctor, lcmap)
 import Data.String (CodePoint)
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
-import Parser.Types (CST(..), Fragment, Grammar)
 import Parser.Comb.Syntax (Syntax(..))
+import Parser.Types (CST(..), Fragment, Grammar)
 
 type CSyntax = Syntax
 type CGrammar nt cat = Grammar nt Int cat
@@ -57,16 +59,25 @@ type CCST nt o = CST (Tuple nt Int) o
 -- |   Commonly `Similar String Rawr` to match with literal keywords and regexes.
 -- | - `o`: Tokenize values output by the lexer. These appear in the CST.
 -- | - `a`: Parser result, can be any type.
-newtype Comb nt cat o a = Comb
+newtype Comb rec nt cat o a = Comb
   { grammar :: CGrammar nt cat
   , pretty :: Maybe (CSyntax nt cat)
   , prettyGrammar :: Array (Tuple nt (Maybe (CSyntax nt cat)))
   , rules :: Array
     { rule :: CFragment nt cat
-    , resultant :: CResultant nt o a
+    , resultant :: CResultant rec nt o a
     }
   }
-type Combs = Comb String CodePoint CodePoint
+type Combs = Comb Unit String CodePoint CodePoint
+
+rerec :: forall rec1 rec2 nt cat o a. (rec2 -> rec1) -> Comb rec1 nt cat o a -> Comb rec2 nt cat o a
+rerec f (Comb c) = Comb c
+  { rules = c.rules <#> \rule ->
+    rule { resultant = lcmap f rule.resultant }
+  }
+
+-- Can be abstracted into a new type parameter for `Comb` if necessary
+newtype Rec nt i o = Rec (i -> Either ParseError (CCST nt o))
 
 type ParseError = String
 
@@ -77,19 +88,19 @@ type ParseError = String
 -- | - `length i < r.length => (r.result `elem` [Partial, Failed])`
 -- | - `length i == r.length => r.result /= Partial`
 -- | - `r.result i == r.result (take r.length i)`
-newtype Resultant i a = Resultant
+newtype Resultant i r a = Resultant
   { length :: Int
-  , result :: Array i -> PartialResult a
+  , result :: r -> Array i -> PartialResult a
   }
-type CResultant nt o = Resultant (CCST nt o)
+type CResultant rec nt o = Resultant (CCST nt o) rec
 
 data PartialResult a
   = Failed
   | Partial
   | Result a
 
-derive instance functorComb :: Functor (Comb nt cat o)
-instance applyComb :: Apply (Comb nt cat o) where
+derive instance functorComb :: Functor (Comb rec nt cat o)
+instance applyComb :: Apply (Comb rec nt cat o) where
   apply (Comb l) (Comb r) = Comb
     { grammar: l.grammar <> r.grammar
     , pretty: Conj <$> l.pretty <*> r.pretty
@@ -102,7 +113,7 @@ instance applyComb :: Apply (Comb nt cat o) where
           , resultant: x.resultant <*> y.resultant
           }
     }
-instance applicativeComb :: Applicative (Comb nt cat o) where
+instance applicativeComb :: Applicative (Comb rec nt cat o) where
   pure a = Comb
     { grammar: mempty
     , pretty: Just Null
@@ -112,7 +123,7 @@ instance applicativeComb :: Applicative (Comb nt cat o) where
       , resultant: pure a
       }
     }
-instance altComb :: Alt (Comb nt cat o) where
+instance altComb :: Alt (Comb rec nt cat o) where
   alt (Comb l) (Comb r) = Comb
     { grammar: l.grammar <> r.grammar
     , pretty: case l.pretty, r.pretty of
@@ -123,75 +134,76 @@ instance altComb :: Alt (Comb nt cat o) where
     , prettyGrammar: l.prettyGrammar <|> r.prettyGrammar
     , rules: l.rules <|> r.rules
     }
-instance plusComb :: Plus (Comb nt cat o) where
+instance plusComb :: Plus (Comb rec nt cat o) where
   empty = Comb { grammar: mempty, pretty: Nothing, prettyGrammar: empty, rules: empty }
 -- | Distributivity follows from distributivity of `Array`
-instance alternativeComb :: Alternative (Comb nt cat o)
-instance compactableComb :: Compactable (Comb nt cat o) where
+instance alternativeComb :: Alternative (Comb rec nt cat o)
+instance compactableComb :: Compactable (Comb rec nt cat o) where
   compact (Comb c) = Comb c { rules = c.rules <#> \r -> r { resultant = compact r.resultant } }
   separate eta = separateDefault eta
-instance semigroupComb :: Semigroup a => Semigroup (Comb nt cat o a) where
+instance semigroupComb :: Semigroup a => Semigroup (Comb rec nt cat o a) where
   append = lift2 append
-instance monoidComb :: Monoid a => Monoid (Comb nt cat o a) where
+instance monoidComb :: Monoid a => Monoid (Comb rec nt cat o a) where
   mempty = pure mempty
 
 -- | Matched a named rule against a CST, with codecs for each production.
-matchRule :: forall nt o a. Ord nt => nt -> Array (CResultant nt o a) -> CCST nt o -> Maybe a
-matchRule name resultants (Branch (Tuple _name i) children) | name == _name = do
+matchRule :: forall rec nt o a. Ord nt => rec -> nt -> Array (CResultant rec nt o a) -> CCST nt o -> Maybe a
+matchRule rec name resultants (Branch (Tuple _name i) children) | name == _name = do
   resultant <- resultants !! i
-  resultFrom resultant children
-matchRule _ _ _ = Nothing
+  resultFrom resultant rec children
+matchRule _ _ _ _ = Nothing
 
 -- | Modify the result of the parser based on the CST fragment it receives.
-withCST :: forall nt cat o a b. (Array (CCST nt o) -> PartialResult (a -> b)) -> Comb nt cat o a -> Comb nt cat o b
+withCST :: forall rec nt cat o a b. (Array (CCST nt o) -> PartialResult (a -> b)) -> Comb rec nt cat o a -> Comb rec nt cat o b
 withCST f = withCST' \csts prev -> f csts <*> prev unit
 
 -- | Modify the result of the parser based on the CST fragment it receives.
-withCST' :: forall nt cat o a b. (Array (CCST nt o) -> (Unit -> PartialResult a) -> PartialResult b) -> Comb nt cat o a -> Comb nt cat o b
+withCST' :: forall rec nt cat o a b. (Array (CCST nt o) -> (Unit -> PartialResult a) -> PartialResult b) -> Comb rec nt cat o a -> Comb rec nt cat o b
 withCST' f (Comb c) = Comb c
   { rules = c.rules <#> \r@{ resultant: Resultant { length, result } } -> r
     { resultant = Resultant
       { length
-      , result: \csts -> f csts (\_ -> result csts)
+      , result: \rec csts -> f csts (\_  -> result rec csts)
       }
     }
   }
 
-derive instance functorResultant :: Functor (Resultant i)
-instance applyResultant :: Apply (Resultant i) where
+derive instance functorResultant :: Functor (Resultant i r)
+derive instance profunctorResultant :: Profunctor (Resultant i)
+instance applyResultant :: Apply (Resultant i r) where
   apply (Resultant l) (Resultant r) = Resultant
     { length: l.length + r.length
-    , result: \i ->
+    , result: \rec i ->
         let { before: li, after: ri } = splitAt l.length i in
-        l.result li <*> r.result ri
+        l.result rec li <*> r.result rec ri
     }
-instance applicativeResultant :: Applicative (Resultant i) where
-  pure a = Resultant { length: 0, result: const (pure a) }
-instance compactableResultant :: Compactable (Resultant i) where
-  compact (Resultant r) = Resultant r { result = map compact r.result }
+instance applicativeResultant :: Applicative (Resultant i r) where
+  pure a = Resultant { length: 0, result: \_ _ -> pure a }
+instance compactableResultant :: Compactable (Resultant i r) where
+  compact (Resultant r) = Resultant r { result = map (map compact) r.result }
   separate eta = separateDefault eta
 
 -- | Apply the resultant.
-resultFrom :: forall i a. Resultant i a -> Array i -> Maybe a
-resultFrom (Resultant r) i = case r.result i of
+resultFrom :: forall i r a. Resultant i r a -> r -> Array i -> Maybe a
+resultFrom (Resultant res) r i = case res.result r i of
   Result a -> Just a
   _ -> Nothing
 
-component :: forall i a. (i -> Maybe a) -> Resultant i a
+component :: forall i r a. (r -> i -> Maybe a) -> Resultant i r a
 component c = Resultant
   { length: 1
-  , result: \is ->
+  , result: \r is ->
       case head is of
         Nothing -> Partial
-        Just i -> compact (Result (c i))
+        Just i -> compact (Result (c r i))
   }
 -- | components = traverse component
-components :: forall i a. Array (i -> Maybe a) -> Resultant i (Array a)
+components :: forall i r a. Array (r -> i -> Maybe a) -> Resultant i r (Array a)
 components cs = Resultant
   { length: length cs
-  , result: \is ->
+  , result: \r is ->
       if length is < length cs then Partial else
-        compact (Result (sequence (zipWith identity cs is)))
+        compact (Result (sequence (zipWith identity (cs <@> r) is)))
   }
 
 derive instance functorPartialResult :: Functor PartialResult
