@@ -17,6 +17,7 @@ import Parser.Types (CST(..), Grammar(..), Part(..), sourceCST)
 token :: forall rec nt cat o. Token cat o => cat -> Comb rec nt cat o o
 token cat = Comb
   { grammar: mempty
+  , entrypoints: empty
   , pretty: Just $ Part $ Terminal cat
   , prettyGrammar: empty
   , rules: pure
@@ -36,6 +37,7 @@ tokenStr = toString >>> Left >>> Similar >>> token
 tokens :: forall rec nt cat o. Token cat o => Array cat -> Comb rec nt cat o (Array o)
 tokens cats = Comb
   { grammar: mempty
+  , entrypoints: empty
   , pretty: Just $ foldl Conj Null (Part <<< Terminal <$> cats)
   , prettyGrammar: empty
   , rules: pure
@@ -52,6 +54,7 @@ namedRec name parseRec =
   let
     recursive = parseRec $ Comb
       { grammar: mempty
+      , entrypoints: empty
       , pretty: Just $ Part $ NonTerminal name
       , prettyGrammar: empty
       , rules: pure
@@ -69,6 +72,7 @@ namedRec name parseRec =
       }
   in Comb
     { grammar: newRules <> produced.grammar
+    , entrypoints: produced.entrypoints
     , prettyGrammar: pure (Tuple name produced.pretty) <> produced.prettyGrammar
     , pretty: Just $ Part $ NonTerminal name
     , rules: pure

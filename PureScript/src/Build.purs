@@ -21,7 +21,7 @@ import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
 import Node.Encoding (Encoding(..))
 import Node.FS.Aff as FS
-import Parser.Comb (named, parseRegex')
+import Parser.Comb (Comb(..), named, parseRegex')
 import Parser.Examples (showPart)
 import Parser.Languages (mainName, printPretty, showZipper, (/|\))
 import Parser.Languages.CSS as CSS
@@ -30,6 +30,8 @@ import Parser.Types (Fragment, OrEOF(..), Part(..), ShiftReduce(..), States(..),
 main :: Effect Unit
 main = launchAff_ do
   liftEffect $ printPretty $ named mainName CSS.selector_list
+  let Comb info = CSS.selector_list
+  log $ show $ info.entrypoints
   let dat@(_ /\ _ /\ States states) = fst $ parseRegex' mainName CSS.selector_list
   log $ show (Array.length states) <> " states"
   log "Conflicts:"

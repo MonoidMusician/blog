@@ -253,8 +253,8 @@ thenNote = map <<< note
 infixr 9 thenNote as ?!
 
 whenFailed :: forall f a. Foldable f => f a -> Effect Unit -> f a
-whenFailed a b | null a = let _ = unsafePerformEffect b in a
 whenFailed a _ = a
+whenFailed a b | null a = let _ = unsafePerformEffect b in a
 
 infixr 9 whenFailed as ?>
 
@@ -280,6 +280,7 @@ guessBest options = case NEA.toArray options of
   [ (cat /\ sr) /\ d ] -> do
     let
       _ = (guard (decisionUnique sr) :: Maybe Unit) ?> do
+        asdf "Decision not unique"
         asdf sr
     guard (decisionUnique sr) *> decide sr <#> map (Tuple cat) >>> (_ /\ d)
   _ -> Nothing
@@ -288,7 +289,7 @@ longest :: forall s r cat i o. Len i => Best s r cat i o
 longest = guessBest <<< prioritize \(_ /\ _ /\ i) -> negate (len i)
 
 bestRegexOrString :: forall s r. Best s r (OrEOF (Similar String Rawr)) (OrEOF String) (OrEOF String)
-bestRegexOrString = guessBest <<< prioritize case _ of
+bestRegexOrString options = options # guessBest <<< prioritize case _ of
   ((Continue (Similar cat) /\ _) /\ _ /\ Continue i) -> Just $ Tuple (isLeft cat) (negate (len i))
   _ -> Nothing
 
@@ -329,12 +330,12 @@ lexingParse { best } (initialState /\ States states) initialInput =
         asdf "advance"
         asdf $ Array.fromFoldable $ Map.keys m
       "No best action"? best possibilities ?> do
+        asdf "possibilities"
+        asdf possibilities
         let (cat /\ sr) /\ o /\ i = NEA.head possibilities
         case sr of
-          Shift _ -> pure unit
-          Reduces _ -> pure unit
-          ShiftReduces s rs -> do
-            asdf "rules to reduce to?"
+          Shift s -> do
+            asdf "rules to just shift to?"
             for_ (lookupState s) $ asdf <<< do
               _.items >>> unwrap >>> map do
                 _.rule >>> \(Zipper l r) -> fold
@@ -342,6 +343,19 @@ lexingParse { best } (initialState /\ States states) initialInput =
                   , [ "•" ]
                   , map (unsafeCoerce _.value0 >>> _.value0) r
                   ]
+          Reduces rs -> do
+            asdf "rules to reduce to?"
+            asdf rs
+          ShiftReduces s rs -> do
+            asdf "rules to shift to?"
+            for_ (lookupState s) $ asdf <<< do
+              _.items >>> unwrap >>> map do
+                _.rule >>> \(Zipper l r) -> fold
+                  [ map (unsafeCoerce _.value0 >>> _.value0) l
+                  , [ "•" ]
+                  , map (unsafeCoerce _.value0 >>> _.value0) r
+                  ]
+            asdf "rules to reduce to?"
             asdf rs
     Right (cat /\ o /\ i) -> do
       sr <- "No repeat action"? Map.lookup cat m ?> do
@@ -349,10 +363,8 @@ lexingParse { best } (initialState /\ States states) initialInput =
         asdf $ Array.fromFoldable $ Map.keys m
       "No best repeat action"? best (NEA.singleton $ (cat /\ sr) /\ o /\ i) ?> do
         case sr of
-          Shift _ -> pure unit
-          Reduces _ -> pure unit
-          ShiftReduces s rs -> do
-            asdf "rules to reduce to?"
+          Shift s -> do
+            asdf "rules to just shift to?"
             for_ (lookupState s) $ asdf <<< do
               _.items >>> unwrap >>> map do
                 _.rule >>> \(Zipper l r) -> fold
@@ -360,6 +372,19 @@ lexingParse { best } (initialState /\ States states) initialInput =
                   , [ "•" ]
                   , map (unsafeCoerce _.value0 >>> _.value0) r
                   ]
+          Reduces rs -> do
+            asdf "rules to reduce to?"
+            asdf rs
+          ShiftReduces s rs -> do
+            asdf "rules to shift to?"
+            for_ (lookupState s) $ asdf <<< do
+              _.items >>> unwrap >>> map do
+                _.rule >>> \(Zipper l r) -> fold
+                  [ map (unsafeCoerce _.value0 >>> _.value0) l
+                  , [ "•" ]
+                  , map (unsafeCoerce _.value0 >>> _.value0) r
+                  ]
+            asdf "rules to reduce to?"
             asdf rs
         let rules = Array.fromFoldable (statesOn stack) # Array.mapMaybe lookupState
         asdf "rules"

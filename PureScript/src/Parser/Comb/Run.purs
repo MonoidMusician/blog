@@ -2,7 +2,7 @@ module Parser.Comb.Run where
 
 import Prelude
 
-import Control.Plus (empty, (<|>))
+import Control.Plus ((<|>))
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), note)
@@ -13,7 +13,7 @@ import Data.Tuple (fst, snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Algorithms (getResultCM', statesNumberedByMany)
 import Parser.Comb.Combinators (named)
-import Parser.Comb.Types (CGrammar, CResultant, Comb(..), ParseError, Rec(..), Resultant(..), matchRule, withRec)
+import Parser.Comb.Types (CGrammar, CResultant, Comb(..), ParseError, Rec(..), Resultant(..), matchRule)
 import Parser.Lexing (class Tokenize, Best, Rawr, Similar, bestRegexOrString, lexingParse, longest, (?))
 import Parser.Types (Grammar(..), OrEOF(..), States)
 
@@ -85,9 +85,9 @@ compile ::
   , resultants :: nt /\ Array (CResultant rec nt o a)
   }
 compile name parser = do
-  let Comb { grammar: MkGrammar initial } = named name parser
+  let Comb { grammar: MkGrammar initial, entrypoints } = named name parser
   let grammar = MkGrammar (Array.nub initial)
-  let stateAssoc /\ generated = statesNumberedByMany identity grammar [ name ]
+  let stateAssoc /\ generated = statesNumberedByMany identity grammar $ [ name ] <> entrypoints
   let stateMap = Map.fromFoldable stateAssoc
   let tgt = Map.lookup name stateMap # fromMaybe 0
   { states: stateMap /\ tgt /\ generated
@@ -164,7 +164,7 @@ coll ::
   nt -> Comb (Rec nt (OrEOF i) o) nt cat o a -> Coll nt cat i o (Parsing i a)
 coll name parser@(Comb c) = Coll
   { grammar: c.grammar
-  , entrypoints: pure name
+  , entrypoints: pure name <> c.entrypoints
   , compilation: \{ entrypoints, states } ->
       case Map.lookup name entrypoints of
         Nothing -> \_ _ ->
@@ -207,6 +207,7 @@ withReparser name aux (Comb cb) f = do
   let Comb ca = named name aux
   Comb
     { grammar: cb.grammar <> ca.grammar
+    , entrypoints: pure name <|> ca.entrypoints <|> cb.entrypoints
     , pretty: cb.pretty
     , prettyGrammar: cb.prettyGrammar <|> ca.prettyGrammar
     , rules: cb.rules <#> \r@{ resultant: Resultant { length, result } } -> r

@@ -61,6 +61,7 @@ type CCST nt o = CST (Tuple nt Int) o
 -- | - `a`: Parser result, can be any type.
 newtype Comb rec nt cat o a = Comb
   { grammar :: CGrammar nt cat
+  , entrypoints :: Array nt
   , pretty :: Maybe (CSyntax nt cat)
   , prettyGrammar :: Array (Tuple nt (Maybe (CSyntax nt cat)))
   , rules :: Array
@@ -103,6 +104,7 @@ derive instance functorComb :: Functor (Comb rec nt cat o)
 instance applyComb :: Apply (Comb rec nt cat o) where
   apply (Comb l) (Comb r) = Comb
     { grammar: l.grammar <> r.grammar
+    , entrypoints: l.entrypoints <|> r.entrypoints
     , pretty: Conj <$> l.pretty <*> r.pretty
     , prettyGrammar: l.prettyGrammar <|> r.prettyGrammar
     , rules: ado
@@ -116,6 +118,7 @@ instance applyComb :: Apply (Comb rec nt cat o) where
 instance applicativeComb :: Applicative (Comb rec nt cat o) where
   pure a = Comb
     { grammar: mempty
+    , entrypoints: empty
     , pretty: Just Null
     , prettyGrammar: empty
     , rules: pure
@@ -126,6 +129,7 @@ instance applicativeComb :: Applicative (Comb rec nt cat o) where
 instance altComb :: Alt (Comb rec nt cat o) where
   alt (Comb l) (Comb r) = Comb
     { grammar: l.grammar <> r.grammar
+    , entrypoints: l.entrypoints <|> r.entrypoints
     , pretty: case l.pretty, r.pretty of
         Nothing, Nothing -> Nothing
         Just lp, Nothing -> Just lp
@@ -135,7 +139,7 @@ instance altComb :: Alt (Comb rec nt cat o) where
     , rules: l.rules <|> r.rules
     }
 instance plusComb :: Plus (Comb rec nt cat o) where
-  empty = Comb { grammar: mempty, pretty: Nothing, prettyGrammar: empty, rules: empty }
+  empty = Comb { grammar: mempty, entrypoints: empty, pretty: Nothing, prettyGrammar: empty, rules: empty }
 -- | Distributivity follows from distributivity of `Array`
 instance alternativeComb :: Alternative (Comb rec nt cat o)
 instance compactableComb :: Compactable (Comb rec nt cat o) where

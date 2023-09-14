@@ -47,7 +47,7 @@ import Parser.Comb (execute, parseRegex, parseRegex', sourceOf)
 import Parser.Comb.Run (Parsing, resultantsOf, withReparser)
 import Parser.Examples (showPart)
 import Parser.Languages (Comber, colorful, delim, key, mainName, many, many1, many1SepBy, mopt, opt, printPretty, rawr, result, showZipper, ws, wss, wsws, wsws', (#->), (#:), (/\\/), (/|\), (<#?>), (>==))
-import Parser.Lexing (type (~), Rawr, bestRegexOrString, unRawr)
+import Parser.Lexing (type (~), Rawr, asdf, bestRegexOrString, unRawr, (?>))
 import Parser.Lexing as Lex
 import Parser.Types (Fragment, OrEOF(..), Part(..), ShiftReduce(..), State, States(..), Zipper(..), decisionUnique, notEOF)
 import Type.Proxy (Proxy(..))
@@ -207,14 +207,16 @@ any_value :: Comber String
 any_value = sourceOf $ "any-value" #-> \rec ->
   pure unit <|>
     oneOf
-      [ void do rawr "[-a-zA-Z0-9_]+"
+      [ void do rawr "."
+      -- Needs to be 2+ chars to not overlap with "."
+      -- Since there is no mechanism to disambiguate that
+      , void do rawr "[-a-zA-Z0-9_][-a-zA-Z0-9_]+"
       , void string
       , void url
       , void comment
       , delim "(" ")" rec
       , delim "{" "}" rec
       , delim "[" "]" rec
-      , void do rawr "."
       ]
     *> rec
 
@@ -267,7 +269,7 @@ atomToNFSelect (Atom a) = and
     items # allWithIndex \value inverted -> single f (Single (Just { inverted, value }))
 
 parseNegated :: ParseCompoundSelectors -> String -> Maybe (NormalForm Select)
-parseNegated parser = parser >>> hush >== any (convSelects parser)
+parseNegated parser value = (":" <> value) # parser >>> (\r -> r ?> (asdf r *> asdf (":" <> value))) >>> hush >== any (convSelects parser)
 
 convRel :: ParseCompoundSelectors -> InterTsil Relation (Array Select) -> Array Vert
 convRel parser = map distribute <<< sequence <<< map (fromNF <<< convSelects parser)

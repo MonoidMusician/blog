@@ -73,7 +73,7 @@ sendExample { interface, attrs } = do
 
 result :: Parser -> Array String -> String
 result parser =
-  filterMap (\x -> if x == "" then Just [] else hush (parser x))
+  filterMap (parser >>> hush)
     >>> sequence
     >>> foldMap combineFold
     >>> printVerts
@@ -103,7 +103,7 @@ component resetting =
               fold $ values # mapWithIndex \i value ->
                 D.div_
                   [ inputValidated "terminal" "CSS selector" "" value
-                    (fold <<< blush <$> (getParser <*> filterMap (_ !! i) (map snd currentRaw)))
+                    ((\parser val -> if val == "" then "" else fold (blush (parser val))) <$> getParser <*> filterMap (_ !! i) (map snd currentRaw))
                     \newValue -> pushUpdate $ Update i newValue
                   , D.button
                       ( oneOf
