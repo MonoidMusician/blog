@@ -169,7 +169,7 @@ withCST' f (Comb c) = Comb c
   }
 
 withRec :: forall rec nt cat o a b. (rec -> a -> b) -> Comb rec nt cat o a -> Comb rec nt cat o b
-withRec f = withCST' \rec _ prev -> pure <<< f rec =<< prev unit
+withRec f = withCST' \rec _ prev -> f rec <$> prev unit
 
 derive instance functorResultant :: Functor (Resultant i r)
 derive instance profunctorResultant :: Profunctor (Resultant i)

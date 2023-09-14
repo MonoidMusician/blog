@@ -618,7 +618,7 @@ label:not([for]):not(.sidenote-number):not(.margin-toggle)
     font-family: "Cormorant"
     font-size: 80%
     color: $text
-    line-height: normal
+    line-height: 1
     letter-spacing: normal
     border: 1px solid #ff004daa
     border-radius: 4px
@@ -692,14 +692,17 @@ label:not([for]):not(.sidenote-number):not(.margin-toggle)
     &::placeholder
       opacity: 0.4
 
-  &.invalid > input
-    border-color: #ff004daa
-    @media (hover: hover) and (pointer: fine)
-      &:not([type=range]):not(:hover)
-        border-color: #ff004d55
-    &:not([type=range]):focus
-      outline: none
-      border-color: #ff004d
+  &.invalid
+    & > label
+      color: #ff004daa
+    & > input
+      border-color: #ff004daa
+      @media (hover: hover) and (pointer: fine)
+        &:not([type=range]):not(:hover)
+          border-color: #ff004d55
+      &:not([type=range]):focus
+        outline: none
+        border-color: #ff004d
 
 
 

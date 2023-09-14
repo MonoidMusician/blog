@@ -10,29 +10,28 @@ import Data.Array ((!!))
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
-import Data.Bitraversable (bifoldMap, bisequence, bitraverse)
-import Data.BooleanAlgebra.CSS (Atom(..), AttrMatch(..), MatchValue(..), MatchValueType(..), Relation(..), Select(..), Several(..), Single(..), SomeSelectors, Vert, combineFold, distribute, fromNF, idMatch, printVerts, selectToMatch)
-import Data.BooleanAlgebra.CSS (AttrMatch(..), MatchValue(..), MatchValueType(..), Relation(..), Select(..), SomeSelectors, Vert, combineFold, distribute, idMatch, printVerts, selectToMatch)
+import Data.Bitraversable (bifoldMap, bitraverse)
+import Data.BooleanAlgebra.CSS (Atom(..), AttrMatch(..), MatchValue(..), MatchValueType(..), Relation(..), Select(..), Several(..), Single(..), Vert, distribute, fromNF, idMatch, printVerts, selectToMatch)
 import Data.BooleanAlgebra.NormalForm (NormalForm, free)
 import Data.Codec.Argonaut (JsonCodec)
 import Data.Codec.Argonaut as CA
 import Data.Codec.Argonaut.Common as CAC
 import Data.Codec.Argonaut.Record as CAR
 import Data.Codec.Argonaut.Variant as CAV
-import Data.Either (Either(..), either, hush)
+import Data.Either (Either(..), hush)
 import Data.Either.Nested (type (\/))
 import Data.Enum (toEnum)
-import Data.Foldable (all, and, any, fold, foldMap, for_, oneOf, or, traverse_)
-import Data.FoldableWithIndex (allWithIndex, foldMapWithIndex)
+import Data.Foldable (all, and, any, fold, foldMap, for_, oneOf, traverse_)
+import Data.FoldableWithIndex (allWithIndex)
 import Data.HeytingAlgebra (tt)
 import Data.Int (hexadecimal)
 import Data.Int as Int
 import Data.InterTsil (InterTsil(..))
 import Data.Lens (review)
 import Data.Lens.Iso.Newtype (_Newtype)
-import Data.Map (Map, SemigroupMap)
+import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), maybe, maybe')
+import Data.Maybe (Maybe(..), maybe)
 import Data.Monoid as M
 import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (unwrap)
@@ -42,20 +41,15 @@ import Data.Traversable (for, sequence)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Variant as Variant
 import Effect (Effect)
-import Effect.Aff (launchAff_)
 import Effect.Console (log)
-import Effect.Exception (throw)
-import Node.Encoding (Encoding(..))
-import Node.FS.Aff as FS.Aff
-import Node.FS.Sync as FS.Sync
-import Parser.Codecs (_n, mappy, nonEmptyStringCodec, shiftReduceCodec)
+import Parser.Codecs (_n, shiftReduceCodec)
 import Parser.Comb (execute, parseRegex, parseRegex', sourceOf)
 import Parser.Comb.Run (Parsing, resultantsOf, withReparser)
 import Parser.Examples (showPart)
 import Parser.Languages (Comber, colorful, delim, key, mainName, many, many1, many1SepBy, mopt, opt, printPretty, rawr, result, showZipper, ws, wss, wsws, wsws', (#->), (#:), (/\\/), (/|\), (<#?>), (>==))
-import Parser.Lexing (type (~), Rawr(..), bestRegexOrString, unRawr)
+import Parser.Lexing (type (~), Rawr, bestRegexOrString, unRawr)
 import Parser.Lexing as Lex
-import Parser.Types (Fragment, OrEOF(..), Part(..), ShiftReduce(..), State, States(..), Zipper(..), StateItem, decisionUnique, notEOF)
+import Parser.Types (Fragment, OrEOF(..), Part(..), ShiftReduce(..), State, States(..), Zipper(..), decisionUnique, notEOF)
 import Type.Proxy (Proxy(..))
 
 mkCSSParser :: Maybe String -> String -> String \/ Array Vert

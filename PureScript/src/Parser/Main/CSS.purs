@@ -3,14 +3,16 @@ module Parser.Main.CSS where
 import Prelude
 
 import Control.Plus (empty, (<|>))
+import Data.Array ((!!))
 import Data.Array as Array
 import Data.BooleanAlgebra.CSS (Vert, combineFold, printVerts, subsumptite)
 import Data.Codec.Argonaut as CA
-import Data.Either (Either, hush)
+import Data.Either (Either, blush, hush)
 import Data.Filterable (filter, filterMap)
 import Data.Foldable (fold, foldMap, oneOf, oneOfMap)
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.Maybe (Maybe, fromMaybe)
+import Data.HeytingAlgebra (tt)
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Traversable (sequence)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested ((/\))
@@ -23,7 +25,7 @@ import Effect.Aff (Aff)
 import Effect.Aff as Aff
 import Effect.Console (log)
 import FRP.Event (Event, makeEvent, memoize)
-import FRP.Memoize (memoBehFold)
+import FRP.Memoize (memoBehFold, memoLast)
 import Fetch (fetch)
 import Foreign.Object (Object)
 import Foreign.Object as Object
@@ -44,7 +46,6 @@ widgets = Object.fromFoldable $
 widgetCSS :: Widget
 widgetCSS { interface, attrs } = do
   example <- attrs "example"
-  log $ unsafeCoerce example
   let
     initial = hush $ CA.decode (CA.array CA.string) example
     resetting = oneOfMap pure initial <|> do
@@ -61,7 +62,6 @@ sendExample :: Widget
 sendExample { interface, attrs } = do
   let push = (interface "css-example").send
   example <- attrs "example"
-  log $ unsafeCoerce example
   pure $ SafeNut do
     D.button
       ( oneOf
@@ -73,7 +73,7 @@ sendExample { interface, attrs } = do
 
 result :: Parser -> Array String -> String
 result parser =
-  filterMap (parser >>> hush)
+  filterMap (\x -> if x == "" then Just [] else hush (parser x))
     >>> sequence
     >>> foldMap combineFold
     >>> printVerts
@@ -90,7 +90,7 @@ fetchParser = _.text =<< fetch "assets/json/css-parser-states.json" {}
 component :: forall lock payload. Event (Array String) -> Domable lock payload
 component resetting =
   bussed \pushUpdate pushedRaw -> do
-    envy $ memoize (mkCSSParser <$> affToEvent fetchParser) \getParser -> do
+    envy $ memoLast (mkCSSParser <$> affToEvent fetchParser) \getParser -> do
       let
         upd (_ /\ last) = case _ of
           Add -> true /\ (last <> [ "" ])
@@ -102,7 +102,8 @@ component resetting =
           [ DC.switcherFlipped (filter fst currentRaw) \(_ /\ values) ->
               fold $ values # mapWithIndex \i value ->
                 D.div_
-                  [ inputValidated "terminal" "CSS selector" "" value empty
+                  [ inputValidated "terminal" "CSS selector" "" value
+                    (fold <<< blush <$> (getParser <*> filterMap (_ !! i) (map snd currentRaw)))
                     \newValue -> pushUpdate $ Update i newValue
                   , D.button
                       ( oneOf
@@ -111,6 +112,8 @@ component resetting =
                           ]
                       )
                       [ text_ "Delete" ]
+                  , D.br__ ""
+                  , D.br__ ""
                   ]
           , D.button
               ( oneOf
@@ -120,5 +123,5 @@ component resetting =
               )
               [ text_ "Add selector to conjunction" ]
           , D.pre (D.Class !:= "css" <|> D.Style !:= "text-wrap: wrap")
-              [ DC.text $ (\parser -> result parser <<< snd) <$> getParser <*> currentRaw ]
+              [ DC.text $ result <$> getParser <*> map snd currentRaw ]
           ]

@@ -2,6 +2,7 @@ module Parser.Comb.Run where
 
 import Prelude
 
+import Control.Plus (empty, (<|>))
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), note)
@@ -12,7 +13,7 @@ import Data.Tuple (fst, snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Algorithms (getResultCM', statesNumberedByMany)
 import Parser.Comb.Combinators (named)
-import Parser.Comb.Types (CGrammar, CResultant, Comb(..), ParseError, Rec(..), matchRule, withRec)
+import Parser.Comb.Types (CGrammar, CResultant, Comb(..), ParseError, Rec(..), Resultant(..), matchRule, withRec)
 import Parser.Lexing (class Tokenize, Best, Rawr, Similar, bestRegexOrString, lexingParse, longest, (?))
 import Parser.Types (Grammar(..), OrEOF(..), States)
 
@@ -202,10 +203,22 @@ withReparser ::
   Comb (Rec nt (OrEOF i) o) nt cat o b ->
   ((i -> Either ParseError a) -> b -> c) ->
   Comb (Rec nt (OrEOF i) o) nt cat o c
-withReparser name aux cb f = do
-  let ca = named name aux
-  ca *> flip withRec cb \(Rec rec) ->
-    f \input ->
-      rec name (Continue input) >>=
-        matchRule (Rec rec) name (resultantsOf aux) >>>
-          note "Error in reparser"
+withReparser name aux (Comb cb) f = do
+  let Comb ca = named name aux
+  Comb
+    { grammar: cb.grammar <> ca.grammar
+    , pretty: cb.pretty
+    , prettyGrammar: cb.prettyGrammar <|> ca.prettyGrammar
+    , rules: cb.rules <#> \r@{ resultant: Resultant { length, result } } -> r
+      { resultant = Resultant
+        { length
+        , result: \(Rec rec) csts ->
+            let
+              parser input =
+                rec name (Continue input) >>=
+                  matchRule (Rec rec) name (resultantsOf aux) >>>
+                    note "Error in reparser"
+            in (\x -> f parser x) <$> result (Rec rec) csts
+        }
+      }
+    }

@@ -253,8 +253,8 @@ thenNote = map <<< note
 infixr 9 thenNote as ?!
 
 whenFailed :: forall f a. Foldable f => f a -> Effect Unit -> f a
-whenFailed a _ = a
 whenFailed a b | null a = let _ = unsafePerformEffect b in a
+whenFailed a _ = a
 
 infixr 9 whenFailed as ?>
 
@@ -315,8 +315,10 @@ lexingParse { best } (initialState /\ States states) initialInput =
       let actions = NEA.fromArray $ Array.mapMaybe (matchCat input) $ Map.toUnfoldable m
       possibilities <- "No action"? actions ?> do
         asdf input
+        asdf "items"
         traverse_ asdf (unwrap info.items)
         let rules = Array.fromFoldable (statesOn stack) # Array.mapMaybe lookupState
+        asdf "rules"
         for_ rules $ asdf <<< do
           _.items >>> unwrap >>> map do
             _.rule >>> \(Zipper l r) -> fold
@@ -324,6 +326,7 @@ lexingParse { best } (initialState /\ States states) initialInput =
               , [ "•" ]
               , map (unsafeCoerce _.value0 >>> _.value0) r
               ]
+        asdf "advance"
         asdf $ Array.fromFoldable $ Map.keys m
       "No best action"? best possibilities ?> do
         let (cat /\ sr) /\ o /\ i = NEA.head possibilities
@@ -331,6 +334,7 @@ lexingParse { best } (initialState /\ States states) initialInput =
           Shift _ -> pure unit
           Reduces _ -> pure unit
           ShiftReduces s rs -> do
+            asdf "rules to reduce to?"
             for_ (lookupState s) $ asdf <<< do
               _.items >>> unwrap >>> map do
                 _.rule >>> \(Zipper l r) -> fold
@@ -348,6 +352,7 @@ lexingParse { best } (initialState /\ States states) initialInput =
           Shift _ -> pure unit
           Reduces _ -> pure unit
           ShiftReduces s rs -> do
+            asdf "rules to reduce to?"
             for_ (lookupState s) $ asdf <<< do
               _.items >>> unwrap >>> map do
                 _.rule >>> \(Zipper l r) -> fold
@@ -357,6 +362,7 @@ lexingParse { best } (initialState /\ States states) initialInput =
                   ]
             asdf rs
         let rules = Array.fromFoldable (statesOn stack) # Array.mapMaybe lookupState
+        asdf "rules"
         for_ rules $ asdf <<< do
           _.items >>> unwrap >>> map do
             _.rule >>> \(Zipper l r) -> fold
