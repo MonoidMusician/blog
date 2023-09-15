@@ -9,11 +9,11 @@ import Data.Either (Either(..), note)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Tuple (fst, snd, uncurry)
+import Data.Tuple (Tuple, fst, snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Algorithms (getResultCM', statesNumberedByMany)
 import Parser.Comb.Combinators (named)
-import Parser.Comb.Types (CGrammar, CResultant, Comb(..), ParseError, Rec(..), Resultant(..), matchRule)
+import Parser.Comb.Types (CGrammar, CResultant, Comb(..), ParseError, Rec(..), Resultant(..), CSyntax, matchRule)
 import Parser.Lexing (class Tokenize, Best, Rawr, Similar, bestRegexOrString, lexingParse, longest, (?))
 import Parser.Types (Grammar(..), OrEOF(..), States)
 
@@ -87,7 +87,7 @@ compile ::
 compile name parser = do
   let Comb { grammar: MkGrammar initial, entrypoints } = named name parser
   let grammar = MkGrammar (Array.nub initial)
-  let stateAssoc /\ generated = statesNumberedByMany identity grammar $ [ name ] <> entrypoints
+  let stateAssoc /\ generated = statesNumberedByMany identity grammar $ Array.nub $ [ name ] <> entrypoints
   let stateMap = Map.fromFoldable stateAssoc
   let tgt = Map.lookup name stateMap # fromMaybe 0
   { states: stateMap /\ tgt /\ generated
@@ -138,6 +138,7 @@ type Parsing i a = i -> Either ParseError a
 
 newtype Coll nt cat i o parsers = Coll
   { grammar :: CGrammar nt cat
+  , prettyGrammar :: Array (Tuple nt (Maybe (CSyntax nt cat)))
   , entrypoints :: Array nt
   , compilation :: Compiled nt cat -> CConf nt cat i o -> parsers
   }
@@ -146,11 +147,12 @@ derive instance functorColl :: Functor (Coll nt cat i o)
 instance applyColl :: Apply (Coll nt cat i o) where
   apply (Coll c1) (Coll c2) = Coll
     { grammar: c1.grammar <> c2.grammar
+    , prettyGrammar: c1.prettyGrammar <> c2.prettyGrammar
     , entrypoints: c1.entrypoints <> c2.entrypoints
     , compilation: \x y -> c1.compilation x y (c2.compilation x y)
     }
 instance applicativeColl :: Applicative (Coll nt cat i o) where
-  pure r = Coll { grammar: mempty, entrypoints: mempty, compilation: \_ _ -> r }
+  pure r = Coll { grammar: mempty, prettyGrammar: mempty, entrypoints: mempty, compilation: \_ _ -> r }
 -- a Monad instance is soooo tempting, but does not make sense:
 -- the grammar needs to be fully built before compilation can be received
 -- maybe there is a way to encode this in the types
@@ -164,6 +166,7 @@ coll ::
   nt -> Comb (Rec nt (OrEOF i) o) nt cat o a -> Coll nt cat i o (Parsing i a)
 coll name parser@(Comb c) = Coll
   { grammar: c.grammar
+  , prettyGrammar: c.prettyGrammar
   , entrypoints: pure name <> c.entrypoints
   , compilation: \{ entrypoints, states } ->
       case Map.lookup name entrypoints of

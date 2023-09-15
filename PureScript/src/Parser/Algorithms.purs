@@ -31,7 +31,7 @@ import Data.Tuple (fst, snd)
 import Data.Tuple.Nested ((/\), type (/\))
 import Parser.Proto (Stack(..), topOf)
 import Parser.Proto as Proto
-import Parser.Types (AST(..), Augmented, CST(..), Fragment, Grammar(..), Lookahead, OrEOF(..), Part(..), Produced, Producible, SAugmented, SFragment, ShiftReduce(..), State(..), StateIndex, StateInfo, StateItem, States(..), Zipper(..), Augmenteds, decide, isNonTerminal, isTerminal, minimizeState, notEOF, unNonTerminal, unShift, unTerminal)
+import Parser.Types (AST(..), Augmented, Augmenteds, CST(..), Fragment, Grammar(..), Lookahead, OrEOF(..), Part(..), Produced, Producible, SAugmented, SFragment, ShiftReduce(..), State(..), StateIndex, StateInfo, StateItem, States(..), Zipper(..), decide, isNonTerminal, isTerminal, minimizeState, minimizeStateCat, notEOF, nubEqCat, unNonTerminal, unShift, unTerminal)
 import Partial.Unsafe (unsafeCrashWith)
 
 
@@ -471,7 +471,7 @@ close grammar state0 =
     if Array.null state' then state0
     else
       let
-        state = state0 <> State state'
+        state = minimizeStateCat state0 state'
       in
         if unwrap state == unwrap state0 then state0 else close grammar state
 
@@ -544,7 +544,7 @@ nextSteps' state =
   in
     lmap Terminal <$> Map.toUnfoldable toks <|> lmap NonTerminal <$> Map.toUnfoldable nts
 
-newStates
+newStates'
   :: forall nt r tok
    . Ord nt
   => Eq r
@@ -552,8 +552,8 @@ newStates
   => Grammar nt r tok
   -> State nt r tok
   -> Array (State nt r tok)
-newStates grammar state =
-  Array.nubEq (close grammar <<< minimizeState <<< snd <$> nextSteps' state)
+newStates' grammar state =
+  close grammar <<< minimizeState <<< snd <$> nextSteps' state
 
 closeStates1
   :: forall nt r tok
@@ -563,7 +563,7 @@ closeStates1
   => Grammar nt r tok
   -> Array (State nt r tok)
   -> Array (State nt r tok)
-closeStates1 grammar states = Array.nubEq (states <> (states >>= newStates grammar))
+closeStates1 grammar states = nubEqCat states (Array.nubEq (states >>= newStates' grammar))
 
 closeStates
   :: forall nt r tok

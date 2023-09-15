@@ -60,6 +60,6 @@ main = launchAff_ do
       showItems "  - " items
       pure (Additive 1)
   log $ show $ unwrap conflicts
-  void $ try $ FS.rm "./assets/json/css-parser-states.json.gz"
+  void $ try do FS.rm' "./assets/json/css-parser-states.json.gz" { force: false, maxRetries: 0, recursive: false, retryDelay: 0 }
   FS.writeTextFile UTF8 "./assets/json/css-parser-states.json" $ J.stringify $ C.encode CSS.codec $
     dat

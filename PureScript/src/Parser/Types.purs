@@ -2,12 +2,12 @@ module Parser.Types where
 
 import Prelude
 
+import Data.Array (foldl, mapWithIndex)
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (class Bifunctor)
 import Data.Either (Either(..), hush)
-import Data.Filterable (filterMap)
 import Data.Generic.Rep (class Generic)
 import Data.Map (Map, SemigroupMap)
 import Data.Maybe (Maybe(..))
@@ -16,8 +16,9 @@ import Data.Show.Generic (genericShow)
 import Data.String (CodePoint)
 import Data.String.NonEmpty as NES
 import Data.String.NonEmpty.Internal (NonEmptyString)
-import Data.Traversable (mapAccumL)
-import Data.Tuple.Nested (type (/\))
+import Data.Traversable (mapAccumL, traverse)
+import Data.Tuple (fst)
+import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Proto as Proto
 
 data OrEOF a = EOF | Continue a
@@ -46,7 +47,7 @@ type GrammarRule nt r tok =
   }
 
 getRulesFor :: forall nt r tok. Eq nt => Array (Produced nt r tok) -> nt -> Array { rule :: Fragment nt tok, produced :: Array tok }
-getRulesFor rules nt = rules # filterMap \rule ->
+getRulesFor rules nt = rules # Array.mapMaybe \rule ->
   if rule.production.pName /= nt then Nothing
   else
     Just { rule: rule.production.rule, produced: rule.produced }
@@ -141,14 +142,8 @@ derive instance newtypeState :: Newtype (State nt r tok) _
 
 instance eqState :: (Eq nt, Eq r, Eq tok) => Eq (State nt r tok) where
   eq (State s1) (State s2) = s1 == s2 ||
-    let
-      State s1' = minimizeState s1
-      State s2' = minimizeState s2
-      State s12 = minimizeState (s1' <> s2')
-    in s1' == s12 && let
-      State s21 = minimizeState (s2' <> s1')
-    in
-      s2' == s21
+    Array.length s1 == Array.length s2 &&
+      noNew s1 s2 && noNew s2 s1
 
 instance ordState :: (Ord nt, Ord r, Ord tok) => Ord (State nt r tok) where
   compare (State s1) (State s2) = compare (deepSort s1) (deepSort s2)
@@ -161,22 +156,47 @@ instance showState :: (Show nt, Show r, Show tok) => Show (State nt r tok) where
   show = genericShow
 
 instance semigroupState :: (Eq nt, Eq r, Eq tok) => Semigroup (State nt r tok) where
-  append (State s1) (State s2) = minimizeState (s1 <> s2)
+  append s1 (State s2) = minimizeStateCat s1 s2
 
 nubEqCat :: forall a. Eq a => Array a -> Array a -> Array a
 nubEqCat as bs = as <> Array.filter (not Array.elem <@> as) bs
+
+sameRule :: forall nt r tok. Eq nt => Eq r => Eq tok => StateItem nt r tok -> StateItem nt r tok -> Boolean
+sameRule item newItem = item.pName == newItem.pName && item.rName == newItem.rName && item.rule == newItem.rule
 
 minimizeState :: forall nt r tok. Eq nt => Eq r => Eq tok => Array (StateItem nt r tok) -> State nt r tok
 minimizeState = compose State $ [] # Array.foldl \items newItem ->
   let
     accumulate :: Boolean -> StateItem nt r tok -> { accum :: Boolean, value :: StateItem nt r tok }
     accumulate alreadyFound item =
-      if item.rName == newItem.rName && item.rule == newItem.rule then { accum: true, value: item { lookahead = nubEqCat item.lookahead newItem.lookahead } }
-      else { accum: alreadyFound, value: item }
+      if sameRule item newItem
+        then { accum: true, value: item { lookahead = nubEqCat item.lookahead newItem.lookahead } }
+        else { accum: alreadyFound, value: item }
     { accum: found, value: items' } =
       mapAccumL accumulate false items
   in
     if found then items' else items' <> [ newItem ]
+
+minimizeStateCat :: forall nt r tok. Eq nt => Eq r => Eq tok => State nt r tok -> Array (StateItem nt r tok) -> State nt r tok
+minimizeStateCat prev [] = prev
+minimizeStateCat (State prev) newItems = State result
+  where
+  indexed = mapWithIndex (/\) newItems
+  discarded /\ prevAugmented = prev # traverse \item ->
+    case indexed # Array.mapMaybe \x@(_ /\ newItem) -> if sameRule item newItem then Just x else Nothing of
+      [] -> [] /\ item
+      found -> map fst found /\ item { lookahead = foldl (\x (_ /\ { lookahead }) -> nubEqCat x lookahead) item.lookahead found }
+  State newFiltered = minimizeState $
+    indexed # Array.mapMaybe \(i /\ y) -> if discarded # Array.any (eq i) then Nothing else Just y
+  result = case newFiltered of
+    [] -> prevAugmented
+    _ -> prevAugmented <> newFiltered
+
+noNew :: forall nt r tok. Eq nt => Eq r => Eq tok => Array (StateItem nt r tok) -> Array (StateItem nt r tok) -> Boolean
+noNew prev newItems = newItems # Array.all \newItem ->
+  prev # Array.any \item ->
+    sameRule item newItem && do
+      newItem.lookahead # Array.all \look -> item.lookahead # Array.any (eq look)
 
 type SState = State NonEmptyString String CodePoint
 type Lookahead tok = Array tok
