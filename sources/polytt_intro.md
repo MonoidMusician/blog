@@ -302,3 +302,120 @@ And then their values are immediately borrowed and written as a pair (now a posi
 
 
 ## Macros
+
+# Code from talk
+
+
+```{.agda data-lang=PolyTT}
+import Data::Polynomial::Fin
+
+-- ⊗ × ◁
+
+-- Tensor in the Poly category (Day convolution)
+-- Not the categorical product!
+-- Actually the one you want to use most of the time.
+-- (e.g. used for juxtaposition in wiring diagrams)
+def tensor-⊗ : Poly → Poly → Poly :=
+  λ P Q → Σ ((p , q) : base P × base Q), y^(fib P p × fib Q q)
+
+-- The notion of arrows internal to the category that goes with the tensor
+def internal-hom : Poly → Poly → Poly :=
+  λ P Q → Σ (f : P ⇒ Q), y^(Σ (p : base P), fib Q (fst (f p)))
+
+-- It contains a morphism of polynomials!
+def base-internal-hom (P Q : Poly) : (base (internal-hom P Q)) = (P => Q) := refl
+
+-- List as a polynomial
+def ListP : Poly :=
+  Σ (n : ℕ), y^(fin n)
+
+  -- y^(fin 0) for []
+  -- y^(fin 1) for [ _ ]
+  -- y^(fin 2) for [ _, _ ]
+
+def Void := #{}
+def Unit := #{ .unit }
+
+-- Maybe as a polynomial
+def MaybeP : Poly :=
+  Σ (tag : #{ .nothing, .just }),
+    y^({ .nothing = Void, .just = Unit} tag)
+
+-- data Maybe a = Nothing | Just a
+
+
+def Poly-eta (P : Poly)
+  : P = (Σ (i : base P), y^(fib P i))
+  := refl
+
+
+
+
+-- Id
+
+def idP2 (P : Poly) : P => P :=
+  λ p -> (p , λ q -> q)
+
+def idP1 (P : Poly) : P => P :=
+  λ (p+ <~ p-) =>
+    return p+ <~ p-
+
+def idP3 (P : Poly) : P => P :=
+  λ (p+ <~ p-) =>
+    return p+ <~ λ⁻ (p : fib P p+) ->
+      p- <- p;
+      done
+
+-- Maybe to List
+
+def zeroOrOne : #{ .nothing, .just } -> ℕ :=
+  { .nothing = 0
+  , .just = 1
+  }
+
+def select :
+  Π (tag : #{ .nothing, .just }),
+    fin (zeroOrOne tag) ->
+    { .nothing = Void, .just = Unit } tag :=
+  { .nothing = λ void -> void
+  , .just = λ _ -> .unit
+  }
+
+def Maybe2ListP1 : MaybeP => ListP :=
+  λ (tag <~ sink) =>
+    let n := zeroOrOne tag;
+    return n <~ λ⁻ (i : fin n) ->
+      sink <- select tag i;
+      done
+
+def Maybe2ListP2 : MaybeP => ListP :=
+  λ tag -> (zeroOrOne tag , select tag)
+
+-- maybe2list :: Maybe a -> List a
+-- maybe2list Nothing = []
+-- maybe2list (Just a) = [a]
+
+-- Swap: symmetric tensor
+
+def swap1 (P Q : Poly) : tensor-⊗ P Q => tensor-⊗ Q P :=
+  λ (p+ <~ p-) (q+ <~ q-) => return (q+ <~ q-) (p+ <~ p-)
+
+def swap2 (P Q : Poly) : tensor-⊗ P Q => tensor-⊗ Q P :=
+  λ ((p+ , q+) <~ pq-) =>
+    let- (p- , q-) := pq-;
+    return (q+ , p+) <~ (q- , p-)
+
+def swap3 (P Q : Poly) : tensor-⊗ P Q => tensor-⊗ Q P :=
+  λ pq → ((snd pq , fst pq) , λ yx -> (snd yx , fst yx))
+
+-- Eval: characterize the internal hom
+
+def eval (P Q : Poly) : tensor-⊗ P (internal-hom P Q) ⇒ Q :=
+  λ (p⁺ , f⁺) ⇜ (qf⁻ , (p⁻ , q⁻)) ⇒
+    let (q⁺ , qf⁺) := f⁺ p⁺;
+    p⁻ ← p⁺;
+    return q⁺ ⇜ λ⁻ (v : fib Q q⁺) →
+      (qf⁻ , q⁻) ← (qf⁺ v , v);
+      done
+```
+
