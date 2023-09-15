@@ -4,18 +4,56 @@ author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
 ---
 
+https://github.com/ToposInstitute/polytt
+
 ## Polynomial Functors
 
 Polynomials are formal functions
   on number-y stuff, (semi)rings, etc.
 
-- \(x^2 + 2\)
-- \(-2(x^3 + 5x)(x - 1) = -2x^4 + 2x^3 - 10x^2 + 10x\)
+- \(x^2 + 2 = 1x^2 + 2x^0 = 1x^2 + 0x^1 + 2x^0\)
+  - Maybe you want to think of it as a syntactic expression:
+    ```haskell
+    Add (XPower 2) (Const 2)
+    ```
+  - Or in some normal form:
+    ```haskell
+    [ (1, 2), (2, 0) ] :: [(Int, Int)]
+    [ 1, 0, 2 ] :: [Int]
+    ```
+  - Or as an actual function:
+    ```haskell
+    f :: Int -> Int
+    f x = x * x + 2
+    ```
+- \(-2(x^3 + 5x)(x - 1) = -2x^4 + 2x^3 - 10x^2 + 10x^1 + 0x^0\)
+  - ```haskell
+  Product (Const (-2)) $
+    Product
+      (Add (XPower 3) (Product (Const 5) (XPower 1)))
+      (Add (XPower 1) (Const (-1)))
+  ```
+  - ```haskell
+  [ -2, 2, -10, 10, 0 ]
+  ```
 
 Polynomial functors are formal functors
   on the category of types, and similar categories
 
-- \(y^2 + 2\)
+https://codewords.recurse.com/issues/three/algebra-and-calculus-of-algebraic-data-types
+
+- \(y + 1 = y^1 + y^0\)
+  - ```haskell
+  data Maybe y
+    = Just y
+    | Nothing
+  ```
+  - ```haskell
+  data MaybeWeird y
+    = Just (() -> y)
+    | Nothing (Void -> y)
+  ```
+- \(y^2 + 2 = y^2 + 1 + 1\)
   - ```haskell
   data P y
     = Fn (Bool -> y)
@@ -104,9 +142,11 @@ _… skipping some steps …_
 The essential data underlying a polynomial functor `P`{.agda data-lang=PolyTT} is:
 
 - a type `base P : Type`{.agda data-lang=PolyTT}
-  - think of as the type of constructors to choose from
-- a function `fib P : base P -> Type`{.agda data-lang=PolyTT} of fibers over the base
+  - think of as the type of constructors you get to choose to construct
+  - or as pointing to each summand in the polynomial
+- a function `fib P : base P -> Type`{.agda data-lang=PolyTT} (of fibers over the base)^[A discussion for another time]
   - think of as giving the arity of each constructor
+  - or the powers of each summand
 
 We write a polynomial as a summation:
 
@@ -124,8 +164,14 @@ From this essential data, we can construct the corresponding functor:
 
 ```{.agda data-lang=PolyTT}
 -- Interpret a Poly as a functor Type → Type
-def ofP (P : Poly): Type → Type :=
-  λ Y → Σ (p : base P), fib P p → Y
+def ofP (P : Poly) : Type → Type :=
+  -- Take an actual type as a parameter
+  -- (No longer formal)
+  λ Y →
+    -- This sigma means the dependent pair
+    -- from regular type theory (MLTT)
+    Σ (p : base P), fib P p → Y
+    -- ^ note that Y is in covariant position
 ```
 
 ## Morphisms of polynomials
