@@ -2,6 +2,7 @@ module Parser.Types where
 
 import Prelude
 
+import Control.Alternative (guard)
 import Data.Array (foldl, mapWithIndex)
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
@@ -214,6 +215,9 @@ data ShiftReduce s r
   | Reduces (NonEmptyArray r)
   | ShiftReduces s (NonEmptyArray r)
 
+derive instance eqShiftReduce :: (Eq s, Eq r) => Eq (ShiftReduce s r)
+derive instance ordShiftReduce :: (Ord s, Ord r) => Ord (ShiftReduce s r)
+
 derive instance genericShiftReduce :: Generic (ShiftReduce s r) _
 instance showShiftReduce :: (Show s, Show r) => Show (ShiftReduce s r) where
   show = genericShow
@@ -233,6 +237,24 @@ decisionUnique :: forall s r. ShiftReduce s r -> Boolean
 decisionUnique (Shift _) = true
 decisionUnique (ShiftReduces _ _) = false
 decisionUnique (Reduces r) = NEA.length r == 1
+
+filterMapSR :: forall s r s' r'. (s -> Maybe s') -> (r -> Maybe r') -> ShiftReduce s r -> Maybe (ShiftReduce s' r')
+filterMapSR f _ (Shift s) = Shift <$> f s
+filterMapSR _ g (Reduces rs) = Reduces <$> NEA.fromArray (NEA.mapMaybe g rs)
+filterMapSR f g (ShiftReduces s rs) = case f s, NEA.fromArray (NEA.mapMaybe g rs) of
+  Nothing, Nothing -> Nothing
+  Just s', Nothing -> Just (Shift s')
+  Nothing, Just rs' -> Just (Reduces rs')
+  Just s', Just rs' -> Just (ShiftReduces s' rs')
+
+filterSR :: forall s r. (s -> Boolean) -> (r -> Boolean) -> ShiftReduce s r -> Maybe (ShiftReduce s r)
+filterSR f _ (Shift s) = Shift s <$ guard (f s)
+filterSR _ g (Reduces rs) = Reduces <$> NEA.fromArray (NEA.filter g rs)
+filterSR f g (ShiftReduces s rs) = case f s, NEA.fromArray (NEA.filter g rs) of
+  false, Nothing -> Nothing
+  true, Nothing -> Just (Shift s)
+  false, Just rs' -> Just (Reduces rs')
+  true, Just rs' -> Just (ShiftReduces s rs')
 
 derive instance functorShiftReduce :: Functor (ShiftReduce s)
 instance semigroupShiftReduce :: Semigroup (ShiftReduce s r) where

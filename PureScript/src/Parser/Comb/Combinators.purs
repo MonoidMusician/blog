@@ -2,15 +2,19 @@ module Parser.Comb.Combinators where
 
 import Prelude
 
+import Control.Comonad (extract)
 import Control.Plus (empty)
 import Data.Array (fold)
+import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..))
 import Data.FunctorWithIndex (mapWithIndex)
+import Data.Lazy (defer)
 import Data.Maybe (Maybe(..))
 import Data.Traversable (foldl)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst)
+import Data.Tuple.Nested ((/\))
 import Parser.Comb.Syntax (Syntax(..))
-import Parser.Comb.Types (Comb(..), PartialResult(..), component, components, matchRule, withCST')
+import Parser.Comb.Types (AcceptTree(..), Comb(..), PartialResult(..), Resultant(..), CAcceptTree, component, components, matchRule, withCST')
 import Parser.Lexing (class ToString, class Token, type (~), Rawr, Similar(..), rawr, rerecognize, toString)
 import Parser.Types (CST(..), Grammar(..), Part(..), sourceCST)
 
@@ -48,6 +52,13 @@ tokens cats = Comb
     }
   }
 
+buildTree ::
+  forall nt o rec a b.
+  nt -> Comb rec nt b o a -> CAcceptTree rec nt o
+buildTree name (Comb c) = AcceptTree $
+  c.rules # mapWithIndex \i { resultant: Resultant { accepting }, rule } ->
+    (name /\ i) /\ accepting /\ map (bimap (extract >>> extract) (const unit)) rule
+
 -- | Name a nonterminal production, this allows recursion.
 namedRec :: forall rec nt cat o a. Ord nt => nt -> (Comb rec nt cat o a -> Comb rec nt cat o a) -> Comb rec nt cat o a
 namedRec name parseRec =
@@ -58,7 +69,7 @@ namedRec name parseRec =
       , pretty: Just $ Part $ NonTerminal name
       , prettyGrammar: empty
       , rules: pure
-        { rule: pure (NonTerminal name)
+        { rule: pure $ NonTerminal $ Tuple name $ defer \_ -> buildTree name recursive
         , resultant: component \rec cst ->
             let Comb borrowed = recursive in
             matchRule rec name (borrowed.rules <#> _.resultant) cst
@@ -68,7 +79,7 @@ namedRec name parseRec =
     newRules = MkGrammar $ produced.rules # mapWithIndex \i { rule } ->
       { pName: name
       , rName: i
-      , rule
+      , rule: lmap fst <$> rule
       }
   in Comb
     { grammar: newRules <> produced.grammar
@@ -76,7 +87,8 @@ namedRec name parseRec =
     , prettyGrammar: pure (Tuple name produced.pretty) <> produced.prettyGrammar
     , pretty: Just $ Part $ NonTerminal name
     , rules: pure
-        { rule: pure (NonTerminal name)
+        { rule: pure $ NonTerminal $ Tuple name $ pure $
+            buildTree name recursive
         , resultant: component \rec -> matchRule rec name (produced.rules <#> _.resultant)
         }
     }

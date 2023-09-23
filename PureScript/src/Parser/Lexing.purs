@@ -2,22 +2,24 @@ module Parser.Lexing where
 
 import Prelude
 
-import Control.Alternative (guard)
+import Control.Alternative (empty, guard)
 import Control.Plus (empty)
-import Data.Array (fold)
+import Data.Array (fold, (!!))
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..), either, isLeft, note)
 import Data.Either.Nested (type (\/))
-import Data.Foldable (class Foldable, for_, null, oneOfMap, traverse_)
+import Data.Foldable (class Foldable, and, for_, null, oneOfMap, traverse_)
+import Data.Function (on)
+import Data.HeytingAlgebra (ff)
 import Data.List (List)
 import Data.List as List
 import Data.Map (SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Newtype (class Newtype, unwrap)
+import Data.Maybe (Maybe(..), fromMaybe, isJust)
+import Data.Newtype (class Newtype, over2, unwrap)
 import Data.Semigroup.Foldable (maximum)
 import Data.String (CodePoint)
 import Data.String as String
@@ -27,15 +29,16 @@ import Data.String.Regex as Re
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags (dotAll, unicode)
 import Data.String.Regex.Unsafe (unsafeRegex)
-import Data.Traversable (class Traversable)
+import Data.Traversable (class Traversable, mapAccumL)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
 import Parser.Algorithms (indexStates)
+import Parser.Comb.Types (AcceptTree(..), Accepting)
 import Parser.Proto (Stack(..), statesOn, topOf)
-import Parser.Types (CST(..), OrEOF(..), Part(..), ShiftReduce(..), State(..), StateInfo, States(..), Zipper(..), decide, decisionUnique)
+import Parser.Types (CST(..), Fragment, OrEOF(..), Part(..), ShiftReduce(..), State(..), StateInfo, StateItem, States(..), Zipper(..), decide, decisionUnique, filterSR)
 import Partial.Unsafe (unsafeCrashWith)
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -263,8 +266,8 @@ asdf = log <<< unsafeCoerce
 
 -- | Prioritize matches.
 type Best s r cat i o =
-  NonEmptyArray ((cat /\ ShiftReduce s r) /\ o /\ i) ->
-  Maybe (Either s (cat /\ r) /\ o /\ i)
+  NonEmptyArray (ShiftReduce s r /\ cat /\ o /\ i) ->
+  Maybe (Either s r /\ cat /\ o /\ i)
 
 prioritize :: forall a score. Ord score => (a -> score) -> NonEmptyArray a -> NonEmptyArray a
 prioritize f as =
@@ -277,20 +280,20 @@ prioritize f as =
 
 guessBest :: forall s r cat i o. Best s r cat i o
 guessBest options = case NEA.toArray options of
-  [ (cat /\ sr) /\ d ] -> do
+  [ sr /\ d ] -> do
     let
       _ = (guard (decisionUnique sr) :: Maybe Unit) ?> do
         asdf "Decision not unique"
         asdf sr
-    guard (decisionUnique sr) *> decide sr <#> map (Tuple cat) >>> (_ /\ d)
+    guard (decisionUnique sr) *> decide sr <#> (_ /\ d)
   _ -> Nothing
 
 longest :: forall s r cat i o. Len i => Best s r cat i o
-longest = guessBest <<< prioritize \(_ /\ _ /\ i) -> negate (len i)
+longest = guessBest <<< prioritize \(_ /\ _ /\ _ /\ i) -> negate (len i)
 
 bestRegexOrString :: forall s r. Best s r (OrEOF (Similar String Rawr)) (OrEOF String) (OrEOF String)
 bestRegexOrString options = options # guessBest <<< prioritize case _ of
-  ((Continue (Similar cat) /\ _) /\ _ /\ Continue i) -> Just $ Tuple (isLeft cat) (negate (len i))
+  (_ /\ (Continue (Similar cat)) /\ _ /\ Continue i) -> Just $ Tuple (isLeft cat) (negate (len i))
   _ -> Nothing
 
 lexingParse ::
@@ -332,7 +335,7 @@ lexingParse { best } (initialState /\ States states) initialInput =
       "No best action"? best possibilities ?> do
         asdf "possibilities"
         asdf possibilities
-        let (cat /\ sr) /\ o /\ i = NEA.head possibilities
+        let sr /\ cat /\ o /\ i = NEA.head possibilities
         case sr of
           Shift s -> do
             asdf "rules to just shift to?"
@@ -361,7 +364,7 @@ lexingParse { best } (initialState /\ States states) initialInput =
       sr <- "No repeat action"? Map.lookup cat m ?> do
         asdf cat
         asdf $ Array.fromFoldable $ Map.keys m
-      "No best repeat action"? best (NEA.singleton $ (cat /\ sr) /\ o /\ i) ?> do
+      "No best repeat action"? best (NEA.singleton $ sr /\ cat /\ o /\ i) ?> do
         case sr of
           Shift s -> do
             asdf "rules to just shift to?"
@@ -396,16 +399,16 @@ lexingParse { best } (initialState /\ States states) initialInput =
               , map (unsafeCoerce _.value0 >>> _.value0) r
               ]
   matchCat input (cat /\ act) =
-    recognize cat input <#> ((cat /\ act) /\ _)
+    recognize cat input <#> \d -> act /\ cat /\ d
   go :: Stack s (CST (nt /\ r) o) -> Either i (cat /\ o /\ i) -> ((Stack s (CST (nt /\ r) o)) /\ String) \/ (Stack s (CST (nt /\ r) o))
   go stack (Left input) | len input == 0 = pure stack
   go stack input = do
     state <- Tuple stack "Missing state"? lookupState (topOf stack)
     act <- lmap (Tuple stack) $ lookupAction stack state input
     case act of
-      Left s /\ o /\ i -> do
+      Left s /\ _cat /\ o /\ i -> do
         go (Snoc stack (Leaf o) s) (Left i)
-      Right (cat /\ r) /\ o /\ i -> do
+      Right r /\ cat /\ o /\ i -> do
         reduction <- Tuple stack "Unknown reduction"? lookupReduction r state
         stacked <- Tuple stack "Failed"? takeStack r stack reduction
         go stacked (Right (cat /\ o /\ i))
@@ -428,3 +431,227 @@ lexingParse { best } (initialState /\ States states) initialInput =
       Array.foldM take1 ([] /\ stack0) (Array.reverse parsed) >>= \(taken /\ stack) ->
         Snoc stack (Branch r taken) <$> goto r (topOf stack)
   goto (p /\ _) s' = lookupState s' >>= _.receive >>> Map.lookup p
+
+type AcceptStates nt r cat o =
+  Array
+    { pName :: nt
+    , rName :: r
+    , rule :: Zipper nt cat
+    , accept :: Accepting (CST (nt /\ r) o) Unit
+    , children :: Fragment (AcceptTree (nt /\ r) (CST (nt /\ r) o) Unit) Unit
+    }
+
+stillAccept :: forall i. Accepting i Unit -> i -> Accepting i Unit
+stillAccept accept advance = accept
+
+nonTrivial :: forall a b. Accepting a b -> Maybe (Accepting a b)
+nonTrivial accept | accept == ff = Nothing
+nonTrivial accept = Just accept
+
+advanceAccepting :: forall nt r cat o. Eq cat => Eq nt => Eq r => AcceptStates nt r cat o -> Part (CST (nt /\ r) o) (cat /\ o) -> AcceptStates nt r cat o
+advanceAccepting = flip \shift -> Array.mapMaybe \option ->
+  case option.rule of
+    Zipper before after
+      | Just { head, tail } <- Array.uncons after ->
+        case head, shift of
+          Terminal cat', Terminal (cat /\ o) | cat == cat' ->
+            nonTrivial (stillAccept option.accept (Leaf o)) <#> \accept ->
+              option { rule = Zipper (before <> [head]) tail, accept = accept }
+          NonTerminal nt', NonTerminal b@(Branch (nt /\ _) _) | nt' == nt ->
+            nonTrivial (stillAccept option.accept b) <#> \accept ->
+              option { rule = Zipper (before <> [head]) tail, accept = accept }
+          _, _ -> empty
+    _ -> empty
+
+closeA1 ::
+  forall nt r cat o.
+    Ord nt =>
+    Eq r =>
+    Ord cat =>
+  State nt r cat -> AcceptStates nt r cat o -> AcceptStates nt r cat o
+closeA1 state items = acceptMore items $ items >>= closeAItem state
+
+closeAItem ::
+  forall nt r cat o xtra.
+    Ord nt =>
+    Eq r =>
+    Ord cat =>
+  State nt r cat ->
+  { rule :: Zipper nt cat
+  , children :: Fragment (AcceptTree (nt /\ r) (CST (nt /\ r) o) Unit) Unit
+  | xtra
+  } ->
+  AcceptStates nt r cat o
+closeAItem state { rule, children } =
+  case rule of
+    Zipper ls rs
+      | Just { head: NonTerminal pName, tail } <- Array.uncons rs
+      , Just (NonTerminal tree) <- children !! Array.length ls -> do
+        addFromTree state pName tree
+    _ -> empty
+
+addFromTree ::
+  forall nt r cat o.
+    Ord nt =>
+    Eq r =>
+    Ord cat =>
+  State nt r cat -> nt -> AcceptTree (nt /\ r) (CST (nt /\ r) o) Unit -> AcceptStates nt r cat o
+addFromTree state pName (AcceptTree tree) =
+  tree >>= \((pName' /\ rName) /\ accept /\ nextChildren) -> do
+    if pName /= pName' then empty else
+      addFromState state pName rName <#>
+        { pName, rName, rule: _, accept, children: nextChildren }
+
+addFromState :: forall nt r cat. Eq nt => Eq r => State nt r cat -> nt -> r -> Array (Zipper nt cat)
+addFromState (State state) pName rName =
+  state >>= case _ of
+    { pName: pName', rName: rName', rule: newRule@(Zipper [] _) }
+      | pName == pName'
+      , rName == rName' -> pure newRule
+    _ -> empty
+
+closeA ::
+  forall nt r cat o.
+    Ord nt =>
+    Eq r =>
+    Ord cat =>
+  State nt r cat -> AcceptStates nt r cat o -> AcceptStates nt r cat o
+closeA state items =
+  let items' = closeA1 state items
+  in if items' == items then items else closeA state items'
+
+argh :: forall a. (a -> a -> Boolean) -> (a -> a -> a) -> Array a -> Array a -> Array a
+argh comp comb ls rs = (#) (ls <> rs) $ [] # Array.foldl \items newItem ->
+  let
+    accumulate :: Boolean -> _ -> { accum :: Boolean, value :: _ }
+    accumulate alreadyFound item =
+      if comp item newItem
+        then { accum: true, value: comb item newItem }
+        else { accum: alreadyFound, value: item }
+    { accum: found, value: items' } =
+      mapAccumL accumulate false items
+  in
+    if found then items' else items' <> [ newItem ]
+
+acceptMore ::
+  forall nt r cat o.
+    Ord nt =>
+    Eq r =>
+    Ord cat =>
+  AcceptStates nt r cat o -> AcceptStates nt r cat o -> AcceptStates nt r cat o
+acceptMore = argh
+  do \item newItem -> and [ eq `on` _.pName, eq `on` _.rName, eq `on` _.rule ] item newItem
+  do \item newItem -> item { accept = item.accept || newItem.accept, children = zipFragment item.children newItem.children }
+
+zipTree :: forall r i rec. Eq r => AcceptTree r i rec -> AcceptTree r i rec -> AcceptTree r i rec
+zipTree = over2 AcceptTree $ argh
+  do \(r1 /\ _) (r2 /\ _) -> r1 == r2
+  do \(r /\ a1 /\ t1) (_ /\ a2 /\ t2) -> r /\ (a1 || a2) /\ zipFragment t1 t2
+
+zipFragment :: forall r i rec. Eq r => Fragment (AcceptTree r i rec) Unit -> Fragment (AcceptTree r i rec) Unit -> Fragment (AcceptTree r i rec) Unit
+zipFragment = Array.zipWith case _, _ of
+  NonTerminal l, NonTerminal r -> NonTerminal (zipTree l r)
+  l, _ -> l
+
+type ContextStack s nt r cat o =
+  Stack (AcceptStates nt r cat o /\ s) (CST (nt /\ r) o)
+
+contextLexingParse ::
+  forall s nt r cat i o.
+    Ord s =>
+    Ord nt =>
+    Eq r =>
+    Ord cat =>
+    Tokenize cat i o =>
+  { best :: Best s (nt /\ r) cat i o
+  , acceptings :: AcceptTree (nt /\ r) (CST (nt /\ r) o) Unit
+  } ->
+  s /\ States s nt r cat -> i ->
+  (ContextStack s nt r cat o /\ String) \/ ContextStack s nt r cat o
+contextLexingParse { best, acceptings } (initialState /\ States states) initialInput =
+  go (Zero (initialMeta /\ initialState)) (Left initialInput)
+  where
+  tabulated = indexStates (States states)
+  lookupState :: s -> Maybe (StateInfo s nt r cat)
+  lookupState s = tabulated s >>= Array.index states
+  lookupAction :: ContextStack s nt r cat o -> StateInfo s nt r cat -> Either i (cat /\ o /\ i) -> Either String _
+  lookupAction stack info@{ advance: SemigroupMap m } = case _ of
+    Left input -> do
+      -- traceM $ [ unsafeCoerce input ] <> Array.fromFoldable (Map.keys m)
+      let actions = NEA.fromArray $ Array.mapMaybe (matchCat input) $ Map.toUnfoldable m
+      possibilities <- "No action"? actions
+      checkBest stack possibilities
+    Right (cat /\ o /\ i) -> do
+      sr <- "No repeat action"? Map.lookup cat m
+      checkBest stack (NEA.singleton $ sr /\ cat /\ o /\ i)
+  matchCat input (cat /\ act) =
+    recognize cat input <#> \d -> act /\ cat /\ d
+  test :: _ -> ShiftReduce (s /\ cat /\ o) (nt /\ r) -> Maybe _
+  test stack = filterSR (testShift stack) (testReduce stack)
+  testShift stack (s /\ cat /\ o) = isJust do
+    { items: s' } <- lookupState s
+    guard $ not failed $ advanceMeta (fst (topOf stack) /\ s') (Terminal (cat /\ o))
+  testReduce stack r = isJust do
+    s <- topOf stack # snd # lookupState
+    reduction <- lookupReduction r s
+    reduced <- takeStack r stack reduction
+    guard $ not failed $ fst $ topOf reduced
+  failed =
+    Array.all (_.accept >>> eq ff)
+  chosenAction = case _ of
+    Left s /\ cat /\ o /\ _ -> Shift (s /\ cat /\ o)
+    Right r /\ _ -> Reduces (pure r)
+  choosePossibility stack (sr /\ cat /\ o /\ i) =
+    filterSR (\s' -> testShift stack (s' /\ cat /\ o)) (testReduce stack) sr <#> \sr' -> sr' /\ cat /\ o /\ i
+  checkBest stack possibilities = do
+    case best possibilities of
+      Just chosen | act <- chosenAction chosen, isJust $ test stack act ->
+        Right chosen
+      _ -> do
+        filtered <- "All actions rejected"?! NEA.fromArray $ NEA.mapMaybe (choosePossibility stack) possibilities
+        "No best action (all accepted)"? guard (NEA.length filtered < NEA.length possibilities)
+        "No best non-rejected action"? best filtered
+  go :: ContextStack s nt r cat o -> Either i (cat /\ o /\ i) -> (ContextStack s nt r cat o /\ String) \/ ContextStack s nt r cat o
+  go stack (Left input) | len input == 0 = pure stack
+  go stack input = do
+    state <- Tuple stack "Missing state"? lookupState (snd (topOf stack))
+    act <- lmap (Tuple stack) $ lookupAction stack state input
+    case act of
+      Left s /\ cat /\ o /\ i -> do
+        { items: s' } <- Tuple stack "Could not find state"? lookupState s
+        go (Snoc stack (Leaf o) (advanceMeta (fst (topOf stack) /\ s') (Terminal (cat /\ o)) /\ s)) (Left i)
+      Right r /\ cat /\ o /\ i -> do
+        reduction <- Tuple stack "Unknown reduction"? lookupReduction r state
+        stacked <- Tuple stack "Failed"? takeStack r stack reduction
+        go stacked (Right (cat /\ o /\ i))
+  lookupReduction (p /\ r) { items: State items } = items # oneOfMap case _ of
+    { rule: Zipper parsed [], pName, rName } | pName == p && rName == r ->
+      Just parsed
+    _ -> Nothing
+  takeStack :: nt /\ r ->  ContextStack s nt r cat o -> Array _ -> Maybe (ContextStack s nt r cat o)
+  takeStack r stack0 parsed =
+    let
+      take1 (taken /\ stack) = case _ of
+        Terminal _ -> case stack of
+          Snoc stack' v@(Leaf _) _ ->
+            Just $ ([ v ] <> taken) /\ stack'
+          _ -> unsafeCrashWith "expected token on stack"
+        NonTerminal nt -> case stack of
+          Snoc stack' v@(Branch (p /\ _) _) _ | p == nt ->
+            Just $ ([ v ] <> taken) /\ stack'
+          _ -> unsafeCrashWith "expected terminal on stack"
+    in
+      Array.foldM take1 ([] /\ stack0) (Array.reverse parsed) >>= \(taken /\ stack) ->
+        Snoc stack (Branch r taken) <$> goto r taken (topOf stack)
+  goto shifting@(p /\ _) taken s = do
+      r <- lookupState (snd s) >>= _.receive >>> Map.lookup p
+      s' <- lookupState r
+      pure $ advanceMeta (fst s /\ s'.items) (NonTerminal (Branch shifting taken)) /\ r
+  initialMeta :: AcceptStates nt r cat o
+  initialMeta = fromMaybe [] do
+    lookupState initialState <#> \{ items } -> do
+      closeA items $ unwrap items >>= \{ pName } ->
+        addFromTree items pName acceptings
+  advanceMeta :: AcceptStates nt r cat o /\ State nt r cat -> Part (CST (nt /\ r) o) (cat /\ o) -> AcceptStates nt r cat o
+  advanceMeta (accept /\ items) advance =
+    closeA items $ advanceAccepting accept advance

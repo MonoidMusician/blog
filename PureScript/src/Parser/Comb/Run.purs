@@ -213,16 +213,15 @@ withReparser name aux (Comb cb) f = do
     , entrypoints: pure name <|> ca.entrypoints <|> cb.entrypoints
     , pretty: cb.pretty
     , prettyGrammar: cb.prettyGrammar <|> ca.prettyGrammar
-    , rules: cb.rules <#> \r@{ resultant: Resultant { length, result } } -> r
-      { resultant = Resultant
-        { length
-        , result: \(Rec rec) csts ->
+    , rules: cb.rules <#> \r@{ resultant: Resultant rr } -> r
+      { resultant = Resultant rr
+        { result = \(Rec rec) csts ->
             let
               parser input =
                 rec name (Continue input) >>=
                   matchRule (Rec rec) name (resultantsOf aux) >>>
                     note "Error in reparser"
-            in (\x -> f parser x) <$> result (Rec rec) csts
+            in (\x -> f parser x) <$> rr.result (Rec rec) csts
         }
       }
     }
