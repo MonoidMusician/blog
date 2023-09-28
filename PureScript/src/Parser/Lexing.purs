@@ -11,7 +11,7 @@ import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..), either, isLeft, note)
 import Data.Either.Nested (type (\/))
-import Data.Foldable (class Foldable, and, for_, null, oneOfMap, traverse_)
+import Data.Foldable (class Foldable, and, foldMap, for_, null, oneOfMap, traverse_)
 import Data.Function (on)
 import Data.HeytingAlgebra (ff)
 import Data.List (List)
@@ -19,7 +19,7 @@ import Data.List as List
 import Data.Map (SemigroupMap(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isJust)
-import Data.Newtype (class Newtype, over2, unwrap)
+import Data.Newtype (class Newtype, over, over2, unwrap)
 import Data.Semigroup.Foldable (maximum)
 import Data.String (CodePoint)
 import Data.String as String
@@ -29,14 +29,14 @@ import Data.String.Regex as Re
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags (dotAll, unicode)
 import Data.String.Regex.Unsafe (unsafeRegex)
-import Data.Traversable (class Traversable, mapAccumL)
+import Data.Traversable (class Traversable, mapAccumL, sequence)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
 import Parser.Algorithms (indexStates)
-import Parser.Comb.Types (AcceptTree(..), Accepting)
+import Parser.Comb.Types (LogicParts(..), Options(..), applyLogic, logicful)
 import Parser.Proto (Stack(..), statesOn, topOf)
 import Parser.Types (CST(..), Fragment, OrEOF(..), Part(..), ShiftReduce(..), State(..), StateInfo, StateItem, States(..), Zipper(..), decide, decisionUnique, filterSR)
 import Partial.Unsafe (unsafeCrashWith)
@@ -432,75 +432,54 @@ lexingParse { best } (initialState /\ States states) initialInput =
         Snoc stack (Branch r taken) <$> goto r (topOf stack)
   goto (p /\ _) s' = lookupState s' >>= _.receive >>> Map.lookup p
 
-type AcceptStates nt r cat o =
-  Array
-    { pName :: nt
-    , rName :: r
-    , rule :: Zipper nt cat
-    , accept :: Accepting (CST (nt /\ r) o) Unit
-    , children :: Fragment (AcceptTree (nt /\ r) (CST (nt /\ r) o) Unit) Unit
-    }
 
-stillAccept :: forall i. Accepting i Unit -> i -> Accepting i Unit
-stillAccept accept advance = accept
+stillAccept :: forall i. LogicParts i Unit -> i -> Maybe (LogicParts i Unit)
+stillAccept (LogicParts before) shift =
+  let advanced = before.advanced <> [shift] in
+  map (LogicParts <<< { advanced, necessary: _ }) $
+    sequence $ before.necessary # Array.mapMaybe \part -> sequence case unit of
+      _ | Array.length advanced < part.start -> Just (Just part)
+      _ | not applyLogic part.logic unit advanced -> Nothing
+      _ | part.start + part.length >= Array.length advanced -> Just Nothing
+      _ -> Just (Just part)
 
-nonTrivial :: forall a b. Accepting a b -> Maybe (Accepting a b)
-nonTrivial accept | accept == ff = Nothing
-nonTrivial accept = Just accept
-
-advanceAccepting :: forall nt r cat o. Eq cat => Eq nt => Eq r => AcceptStates nt r cat o -> Part (CST (nt /\ r) o) (cat /\ o) -> AcceptStates nt r cat o
-advanceAccepting = flip \shift -> Array.mapMaybe \option ->
-  case option.rule of
-    Zipper before after
-      | Just { head, tail } <- Array.uncons after ->
-        case head, shift of
-          Terminal cat', Terminal (cat /\ o) | cat == cat' ->
-            nonTrivial (stillAccept option.accept (Leaf o)) <#> \accept ->
-              option { rule = Zipper (before <> [head]) tail, accept = accept }
-          NonTerminal nt', NonTerminal b@(Branch (nt /\ _) _) | nt' == nt ->
-            nonTrivial (stillAccept option.accept b) <#> \accept ->
-              option { rule = Zipper (before <> [head]) tail, accept = accept }
-          _, _ -> empty
+advanceAccepting :: forall nt r cat o. Eq cat => Eq nt => Eq r => Options Unit nt r cat o -> Part (CST (nt /\ r) o) (cat /\ o) -> Options Unit nt r cat o
+advanceAccepting (Options options) shift = Options $ options # Array.mapMaybe \option@{ logicParts: LogicParts { advanced }} ->
+  case option.rule !! Array.length advanced of
+    Just head ->
+      case head, shift of
+        Terminal cat', Terminal (cat /\ o) | cat == cat' ->
+          stillAccept option.logicParts (Leaf o) <#> \logicParts ->
+            option { logicParts = logicParts }
+        NonTerminal (_ /\ nt'), NonTerminal b@(Branch (nt /\ _) _) | nt' == nt ->
+          stillAccept option.logicParts b <#> \logicParts ->
+            option { logicParts = logicParts }
+        _, _ -> empty
     _ -> empty
 
 closeA1 ::
-  forall nt r cat o.
+  forall rec nt r cat o.
     Ord nt =>
     Eq r =>
     Ord cat =>
-  State nt r cat -> AcceptStates nt r cat o -> AcceptStates nt r cat o
-closeA1 state items = acceptMore items $ items >>= closeAItem state
+  Options rec nt r cat o -> Options rec nt r cat o
+closeA1 (Options items) = acceptMore (Options items) $ items # foldMap closeAItem
 
 closeAItem ::
-  forall nt r cat o xtra.
+  forall rec nt r cat o xtra.
     Ord nt =>
     Eq r =>
     Ord cat =>
-  State nt r cat ->
-  { rule :: Zipper nt cat
-  , children :: Fragment (AcceptTree (nt /\ r) (CST (nt /\ r) o) Unit) Unit
+  { rule :: Fragment (Options rec nt r cat o /\ nt) cat
+  , logicParts :: LogicParts (CST (nt /\ r) o) rec
   | xtra
   } ->
-  AcceptStates nt r cat o
-closeAItem state { rule, children } =
-  case rule of
-    Zipper ls rs
-      | Just { head: NonTerminal pName, tail } <- Array.uncons rs
-      , Just (NonTerminal tree) <- children !! Array.length ls -> do
-        addFromTree state pName tree
-    _ -> empty
-
-addFromTree ::
-  forall nt r cat o.
-    Ord nt =>
-    Eq r =>
-    Ord cat =>
-  State nt r cat -> nt -> AcceptTree (nt /\ r) (CST (nt /\ r) o) Unit -> AcceptStates nt r cat o
-addFromTree state pName (AcceptTree tree) =
-  tree >>= \((pName' /\ rName) /\ accept /\ nextChildren) -> do
-    if pName /= pName' then empty else
-      addFromState state pName rName <#>
-        { pName, rName, rule: _, accept, children: nextChildren }
+  Options rec nt r cat o
+closeAItem { rule, logicParts: LogicParts { advanced } } =
+  case rule !! Array.length advanced of
+    Just (NonTerminal (opts /\ _)) ->
+      opts
+    _ -> mempty
 
 addFromState :: forall nt r cat. Eq nt => Eq r => State nt r cat -> nt -> r -> Array (Zipper nt cat)
 addFromState (State state) pName rName =
@@ -515,10 +494,11 @@ closeA ::
     Ord nt =>
     Eq r =>
     Ord cat =>
-  State nt r cat -> AcceptStates nt r cat o -> AcceptStates nt r cat o
-closeA state items =
-  let items' = closeA1 state items
-  in if items' == items then items else closeA state items'
+    Eq o =>
+  Options Unit nt r cat o -> Options Unit nt r cat o
+closeA items =
+  let items' = closeA1 items
+  in if items' == items then items else closeA items'
 
 argh :: forall a. (a -> a -> Boolean) -> (a -> a -> a) -> Array a -> Array a -> Array a
 argh comp comb ls rs = (#) (ls <> rs) $ [] # Array.foldl \items newItem ->
@@ -534,27 +514,32 @@ argh comp comb ls rs = (#) (ls <> rs) $ [] # Array.foldl \items newItem ->
     if found then items' else items' <> [ newItem ]
 
 acceptMore ::
-  forall nt r cat o.
+  forall rec nt r cat o.
     Ord nt =>
     Eq r =>
     Ord cat =>
-  AcceptStates nt r cat o -> AcceptStates nt r cat o -> AcceptStates nt r cat o
-acceptMore = argh
-  do \item newItem -> and [ eq `on` _.pName, eq `on` _.rName, eq `on` _.rule ] item newItem
-  do \item newItem -> item { accept = item.accept || newItem.accept, children = zipFragment item.children newItem.children }
+  Options rec nt r cat o -> Options rec nt r cat o -> Options rec nt r cat o
+acceptMore = over2 Options $ argh
+  do \item newItem -> and [ eq `on` _.pName, eq `on` _.rName ] item newItem
+  do
+    \item newItem ->
+      item
+        { logicParts = item.logicParts <> newItem.logicParts
+        , rule = zipFragment item.rule newItem.rule
+        }
 
-zipTree :: forall r i rec. Eq r => AcceptTree r i rec -> AcceptTree r i rec -> AcceptTree r i rec
-zipTree = over2 AcceptTree $ argh
-  do \(r1 /\ _) (r2 /\ _) -> r1 == r2
-  do \(r /\ a1 /\ t1) (_ /\ a2 /\ t2) -> r /\ (a1 || a2) /\ zipFragment t1 t2
-
-zipFragment :: forall r i rec. Eq r => Fragment (AcceptTree r i rec) Unit -> Fragment (AcceptTree r i rec) Unit -> Fragment (AcceptTree r i rec) Unit
+zipFragment ::
+  forall nt r cat o rec.
+    Ord nt =>
+    Eq r =>
+    Ord cat =>
+  Fragment (Options rec nt r cat o /\ nt) cat -> Fragment (Options rec nt r cat o /\ nt) cat -> Fragment (Options rec nt r cat o /\ nt) cat
 zipFragment = Array.zipWith case _, _ of
-  NonTerminal l, NonTerminal r -> NonTerminal (zipTree l r)
+  NonTerminal (l /\ nt), NonTerminal (r /\ _) -> NonTerminal (acceptMore l r /\ nt)
   l, _ -> l
 
 type ContextStack s nt r cat o =
-  Stack (AcceptStates nt r cat o /\ s) (CST (nt /\ r) o)
+  Stack (Options Unit nt r cat o /\ s) (CST (nt /\ r) o)
 
 contextLexingParse ::
   forall s nt r cat i o.
@@ -563,8 +548,9 @@ contextLexingParse ::
     Eq r =>
     Ord cat =>
     Tokenize cat i o =>
+    Eq o =>
   { best :: Best s (nt /\ r) cat i o
-  , acceptings :: AcceptTree (nt /\ r) (CST (nt /\ r) o) Unit
+  , acceptings :: Options Unit nt r cat o
   } ->
   s /\ States s nt r cat -> i ->
   (ContextStack s nt r cat o /\ String) \/ ContextStack s nt r cat o
@@ -596,8 +582,8 @@ contextLexingParse { best, acceptings } (initialState /\ States states) initialI
     reduction <- lookupReduction r s
     reduced <- takeStack r stack reduction
     guard $ not failed $ fst $ topOf reduced
-  failed =
-    Array.all (_.accept >>> eq ff)
+  failed (Options opts) =
+    Array.null opts
   chosenAction = case _ of
     Left s /\ cat /\ o /\ _ -> Shift (s /\ cat /\ o)
     Right r /\ _ -> Reduces (pure r)
@@ -647,11 +633,8 @@ contextLexingParse { best, acceptings } (initialState /\ States states) initialI
       r <- lookupState (snd s) >>= _.receive >>> Map.lookup p
       s' <- lookupState r
       pure $ advanceMeta (fst s /\ s'.items) (NonTerminal (Branch shifting taken)) /\ r
-  initialMeta :: AcceptStates nt r cat o
-  initialMeta = fromMaybe [] do
-    lookupState initialState <#> \{ items } -> do
-      closeA items $ unwrap items >>= \{ pName } ->
-        addFromTree items pName acceptings
-  advanceMeta :: AcceptStates nt r cat o /\ State nt r cat -> Part (CST (nt /\ r) o) (cat /\ o) -> AcceptStates nt r cat o
+  initialMeta :: Options Unit nt r cat o
+  initialMeta = acceptings
+  advanceMeta :: Options Unit nt r cat o /\ State nt r cat -> Part (CST (nt /\ r) o) (cat /\ o) -> Options Unit nt r cat o
   advanceMeta (accept /\ items) advance =
-    closeA items $ advanceAccepting accept advance
+    closeA $ advanceAccepting accept advance

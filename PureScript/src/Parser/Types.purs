@@ -290,6 +290,7 @@ type SStates = States Int NonEmptyString String CodePoint
 data CST r tok
   = Leaf tok
   | Branch r (Array (CST r tok))
+derive instance eqCST :: (Eq r, Eq tok) => Eq (CST r tok)
 
 sourceCST :: forall r tok. CST r tok -> Array tok
 sourceCST (Leaf tok) = pure tok

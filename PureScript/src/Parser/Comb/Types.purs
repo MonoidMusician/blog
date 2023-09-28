@@ -29,8 +29,6 @@ type CSyntax = Syntax
 type CGrammar nt cat = Grammar nt Int cat
 type CFragment nt cat = Fragment nt cat
 type CCST nt o = CST (nt /\ Int) o
-type CAcceptTree rec nt o =
-  AcceptTree (nt /\ Int) (CCST nt o) rec
 
 -- | An applicative parser combinator that builds a grammar and parses a CST.
 -- |
@@ -76,7 +74,7 @@ newtype Comb rec nt cat o a = Comb
   , pretty :: Maybe (CSyntax nt cat)
   , prettyGrammar :: Array (Tuple nt (Maybe (CSyntax nt cat)))
   , rules :: Array
-    { rule :: CFragment (nt /\ Lazy (CAcceptTree rec nt o)) cat
+    { rule :: CFragment (Lazy (Options rec nt Int cat o) /\ nt) cat
     , resultant :: CResultant rec nt o a
     }
   }
@@ -86,7 +84,7 @@ rerec :: forall rec1 rec2 nt cat o a. (rec2 -> rec1) -> Comb rec1 nt cat o a -> 
 rerec f (Comb c) = Comb c
   { rules = c.rules <#> \rule ->
     rule
-      { rule = lmap (map (map (cmap f))) <$> rule.rule
+      { rule = lmap (lmap (map (cmapOptions f))) <$> rule.rule
       , resultant = lcmap f rule.resultant
       }
   }
@@ -105,8 +103,7 @@ type ParseError = String
 -- | - `r.result i == r.result (take r.length i)`
 newtype Resultant i rec a = Resultant
   { length :: Int
-  -- Whether it will reject an otherwise well-formed CST
-  , accepting :: Accepting i rec
+  , accepting :: LogicParts i rec
   , result :: rec -> Array i -> PartialResult a
   }
 type CResultant rec nt o = Resultant (CCST nt o) rec
@@ -116,32 +113,59 @@ data PartialResult a
   | Partial
   | Result a
 
-data Accepting i r
-  = AlwaysAccept
-  | Possibilities (Array (Logicful i r))
-newtype AcceptTree r i rec = AcceptTree
-  (Array
-    (r /\ Accepting i rec /\ Fragment (AcceptTree r i rec) Unit)
-  )
-derive instance newtypeAcceptTree :: Newtype (AcceptTree r i rec) _
-derive newtype instance eqAcceptTree :: Eq r => Eq (AcceptTree r i rec)
+newtype Options rec nt r cat o = Options
+  (Array (Option rec nt r cat o))
+type Option rec nt r cat o =
+  { pName :: nt
+  , rName :: r
+  , rule :: Fragment (Options rec nt r cat o /\ nt) cat
+  , logicParts :: LogicParts (CST (nt /\ r) o) rec
+  }
+
+derive newtype instance semigroupOptions :: Semigroup (Options rec nt r cat o)
+derive newtype instance monoidOptions :: Monoid (Options rec nt r cat o)
+derive newtype instance eqOptions :: (Eq nt, Eq r, Eq cat, Eq o) => Eq (Options rec nt r cat o)
+derive instance newtypeOptions :: Newtype (Options rec nt r cat o) _
+
+newtype LogicParts i r = LogicParts
+  { necessary :: Array
+    { start :: Int
+    , length :: Int
+    -- RefEq
+    , logic :: Logicful i r
+    }
+  , advanced :: Array i
+  }
+-- FIXME
+derive newtype instance semigroupLogicParts :: Semigroup (LogicParts i r)
+derive newtype instance monoidLogicParts :: Monoid (LogicParts i r)
+derive instance contravariantLogicParts :: Contravariant (LogicParts i)
+derive instance newtypeLogicParts :: Newtype (LogicParts i r) _
+derive newtype instance eqLogicParts :: Eq i => Eq (LogicParts i r)
+
+cmapOptions :: forall rec rec' nt r cat o. (rec' -> rec) -> Options rec nt r cat o -> Options rec' nt r cat o
+cmapOptions f (Options options) = Options $ options <#> \option ->
+  option
+    { rule = lmap (lmap (cmapOptions f)) <$> option.rule
+    , logicParts = cmap f option.logicParts
+    }
 
 foreign import data Logicful :: Type -> Type -> Type
 logicful :: forall i r. (r -> Array i -> Boolean) -> Logicful i r
 logicful = unsafeCoerce
-getLogic :: forall i r. Logicful i r -> r -> Array i -> Boolean
-getLogic = unsafeCoerce
+applyLogic :: forall i r. Logicful i r -> r -> Array i -> Boolean
+applyLogic = unsafeCoerce
 overLogic ::
   forall p393 t398 t399 t400 t401.
     Profunctor p393 =>
   p393 (t399 -> Array t398 -> Boolean) (t401 -> Array t400 -> Boolean) ->
   p393 (Logicful t398 t399) (Logicful t400 t401)
-overLogic = dimap getLogic logicful
+overLogic = dimap applyLogic logicful
 over2Logic ::
   forall i384 r385 i386 r387 i389 r390.
   ((r387 -> Array i386 -> Boolean) -> (r390 -> Array i389 -> Boolean) -> r385 -> Array i384 -> Boolean) ->
   Logicful i386 r387 -> Logicful i389 r390 -> Logicful i384 r385
-over2Logic op f g = logicful (op (getLogic f) (getLogic g))
+over2Logic op f g = logicful (op (applyLogic f) (applyLogic g))
 instance eqLogicful :: Eq (Logicful i r) where
   eq = unsafeRefEq
 instance HeytingAlgebra (Logicful i r) where
@@ -153,18 +177,6 @@ instance HeytingAlgebra (Logicful i r) where
   implies = over2Logic implies
 instance contravariantLogicful :: Contravariant (Logicful i) where
   cmap f = overLogic (lcmap f)
-
-derive instance contravariantAcceptTree :: Contravariant (AcceptTree r i)
-
-acceptResult :: forall i r a. (r -> Array i -> PartialResult a) -> Accepting i r
-acceptResult f = Possibilities $ pure $ logicful \r i -> case f r i of
-  Failed -> false
-  _ -> true
-
-acceptPartial :: forall i r. Accepting i r -> r -> Array i -> Accepting i r
-acceptPartial AlwaysAccept _ _ = AlwaysAccept
-acceptPartial (Possibilities ps) r i = Possibilities $ ps # Array.filter \p ->
-  getLogic p r i
 
 derive instance functorComb :: Functor (Comb rec nt cat o)
 instance applyComb :: Apply (Comb rec nt cat o) where
@@ -227,14 +239,37 @@ matchRule _ _ _ _ = Nothing
 withCST :: forall rec nt cat o a b. (Array (CCST nt o) -> PartialResult (a -> b)) -> Comb rec nt cat o a -> Comb rec nt cat o b
 withCST f = withCST' \_ csts prev -> f csts <*> prev unit
 
+acceptResult :: forall i r a. Int -> (r -> Array i -> PartialResult a) -> LogicParts i r
+acceptResult length f = LogicParts
+  { necessary: pure
+    { start: 0
+    , length
+    , logic: logicful \r i -> case f r i of
+      Failed -> false
+      _ -> true
+    }
+  , advanced: []
+  }
+
 -- | Modify the result of the parser based on the CST fragment it receives.
 withCST' :: forall rec nt cat o a b. (rec -> Array (CCST nt o) -> (Unit -> PartialResult a) -> PartialResult b) -> Comb rec nt cat o a -> Comb rec nt cat o b
 withCST' f (Comb c) = Comb c
   { rules = c.rules <#> \r@{ resultant: Resultant { length, result } } -> r
     { resultant = Resultant
       { length
-      , accepting: acceptResult \rec csts -> f rec csts (\_  -> result rec csts)
+      , accepting: acceptResult length \rec csts -> f rec csts (\_  -> result rec csts)
       , result: \rec csts -> f rec csts (\_  -> result rec csts)
+      }
+    }
+  }
+
+withCST_ :: forall rec nt cat o a b. (rec -> Array (CCST nt o) -> (Unit -> PartialResult a) -> b) -> Comb rec nt cat o a -> Comb rec nt cat o b
+withCST_ f (Comb c) = Comb c
+  { rules = c.rules <#> \r@{ resultant: Resultant { length, result } } -> r
+    { resultant = Resultant
+      { length
+      , accepting: mempty
+      , result: \rec csts -> Result (f rec csts (\_  -> result rec csts))
       }
     }
   }
@@ -247,13 +282,13 @@ derive instance profunctorResultant :: Profunctor (Resultant i)
 instance applyResultant :: Apply (Resultant i r) where
   apply (Resultant l) (Resultant r) = Resultant
     { length: l.length + r.length
-    , accepting: l.accepting && r.accepting
+    , accepting: l.accepting <> r.accepting
     , result: \rec i ->
         let { before: li, after: ri } = splitAt l.length i in
         l.result rec li <*> r.result rec ri
     }
 instance applicativeResultant :: Applicative (Resultant i r) where
-  pure a = Resultant { length: 0, accepting: tt, result: \_ _ -> pure a }
+  pure a = Resultant { length: 0, accepting: mempty, result: \_ _ -> pure a }
 instance compactableResultant :: Compactable (Resultant i r) where
   compact (Resultant r) = Resultant r { result = map (map compact) r.result }
   separate eta = separateDefault eta
@@ -267,7 +302,7 @@ resultFrom (Resultant res) r i = case res.result r i of
 component :: forall i r a. (r -> i -> Maybe a) -> Resultant i r a
 component c = Resultant
   { length: 1
-  , accepting: AlwaysAccept
+  , accepting: mempty
   , result: \r is ->
       case head is of
         Nothing -> Partial
@@ -277,40 +312,11 @@ component c = Resultant
 components :: forall i r a. Array (r -> i -> Maybe a) -> Resultant i r (Array a)
 components cs = Resultant
   { length: length cs
-  , accepting: AlwaysAccept
+  , accepting: mempty
   , result: \r is ->
       if length is < length cs then Partial else
         compact (Result (sequence (zipWith identity (cs <@> r) is)))
   }
-
-derive instance contravariantAccepting :: Contravariant (Accepting i)
-instance heytingAlgebraAccepting :: HeytingAlgebra (Accepting i r) where
-  tt = AlwaysAccept
-  ff = Possibilities []
-
-  not AlwaysAccept = (Possibilities [])
-  not (Possibilities []) = AlwaysAccept
-  not (Possibilities f) = Possibilities (not <$> f)
-
-  implies l r = not l || r
-
-  conj AlwaysAccept e = e
-  conj e AlwaysAccept = e
-  conj (Possibilities []) _ = (Possibilities [])
-  conj _ (Possibilities []) = (Possibilities [])
-  conj (Possibilities l) (Possibilities r) = Possibilities (lift2 (&&) l r)
-
-  disj AlwaysAccept _ = AlwaysAccept
-  disj _ AlwaysAccept = AlwaysAccept
-  disj (Possibilities []) e = e
-  disj e (Possibilities []) = e
-  disj (Possibilities l) (Possibilities r) = Possibilities (Array.nubEq (l <|> r))
-instance booleanAlgebraAccepting :: BooleanAlgebra (Accepting i r)
-instance eqAccepting :: Eq (Accepting i r) where
-  eq AlwaysAccept AlwaysAccept = true
-  eq (Possibilities []) (Possibilities []) = false
-  eq (Possibilities l) (Possibilities r) = unsafeRefEq l r
-  eq _ _ = false
 
 derive instance functorPartialResult :: Functor PartialResult
 instance applyPartialResult :: Apply PartialResult where
