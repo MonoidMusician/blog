@@ -4,26 +4,29 @@ import Prelude
 
 import Control.Alternative (class Alternative)
 import Control.Apply (lift2)
+import Control.Monad.ST.Global as ST
 import Control.Plus (class Alt, class Plus, empty, (<|>))
 import Data.Array (head, length, splitAt, zipWith, (!!))
 import Data.Array as Array
-import Data.Bifunctor (lmap)
+import Data.Bifunctor (bimap, lmap)
 import Data.Compactable (class Compactable, compact, separateDefault)
 import Data.Either (Either)
 import Data.Functor.Contravariant (class Contravariant, cmap)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Lazy (Lazy)
 import Data.Maybe (Maybe(..))
-import Data.Newtype (class Newtype)
+import Data.Newtype (class Newtype, over)
 import Data.Profunctor (class Profunctor, dimap, lcmap)
 import Data.String (CodePoint)
-import Data.Traversable (sequence)
+import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\))
+import Effect.Unsafe (unsafePerformEffect)
 import Parser.Comb.Syntax (Syntax(..))
 import Parser.Types (CST(..), Fragment, Grammar)
 import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Reference (unsafeRefEq)
+import Util (memoizeEq)
 
 type CSyntax = Syntax
 type CGrammar nt cat = Grammar nt Int cat
@@ -118,13 +121,13 @@ newtype Options rec nt r cat o = Options
 type Option rec nt r cat o =
   { pName :: nt
   , rName :: r
-  , rule :: Fragment (Options rec nt r cat o /\ nt) cat
+  , rule :: Fragment (Lazy (Options rec nt r cat o) /\ nt) cat
   , logicParts :: LogicParts (CST (nt /\ r) o) rec
   }
+type COptions rec nt cat o = Options rec nt Int cat o
 
 derive newtype instance semigroupOptions :: Semigroup (Options rec nt r cat o)
 derive newtype instance monoidOptions :: Monoid (Options rec nt r cat o)
-derive newtype instance eqOptions :: (Eq nt, Eq r, Eq cat, Eq o) => Eq (Options rec nt r cat o)
 derive instance newtypeOptions :: Newtype (Options rec nt r cat o) _
 
 newtype LogicParts i r = LogicParts
@@ -146,9 +149,37 @@ derive newtype instance eqLogicParts :: Eq i => Eq (LogicParts i r)
 cmapOptions :: forall rec rec' nt r cat o. (rec' -> rec) -> Options rec nt r cat o -> Options rec' nt r cat o
 cmapOptions f (Options options) = Options $ options <#> \option ->
   option
-    { rule = lmap (lmap (cmapOptions f)) <$> option.rule
+    { rule = lmap (lmap (map (cmapOptions f))) <$> option.rule
     , logicParts = cmap f option.logicParts
     }
+
+fullMapOptions :: forall rec rec' nt nt' r r' cat cat' o o'.
+  { rec :: rec' -> rec
+  , nt :: nt -> nt'
+  , r :: r -> r'
+  , cat :: cat -> cat'
+  , o :: o -> o'
+  , cst :: CST (nt' /\ r') o' -> Maybe (CST (nt /\ r) o)
+  } -> Options rec nt r cat o -> Options rec' nt' r' cat' o'
+fullMapOptions fs =
+  let
+    mapLogicful = memoizeEq $ overLogic $
+      \f r is ->
+        case traverse fs.cst is of
+          Just is' -> f (fs.rec r) is'
+          Nothing -> false
+    mapLogicParts = over LogicParts \lp ->
+      { necessary: lp.necessary <#> \n ->
+          n { logic = mapLogicful n.logic }
+      , advanced: bimap (bimap fs.nt fs.r) fs.o <$> lp.advanced
+      }
+    go = over Options $ map \opt ->
+      { pName: fs.nt opt.pName
+      , rName: fs.r opt.rName
+      , rule: bimap (bimap (map go) fs.nt) fs.cat <$> opt.rule
+      , logicParts: mapLogicParts opt.logicParts
+      }
+  in go
 
 foreign import data Logicful :: Type -> Type -> Type
 logicful :: forall i r. (r -> Array i -> Boolean) -> Logicful i r
@@ -273,6 +304,17 @@ withCST_ f (Comb c) = Comb c
       }
     }
   }
+
+mapMaybe :: forall rec nt cat o a b. (a -> Maybe b) -> Comb rec nt cat o a -> Comb rec nt cat o b
+mapMaybe f = withCST' \_ _ da -> da unit >>= \a ->
+  case f a of
+    Nothing -> Failed
+    Just r -> Result r
+
+mapMaybeFlipped :: forall rec nt cat o a b. Comb rec nt cat o a -> (a -> Maybe b) -> Comb rec nt cat o b
+mapMaybeFlipped = flip mapMaybe
+
+infixl 1 mapMaybeFlipped as <?>
 
 withRec :: forall rec nt cat o a b. (rec -> a -> b) -> Comb rec nt cat o a -> Comb rec nt cat o b
 withRec f = withCST' \rec _ prev -> f rec <$> prev unit

@@ -59,7 +59,7 @@ buildTree name (Comb c) = Options $
   c.rules # mapWithIndex \i { resultant: Resultant { accepting }, rule } ->
     { pName: name
     , rName: i
-    , rule: lmap (lmap extract) <$> rule
+    , rule: rule
     , logicParts: accepting
     }
 

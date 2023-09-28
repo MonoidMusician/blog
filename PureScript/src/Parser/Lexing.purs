@@ -14,11 +14,12 @@ import Data.Either.Nested (type (\/))
 import Data.Foldable (class Foldable, and, foldMap, for_, null, oneOfMap, traverse_)
 import Data.Function (on)
 import Data.HeytingAlgebra (ff)
+import Data.Lazy (Lazy, force)
 import Data.List (List)
 import Data.List as List
 import Data.Map (SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe, isJust)
+import Data.Maybe (Maybe(..), fromMaybe, isJust, isNothing)
 import Data.Newtype (class Newtype, over, over2, unwrap)
 import Data.Semigroup.Foldable (maximum)
 import Data.String (CodePoint)
@@ -32,6 +33,7 @@ import Data.String.Regex.Unsafe (unsafeRegex)
 import Data.Traversable (class Traversable, mapAccumL, sequence)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
+import Debug (spy, spyWith, traceM)
 import Effect (Effect)
 import Effect.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
@@ -433,26 +435,26 @@ lexingParse { best } (initialState /\ States states) initialInput =
   goto (p /\ _) s' = lookupState s' >>= _.receive >>> Map.lookup p
 
 
-stillAccept :: forall i. LogicParts i Unit -> i -> Maybe (LogicParts i Unit)
-stillAccept (LogicParts before) shift =
+stillAccept :: forall i r. r -> LogicParts i r -> i -> Maybe (LogicParts i r)
+stillAccept rec (LogicParts before) shift =
   let advanced = before.advanced <> [shift] in
   map (LogicParts <<< { advanced, necessary: _ }) $
     sequence $ before.necessary # Array.mapMaybe \part -> sequence case unit of
       _ | Array.length advanced < part.start -> Just (Just part)
-      _ | not applyLogic part.logic unit advanced -> Nothing
+      _ | not applyLogic part.logic rec (Array.drop part.start advanced) -> Nothing
       _ | part.start + part.length >= Array.length advanced -> Just Nothing
       _ -> Just (Just part)
 
-advanceAccepting :: forall nt r cat o. Eq cat => Eq nt => Eq r => Options Unit nt r cat o -> Part (CST (nt /\ r) o) (cat /\ o) -> Options Unit nt r cat o
-advanceAccepting (Options options) shift = Options $ options # Array.mapMaybe \option@{ logicParts: LogicParts { advanced }} ->
+advanceAccepting :: forall rec nt r cat o. Eq cat => Eq nt => Eq r => rec -> Options rec nt r cat o -> Part (CST (nt /\ r) o) (cat /\ o) -> Options rec nt r cat o
+advanceAccepting rec (Options options) shift = Options $ options # Array.mapMaybe \option@{ logicParts: LogicParts { advanced }} ->
   case option.rule !! Array.length advanced of
     Just head ->
       case head, shift of
         Terminal cat', Terminal (cat /\ o) | cat == cat' ->
-          stillAccept option.logicParts (Leaf o) <#> \logicParts ->
+          stillAccept rec option.logicParts (Leaf o) <#> \logicParts ->
             option { logicParts = logicParts }
         NonTerminal (_ /\ nt'), NonTerminal b@(Branch (nt /\ _) _) | nt' == nt ->
-          stillAccept option.logicParts b <#> \logicParts ->
+          stillAccept rec option.logicParts b <#> \logicParts ->
             option { logicParts = logicParts }
         _, _ -> empty
     _ -> empty
@@ -462,6 +464,7 @@ closeA1 ::
     Ord nt =>
     Eq r =>
     Ord cat =>
+    Eq o =>
   Options rec nt r cat o -> Options rec nt r cat o
 closeA1 (Options items) = acceptMore (Options items) $ items # foldMap closeAItem
 
@@ -470,7 +473,8 @@ closeAItem ::
     Ord nt =>
     Eq r =>
     Ord cat =>
-  { rule :: Fragment (Options rec nt r cat o /\ nt) cat
+    Eq o =>
+  { rule :: Fragment (Lazy (Options rec nt r cat o) /\ nt) cat
   , logicParts :: LogicParts (CST (nt /\ r) o) rec
   | xtra
   } ->
@@ -478,71 +482,42 @@ closeAItem ::
 closeAItem { rule, logicParts: LogicParts { advanced } } =
   case rule !! Array.length advanced of
     Just (NonTerminal (opts /\ _)) ->
-      opts
+      force opts
     _ -> mempty
 
-addFromState :: forall nt r cat. Eq nt => Eq r => State nt r cat -> nt -> r -> Array (Zipper nt cat)
-addFromState (State state) pName rName =
-  state >>= case _ of
-    { pName: pName', rName: rName', rule: newRule@(Zipper [] _) }
-      | pName == pName'
-      , rName == rName' -> pure newRule
-    _ -> empty
-
 closeA ::
-  forall nt r cat o.
+  forall rec nt r cat o.
     Ord nt =>
     Eq r =>
     Ord cat =>
     Eq o =>
-  Options Unit nt r cat o -> Options Unit nt r cat o
+  Options rec nt r cat o -> Options rec nt r cat o
 closeA items =
   let items' = closeA1 items
-  in if items' == items then items else closeA items'
-
-argh :: forall a. (a -> a -> Boolean) -> (a -> a -> a) -> Array a -> Array a -> Array a
-argh comp comb ls rs = (#) (ls <> rs) $ [] # Array.foldl \items newItem ->
-  let
-    accumulate :: Boolean -> _ -> { accum :: Boolean, value :: _ }
-    accumulate alreadyFound item =
-      if comp item newItem
-        then { accum: true, value: comb item newItem }
-        else { accum: alreadyFound, value: item }
-    { accum: found, value: items' } =
-      mapAccumL accumulate false items
-  in
-    if found then items' else items' <> [ newItem ]
+  in if Array.length (unwrap items') == Array.length (unwrap items) then items else closeA items'
 
 acceptMore ::
   forall rec nt r cat o.
     Ord nt =>
     Eq r =>
     Ord cat =>
+    Eq o =>
   Options rec nt r cat o -> Options rec nt r cat o -> Options rec nt r cat o
-acceptMore = over2 Options $ argh
-  do \item newItem -> and [ eq `on` _.pName, eq `on` _.rName ] item newItem
-  do
-    \item newItem ->
-      item
-        { logicParts = item.logicParts <> newItem.logicParts
-        , rule = zipFragment item.rule newItem.rule
-        }
+acceptMore = over2 Options $
+  let
+    comp a b =
+      a.pName == b.pName && a.rName == b.rName &&
+        a.logicParts == b.logicParts
+  in \as bs -> Array.nubByEq comp (as <> bs)
+  -- \as bs -> as <> do
+  --   bs # Array.filter \b ->
+  --     isNothing $ as # Array.find \a ->
 
-zipFragment ::
-  forall nt r cat o rec.
-    Ord nt =>
-    Eq r =>
-    Ord cat =>
-  Fragment (Options rec nt r cat o /\ nt) cat -> Fragment (Options rec nt r cat o /\ nt) cat -> Fragment (Options rec nt r cat o /\ nt) cat
-zipFragment = Array.zipWith case _, _ of
-  NonTerminal (l /\ nt), NonTerminal (r /\ _) -> NonTerminal (acceptMore l r /\ nt)
-  l, _ -> l
-
-type ContextStack s nt r cat o =
-  Stack (Options Unit nt r cat o /\ s) (CST (nt /\ r) o)
+type ContextStack s rec nt r cat o =
+  Stack (Options rec nt r cat o /\ s) (CST (nt /\ r) o)
 
 contextLexingParse ::
-  forall s nt r cat i o.
+  forall s rec nt r cat i o.
     Ord s =>
     Ord nt =>
     Eq r =>
@@ -550,22 +525,40 @@ contextLexingParse ::
     Tokenize cat i o =>
     Eq o =>
   { best :: Best s (nt /\ r) cat i o
-  , acceptings :: Options Unit nt r cat o
   } ->
-  s /\ States s nt r cat -> i ->
-  (ContextStack s nt r cat o /\ String) \/ ContextStack s nt r cat o
-contextLexingParse { best, acceptings } (initialState /\ States states) initialInput =
+  s /\ States s nt r cat ->
+  Options rec nt r cat o ->
+  rec ->
+  i ->
+  (ContextStack s rec nt r cat o /\ String) \/ ContextStack s rec nt r cat o
+contextLexingParse { best } (initialState /\ States states) acceptings rec initialInput =
   go (Zero (initialMeta /\ initialState)) (Left initialInput)
   where
   tabulated = indexStates (States states)
   lookupState :: s -> Maybe (StateInfo s nt r cat)
   lookupState s = tabulated s >>= Array.index states
-  lookupAction :: ContextStack s nt r cat o -> StateInfo s nt r cat -> Either i (cat /\ o /\ i) -> Either String _
+  lookupAction :: ContextStack s rec nt r cat o -> StateInfo s nt r cat -> Either i (cat /\ o /\ i) -> Either String _
   lookupAction stack info@{ advance: SemigroupMap m } = case _ of
     Left input -> do
       -- traceM $ [ unsafeCoerce input ] <> Array.fromFoldable (Map.keys m)
       let actions = NEA.fromArray $ Array.mapMaybe (matchCat input) $ Map.toUnfoldable m
-      possibilities <- "No action"? actions
+      possibilities <- "No action"? actions ?> do
+        asdf input
+        asdf "items"
+        traverse_ asdf (unwrap info.items)
+        let rules = Array.fromFoldable (statesOn stack) # Array.mapMaybe (snd >>> lookupState)
+        asdf "rules"
+        for_ rules $ asdf <<< do
+          _.items >>> unwrap >>> map do
+            _.rule >>> \(Zipper l r) -> fold
+              [ map (unsafeCoerce _.value0 >>> _.value0) l
+              , [ "•" ]
+              , map (unsafeCoerce _.value0 >>> _.value0) r
+              ]
+        asdf "advance"
+        asdf $ Array.fromFoldable $ Map.keys m
+        asdf "options"
+        asdf (fst (topOf stack))
       checkBest stack possibilities
     Right (cat /\ o /\ i) -> do
       sr <- "No repeat action"? Map.lookup cat m
@@ -594,10 +587,12 @@ contextLexingParse { best, acceptings } (initialState /\ States states) initialI
       Just chosen | act <- chosenAction chosen, isJust $ test stack act ->
         Right chosen
       _ -> do
-        filtered <- "All actions rejected"?! NEA.fromArray $ NEA.mapMaybe (choosePossibility stack) possibilities
+        filtered <- "All actions rejected"? (NEA.fromArray $ NEA.mapMaybe (choosePossibility stack) possibilities) ?> do
+          -- void $ pure $ spy "asdf" (fst (topOf stack))
+          void $ pure $ unwrap (fst (topOf stack)) <#> _.logicParts >>> unwrap >>> _.advanced
         "No best action (all accepted)"? guard (NEA.length filtered < NEA.length possibilities)
         "No best non-rejected action"? best filtered
-  go :: ContextStack s nt r cat o -> Either i (cat /\ o /\ i) -> (ContextStack s nt r cat o /\ String) \/ ContextStack s nt r cat o
+  go :: ContextStack s rec nt r cat o -> Either i (cat /\ o /\ i) -> (ContextStack s rec nt r cat o /\ String) \/ ContextStack s rec nt r cat o
   go stack (Left input) | len input == 0 = pure stack
   go stack input = do
     state <- Tuple stack "Missing state"? lookupState (snd (topOf stack))
@@ -614,7 +609,7 @@ contextLexingParse { best, acceptings } (initialState /\ States states) initialI
     { rule: Zipper parsed [], pName, rName } | pName == p && rName == r ->
       Just parsed
     _ -> Nothing
-  takeStack :: nt /\ r ->  ContextStack s nt r cat o -> Array _ -> Maybe (ContextStack s nt r cat o)
+  takeStack :: nt /\ r ->  ContextStack s rec nt r cat o -> Array _ -> Maybe (ContextStack s rec nt r cat o)
   takeStack r stack0 parsed =
     let
       take1 (taken /\ stack) = case _ of
@@ -633,8 +628,8 @@ contextLexingParse { best, acceptings } (initialState /\ States states) initialI
       r <- lookupState (snd s) >>= _.receive >>> Map.lookup p
       s' <- lookupState r
       pure $ advanceMeta (fst s /\ s'.items) (NonTerminal (Branch shifting taken)) /\ r
-  initialMeta :: Options Unit nt r cat o
-  initialMeta = acceptings
-  advanceMeta :: Options Unit nt r cat o /\ State nt r cat -> Part (CST (nt /\ r) o) (cat /\ o) -> Options Unit nt r cat o
+  initialMeta :: Options rec nt r cat o
+  initialMeta = closeA acceptings
+  advanceMeta :: Options rec nt r cat o /\ State nt r cat -> Part (CST (nt /\ r) o) (cat /\ o) -> Options rec nt r cat o
   advanceMeta (accept /\ items) advance =
-    closeA $ advanceAccepting accept advance
+    closeA $ advanceAccepting rec accept advance

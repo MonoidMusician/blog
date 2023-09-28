@@ -9,13 +9,14 @@ import Data.Either (Either(..), note)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Newtype (over)
 import Data.Tuple (Tuple, fst, snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
-import Parser.Algorithms (getResultCM', statesNumberedByMany)
-import Parser.Comb.Combinators (named)
-import Parser.Comb.Types (CGrammar, CResultant, Comb(..), ParseError, Rec(..), Resultant(..), CSyntax, matchRule)
-import Parser.Lexing (class Tokenize, Best, Rawr, Similar, bestRegexOrString, lexingParse, longest, (?))
-import Parser.Types (Grammar(..), OrEOF(..), States)
+import Parser.Algorithms (getResultCM', revertCST', statesNumberedByMany)
+import Parser.Comb.Combinators (buildTree, named)
+import Parser.Comb.Types (CGrammar, COptions, CResultant, CSyntax, Comb(..), Options(..), ParseError, Rec(..), Resultant(..), fullMapOptions, matchRule)
+import Parser.Lexing (class Tokenize, Best, Rawr, Similar, bestRegexOrString, contextLexingParse, longest, (?))
+import Parser.Types (Grammar(..), OrEOF(..), Part(..), States)
 
 type CBest nt cat i o =
   Best Int (Either nt nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
@@ -33,6 +34,7 @@ parse ::
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
+    Eq o =>
   nt -> Comb (Rec nt (OrEOF i) o) nt cat o a -> (i -> Either ParseError a)
 parse = parseWith { best: longest }
 
@@ -51,6 +53,7 @@ parseWith ::
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
+    Eq o =>
   CConf nt cat i o -> nt -> Comb (Rec nt (OrEOF i) o) nt cat o a -> (i -> Either ParseError a)
 parseWith conf name parser = snd (parseWith' conf name parser)
 
@@ -60,13 +63,14 @@ parseWith' ::
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
+    Eq o =>
   CConf nt cat i o -> nt -> Comb (Rec nt (OrEOF i) o) nt cat o a ->
   (Map nt Int /\ Int /\ CStates nt cat) /\ (i -> Either ParseError a)
 parseWith' conf name parser = do
   -- First we build the LR(1) parsing table
   let { states, resultants } = compile name parser
   -- Then we can run it on an input
-  states /\ execute conf { states, resultants }
+  states /\ execute conf { states, resultants, options: buildTree name parser }
 
 parseRegex' ::
   forall nt a.
@@ -108,20 +112,42 @@ execute ::
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
+    Eq o =>
   { best :: Best Int (Either nt nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
   } ->
   { states :: Map nt Int /\ Int /\ States Int (Either nt nt) (Maybe Int) (OrEOF cat)
   , resultants :: nt /\ Array (CResultant (Rec nt (OrEOF i) o) nt o a)
+  , options :: COptions (Rec nt (OrEOF i) o) nt cat o
   } ->
   (i -> Either ParseError a)
-execute conf { states: stateMap /\ tgt /\ states, resultants } = do
+execute conf { states: stateMap /\ tgt /\ states, resultants, options } = do
   let
+    options' ::
+      nt -> Options (Rec nt (OrEOF i) o) (Either nt nt) (Maybe Int) (OrEOF cat) (OrEOF o)
+    options' =
+      let
+        x = fullMapOptions
+          { rec: identity
+          , nt: pure
+          , r: pure
+          , cat: Continue
+          , o: Continue
+          , cst: revertCST'
+          } options
+      in \name -> Options
+          [ { pName: Left name
+            , rName: Nothing
+            -- FIXME: pure x is wrong here
+            , rule: [NonTerminal (pure x /\ Right name), Terminal EOF]
+            , logicParts: mempty
+            }
+          ]
     rec = Rec \name input -> do
       state <- "Could not find parser in table"? Map.lookup name stateMap
-      stack <- lmap snd $ lexingParse conf (state /\ states) input
+      stack <- lmap snd $ contextLexingParse conf (state /\ states) (options' name) rec input
       "Failed to extract result"? getResultCM' stack
   \(input :: i) -> do
-    stack <- lmap snd $ lexingParse conf (tgt /\ states) (Continue input)
+    stack <- lmap snd $ contextLexingParse conf (tgt /\ states) (options' (fst resultants)) rec (Continue input)
     cst <- "Failed to extract result"? getResultCM' stack
     -- Apply the function that parses from the CST to the desired result type
     "Failed to match rule"? uncurry (matchRule rec) resultants cst
@@ -163,6 +189,7 @@ coll ::
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
+    Eq o =>
   nt -> Comb (Rec nt (OrEOF i) o) nt cat o a -> Coll nt cat i o (Parsing i a)
 coll name parser@(Comb c) = Coll
   { grammar: c.grammar
@@ -176,6 +203,7 @@ coll name parser@(Comb c) = Coll
           \conf -> execute conf
             { states: entrypoints /\ state /\ states
             , resultants: name /\ resultantsOf parser
+            , options: buildTree name parser
             }
   }
 

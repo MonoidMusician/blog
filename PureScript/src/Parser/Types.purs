@@ -291,6 +291,8 @@ data CST r tok
   = Leaf tok
   | Branch r (Array (CST r tok))
 derive instance eqCST :: (Eq r, Eq tok) => Eq (CST r tok)
+derive instance functorCST :: Functor (CST r)
+derive instance bifunctorCST :: Bifunctor CST
 
 sourceCST :: forall r tok. CST r tok -> Array tok
 sourceCST (Leaf tok) = pure tok

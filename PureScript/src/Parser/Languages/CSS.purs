@@ -44,7 +44,9 @@ import Effect (Effect)
 import Effect.Console (log)
 import Parser.Codecs (_n, shiftReduceCodec)
 import Parser.Comb (execute, parseRegex, parseRegex', sourceOf)
+import Parser.Comb.Combinators (buildTree)
 import Parser.Comb.Run (Parsing, resultantsOf, withReparser)
+import Parser.Debug (thingy)
 import Parser.Examples (showPart)
 import Parser.Languages (Comber, colorful, delim, key, mainName, many, many1, many1SepBy, mopt, opt, printPretty, rawr, result, showZipper, ws, wss, wsws, wsws', (#->), (#:), (/\\/), (/|\), (<#?>), (>==))
 import Parser.Lexing (type (~), Rawr, asdf, bestRegexOrString, unRawr, (?>))
@@ -55,7 +57,7 @@ import Type.Proxy (Proxy(..))
 mkCSSParser :: Maybe String -> String -> String \/ Array Vert
 mkCSSParser (Just json)
   | Right (Right states) <- CA.decode codec <$> Json.parseJson json =
-    execute { best: bestRegexOrString } { states, resultants: mainName /\ resultantsOf selector_list }
+    execute { best: bestRegexOrString } { states, resultants: mainName /\ resultantsOf selector_list, options: buildTree mainName selector_list }
 mkCSSParser _ = parseRegex mainName selector_list
 
 token :: JsonCodec (OrEOF (String ~ Rawr))
@@ -99,6 +101,7 @@ codec = CAC.tuple (indexed CA.string CA.int) $ CAC.tuple CAC.int $
 
 test :: Comber String -> Array String -> Effect Unit
 test parser testData = do
+  void $ pure thingy
   log ""
   log "Grammar:"
   printPretty (mainName #: parser)

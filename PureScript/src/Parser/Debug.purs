@@ -12,3 +12,5 @@ spie = (\v -> unsafePerformEffect (v <$ log (stringifyWithIndent 2 (unsafeCoerce
 
 spieName :: forall a2. String -> a2 -> a2
 spieName name = (\v -> unsafePerformEffect (v <$ log (name <> ": " <> stringifyWithIndent 2 (unsafeCoerce v))))
+
+foreign import thingy :: Int

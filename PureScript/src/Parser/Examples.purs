@@ -86,7 +86,7 @@ testData =
   , "1234"
   ]
 
-test :: forall cat o a. Show a => Ord cat => ToString cat => Tokenize cat String o => Comb Unit String cat o a -> Effect Unit
+test :: forall cat o a. Show a => Ord cat => ToString cat => Tokenize cat String o => Eq o => Comb Unit String cat o a -> Effect Unit
 test parser = do
   log ""
   log "Grammar:"

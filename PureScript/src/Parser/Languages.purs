@@ -54,15 +54,18 @@ printPretty (Comb { prettyGrammar }) = nub prettyGrammar #
     msyntax # traverse_ \syntax ->
       log $ showPart (NonTerminal name) <> " = " <> printSyntax showFragment syntax <> " ."
 
-showFragment :: Fragment String (String ~ Rawr) -> String
-showFragment =
+showFragment' :: Fragment String (String ~ Rawr) -> String
+showFragment' =
   toUnfoldable >>> coalesce >>> fromFoldable >>>
-    map showPart >>> intercalate " " >>> case _ of
-      "" -> showPart (Terminal (Similar (Left "")))
-      r -> r
+    map showPart >>> intercalate " "
+
+showFragment :: Fragment String (String ~ Rawr) -> String
+showFragment = showFragment' >>> case _ of
+  "" -> showPart (Terminal (Similar (Left "")))
+  r -> r
 
 showZipper :: Zipper String (String ~ Rawr) -> String
-showZipper (Zipper l r) = intercalate " • " [ showFragment l, showFragment r ]
+showZipper (Zipper l r) = intercalate " • " [ showFragment' l, showFragment' r ]
 
 digit :: Comber Int
 digit = named "digit" $ oneOf $ mapWithIndex (<$) $
