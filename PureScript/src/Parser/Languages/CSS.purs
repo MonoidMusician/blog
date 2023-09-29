@@ -22,7 +22,7 @@ import Data.Either (Either(..), either, hush, isLeft, isRight)
 import Data.Either.Nested (type (\/))
 import Data.Enum (toEnum)
 import Data.Foldable (all, and, any, fold, foldMap, for_, oneOf, sum, traverse_)
-import Data.FoldableWithIndex (allWithIndex)
+import Data.FoldableWithIndex (allWithIndex, forWithIndex_)
 import Data.HeytingAlgebra (tt)
 import Data.Int (hexadecimal)
 import Data.Int as Int
@@ -38,6 +38,7 @@ import Data.Newtype (unwrap)
 import Data.Profunctor (dimap)
 import Data.String as String
 import Data.Traversable (for, sequence)
+import Data.TraversableWithIndex (forWithIndex)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Variant as Variant
 import Effect (Effect)
@@ -99,64 +100,70 @@ codec = CAC.tuple (indexed CA.string CA.int) $ CAC.tuple CAC.int $
       , receive: indexed (CAC.either CA.string CA.string) CA.int
       }
 
-test :: Comber String -> Array (Either String String) -> Effect Unit
-test parser testData = do
+test :: Array (Comber String) -> Array (Either String String) -> Effect Unit
+test parsers testData = do
   void $ pure thingy
-  log ""
-  log "Grammar:"
-  printPretty (mainName #: parser)
-  -- json <- FS.Sync.readTextFile UTF8 "states.compact.json"
-  -- dat@(_ /\ States states) <- maybe' (const (throw "Could not decode file")) pure $
-  --   hush (Json.parseJson json) >>= CA.decode codec >>> hush
-  -- let doParse = execute { best: bestRegexOrString } { states: dat, resultants: mainName /\ resultantsOf parser }
-  let dat@(_ /\ _ /\ States states) /\ doParse = parseRegex' mainName parser
-  log ""
-  -- launchAff_ $ FS.Aff.writeTextFile UTF8 "states.compact.json" $ Json.stringify $ CA.encode codec dat
-  -- log $ show states
-  log $ show (Array.length states) <> " states"
-  log ""
-  log "Conflicts:"
-  let
-    normal :: Fragment (Either _ _) _ -> Maybe (Fragment _ _)
-    normal frag = for frag case _ of
-      Terminal (Continue a) -> Just (Terminal a)
-      NonTerminal (Right a) -> Just (NonTerminal a)
-      _ -> Nothing
-    showItems :: String -> State (Either _ _) (Maybe _) (OrEOF _) -> _
-    showItems pre items =
-      for_ (unwrap items) \{ pName, rName, rule: Zipper l' r' } -> do
-        for_ (normal l' /|\ normal r') \(l /\ r) ->
-          log $ pre <> showPart (NonTerminal (fold pName)) <> "." <> foldMap show rName <> " = " <> showZipper (Zipper l r)
-  conflicts <- states # foldMap \{ items, advance } ->
-    advance # foldMap \sr -> M.guard (not decisionUnique sr) do
-      log $ "- " <> show sr
-      case sr of
-        ShiftReduces s rs | Just st <- states !! s -> do
-          log "  Shift to"
-          showItems "  -> " st.items
-          log "  Or reduce"
-          for_ rs $ bitraverse hush identity >>> traverse_ \(name /\ num) -> do
-            log $ "  <- " <> showPart (NonTerminal name) <> "." <> show num
-        _ -> pure unit
-      log "  With items"
-      showItems "  - " items
-      pure (Additive 1)
-  log $ show $ unwrap conflicts
+  doParses <- forWithIndex parsers \i parser -> do
+    log ""
+    log $ "Grammar " <> show (i+1) <> ":"
+    printPretty (mainName #: parser)
+    -- json <- FS.Sync.readTextFile UTF8 "states.compact.json"
+    -- dat@(_ /\ States states) <- maybe' (const (throw "Could not decode file")) pure $
+    --   hush (Json.parseJson json) >>= CA.decode codec >>> hush
+    -- let doParse = execute { best: bestRegexOrString } { states: dat, resultants: mainName /\ resultantsOf parser }
+    let dat@(_ /\ _ /\ States states) /\ doParse = parseRegex' mainName parser
+    log ""
+    -- launchAff_ $ FS.Aff.writeTextFile UTF8 "states.compact.json" $ Json.stringify $ CA.encode codec dat
+    -- log $ show states
+    log $ show (Array.length states) <> " states"
+    log ""
+    log "Conflicts:"
+    let
+      normal :: Fragment (Either _ _) _ -> Maybe (Fragment _ _)
+      normal frag = for frag case _ of
+        Terminal (Continue a) -> Just (Terminal a)
+        NonTerminal (Right a) -> Just (NonTerminal a)
+        _ -> Nothing
+      showItems :: String -> State (Either _ _) (Maybe _) (OrEOF _) -> _
+      showItems pre items =
+        for_ (unwrap items) \{ pName, rName, rule: Zipper l' r' } -> do
+          for_ (normal l' /|\ normal r') \(l /\ r) ->
+            log $ pre <> showPart (NonTerminal (fold pName)) <> "." <> foldMap show rName <> " = " <> showZipper (Zipper l r)
+    conflicts <- states # foldMap \{ items, advance } ->
+      advance # foldMap \sr -> M.guard (not decisionUnique sr) do
+        log $ "- " <> show sr
+        case sr of
+          ShiftReduces s rs | Just st <- states !! s -> do
+            log "  Shift to"
+            showItems "  -> " st.items
+            log "  Or reduce"
+            for_ rs $ bitraverse hush identity >>> traverse_ \(name /\ num) -> do
+              log $ "  <- " <> showPart (NonTerminal name) <> "." <> show num
+          _ -> pure unit
+        log "  With items"
+        showItems "  - " items
+        pure (Additive 1)
+    log $ show $ unwrap conflicts
+    pure doParse
   log ""
   log "Examples:"
   results <- for testData \ex -> do
     pure unit
     let s = either identity identity ex
-    let parsed = doParse s
-    let r = either identity identity parsed
-    let res = if isRight parsed == isRight ex then Right r else Left r
-    log (colorful Ansi.BrightYellow (show s) <> "\n  " <> result res)
-    pure if isRight res then 1 else 0
-  log $ show (sum results) <> " / " <> show (Array.length results)
+    log $ colorful Ansi.BrightYellow $ show s
+    for doParses \doParse -> do
+      let parsed = doParse s
+      let r = either identity identity parsed
+      let res = if isRight parsed == isRight ex then Right r else Left r
+      log $ "  " <> result res
+      pure if isRight res then 1 else 0
+  forWithIndex_ doParses \i _ -> do
+    let parserResults = results # Array.mapMaybe (_ !! i)
+    log $ show (sum parserResults) <> " / " <> show (Array.length parserResults)
 
 main :: Effect Unit
 main = do
-  test (printVerts <$> selector_list)
+  test [printVerts <$> selector_list]
     [ Right "::before"
     , Right ".haskell"
     , Right "h1#title"

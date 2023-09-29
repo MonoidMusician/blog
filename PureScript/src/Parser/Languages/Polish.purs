@@ -65,23 +65,29 @@ op = rawr $ "[a-zA-Z]+" <> wsrawr
 num :: Comber Number
 num = rawr ("\\d+(\\.\\d+)?" <> wsrawr) <?> Number.fromString
 
-polish :: Comber (CST String Number)
-polish =
+data Strat = Explicit | ManyR | ManyL
+-- 15 10 13
+strats = [Explicit,ManyR,ManyL] :: Array Strat
+
+polish :: Strat -> Comber (CST String Number)
+polish strat =
   namedRec "polish" \rec ->
     oneOf
       [ "num"#: Leaf <$> num
-      , oneOf $ arities <#> \i -> ado
-          b <- "op"#: op <?> arityEq i
-          cs <- sequence $ Array.replicate i (wss *> rec)
-          in Branch b cs
-      -- , ado
-      --   b /\ cs <- ((op <?> arity) /|\ many "arguments" (wss *> rec)) <?>
-      --     \((b /\ i) /\ cs) -> b /\ cs <$ guard (Array.length cs == i)
-      --   in Branch b cs
-      -- , ado
-      --     b /\ cs <- ((op <?> arity) /|\ manyL "arguments" (wss *> rec)) <?>
-      --       \((b /\ i) /\ cs) -> b /\ cs <$ guard (Array.length cs == i)
-      --     in Branch b cs
+      , case strat of
+          Explicit ->
+            oneOf $ arities <#> \i -> ado
+              b <- "op"#: op <?> arityEq i
+              cs <- sequence $ Array.replicate i $ wss *> rec
+              in Branch b cs
+          ManyR -> ado
+            b /\ cs <- ((op <?> arity) /|\ many "arguments" (wss *> rec)) <?>
+              \((b /\ i) /\ cs) -> b /\ cs <$ guard (Array.length cs == i)
+            in Branch b cs
+          ManyL -> ado
+            b /\ cs <- ((op <?> arity) /|\ manyL "arguments" (wss *> rec)) <?>
+              \((b /\ i) /\ cs) -> b /\ cs <$ guard (Array.length cs == i)
+            in Branch b cs
       ]
     -- namedRec "arguments" \args ->
     --   oneOf
@@ -102,7 +108,7 @@ polish =
 
 main :: Effect Unit
 main = do
-  test (printPN <$> polish) $ map (join bimap trimWS)
+  test (strats <#> \strat -> printPN <$> polish strat) $ map (join bimap trimWS)
     [ Right "123"
     , Left "NOT"
     , Left "MOP"
