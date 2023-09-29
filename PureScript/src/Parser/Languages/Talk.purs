@@ -13,7 +13,10 @@ import Data.Tuple (Tuple)
 
 -- https://dl.acm.org/doi/10.1145/3341694
 -- https://dl.acm.org/doi/10.1145/3409002
+
 -- https://cofree.coffee/~verity/parser.html
+-- https://cofree.coffee/~verity/css_selectors.html
+
 -- https://github.com/MonoidMusician/blog/blob/274c1d64c12248773501e2df276cd305ecd94a14/PureScript/src/Parser/Comb/Types.purs#L38-L85
 -- (to be pulled out into a proper library later)
 
