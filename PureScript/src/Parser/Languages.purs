@@ -158,9 +158,15 @@ main = do
     , "[,]"
     ]
 
-many :: forall a. String -> Comber a -> Comber (Array a)
+--many :: forall a. String -> Comber a -> Comber (Array a)
+many :: forall t308 rec309 nt310 cat311 o312. Ord nt310 => nt310 -> Comb rec309 nt310 cat311 o312 t308 -> Comb rec309 nt310 cat311 o312 (Array t308)
 many n p = Array.fromFoldable <$> n #-> \more ->
   pure Nil <|> lift2 Cons p more
+
+manyL :: forall t308 rec309 nt310 cat311 o312. Ord nt310 => nt310 -> Comb rec309 nt310 cat311 o312 t308 -> Comb rec309 nt310 cat311 o312 (Array t308)
+manyL n p = Array.reverse <<< Array.fromFoldable <$> n #-> \more ->
+  pure Nil <|> lift2 (flip Cons) more p
+
 
 manySepBy :: forall x a. String -> Comber x -> Comber a -> Comber (Array a)
 manySepBy n s p = map Array.fromFoldable $

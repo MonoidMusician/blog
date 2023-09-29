@@ -11,7 +11,8 @@ import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..), either, isLeft, note)
 import Data.Either.Nested (type (\/))
-import Data.Foldable (class Foldable, and, foldMap, for_, null, oneOfMap, traverse_)
+import Data.Foldable (class Foldable, and, foldMap, for_, null, oneOfMap, sum, traverse_)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.Function (on)
 import Data.HeytingAlgebra (ff)
 import Data.Lazy (Lazy, force)
@@ -258,8 +259,8 @@ thenNote = map <<< note
 infixr 9 thenNote as ?!
 
 whenFailed :: forall f a. Foldable f => f a -> Effect Unit -> f a
-whenFailed a _ = a
 whenFailed a b | null a = let _ = unsafePerformEffect b in a
+whenFailed a _ = a
 
 infixr 9 whenFailed as ?>
 
@@ -565,23 +566,47 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
       checkBest stack (NEA.singleton $ sr /\ cat /\ o /\ i)
   matchCat input (cat /\ act) =
     recognize cat input <#> \d -> act /\ cat /\ d
-  test :: _ -> ShiftReduce (s /\ cat /\ o) (nt /\ r) -> Maybe _
+  test :: _ -> ShiftReduce (s /\ cat /\ o) ((nt /\ r) /\ cat /\ o) -> Maybe _
   test stack = filterSR (testShift stack) (testReduce stack)
   testShift stack (s /\ cat /\ o) = isJust do
     { items: s' } <- lookupState s
     guard $ not failed $ advanceMeta (fst (topOf stack) /\ s') (Terminal (cat /\ o))
-  testReduce stack r = isJust do
+  testReduce stack (r /\ cat /\ o) = isJust do
     s <- topOf stack # snd # lookupState
     reduction <- lookupReduction r s
     reduced <- takeStack r stack reduction
-    guard $ not failed $ fst $ topOf reduced
+    traceM "testReduce"
+    guard $ not failed $ fst $ topOf $ drain reduced (cat /\ o)
+  drain :: ContextStack s rec nt r cat o -> cat /\ o -> ContextStack s rec nt r cat o
+  drain stack (cat /\ o) = fromMaybe stack $ const Nothing do
+    state@{ advance: SemigroupMap m } <- lookupState (snd (topOf stack))
+    sr <- Map.lookup cat m
+    case sr of
+      Shift s -> do
+        traceM "drain shift"
+        traceM s
+        { items: s' } <- lookupState s
+        pure (Snoc stack (Leaf o) (advanceMeta (fst (topOf stack) /\ s') (Terminal (cat /\ o)) /\ s))
+      Reduces rs | [r] <- NEA.toArray rs -> do
+        reduction <- lookupReduction r state
+        stacked <- takeStack r stack reduction
+        traceM "drain"
+        pure $ drain stacked (cat /\ o)
+      _ -> do
+        traceM "drain stopped"
+        Nothing
   failed (Options opts) =
     Array.null opts
   chosenAction = case _ of
     Left s /\ cat /\ o /\ _ -> Shift (s /\ cat /\ o)
-    Right r /\ _ -> Reduces (pure r)
+    Right r /\ cat /\ o /\ _ -> Reduces $ pure $ r /\ cat /\ o
   choosePossibility stack (sr /\ cat /\ o /\ i) =
-    filterSR (\s' -> testShift stack (s' /\ cat /\ o)) (testReduce stack) sr <#> \sr' -> sr' /\ cat /\ o /\ i
+    filterSR (\s' -> testShift stack (s' /\ cat /\ o)) (\r' -> testReduce stack (r' /\ cat /\ o)) sr <#> \sr' -> sr' /\ cat /\ o /\ i
+  nPossibilities :: NonEmptyArray (ShiftReduce s (nt /\ r) /\ cat /\ o /\ i) -> Int
+  nPossibilities = sum <<< map case _ of
+    Shift _ /\ _ -> 1
+    Reduces rs /\ _ -> NEA.length rs
+    ShiftReduces _ rs /\ _ -> 1 + NEA.length rs
   checkBest stack possibilities = do
     case best possibilities of
       Just chosen | act <- chosenAction chosen, isJust $ test stack act ->
@@ -590,12 +615,16 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
         filtered <- "All actions rejected"? (NEA.fromArray $ NEA.mapMaybe (choosePossibility stack) possibilities) ?> do
           -- void $ pure $ spy "asdf" (fst (topOf stack))
           void $ pure $ unwrap (fst (topOf stack)) <#> _.logicParts >>> unwrap >>> _.advanced
-        "No best action (all accepted)"? guard (NEA.length filtered < NEA.length possibilities)
+        "No best action (all accepted)"? guard (nPossibilities filtered < nPossibilities possibilities) ?> do
+          forWithIndex_ (fst <$> statesOn stack) \i opts -> do
+            asdf $ "options " <> show i
+            asdf opts
         "No best non-rejected action"? best filtered
   go :: ContextStack s rec nt r cat o -> Either i (cat /\ o /\ i) -> (ContextStack s rec nt r cat o /\ String) \/ ContextStack s rec nt r cat o
   go stack (Left input) | len input == 0 = pure stack
   go stack input = do
     state <- Tuple stack "Missing state"? lookupState (snd (topOf stack))
+    traceM input
     act <- lmap (Tuple stack) $ lookupAction stack state input
     case act of
       Left s /\ cat /\ o /\ i -> do

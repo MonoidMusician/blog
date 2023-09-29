@@ -282,6 +282,10 @@ acceptResult length f = LogicParts
   , advanced: []
   }
 
+shiftAccepting :: forall i r. Int -> LogicParts i r -> LogicParts i r
+shiftAccepting length (LogicParts l) = LogicParts $
+  l { necessary = l.necessary <#> \n -> n { start = n.start + length } }
+
 -- | Modify the result of the parser based on the CST fragment it receives.
 withCST' :: forall rec nt cat o a b. (rec -> Array (CCST nt o) -> (Unit -> PartialResult a) -> PartialResult b) -> Comb rec nt cat o a -> Comb rec nt cat o b
 withCST' f (Comb c) = Comb c
@@ -324,7 +328,7 @@ derive instance profunctorResultant :: Profunctor (Resultant i)
 instance applyResultant :: Apply (Resultant i r) where
   apply (Resultant l) (Resultant r) = Resultant
     { length: l.length + r.length
-    , accepting: l.accepting <> r.accepting
+    , accepting: l.accepting <> shiftAccepting l.length r.accepting
     , result: \rec i ->
         let { before: li, after: ri } = splitAt l.length i in
         l.result rec li <*> r.result rec ri
