@@ -213,15 +213,6 @@ string = named "string" $ join delim "\"" $
       ]
     ]
 
-arrayOf :: forall a. Comber a -> Comber (Array a)
-arrayOf value = delim "[" "]" do
-  manyBaseSepBy "array_contents" ws (key ",") value
-
-objectOf :: forall a. Comber a -> Comber (Array (String /\ a))
-objectOf value = delim "{" "}" do
-  manyBaseSepBy "object_contents" ws (key ",") do
-    "object_entry"#: Tuple <$> wsws string <* key ":" <*> value
-
 infixr 2 named as #:
 infixr 5 namedRec as #->
 
@@ -245,8 +236,19 @@ infixr 6 theseing as /\\/
 infixr 6 type These as /\/
 
 
+arrayOf :: forall a. Comber a -> Comber (Array a)
+arrayOf value = delim "[" "]" do
+  manyBaseSepBy "array_contents" ws (key ",") value
+
+objectOf :: forall a. Comber a -> Comber (Array (String /\ a))
+objectOf value = delim "{" "}" do
+  manyBaseSepBy "object_contents" ws (key ",") do
+    "object_entry"#: Tuple <$> wsws string <* key ":" <*> value
+
+-- Comb Combinator
+
 json :: Comber Json
-json = "value" #-> \value -> wsws $ oneOf
+json = namedRec "value" \value -> wsws $ oneOf
   [ string <#> J.fromString
   , number <#> J.fromNumber
   , key "true" $> J.fromBoolean true

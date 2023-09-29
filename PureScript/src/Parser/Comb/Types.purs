@@ -68,6 +68,7 @@ type CCST nt o = CST (nt /\ Int) o
 -- | - `rules # all \{ rule, resultant } -> length rule == resultant.length`
 -- |
 -- | Type parameters:
+-- | - `rec`: Parameter to enable recursively calling (sub-)parsers.
 -- | - `nt`: Names for non-terminals. Must have an `Ord` instance.
 -- | - `cat`: Categories of tokens, including literals. Also requires `Ord`.
 -- |   Commonly `Similar String Rawr` to match with literal keywords and regexes.
@@ -79,7 +80,11 @@ newtype Comb rec nt cat o a = Comb
   , pretty :: Maybe (CSyntax nt cat)
   , prettyGrammar :: Array (Tuple nt (Maybe (CSyntax nt cat)))
   , rules :: Array
+    -- Each nonterminal embedded in the rule comes with a way to determine
+    -- how it is allowed to fail
     { rule :: CFragment (Lazy (Options rec nt Int cat o) /\ nt) cat
+    -- The only part that deals with the parser result type `a`, essentially
+    -- a codec for deserializing CSTs into application types.
     , resultant :: CResultant rec nt o a
     }
   }
@@ -94,7 +99,6 @@ rerec f (Comb c) = Comb c
       }
   }
 
--- Can be abstracted into a new type parameter for `Comb` if necessary
 newtype Rec nt i o = Rec (nt -> i -> Either ParseError (CCST nt o))
 
 type ParseError = String
