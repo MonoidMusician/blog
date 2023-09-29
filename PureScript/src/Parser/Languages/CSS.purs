@@ -18,10 +18,10 @@ import Data.Codec.Argonaut as CA
 import Data.Codec.Argonaut.Common as CAC
 import Data.Codec.Argonaut.Record as CAR
 import Data.Codec.Argonaut.Variant as CAV
-import Data.Either (Either(..), hush)
+import Data.Either (Either(..), either, hush, isLeft, isRight)
 import Data.Either.Nested (type (\/))
 import Data.Enum (toEnum)
-import Data.Foldable (all, and, any, fold, foldMap, for_, oneOf, traverse_)
+import Data.Foldable (all, and, any, fold, foldMap, for_, oneOf, sum, traverse_)
 import Data.FoldableWithIndex (allWithIndex)
 import Data.HeytingAlgebra (tt)
 import Data.Int (hexadecimal)
@@ -99,7 +99,7 @@ codec = CAC.tuple (indexed CA.string CA.int) $ CAC.tuple CAC.int $
       , receive: indexed (CAC.either CA.string CA.string) CA.int
       }
 
-test :: Comber String -> Array String -> Effect Unit
+test :: Comber String -> Array (Either String String) -> Effect Unit
 test parser testData = do
   void $ pure thingy
   log ""
@@ -144,24 +144,30 @@ test parser testData = do
   log $ show $ unwrap conflicts
   log ""
   log "Examples:"
-  for_ testData \s -> do
+  results <- for testData \ex -> do
     pure unit
-    log (colorful Ansi.BrightYellow (show s) <> "\n  " <> result (doParse s))
+    let s = either identity identity ex
+    let parsed = doParse s
+    let r = either identity identity parsed
+    let res = if isRight parsed == isRight ex then Right r else Left r
+    log (colorful Ansi.BrightYellow (show s) <> "\n  " <> result res)
+    pure if isRight res then 1 else 0
+  log $ show (sum results) <> " / " <> show (Array.length results)
 
 main :: Effect Unit
 main = do
   test (printVerts <$> selector_list)
-    [ "::before"
-    , ".haskell"
-    , "h1#title"
-    , "h1 span"
-    , "blockquote > p"
-    , "blockquote>p"
-    , "body"
-    , "html,body"
-    , "html, body"
-    , "html , body"
-    -- , ":has(> [data-lang=\"en\"])"
+    [ Right "::before"
+    , Right ".haskell"
+    , Right "h1#title"
+    , Right "h1 span"
+    , Right "blockquote > p"
+    , Right "blockquote>p"
+    , Right "body"
+    , Right "html,body"
+    , Right "html, body"
+    , Right "html , body"
+    -- , Right ":has(> [data-lang=\"en\"])"
     ]
 
 -- Lexer definitions

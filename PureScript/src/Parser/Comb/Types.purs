@@ -14,8 +14,10 @@ import Data.Either (Either)
 import Data.Functor.Contravariant (class Contravariant, cmap)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Lazy (Lazy)
+import Data.List (List)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, over)
+import Data.NonEmpty (NonEmpty(..))
 import Data.Profunctor (class Profunctor, dimap, lcmap)
 import Data.String (CodePoint)
 import Data.Traversable (sequence, traverse)
@@ -104,12 +106,12 @@ type ParseError = String
 -- | - `length i < r.length => (r.result `elem` [Partial, Failed])`
 -- | - `length i == r.length => r.result /= Partial`
 -- | - `r.result i == r.result (take r.length i)`
-newtype Resultant i rec a = Resultant
+newtype Resultant r tok rec a = Resultant
   { length :: Int
-  , accepting :: LogicParts i rec
-  , result :: rec -> Array i -> PartialResult a
+  , accepting :: LogicParts r tok rec
+  , result :: rec -> Array (CST r tok) -> PartialResult a
   }
-type CResultant rec nt o = Resultant (CCST nt o) rec
+type CResultant rec nt o = Resultant (nt /\ Int) o rec
 
 data PartialResult a
   = Failed
@@ -122,7 +124,8 @@ type Option rec nt r cat o =
   { pName :: nt
   , rName :: r
   , rule :: Fragment (Lazy (Options rec nt r cat o) /\ nt) cat
-  , logicParts :: LogicParts (CST (nt /\ r) o) rec
+  , logicParts :: LogicParts (nt /\ r) o rec
+  , advanced :: Array (CST (nt /\ r) o)
   }
 type COptions rec nt cat o = Options rec nt Int cat o
 
@@ -130,21 +133,20 @@ derive newtype instance semigroupOptions :: Semigroup (Options rec nt r cat o)
 derive newtype instance monoidOptions :: Monoid (Options rec nt r cat o)
 derive instance newtypeOptions :: Newtype (Options rec nt r cat o) _
 
-newtype LogicParts i r = LogicParts
+newtype LogicParts r tok rec = LogicParts
   { necessary :: Array
     { start :: Int
     , length :: Int
     -- RefEq
-    , logic :: Logicful i r
+    , logic :: Logicful (CST r tok) rec
+    , parents :: Array (Tuple (Array (CST r tok)) r)
     }
-  , advanced :: Array i
   }
--- FIXME
-derive newtype instance semigroupLogicParts :: Semigroup (LogicParts i r)
-derive newtype instance monoidLogicParts :: Monoid (LogicParts i r)
-derive instance contravariantLogicParts :: Contravariant (LogicParts i)
-derive instance newtypeLogicParts :: Newtype (LogicParts i r) _
-derive newtype instance eqLogicParts :: Eq i => Eq (LogicParts i r)
+derive newtype instance semigroupLogicParts :: Semigroup (LogicParts r tok rec)
+derive newtype instance monoidLogicParts :: Monoid (LogicParts r tok rec)
+derive instance contravariantLogicParts :: Contravariant (LogicParts r tok)
+derive instance newtypeLogicParts :: Newtype (LogicParts r tok rec) _
+derive newtype instance eqLogicParts :: (Eq r, Eq tok) => Eq (LogicParts r tok rec)
 
 cmapOptions :: forall rec rec' nt r cat o. (rec' -> rec) -> Options rec nt r cat o -> Options rec' nt r cat o
 cmapOptions f (Options options) = Options $ options <#> \option ->
@@ -169,15 +171,17 @@ fullMapOptions fs =
           Just is' -> f (fs.rec r) is'
           Nothing -> false
     mapLogicParts = over LogicParts \lp ->
-      { necessary: lp.necessary <#> \n ->
-          n { logic = mapLogicful n.logic }
-      , advanced: bimap (bimap fs.nt fs.r) fs.o <$> lp.advanced
+      { necessary: lp.necessary <#> \n -> n
+        { logic = mapLogicful n.logic
+        , parents = bimap (map (bimap (bimap fs.nt fs.r) fs.o)) (bimap fs.nt fs.r) <$> n.parents
+        }
       }
     go = over Options $ map \opt ->
       { pName: fs.nt opt.pName
       , rName: fs.r opt.rName
       , rule: bimap (bimap (map go) fs.nt) fs.cat <$> opt.rule
       , logicParts: mapLogicParts opt.logicParts
+      , advanced: bimap (bimap fs.nt fs.r) fs.o <$> opt.advanced
       }
   in go
 
@@ -270,7 +274,7 @@ matchRule _ _ _ _ = Nothing
 withCST :: forall rec nt cat o a b. (Array (CCST nt o) -> PartialResult (a -> b)) -> Comb rec nt cat o a -> Comb rec nt cat o b
 withCST f = withCST' \_ csts prev -> f csts <*> prev unit
 
-acceptResult :: forall i r a. Int -> (r -> Array i -> PartialResult a) -> LogicParts i r
+acceptResult :: forall r tok rec a. Int -> (rec -> Array (CST r tok) -> PartialResult a) -> LogicParts r tok rec
 acceptResult length f = LogicParts
   { necessary: pure
     { start: 0
@@ -278,11 +282,11 @@ acceptResult length f = LogicParts
     , logic: logicful \r i -> case f r i of
       Failed -> false
       _ -> true
+    , parents: []
     }
-  , advanced: []
   }
 
-shiftAccepting :: forall i r. Int -> LogicParts i r -> LogicParts i r
+shiftAccepting :: forall r tok rec. Int -> LogicParts r tok rec -> LogicParts r tok rec
 shiftAccepting length (LogicParts l) = LogicParts $
   l { necessary = l.necessary <#> \n -> n { start = n.start + length } }
 
@@ -323,9 +327,9 @@ infixl 1 mapMaybeFlipped as <?>
 withRec :: forall rec nt cat o a b. (rec -> a -> b) -> Comb rec nt cat o a -> Comb rec nt cat o b
 withRec f = withCST' \rec _ prev -> f rec <$> prev unit
 
-derive instance functorResultant :: Functor (Resultant i r)
-derive instance profunctorResultant :: Profunctor (Resultant i)
-instance applyResultant :: Apply (Resultant i r) where
+derive instance functorResultant :: Functor (Resultant r tok rec)
+derive instance profunctorResultant :: Profunctor (Resultant r tok)
+instance applyResultant :: Apply (Resultant r tok rec) where
   apply (Resultant l) (Resultant r) = Resultant
     { length: l.length + r.length
     , accepting: l.accepting <> shiftAccepting l.length r.accepting
@@ -333,19 +337,19 @@ instance applyResultant :: Apply (Resultant i r) where
         let { before: li, after: ri } = splitAt l.length i in
         l.result rec li <*> r.result rec ri
     }
-instance applicativeResultant :: Applicative (Resultant i r) where
+instance applicativeResultant :: Applicative (Resultant r tok rec) where
   pure a = Resultant { length: 0, accepting: mempty, result: \_ _ -> pure a }
-instance compactableResultant :: Compactable (Resultant i r) where
+instance compactableResultant :: Compactable (Resultant r tok rec) where
   compact (Resultant r) = Resultant r { result = map (map compact) r.result }
   separate eta = separateDefault eta
 
 -- | Apply the resultant.
-resultFrom :: forall i r a. Resultant i r a -> r -> Array i -> Maybe a
+resultFrom :: forall r tok rec a. Resultant r tok rec a -> rec -> Array (CST r tok) -> Maybe a
 resultFrom (Resultant res) r i = case res.result r i of
   Result a -> Just a
   _ -> Nothing
 
-component :: forall i r a. (r -> i -> Maybe a) -> Resultant i r a
+component :: forall r tok rec a. (rec -> CST r tok -> Maybe a) -> Resultant r tok rec a
 component c = Resultant
   { length: 1
   , accepting: mempty
@@ -355,7 +359,7 @@ component c = Resultant
         Just i -> compact (Result (c r i))
   }
 -- | components = traverse component
-components :: forall i r a. Array (r -> i -> Maybe a) -> Resultant i r (Array a)
+components :: forall r tok rec a. Array (rec -> CST r tok -> Maybe a) -> Resultant r tok rec (Array a)
 components cs = Resultant
   { length: length cs
   , accepting: mempty

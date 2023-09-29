@@ -2,7 +2,7 @@ module Parser.Lexing where
 
 import Prelude
 
-import Control.Alternative (empty, guard)
+import Control.Alternative (guard)
 import Control.Plus (empty)
 import Data.Array (fold, (!!))
 import Data.Array as Array
@@ -11,17 +11,16 @@ import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..), either, isLeft, note)
 import Data.Either.Nested (type (\/))
-import Data.Foldable (class Foldable, and, foldMap, for_, null, oneOfMap, sum, traverse_)
+import Data.Foldable (class Foldable, foldMap, foldr, for_, null, oneOfMap, sum, traverse_)
 import Data.FoldableWithIndex (forWithIndex_)
-import Data.Function (on)
-import Data.HeytingAlgebra (ff)
 import Data.Lazy (Lazy, force)
 import Data.List (List)
 import Data.List as List
 import Data.Map (SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe, isJust, isNothing)
+import Data.Maybe (Maybe(..), fromMaybe, isJust)
 import Data.Newtype (class Newtype, over, over2, unwrap)
+import Data.NonEmpty (NonEmpty(..), (:|))
 import Data.Semigroup.Foldable (maximum)
 import Data.String (CodePoint)
 import Data.String as String
@@ -31,17 +30,17 @@ import Data.String.Regex as Re
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags (dotAll, unicode)
 import Data.String.Regex.Unsafe (unsafeRegex)
-import Data.Traversable (class Traversable, mapAccumL, sequence)
+import Data.Traversable (class Traversable, sequence)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import Debug (spy, spyWith, traceM)
+import Debug (spy, traceM)
 import Effect (Effect)
 import Effect.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
 import Parser.Algorithms (indexStates)
-import Parser.Comb.Types (LogicParts(..), Options(..), applyLogic, logicful)
+import Parser.Comb.Types (LogicParts(..), Options(..), Option, applyLogic)
 import Parser.Proto (Stack(..), statesOn, topOf)
-import Parser.Types (CST(..), Fragment, OrEOF(..), Part(..), ShiftReduce(..), State(..), StateInfo, StateItem, States(..), Zipper(..), decide, decisionUnique, filterSR)
+import Parser.Types (CST(..), Fragment, OrEOF(..), Part(..), ShiftReduce(..), State(..), StateInfo, States(..), Zipper(..), decide, decisionUnique, filterSR)
 import Partial.Unsafe (unsafeCrashWith)
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -259,8 +258,8 @@ thenNote = map <<< note
 infixr 9 thenNote as ?!
 
 whenFailed :: forall f a. Foldable f => f a -> Effect Unit -> f a
-whenFailed a b | null a = let _ = unsafePerformEffect b in a
 whenFailed a _ = a
+whenFailed a b | null a = let _ = unsafePerformEffect b in a
 
 infixr 9 whenFailed as ?>
 
@@ -436,27 +435,33 @@ lexingParse { best } (initialState /\ States states) initialInput =
   goto (p /\ _) s' = lookupState s' >>= _.receive >>> Map.lookup p
 
 
-stillAccept :: forall i r. r -> LogicParts i r -> i -> Maybe (LogicParts i r)
-stillAccept rec (LogicParts before) shift =
-  let advanced = before.advanced <> [shift] in
-  map (LogicParts <<< { advanced, necessary: _ }) $
-    sequence $ before.necessary # Array.mapMaybe \part -> sequence case unit of
+addSpine :: forall r tok. Array (Tuple (Array (CST r tok)) r) -> Array (CST r tok) -> Array (CST r tok)
+addSpine = flip $ foldr (\(Tuple prev r) children -> prev <> [Branch r children])
+
+stillAccept ::
+  forall rec nt r cat o.
+  rec ->
+  Option rec nt r cat o ->
+  CST (nt /\ r) o ->
+  Maybe (Option rec nt r cat o)
+stillAccept rec opt@{ logicParts: LogicParts { necessary } } shift =
+  let advanced = opt.advanced <> [shift] in
+  map (opt { advanced = advanced, logicParts = _ } <<< LogicParts <<< { necessary: _ }) $
+    sequence $ necessary # Array.mapMaybe \part -> sequence case unit of
       _ | Array.length advanced < part.start -> Just (Just part)
-      _ | not applyLogic part.logic rec (Array.drop part.start advanced) -> Nothing
+      _ | not applyLogic part.logic rec ((addSpine part.parents (Array.drop part.start advanced))) -> Nothing
       _ | part.start + part.length >= Array.length advanced -> Just Nothing
       _ -> Just (Just part)
 
 advanceAccepting :: forall rec nt r cat o. Eq cat => Eq nt => Eq r => rec -> Options rec nt r cat o -> Part (CST (nt /\ r) o) (cat /\ o) -> Options rec nt r cat o
-advanceAccepting rec (Options options) shift = Options $ options # Array.mapMaybe \option@{ logicParts: LogicParts { advanced }} ->
+advanceAccepting rec (Options options) shift = Options $ options # Array.mapMaybe \option@{ advanced } ->
   case option.rule !! Array.length advanced of
     Just head ->
       case head, shift of
         Terminal cat', Terminal (cat /\ o) | cat == cat' ->
-          stillAccept rec option.logicParts (Leaf o) <#> \logicParts ->
-            option { logicParts = logicParts }
+          stillAccept rec option (Leaf o)
         NonTerminal (_ /\ nt'), NonTerminal b@(Branch (nt /\ _) _) | nt' == nt ->
-          stillAccept rec option.logicParts b <#> \logicParts ->
-            option { logicParts = logicParts }
+          stillAccept rec option b
         _, _ -> empty
     _ -> empty
 
@@ -469,21 +474,35 @@ closeA1 ::
   Options rec nt r cat o -> Options rec nt r cat o
 closeA1 (Options items) = acceptMore (Options items) $ items # foldMap closeAItem
 
+pushLogicParts ::
+  forall rec nt r cat o.
+  Option rec nt r cat o ->
+  Option rec nt r cat o ->
+  LogicParts (nt /\ r) o rec
+pushLogicParts parent@{ logicParts: LogicParts { necessary } } child =
+  LogicParts
+    { necessary: necessary <#> \n ->
+      { start: 0
+      , length: Array.length child.rule
+      , logic: n.logic
+      , parents: n.parents <> [Tuple parent.advanced (Tuple child.pName child.rName)]
+      }
+    }
+
 closeAItem ::
-  forall rec nt r cat o xtra.
+  forall rec nt r cat o.
     Ord nt =>
     Eq r =>
     Ord cat =>
     Eq o =>
-  { rule :: Fragment (Lazy (Options rec nt r cat o) /\ nt) cat
-  , logicParts :: LogicParts (CST (nt /\ r) o) rec
-  | xtra
-  } ->
+  Option rec nt r cat o ->
   Options rec nt r cat o
-closeAItem { rule, logicParts: LogicParts { advanced } } =
-  case rule !! Array.length advanced of
+closeAItem parent =
+  case parent.rule !! Array.length parent.advanced of
     Just (NonTerminal (opts /\ _)) ->
-      force opts
+      Options $ unwrap (force opts) <#> \opt -> opt
+        { logicParts = opt.logicParts <> pushLogicParts parent opt
+        }
     _ -> mempty
 
 closeA ::
@@ -575,7 +594,7 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
     s <- topOf stack # snd # lookupState
     reduction <- lookupReduction r s
     reduced <- takeStack r stack reduction
-    traceM "testReduce"
+    -- traceM "testReduce"
     guard $ not failed $ fst $ topOf $ drain reduced (cat /\ o)
   drain :: ContextStack s rec nt r cat o -> cat /\ o -> ContextStack s rec nt r cat o
   drain stack (cat /\ o) = fromMaybe stack $ const Nothing do
@@ -583,17 +602,17 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
     sr <- Map.lookup cat m
     case sr of
       Shift s -> do
-        traceM "drain shift"
-        traceM s
+        -- traceM "drain shift"
+        -- traceM s
         { items: s' } <- lookupState s
         pure (Snoc stack (Leaf o) (advanceMeta (fst (topOf stack) /\ s') (Terminal (cat /\ o)) /\ s))
       Reduces rs | [r] <- NEA.toArray rs -> do
         reduction <- lookupReduction r state
         stacked <- takeStack r stack reduction
-        traceM "drain"
+        -- traceM "drain"
         pure $ drain stacked (cat /\ o)
       _ -> do
-        traceM "drain stopped"
+        -- traceM "drain stopped"
         Nothing
   failed (Options opts) =
     Array.null opts
@@ -614,7 +633,7 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
       _ -> do
         filtered <- "All actions rejected"? (NEA.fromArray $ NEA.mapMaybe (choosePossibility stack) possibilities) ?> do
           -- void $ pure $ spy "asdf" (fst (topOf stack))
-          void $ pure $ unwrap (fst (topOf stack)) <#> _.logicParts >>> unwrap >>> _.advanced
+          void $ pure $ unwrap (fst (topOf stack)) <#> _.advanced
         "No best action (all accepted)"? guard (nPossibilities filtered < nPossibilities possibilities) ?> do
           forWithIndex_ (fst <$> statesOn stack) \i opts -> do
             asdf $ "options " <> show i
@@ -624,7 +643,7 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
   go stack (Left input) | len input == 0 = pure stack
   go stack input = do
     state <- Tuple stack "Missing state"? lookupState (snd (topOf stack))
-    traceM input
+    -- traceM input
     act <- lmap (Tuple stack) $ lookupAction stack state input
     case act of
       Left s /\ cat /\ o /\ i -> do

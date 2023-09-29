@@ -140,6 +140,7 @@ execute conf { states: stateMap /\ tgt /\ states, resultants, options } = do
             -- FIXME: pure x is wrong here
             , rule: [NonTerminal (pure x /\ Right name), Terminal EOF]
             , logicParts: mempty
+            , advanced: []
             }
           ]
     rec = Rec \name input -> do

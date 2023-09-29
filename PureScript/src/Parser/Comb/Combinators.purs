@@ -10,6 +10,7 @@ import Data.Either (Either(..))
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Lazy (defer)
 import Data.Maybe (Maybe(..))
+import Data.NonEmpty (NonEmpty(..))
 import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested ((/\))
@@ -61,6 +62,7 @@ buildTree name (Comb c) = Options $
     , rName: i
     , rule: rule
     , logicParts: accepting
+    , advanced: []
     }
 
 -- | Name a nonterminal production, this allows recursion.
