@@ -7,11 +7,12 @@ author:
 ## CLI
 
 - MacOS SIGINFO: Ctrl+T, https://stuff-things.net/2016/04/06/that-one-stupid-dd-trick-and-the-ballad-of-siginfo/
+- Mac `pbpaste`{.bash}/`pbcopy`{.bash}
 - Print side-by-side: `pr -mtw $(tput cols)`{.bash}
   - not a great way to do it
   - will cut off long lines
   - does not automatically size to content, just console widith
-- Type decimal numbers, echo and copy hexadecimal escapes: `cat (echo "obase=16" | psub) - | bc | xargs -I % -n 1 bash -c "echo -n \\\\x% | pbcopy; echo \\\\x%"`{.fish}
+- Type decimal numbers, echo and copy hexadecimal escapes: `cat $(echo "obase=16" | psub) - | bc | xargs -I % -n 1 bash -c "echo -n \\\\x% | pbcopy; echo \\\\x%"`{.bash}
 
 ### Git
 
@@ -23,6 +24,16 @@ author:
   - Untracked: `git clean -f`{.bash}, dry-run: `git clean -n`{.bash}
   - Ignored: `git clean -fX`{.bash}, dry-run: `git clean -nX`{.bash}
   - Both: `git clean -fx`{.bash}, dry-run: `git clean -nx`{.bash}
+
+### Runtimes/Debugging
+
+#### NodeJS
+
+- Full stack trace: `NODE_OPTIONS='--stack-trace-limit=10000'`{.bash}
+- `util.inspect.defaultOptions.depth = null;`{.js}
+
+#### Erlang
+- `io:format(user, <<"~p~n">>, [Object])`{.erl} and `rp(Object).`{.erl} in the REPL
 
 ## GUI
 
@@ -36,6 +47,15 @@ author:
 
 - `p`{.key}/`Space`{.key} to pause
 - `s`{.key} to step to next frame
+
+## OSes
+
+### MacOS nonsense
+
+- > [“VSCodium.app” can’t be opened because Apple cannot check it for malicious software.](https://github.com/VSCodium/vscodium/issues/228#issuecomment-510788465)
+
+  Alt + right click > open the app once, the dialog will have an “Open” button, and then it will be fine.
+
 
 ## Data Formats/Parsers
 

@@ -66,8 +66,8 @@ num :: Comber Number
 num = rawr ("\\d+(\\.\\d+)?" <> wsrawr) <?> Number.fromString
 
 data Strat = Explicit | ManyR | ManyL
--- 15 10 13
-strats = [Explicit,ManyR,ManyL] :: Array Strat
+-- 16 10 13
+strats = ([Explicit,ManyR,ManyL] :: Array Strat)
 
 polish :: Strat -> Comber (CST String Number)
 polish strat =

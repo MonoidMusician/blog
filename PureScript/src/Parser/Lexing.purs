@@ -597,7 +597,7 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
     -- traceM "testReduce"
     guard $ not failed $ fst $ topOf $ drain reduced (cat /\ o)
   drain :: ContextStack s rec nt r cat o -> cat /\ o -> ContextStack s rec nt r cat o
-  drain stack (cat /\ o) = fromMaybe stack $ const Nothing do
+  drain stack (cat /\ o) = fromMaybe stack do
     state@{ advance: SemigroupMap m } <- lookupState (snd (topOf stack))
     sr <- Map.lookup cat m
     case sr of
