@@ -382,7 +382,7 @@ That is, we know how to make intervallic dependencies a relation, so we compose 
 Perhaps there is a way to categorify it directly, I donʼt know.
 We can come up with an identity, but Iʼm not so sure that associativity would hold.
 
-:::{.Details bpx-name="Clarification"}
+:::{.Details box-name="Clarification"}
 To see how it fits.
 Unit -> Package X range -> Package Y range
 (X depends on Y)
