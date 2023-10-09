@@ -24,6 +24,7 @@ import Deku.DOM as D
 import Effect.Aff (Aff)
 import Effect.Aff as Aff
 import Effect.Console (log)
+import FRP.Aff (affToEvent)
 import FRP.Event (Event, makeEvent, memoize)
 import FRP.Memoize (memoBehFold, memoLast)
 import Fetch (fetch)
@@ -52,11 +53,6 @@ widgetCSS { interface, attrs } = do
       (adaptInterface (CA.array CA.string) (interface "css-example")).receive
   pure $ SafeNut do
     component resetting
-
-affToEvent :: forall a. Aff a -> Event (Maybe a)
-affToEvent aff = makeEvent \cb -> do
-  fiber <- Aff.runAff (cb <<< hush) aff
-  pure $ Aff.launchAff_ $ Aff.killFiber (Aff.error "event unsubscribed") fiber
 
 sendExample :: Widget
 sendExample { interface, attrs } = do

@@ -1,4 +1,4 @@
-function makeVisibleSpaces() {
+function makeVisibleSpaces(tab_width=2) {
   var cls = 'visible-space';
   var chars = [' ', '\u00A0', '\t', '\n'];
   function findNext(str, idx) {
@@ -28,7 +28,14 @@ function makeVisibleSpaces() {
         var span = document.createElement('SPAN');
         span.classList.add(cls);
         span.dataset['whitespace'] = "0x"+value.charCodeAt(found).toString(16);
-        span.appendChild(document.createTextNode(value.substring(found, found+1)));
+        var ws = value.substring(found, found+1);
+        if (ws === '\t' && tab_width) {
+          ws = '';
+          for (var z=0;z<tab_width;z++) {
+            ws += ' ';
+          }
+        }
+        span.appendChild(document.createTextNode(ws));
         replacements.push(span);
         i = found+1;
       }
@@ -44,12 +51,18 @@ function makeVisibleSpaces() {
       // Convert the children to a static list so we don't iterate over what we are mutating
       forEach(Array.from(e.childNodes), visit);
       if (e.nodeName === 'CODE' && e.parentNode.nodeName === 'PRE' && e.lastChild.textContent && e.lastChild.textContent !== "\n") {
+        var x = tab_width;
+        if (+e.dataset['tab-width']) {
+          tab_width = +e.dataset['tab-width'];
+          console.log(tab_width);
+        }
         console.log(e);
         var span = document.createElement('SPAN');
         span.classList.add(cls);
         span.dataset['whitespace'] = "0x"+"\n".charCodeAt(0).toString(16);
         span.appendChild(document.createTextNode("\n"));
         e.appendChild(span);
+        tab_width = x;
       }
     }
   }

@@ -12,7 +12,7 @@ author:
   - not a great way to do it
   - will cut off long lines
   - does not automatically size to content, just console widith
-- Type decimal numbers, echo and copy hexadecimal escapes: `cat $(echo "obase=16" | psub) - | bc | xargs -I % -n 1 bash -c "echo -n \\\\x% | pbcopy; echo \\\\x%"`{.bash}
+- Type decimal numbers, echo and copy hexadecimal escapes: `cat (echo "obase=16" | psub) - | bc | xargs -I % -n 1 bash -c "echo -n \\\\x% | pbcopy; echo \\\\x%"`{.fish}
 - [`entr`](http://eradman.com/entrproject/) is pretty useful, a little tricky to use ... maybe `watchexec` is better? never used it
 
 ### Git

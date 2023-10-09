@@ -16,12 +16,14 @@ import Web.HTML.HTMLDocument.ReadyState (ReadyState(..))
 import Web.HTML.Window (document, requestAnimationFrame, toEventTarget)
 import Widget (Widgets, instantiateAll)
 import Widget.Query as Widget.Query
+import Widget.Unicode as Widget.Unicode
 import Widget.Widgets as Widget.Widgets
 
 widgets :: Widgets
 widgets = Parser.widgets `Object.union` CSS.widgets `Object.union` Object.fromFoldable
   [ "Widget.Query" /\ Widget.Query.widget
   , "Widget.Control" /\ Widget.Widgets.controlWidget
+  , "Widget.Unicode" /\ Widget.Unicode.widget
   ]
 
 -- Returns a cleanup effect
