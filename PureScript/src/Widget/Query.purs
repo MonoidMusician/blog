@@ -62,6 +62,8 @@ setQueryKeys overwriting = do
       QueryPairs.keyFromString k /\
         if Json.isNull v
           then Nothing
+          else if Json.isString v
+          then Just $ QueryPairs.valueFromString $ fromMaybe "" $ Json.toString v
           else Just $ QueryPairs.valueFromString $ Json.stringify v
     q = Query.print $ QueryPairs.print identity identity $
       -- prepend changed keys just so they are more visible

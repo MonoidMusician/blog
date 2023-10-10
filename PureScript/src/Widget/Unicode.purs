@@ -26,6 +26,7 @@ import Deku.Attribute (cb, xdata, (!:=), (<:=>))
 import Deku.Control (switcher, text_)
 import Deku.Core (Domable, bussed)
 import Deku.DOM as D
+import Effect (Effect)
 import FRP.Event (Event)
 import FRP.Helpers (dedup)
 import Partial.Unsafe (unsafeCrashWith)
@@ -43,13 +44,13 @@ import Widget.Types (SafeNut(..))
 
 widget :: Widget
 widget { interface, attrs } = do
-  example <- attrs "example"
+  example <- attrs "unicode"
   let
     initial = hush $ CA.decode CA.string example
-    resetting = oneOfMap pure initial <|> do
-      (adaptInterface CA.string (interface "unicode-example")).receive
+    stringInterface = adaptInterface CA.string (interface "unicode")
+    resetting = oneOfMap pure initial <|> stringInterface.receive
   pure $ SafeNut do
-    component resetting
+    component stringInterface.send resetting
 
 only :: Array ~> Maybe
 only [a] = Just a
@@ -119,8 +120,8 @@ allsomenone p as =
 
 st = D.Style !:= "font-variant-numeric: lining-nums tabular-nums"
 
-component :: forall lock payload. Event String -> Domable lock payload
-component resetting =
+component :: forall lock payload. (String -> Effect Unit) -> Event String -> Domable lock payload
+component setGlobal resetting =
     bussed \taCb taState' -> fold do
       let
         taState = dedup ({ value: _, start: 0, end: 0 } <$> (pure "" <|> resetting) <|> taState')
@@ -177,6 +178,7 @@ component resetting =
           , uniprop { isControl }
           ]
         ]
+      , D.button (D.OnClick <:=> (setGlobal <$> taValue) <|> D.Class !:= "add") [ text_ "Save" ]
       ]
   where
   updateTA upd = cb $
@@ -191,8 +193,6 @@ component resetting =
     let
       uv | unsafeRefEq x y = join Tuple <<< calc <$> x
       uv = lift2 Tuple (calc <$> x) (calc <$> y)
-      code = D.span ((D.Style !:= "font-family: \"Fira Code\", Hasklig, monospace; font-weight: 300")) <<< pure <<< text_
-      -- code = D.code_ <<< pure <<< text_
     D.tr_ $
       [ D.td_ $ pure $ text_ name <> text_ " "
       , D.td_ $ pure $ flip switcher uv \(Tuple u v) ->

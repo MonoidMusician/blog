@@ -61,7 +61,10 @@ Enter some text. Select some text. Have some fun.
 
 Note: grapheme analysis is out of scope.
 
-::: {.widget widget="Widget.Unicode" widget-datakey="default" widget-loading="true" widget-data-example="Hello World 1234! 😇 é é"}
+::: {.widget widget="Widget.Query" widget-empty="true" widget-datakey="unicode" widget-data-keys="unicode" widget-loading="true"}
+:::
+
+::: {.widget widget="Widget.Unicode" widget-datakey="unicode" widget-loading="true" widget-data-unicode="Hello World 1234! 😇 é é"}
 :::
 
 ## Encodings
@@ -78,6 +81,8 @@ I will call them “High BMP”.
 In UTF-16, this High BMP region will compare as _greater than_ the astral characters.
 
 Things get worse if you allow unpaired surrogates …
+
+“^ Unicode range E000–F8FF is used as a private use area, which is reserved for private use.” (https://en.wikibooks.org/wiki/Unicode/Character_reference/E000-EFFF#ref_PUA , https://en.wikibooks.org/wiki/Unicode/Character_reference/F000-FFFF)
 
 #### Example code
 
@@ -151,6 +156,12 @@ I am hoping I do not have to cover endianness here …
 ### Unpaired Surrogates
 
 ## Layout of Unicode
+
+https://stackoverflow.com/questions/52203351/why-is-unicode-restricted-to-0x10ffff
+
+https://en.wikipedia.org/wiki/Specials_(Unicode_block)
+
+https://en.wikipedia.org/wiki/Private_Use_Areas
 
 ### Never Assigned
 
