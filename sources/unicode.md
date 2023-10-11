@@ -165,4 +165,15 @@ https://en.wikipedia.org/wiki/Private_Use_Areas
 
 ### Never Assigned
 
+### Categories
+
+https://en.wikipedia.org/wiki/Unicode_character_property#General_Category
+
+Combining characters are assigned the Unicode major category "M" ("Mark").
+https://en.wikipedia.org/wiki/Combining_character
+
+- Mn = Mark, nonspacing
+- Mc = Mark, spacing combining
+- Me = Mark, enclosing
+
 ## Terminology

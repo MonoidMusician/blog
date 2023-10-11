@@ -6,16 +6,21 @@ import Control.Alternative (guard)
 import Control.Apply (lift2)
 import Control.Plus ((<|>))
 import Data.Array as Array
-import Data.CodePoint.Unicode (generalCatToUnicodeCat, isAlpha, isAlphaNum, isControl, isPrint, isPunctuation, isSpace, isSymbol)
+import Data.Array.NonEmpty as NEA
+import Data.CodePoint.Unicode (generalCatToUnicodeCat, isAlpha, isAlphaNum, isControl, isMark, isPrint, isPunctuation, isSpace, isSymbol)
 import Data.CodePoint.Unicode as Unicode
 import Data.Codec.Argonaut as CA
 import Data.Either (hush)
 import Data.Enum (fromEnum, toEnum)
-import Data.Foldable (fold, foldMap, oneOf, oneOfMap, traverse_)
+import Data.Foldable (fold, foldMap, intercalate, oneOf, oneOfMap, traverse_)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int as Int
 import Data.Int as Radix
+import Data.Int.Bits (shl, zshr, (.&.), (.|.))
 import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Newtype (class Newtype, unwrap)
+import Data.Monoid (power)
+import Data.NonEmpty (NonEmpty(..))
+import Data.Semigroup.Foldable (intercalateMap)
 import Data.String (CodePoint)
 import Data.String as CP
 import Data.String as String
@@ -61,10 +66,10 @@ uniprop ::
     RowToList r (RL.Cons s (CodePoint -> Boolean) RL.Nil) =>
     Row.Cons s (CodePoint -> Boolean) () r =>
     IsSymbol s =>
-  Record r -> Tuple String (Array CodePoint -> Display)
+  Record r -> Tuple String (CodePoint -> Boolean)
 uniprop r = Tuple
   (reflectSymbol (Proxy :: Proxy s) # apply fromMaybe (String.stripPrefix (String.Pattern "is")) >>> append "are " >>> (_ <> "?"))
-  (allsomenone (Record.get (Proxy :: Proxy s) r) >>> Text)
+  (Record.get (Proxy :: Proxy s) r)
 
 data Radix
   = Dec
@@ -75,17 +80,32 @@ derive instance Eq Radix
 printRadix :: Maybe Radix -> Int -> String
 printRadix Nothing = show
 printRadix (Just Dec) = Int.toStringAs Radix.decimal
-printRadix (Just Hex) = Int.toStringAs Radix.hexadecimal >>> String.toUpper >>> append "0x"
-printRadix (Just Bin) = Int.toStringAs Radix.binary >>> append "0b"
+printRadix (Just Hex) = Int.toStringAs Radix.hexadecimal >>> String.toUpper
+printRadix (Just Bin) = Int.toStringAs Radix.binary
+
+printBase :: Maybe Radix -> String
+printBase Nothing = ""
+printBase (Just Dec) = ""
+printBase (Just Hex) = "0x"
+printBase (Just Bin) = "0b"
+
+padNumTo :: Int -> String -> String
+padNumTo digits s = power "0" (digits - CU.length s) <> s
+
+printByte :: Int -> String
+printByte = padNumTo 8 <<< Int.toStringAs Radix.binary
 
 data Display
   = Unicode CodePoint
   | Numeric String
   | Number (Maybe Radix) Int
+  | Byte Int
+  | Bytes Int Int
   | Text String
   | Code String
   | Meta String
   | Many (Array Display)
+  | ManySep Display (Array Display)
 derive instance Eq Display
 instance Semigroup Display where
   append (Many as) (Many bs) = Many (as <> bs)
@@ -103,20 +123,33 @@ display (Unicode cp) = display $ Meta "U+" <> Numeric do
 display (Text txt) = text_ txt
 display (Code c) = D.span (D.Class !:= "code") <<< pure <<< text_ $ c
 display (Numeric n) = D.span (D.Class !:= "code numeric") <<< pure <<< text_ $ n
-display (Number mr i) = display $ Numeric $ printRadix mr i
+display (Number mr i) = display $ Numeric $ printBase mr <> printRadix mr i
+display (Byte b) = display $ Numeric $ "0b" <> printByte b
+display (Bytes n b) = display $ Numeric $ "0b" <> intercalate "_" (printByte <$> bytesOf n b)
 display (Meta x) = D.span (D.Class !:= "meta-code") <<< pure <<< text_ $ x
 display (Many ds) = foldMap display ds
+display (ManySep sep ds) = foldMap (intercalateMap (display sep) display) (NEA.fromArray ds)
 
-allsomenone :: forall a. (a -> Boolean) -> Array a -> String
-allsomenone _ [] = ""
-allsomenone p [a] = if p a then "Yes" else "No"
-allsomenone p as =
-  if Array.all p as
-    then "All"
-    else case Array.length (Array.filter p as) of
-      0 -> "None"
-      1 -> "One"
-      _ -> "Some"
+tallyComp :: forall a. (a -> Display) -> a -> a -> Display
+tallyComp f a b | f a == f b = f a
+tallyComp f a b = f a <> Text " / " <> f b
+
+allsomenone :: forall a. (a -> Boolean) -> Array a -> Array a -> Display
+allsomenone _ _ [] = Text ""
+allsomenone p _ as | Array.all p as = Text "All"
+allsomenone p _ as | not Array.any p as = Text "None"
+allsomenone p [a] [_] = if p a then Text "Yes" else Text "No"
+allsomenone p [a] as = (if p a then Text "Yes" else Text "No") <> Text " / " <>
+    case Array.length (Array.filter p as) of
+      1 -> Text "One"
+      _ -> Text "Some"
+allsomenone p as bs = tallyComp tallier as bs
+  where
+  tallier xs = case Array.length (Array.filter p xs) of
+    0 -> Text "None"
+    1 -> Text "One"
+    l | l == Array.length xs -> Text "All"
+    _ -> Text "Some"
 
 st = D.Style !:= "font-variant-numeric: lining-nums tabular-nums"
 
@@ -155,18 +188,24 @@ component setGlobal resetting =
         , D.Value <:=> resetting
         ]
       , D.table (st <|> D.Class !:= "properties-table")
-        [ renderInfos taSelected taValue
+        [ renderInfos tallyComp taSelected taValue
           [ Tuple "Code Point(s)" $ CP.length >>> Number (Just Dec)
           , Tuple "UTF-16 Code Unit(s)" $ CU.length >>> Number (Just Dec)
+          , Tuple "UTF-8 Bytes" $ utf8Str >>> Array.length >>> Number (Just Dec)
+          , Tuple "UTF-16 Bytes" $ CU.length >>> mul 2 >>> Number (Just Dec)
+          , Tuple "UTF-32 Bytes" $ CU.length >>> mul 4 >>> Number (Just Dec)
           ]
-        , renderInfos taCP taCP $
+        , renderInfos tallyComp taCP taCP $
           [ Tuple "Code Point" $ foldMap $ Unicode
           , Tuple "Decimal" $ foldMap $ fromEnum >>> Number (Just Dec)
           , Tuple "Binary" $ foldMap $ fromEnum >>> Number (Just Bin)
           , Tuple "General Category" $ foldMap $ Unicode.generalCategory >>> foldMap \cat ->
               Text (show cat) <> Text " (" <> Code (show (generalCatToUnicodeCat cat)) <> Text ")"
+          , Tuple "UTF-8" $ foldMap $ fromEnum >>> utf8 >>> map Byte >>> ManySep (Text " ")
+          , Tuple "UTF-16" $ foldMap $ String.singleton >>> CU.toCharArray >>> map (fromEnum >>> Bytes 2) >>> ManySep (Text " ")
+          , Tuple "UTF-32" $ foldMap $ fromEnum >>> Bytes 4
           ]
-        , renderInfos taCPs taAllCPs
+        , renderInfos allsomenone taCPs taAllCPs
           [ uniprop { isPrint }
           , uniprop { isAlphaNum }
           , uniprop { isAlpha }
@@ -176,6 +215,7 @@ component setGlobal resetting =
           , uniprop { isSymbol }
           , uniprop { isSpace }
           , uniprop { isControl }
+          , uniprop { isMark }
           ]
         ]
       , D.button (D.OnClick <:=> (setGlobal <$> taValue) <|> D.Class !:= "add") [ text_ "Save" ]
@@ -188,15 +228,13 @@ component setGlobal resetting =
         start <- HTMLTextArea.selectionStart ta
         end <- HTMLTextArea.selectionEnd ta
         upd { value, start, end }
-  renderInfos :: forall a. Event a -> Event a -> Array (Tuple String (a -> Display)) -> _
-  renderInfos x y infos = D.tbody_ $ infos <#> \(Tuple name calc) -> do
+  renderInfos :: forall a b. (b -> a -> a -> Display) -> Event a -> Event a -> Array (Tuple String b) -> _
+  renderInfos tally x y infos = D.tbody_ $ infos <#> \(Tuple name calc) -> do
     let
-      uv | unsafeRefEq x y = join Tuple <<< calc <$> x
-      uv = lift2 Tuple (calc <$> x) (calc <$> y)
+      uv = lift2 Tuple x y
     D.tr_ $
       [ D.td_ $ pure $ text_ name <> text_ " "
-      , D.td_ $ pure $ flip switcher uv \(Tuple u v) ->
-          if u == v then display u else display u <> text_ " / " <> display v
+      , D.td_ $ pure $ flip switcher uv \(Tuple u v) -> display $ tally calc u v
       ]
 
 
@@ -247,3 +285,49 @@ exactlyOneOf :: forall a. Array a -> a
 exactlyOneOf [a] = a
 exactlyOneOf [] = unsafeCrashWith "No options in exactlyOneOf"
 exactlyOneOf _ = unsafeCrashWith "Too many options in exactlyOneOf"
+
+utf8Str :: String -> Array Int
+utf8Str = String.toCodePointArray >=> fromEnum >>> utf8
+
+utf8 :: Int -> Array Int
+utf8 = utf8' >>> \(NonEmpty h t) -> Array.cons h t
+
+utf8' :: Int -> NonEmpty Array Int
+utf8' i | nbitsLE i 7 = NonEmpty i []
+utf8' i0 = go 6 i0 []
+  where
+  go allowed i acc
+    | nbitsLE i allowed =
+      -- Base case: set some high bits, keep a zero bit, and then the remaining
+      -- high bits left from `i`
+      NonEmpty (highmask (7 - allowed) .|. i) acc
+    | otherwise =
+      -- Pop 6 low bits from `i`, which get put in the representation with a
+      -- high bit set
+      go (allowed - 1) (i `zshr` 6) $
+        [highmask 1 .|. (i .&. bitmask 6)] <> acc
+
+bytesOf :: Int -> Int -> Array Int
+bytesOf en by =
+  Array.replicate en unit # mapWithIndex \i _ ->
+    (by `zshr` ((en - 1 - i) * 8)) .&. bitmask 8
+
+bitmask :: Int -> Int
+bitmask 0 = 0
+bitmask 1 = 1
+bitmask 2 = 3
+bitmask 3 = 7
+bitmask 4 = 0xF
+bitmask 5 = 0x1F
+bitmask 6 = 0x3F
+bitmask 7 = 0x7F
+bitmask 8 = 0xFF
+bitmask n = (2 `shl` n) - 1
+
+-- highmask 1 = 0b1000_0000
+-- highmask 2 = 0b1100_0000
+highmask :: Int -> Int
+highmask n = bitmask 8 - bitmask (8 - n)
+
+nbitsLE :: Int -> Int -> Boolean
+nbitsLE i n = i .&. bitmask n == i

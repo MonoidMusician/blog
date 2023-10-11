@@ -50,6 +50,11 @@ getQueryKeys = map Object.fromFoldable $ getQueryPairs <#>
         Just v | Right j <- Json.parseJson v -> j
         Just v -> Json.fromString v
 
+toJsonish :: Json -> String
+toJsonish v = case Json.toString v of
+  Just s | Left _ <- Json.parseJson s -> s
+  _ -> Json.stringify v
+
 setQueryKeys :: Object Json -> Effect Unit
 setQueryKeys overwriting = do
   -- QueryPairs keeps duplicates, so we need to manually drop the keys
@@ -62,9 +67,7 @@ setQueryKeys overwriting = do
       QueryPairs.keyFromString k /\
         if Json.isNull v
           then Nothing
-          else if Json.isString v
-          then Just $ QueryPairs.valueFromString $ fromMaybe "" $ Json.toString v
-          else Just $ QueryPairs.valueFromString $ Json.stringify v
+          else Just $ QueryPairs.valueFromString $ toJsonish v
     q = Query.print $ QueryPairs.print identity identity $
       -- prepend changed keys just so they are more visible
       QueryPairs.QueryPairs $ overwrite <> qps
