@@ -17,7 +17,7 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int as Int
 import Data.Int as Radix
 import Data.Int.Bits (shl, zshr, (.&.), (.|.))
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Monoid (power)
 import Data.NonEmpty (NonEmpty(..))
 import Data.Semigroup.Foldable (intercalateMap)
@@ -123,9 +123,9 @@ display (Unicode cp) = display $ Meta "U+" <> Numeric do
 display (Text txt) = text_ txt
 display (Code c) = D.span (D.Class !:= "code") <<< pure <<< text_ $ c
 display (Numeric n) = D.span (D.Class !:= "code numeric") <<< pure <<< text_ $ n
-display (Number mr i) = display $ Numeric $ printBase mr <> printRadix mr i
-display (Byte b) = display $ Numeric $ "0b" <> printByte b
-display (Bytes n b) = display $ Numeric $ "0b" <> intercalate "_" (printByte <$> bytesOf n b)
+display (Number mr i) = display $ Many [ Meta $ printBase mr, Numeric $ printRadix mr i ]
+display (Byte b) = display $ Many [ Meta "0b", Numeric $ printByte b ]
+display (Bytes n b) = display $ Many [ Meta "0b", intercalate (Meta "_") (Numeric <<< printByte <$> bytesOf n b) ]
 display (Meta x) = D.span (D.Class !:= "meta-code") <<< pure <<< text_ $ x
 display (Many ds) = foldMap display ds
 display (ManySep sep ds) = foldMap (intercalateMap (display sep) display) (NEA.fromArray ds)
@@ -166,7 +166,8 @@ component setGlobal resetting =
         taCP = taState <#> \ta ->
           let r = CU.drop ta.start (CU.take ta.end ta.value)
           in if r == ""
-            then Array.head $ CP.toCodePointArray $ CU.take 2 (CU.drop ta.start ta.value)
+            then maybe (only (CP.toCodePointArray ta.value)) Just $
+                Array.head $ CP.toCodePointArray $ CU.take 2 (CU.drop ta.start ta.value)
             else only (CP.toCodePointArray r)
         taCPs = taState <#> \ta ->
           let r = CU.drop ta.start (CU.take ta.end ta.value)
@@ -176,18 +177,23 @@ component setGlobal resetting =
             else if r == ""
               then Array.take 1 $ CP.toCodePointArray $ CU.take 2 (CU.drop ta.start ta.value)
               else CP.toCodePointArray r
-      [ D.div (st <|> D.Class !:= "sourceCode" <|> pure (xdata "lang" "Text")) $ pure $ D.pre_ $ pure $ D.code_ $ pure $ flip D.textarea [] $ oneOf
+      [ D.button (D.OnClick <:=> (setGlobal <$> taValue) <|> D.Class !:= "add") [ text_ "Save text to URL" ]
+      , D.a (D.Href !:= "") [ text_ "Shareable URL" ]
+      , D.div (st <|> D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "Text")) $ pure $ D.pre_ $ pure $ D.code_ $ pure $ flip D.textarea [] $ oneOf
         [ D.OnInput !:= updateTA taCb
         , D.OnMousedown !:= updateTA taCb
         , D.OnMouseup !:= updateTA taCb
+        , D.OnClick !:= updateTA taCb
         , D.OnKeydown !:= updateTA taCb
         , D.OnKeyup !:= updateTA taCb
-        , D.OnKeypress !:= updateTA taCb
+        -- D.OnKeypress will lag arrow key repetitions
         , D.OnSelect !:= updateTA taCb
         , D.OnSelectionchange !:= updateTA taCb
         , D.Value <:=> resetting
         ]
-      , D.table (st <|> D.Class !:= "properties-table")
+      , D.div (D.Class !:= "full-width h-scroll") $ pure $ D.div (st <|> D.Class !:= "code-points unicode") $ pure $ flip switcher taAllCPs $ foldMap \cp ->
+          D.span (D.Class !:= "code-point") [ text_ (String.singleton cp) ]
+      , D.div (D.Class !:= "table-wrapper") $ pure $ D.table (st <|> D.Class !:= "properties-table")
         [ renderInfos tallyComp taSelected taValue
           [ Tuple "Code Point(s)" $ CP.length >>> Number (Just Dec)
           , Tuple "UTF-16 Code Unit(s)" $ CU.length >>> Number (Just Dec)
@@ -218,7 +224,6 @@ component setGlobal resetting =
           , uniprop { isMark }
           ]
         ]
-      , D.button (D.OnClick <:=> (setGlobal <$> taValue) <|> D.Class !:= "add") [ text_ "Save" ]
       ]
   where
   updateTA upd = cb $

@@ -8,6 +8,15 @@ author:
   .widget {
     display: contents;
   }
+  .table-wrapper {
+    overflow-x: auto;
+  }
+  @media (min-width: 761px) {
+    .table-wrapper {
+      padding: 0.5em;
+      margin: -0.5em;
+    }
+  }
   table.properties-table {
     border-collapse: collapse;
   }
@@ -48,7 +57,40 @@ author:
   }
 
   .meta-code {
+    font-feature-settings: "cv12";
     color: gray;
+  }
+
+  .full-width.h-scroll {
+    display: flex;
+    justify-content: center;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 5%, black 95%, transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0%, black 5%, black 95%, transparent 100%);
+  }
+
+  .code-points {
+    margin: 10px 0;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow-x: scroll;
+    /* for mask-image */
+    padding: 0 5%;
+    /* This does nothing lol */
+    scrollbar-gutter: stable;
+    /* So we do this */
+    padding-bottom: 15px;
+  }
+  .code-points > .code-point {
+    display: inline-block;
+    white-space: pre;
+    border: 1px solid gray;
+    width: 1.2em;
+    height: 1.2em;
+    vertical-align: bottom;
+    text-align: center;
+  }
+  .code-points > .code-point:not(:last-child) {
+    border-right: none;
   }
 
 
@@ -61,7 +103,7 @@ Enter some text. Select some text. Have some fun.
 
 Note: grapheme analysis is out of scope.
 
-::: {.widget widget="Widget.Query" widget-empty="true" widget-datakey="unicode" widget-data-keys="unicode" widget-loading="true"}
+::: {.widget widget="Widget.Query" widget-empty="true" widget-datakey="unicode" widget-data-keys="unicode"}
 :::
 
 ::: {.widget widget="Widget.Unicode" widget-datakey="unicode" widget-loading="true" widget-data-unicode="Hello World 1234! 😇 é é"}
@@ -82,7 +124,7 @@ In UTF-16, this High BMP region will compare as _greater than_ the astral charac
 
 Things get worse if you allow unpaired surrogates …
 
-“^ Unicode range E000–F8FF is used as a private use area, which is reserved for private use.” (https://en.wikibooks.org/wiki/Unicode/Character_reference/E000-EFFF#ref_PUA , https://en.wikibooks.org/wiki/Unicode/Character_reference/F000-FFFF)
+<!-- “^ Unicode range E000–F8FF is used as a private use area, which is reserved for private use.” (https://en.wikibooks.org/wiki/Unicode/Character_reference/E000-EFFF#ref_PUA , https://en.wikibooks.org/wiki/Unicode/Character_reference/F000-FFFF) -->
 
 #### Example code
 

@@ -14,8 +14,16 @@ body > section
   max-width: 60%
   margin-left: auto
   margin-right: auto
+  .full-width
+    margin-left: -19vw
+    margin-right: -19vw
+    margin-left: calc(-19vw + 8px)
+    margin-right: calc(-19vw + 8px)
   @media (max-width: $breakpoint)
     max-width: 98%
+    .full-width
+      margin-left: calc(-5vw + 8px)
+      margin-right: calc(-5vw + 8px)
 
 
 @media (max-width: $breakpoint)
