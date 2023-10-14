@@ -73,6 +73,7 @@ author:
     white-space: nowrap;
     max-width: 100%;
     overflow-x: scroll;
+    overflow-y: visible;
     /* for mask-image */
     padding: 0 5%;
     /* This does nothing lol */
@@ -88,6 +89,7 @@ author:
     height: 1.2em;
     vertical-align: bottom;
     text-align: center;
+    line-height: 1.3;
   }
   .code-points > .code-point:not(:last-child) {
     border-right: none;

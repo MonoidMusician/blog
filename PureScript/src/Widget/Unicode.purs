@@ -130,6 +130,10 @@ display (Meta x) = D.span (D.Class !:= "meta-code") <<< pure <<< text_ $ x
 display (Many ds) = foldMap display ds
 display (ManySep sep ds) = foldMap (intercalateMap (display sep) display) (NEA.fromArray ds)
 
+disp :: CodePoint -> String
+-- disp cp | isMark cp = "◌" <> String.singleton cp
+disp cp = String.singleton cp
+
 tallyComp :: forall a. (a -> Display) -> a -> a -> Display
 tallyComp f a b | f a == f b = f a
 tallyComp f a b = f a <> Text " / " <> f b
@@ -192,7 +196,7 @@ component setGlobal resetting =
         , D.Value <:=> resetting
         ]
       , D.div (D.Class !:= "full-width h-scroll") $ pure $ D.div (st <|> D.Class !:= "code-points unicode") $ pure $ flip switcher taAllCPs $ foldMap \cp ->
-          D.span (D.Class !:= "code-point") [ text_ (String.singleton cp) ]
+          D.span (D.Class !:= "code-point") [ text_ (disp cp) ]
       , D.div (D.Class !:= "table-wrapper") $ pure $ D.table (st <|> D.Class !:= "properties-table")
         [ renderInfos tallyComp taSelected taValue
           [ Tuple "Code Point(s)" $ CP.length >>> Number (Just Dec)
