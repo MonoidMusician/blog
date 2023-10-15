@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "make": "make all"
+    "make": "make all",
+    "pandoc": "make pandoc",
+    "sass": "make sass"
   },
   "author": "Verity Scheel (monoidmusician)",
   "license": "ISC",
