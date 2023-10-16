@@ -16,13 +16,13 @@ _What you write:_
 
 ```{.js data-lang="tmTTmt"}
 // If we are casing on a known boolean, we know which case to choose
-normalize ["if" "true" "then" exprT "else" exprF] => exprT
-normalize ["if" "false" "then" exprT "else" exprF] => exprF
+normalize/ ["if" "true" "then" exprT "else" exprF] => exprT
+normalize/ ["if" "false" "then" exprT "else" exprF] => exprF
 // If both branches have the same value, the boolean is irrelevant
 // This is an example of non-linear pattern matching, which will get desugared
-normalize ["if" _cond "then" expr "else" expr] => expr
+normalize/ ["if" _cond "then" expr "else" expr] => expr
 // Fallback case, including most other nodes not specified
-normalize layer => normalized:
+normalize/ layer => normalized:
   // ^ We compute the result, `normalized`, by following these operation(s):
   // Recursively calling normalize on each child node of this node
   // (that's it, that's the only operation in this case, but there could be more)
@@ -37,9 +37,9 @@ normalize (Roll (IfThenElse metadata cond exprT exprF)) =
   case normalize cond of
     -- Note that "true" above is allowed to stand for the literal in the AST
     -- (as well as the Boolean type in tmTTmt itself), but in Haskell we need
-    -- an explicit constructor `BoolLit` to embed it in the AST:
-    BoolLit True -> exprT
-    BoolLit False -> exprF
+    -- an explicit constructor `BooleanLiteral` to embed it in the AST:
+    BooleanLiteral True -> exprT
+    BooleanLiteral False -> exprF
     condN ->
       let (exprTN, exprFN) = (normalize exprT, normalize exprF)
       in case areEqual exprTN exprFN of
@@ -224,7 +224,9 @@ I think Iʼm ready to make it happen!
 - Simplify writing advanced programming techniques:
   - Continuation Passing Style (CPS).
     This is (apparently) really great for efficiency for a bunch of reasons (e.g. quicker backtracking), but can be mind-bending to write directly.
-  - Deriving zippers for datatypes, possibly even [Clowns & Jokers](http://strictlypositive.org/CJ.pdf) style for incremental stack-safe computations.
+  - Deriving zippers/one-hole contexts for datatypes, possibly even [Clowns & Jokers](http://strictlypositive.org/CJ.pdf) style for incremental stack-safe computations.
+    (One-hole contexts are possible to derive generically with typeclass machinery.
+    But the conversions get super annoying...)
   - Functional Reactive Programming (FRP).
     Existing FRP frameworks are … alright.
     But none really capture the right logic/linguistics to make it easy.
@@ -236,6 +238,7 @@ I think Iʼm ready to make it happen!
     I love parsers so it would be great to integrate them.
     Maybe even into the type theory!
     (It is apparently possible to algorithmically decided whether one regular expression is contained in another uwu :3.)
+  - STM. Eventual consistency. Other lattice-y stuff.
 
 ## Non-goals
 
@@ -247,3 +250,132 @@ I think Iʼm ready to make it happen!
   That can (and should) be provided by users; the goal is to make the syntax lightweight enough to facilitate it.
 - Probably not going to have Rank-N types for a while, if ever.
   I mean, I like Rank-N types, especially for APIs, but most things end up being better expressed by inductive data types, and this way I have a type inference algorithm that is actually tractable …
+
+## More Details
+
+(A separate section so I donʼt bury [Non-goals])
+
+### Abstractions I want
+
+Worship the shape of data and the structure of code ...
+
+- Any metatheory that makes dealing with variable binding easier is worth a lot!
+  - What I did in Dhall-PureScript: [Dhall/Variables.purs](https://github.com/MonoidMusician/dhall-purescript/blob/469c3e10d51a8afb90f2e231cf3e6101f50814eb/src/Dhall/Variables.purs#L119-L201)
+    This just does basic bookkeeping of when variables are bound, based on the functors I used in the recursion schemes, but I think it proved to do most of what I needed.
+  - :::{.Bonus box-name="Aside"}
+    The other, silly solution, is to commit to only having one binder: lambda, and phrasing pi in terms of lambda.
+    I convinced myself it works out on paper but I got a little stuck trying to prove it to Agda.
+    Heh heh heh …
+    :::
+- Container functors, the building blocks of an AST.
+  - `traverseWithIndex :: (i -> a -> m b) -> (f a -> m (f b))`{.haskell}
+  - `mergeWith :: (i -> a -> b -> c) -> f a -> f b -> Maybe (f c)`{.haskell}
+    - I believe that we need a lot more binary operations like this, for matching on two shapes at once!
+      It is not something that is covered by recursion schemes for example.
+      `Data.Map`{.haskell} has a terrible interface (`unionWith`{.haskell} is so bleh).
+  - [Zippers/one-hole contexts](https://github.com/MonoidMusician/dhall-purescript/blob/main/src/Dhall/Core/Zippers.purs) (optional – I never actually used them in Dhall-PureScript, but they could be useful for some things):
+    - `upZF :: ZF f' x -> f x`{.haskell}
+    - `downZF :: f x -> f (ZF f' x)`{.haskell}
+    - `ixF :: f' x -> i`{.haskell}
+
+### Examples
+
+_\~Disclaimer that I use typechecking and type inference interchangeably.\~_
+
+#### Typechecking lists
+
+I think it is *very **very*** useful to move from thinking of unification as a binary operation to it as a N-ary operation.
+As one example, consider (homogeneous) list literals.
+
+The way a lot of typecheckers work when inferring list literals is that it assumes the first item has the right type, and then it typechecks the remaining items against it.
+But what if it is the first item that has the wrong type, and all 12 other items are actually right?
+I believe it is best to typecheck each term in isolation, then see if the results can be unified all at once – and then unify the unification states, since unification variables may have been unified in inconsistent ways.
+(This requires unification state to be `WriterT`{.haskell} not `StateT`{.haskell}. Yeah.)
+
+```{.js data-lang="tmTTmt"}
+typecheck/ ["ListLiteral" items] => ["App" "ListType" itemType]
+  map typecheck items => itemTypes
+  ensureConsistency itemTypes => itemType
+```
+
+#### Typechecking non-dependent pi types
+
+I would like to be able to short-circuit typechecking non-dependent functions, and return a result even if the argument is ill-typed or does not have the correct type.
+
+(Why? Because having a more global view of errors is often useful, since the hyperlocal errors we are used to can obscure the real problem.)
+
+This would show up as a soft error that allows further typechecking to proceed.
+Soft errors can be turned into critical errors when we need to be able to trust the result of typechecking, e.g. to know that normalization is going to complete.
+
+```{.js data-lang="tmTTmt"}
+typecheck/ ["App" fn arg] => resultType:
+  // Unifies the result with a "Pi" type
+  typecheck fn => ["Pi" binder domain codomain]
+  // See if `codomain` does not in fact depend on `binder`
+  tryApplyConstant binder codomain
+  | => ["constant" resultType]:
+    // `resultType` got assigned, so this case is not necessary to produce
+    // *some* result that can inform further type errors, though this node does
+    // not truly typecheck if it fails:
+    typecheck arg => domain
+    // `domain` is a non-linear pattern match, unifying `argType` and `domain`
+    // (any further references to `domain` would refer to the unified node)
+  | => ["non-constant"]:
+    // Typecheck the argument in strict mode to ensure that type errors result
+    // in an immediate failure even if an approximate result can be computed:
+    // (This is simplified syntax for a lambda, to defer the typechecking.)
+    strictly (_ =>> typecheck arg) => domain
+    // (Unification with `domain` is always strict, it never adds soft errors.)
+
+    // Now that it is safe to compute with `arg`, we apply it to compute the
+    // result type:
+    substitute binder arg codomain => resultType
+
+// Probably should simplify this somehow ...
+```
+
+<!--
+branch :: f (Either a b) -> f (a -> c) -> f (b -> c) -> f c
+-->
+
+:::{.Note box-name="Aside"}
+Is this good notation for lambdas as arguments to functions?
+I donʼt know.
+
+```{.js data-lang="tmTTmt"}
+  strictly (_ => r:
+    typecheck arg => r
+  ) => domain
+```
+
+I want to avoid some problems:
+
+- Indentation. Figuring out how to indent lambdas as arguments to functions is so annoying.
+- Related: figuring out where the lambdas end is also annoying.
+  I do like dangling lambdas actually.
+:::
+
+```haskell
+-- The behavior of `select` for the typechecker monad/thingy is that if the
+-- first computation returns a `Left`, it will accumulate errors from the second
+-- computation, instead of failing and blocking computation like `>>=`.
+--
+-- In particular, it does accumulate errors from `strictly`, in that case.
+select :: f (Either b a) -> f (a -> b) -> f b
+strictly :: f a -> f a
+tryApplyConstant :: Binder -> Type -> Maybe Type
+
+typecheck :: Type -> f Type
+typecheck (App fn arg) =
+  select
+    ( typecheck fn >>= \fnType ->
+        unifyPi fnType >>= \binder domain codomain ->
+          case tryApplyConstant binder codomain of
+            Just r -> Left r
+            Nothing -> Right Unit
+    )
+    ( strictly (typecheck arg) >>= \argType ->
+        unify argType domain <#> \_unified ->
+          apply binder arg codomain
+    )
+```
