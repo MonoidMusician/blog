@@ -239,6 +239,7 @@ I think Iʼm ready to make it happen!
     Maybe even into the type theory!
     (It is apparently possible to algorithmically decided whether one regular expression is contained in another uwu :3.)
   - STM. Eventual consistency. Other lattice-y stuff.
+  - Parallel evaluation, à la `unamb`{.haskell} or so.
 
 ## Non-goals
 
@@ -277,6 +278,14 @@ Worship the shape of data and the structure of code ...
     - `upZF :: ZF f' x -> f x`{.haskell}
     - `downZF :: f x -> f (ZF f' x)`{.haskell}
     - `ixF :: f' x -> i`{.haskell}
+- Array stuff
+  - normal `zipWith`
+  - “long” `zipWith`
+  - `takeWhileJustWithRest :: (a -> Maybe b) -> Array a -> (Array b, Array a)`
+    - some kind of condensor pattern
+  - something better than `mapAccumL`/`mapAccumR` lol
+    - every time I want to reach for a stateful traversal, I find it so annoying!
+  - maybe some actual parser type thing
 
 ### Examples
 

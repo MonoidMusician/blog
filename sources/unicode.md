@@ -118,7 +118,7 @@ Note: grapheme analysis is out of scope.
 UTF-8 and UTF-32 have consistent ordering.^[Citations needed.]
 But UTF-16 is kind of fucked up.
 
-The reason that UTF-16 is fucked up is that surrogates are taken from [U+]{.meta-code}[D800]{.code .numeric} to [U+]{.meta-code}[DFFF]{.code .numeric} (and are used to encode [U+]{.meta-code}[010000]{.code .numeric} to [U+]{.meta-code}[10FFFF]{.code .numeric} – the astral characters), but [U+]{.meta-code}[E000]{.code .numeric} to [U+]{.meta-code}[FFFF]{.code .numeric} are still valid code points.
+The reason that UTF-16 is fucked up is that surrogates are taken from [U+]{.meta-code}[D800]{.code .numeric} through [U+]{.meta-code}[DFFF]{.code .numeric} (and are used to encode [U+]{.meta-code}[010000]{.code .numeric} through [U+]{.meta-code}[10FFFF]{.code .numeric} – the astral characters), but [U+]{.meta-code}[E000]{.code .numeric} through [U+]{.meta-code}[FFFF]{.code .numeric} are still valid code points.
 Is there a standard name for these?
 I will call them “High BMP”.
 
