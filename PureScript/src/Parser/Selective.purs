@@ -2,12 +2,14 @@ module Parser.Selective where
 
 import Prelude hiding (zero, one, ap)
 
+import Control.Apply (lift2)
 import Control.Plus (class Plus, empty)
 import Data.Array (foldr)
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
 import Data.Enum (class BoundedEnum, enumFromTo)
+import Data.Profunctor (lcmap)
 import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
@@ -100,8 +102,16 @@ data CaseTree i f r
   | OneCase (f (i -> r))
   | TwoCases (SplitCases i f r)
 
+instance functorCaseTree :: Functor f => Functor (CaseTree i f) where
+  map _ (ZeroCases toVoid) = ZeroCases toVoid
+  map f (OneCase fir) = OneCase (compose f <$> fir)
+  map f (TwoCases cases) = TwoCases (map f cases)
+
 -- `SplitCases i f r` is an existential of `CasesSplit a b i f r` over `a` and `b`
 foreign import data SplitCases :: Type -> (Type -> Type) -> Type -> Type
+
+instance functorSplitCases :: Functor f => Functor (SplitCases i f) where
+  map f xy = splitCases xy \cases -> casesSplit (map f cases)
 
 -- Note that even though we are inserting an `fmap` here, we still know that
 -- the left and right cases are exclusive, because of how the types line up!
@@ -111,11 +121,13 @@ foreign import data SplitCases :: Type -> (Type -> Type) -> Type -> Type
 data CasesSplit a b i f r
   = CasesSplit (i -> Either a b) (CaseTree a f r) (CaseTree b f r)
 
-splitCases :: forall a b i f r. CasesSplit a b i f r -> SplitCases i f r
-splitCases = unsafeCoerce
+derive instance functorCasesSplit :: Functor f => Functor (CasesSplit a b i f)
 
-casesSplit :: forall i f r. SplitCases i f r -> forall z. (forall a b. CasesSplit a b i f r -> z) -> z
-casesSplit cases f = f (unsafeCoerce cases)
+casesSplit :: forall a b i f r. CasesSplit a b i f r -> SplitCases i f r
+casesSplit = unsafeCoerce
+
+splitCases :: forall i f r. SplitCases i f r -> forall z. (forall a b. CasesSplit a b i f r -> z) -> z
+splitCases cases f = f (unsafeCoerce cases)
 
 twoCases ::
   forall a b i f r.
@@ -123,18 +135,63 @@ twoCases ::
     CaseTree a f r ->
     CaseTree b f r ->
     CaseTree i f r
-twoCases f a b = TwoCases $ splitCases $ CasesSplit f a b
+twoCases f a b = TwoCases $ casesSplit $ CasesSplit f a b
 
 -- One thing you can do is apply a `CaseTree` to a specific value of `i` to see
--- what branch it chooses.
+-- what branch it chooses. This lets you apply it via `>>=`.
 applyCaseTree :: forall i f r. Functor f => CaseTree i f r -> i -> f r
 applyCaseTree (ZeroCases toVoid) i = absurd (toVoid i)
 applyCaseTree (OneCase fir) i = fir <@> i
 applyCaseTree (TwoCases xy) ij =
-  casesSplit xy \(CasesSplit f x y) ->
-    case f ij of
+  splitCases xy \(CasesSplit fg x y) ->
+    case fg ij of
       Left i -> applyCaseTree x i
       Right j -> applyCaseTree y j
+
+-- The other way to apply it is via `<*>`, which means we do not get to skip
+-- executing any branches.
+mergeCaseTree :: forall i f r. Applicative f => CaseTree i f r -> f (i -> r)
+mergeCaseTree (ZeroCases toVoid) = pure (absurd <<< toVoid)
+mergeCaseTree (OneCase fir) = fir
+mergeCaseTree (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
+  lift2 (\f g ij -> either f g (fg ij)) (mergeCaseTree x) (mergeCaseTree y)
+
+hoistCaseTree :: forall i f g r. (f ~> g) -> CaseTree i f r -> CaseTree i g r
+hoistCaseTree _ (ZeroCases toVoid) = ZeroCases toVoid
+hoistCaseTree h (OneCase fir) = OneCase (h fir)
+hoistCaseTree h (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
+  twoCases fg (hoistCaseTree h x) (hoistCaseTree h y)
+
+cmapCaseTree :: forall i j f r. Functor f => (j -> i) -> CaseTree i f r -> CaseTree j f r
+cmapCaseTree h (ZeroCases toVoid) = ZeroCases (toVoid <<< h)
+cmapCaseTree h (OneCase fir) = OneCase (lcmap h <$> fir)
+cmapCaseTree h (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
+  twoCases (fg <<< h) x y
+
+-- Hmm I don't think theres a satisfying way to implement this without
+-- collapsing it all via `mergeCaseTree` ... it would need to be another
+-- constructor. And it would just correspond to repeated applications of
+-- `caseTreeOn` at a higher level.
+
+-- nestCaseTree :: forall i j f r. Applicative f => CaseTree i f j -> CaseTree j f r -> CaseTree i f r
+-- nestCaseTree (ZeroCases toVoid) = const (ZeroCases toVoid)
+-- nestCaseTree (OneCase fij) = case _ of
+--   ZeroCases toVoid -> OneCase (map (absurd <<< toVoid) <$> fir)
+--   OneCase fjr -> OneCase (lift2 (>>>) fij fjr)
+--   TwoCases xy -> splitCases xy \(CasesSplit fg x y) ->
+--     OneCase $ ?help
+-- nestCaseTree (TwoCases xy) = case _ of
+--   ZeroCases toVoid -> ?help
+--   OneCase fjr -> ?help
+--   TwoCases uv -> ?help
+
+-- Instead, it makes sense to implement this: push down applicative sequencing
+-- through each branch of the tree.
+afterCaseTree :: forall i j f r. Applicative f => CaseTree i f j -> f (j -> r) -> CaseTree i f r
+afterCaseTree (ZeroCases toVoid) _ = ZeroCases toVoid
+afterCaseTree (OneCase fij) fjr = OneCase (lift2 (>>>) fij fjr)
+afterCaseTree (TwoCases xy) fjr = splitCases xy \(CasesSplit fg x y) ->
+  twoCases fg (afterCaseTree x fjr) (afterCaseTree y fjr)
 
 instance interpretersCaseTree :: Interpreters (CaseTree i) i where
   caseTree = identity
@@ -146,7 +203,7 @@ instance interpretersCaseTree :: Interpreters (CaseTree i) i where
     go iq (OneCase fir) =
       select (map Left <$> iq)
         (compose Right <$> fir)
-    go ijq (TwoCases xy) = casesSplit xy \(CasesSplit f x y) ->
+    go ijq (TwoCases xy) = splitCases xy \(CasesSplit f x y) ->
       let
         iq = either (either Left (Right <<< Left)) (Right <<< Right) <<< lmap f <$> ijq
         xi = go iq x
@@ -157,7 +214,7 @@ instance interpretersCaseTree :: Interpreters (CaseTree i) i where
 instance analyzeCaseTree :: Analyze (CaseTree i) where
   analyze _ (ZeroCases _) = mempty
   analyze f (OneCase fir) = f fir
-  analyze f (TwoCases xy) = casesSplit xy \(CasesSplit _ x y) ->
+  analyze f (TwoCases xy) = splitCases xy \(CasesSplit _ x y) ->
     analyze f x <> analyze f y
 
 instance interpretersSplitCases :: Interpreters (SplitCases i) i where
@@ -165,11 +222,11 @@ instance interpretersSplitCases :: Interpreters (SplitCases i) i where
   interpreters = adapt caseTree identity interpreters
 
 instance analyzeSplitCases :: Analyze (SplitCases i) where
-  analyze f xy = casesSplit xy \(CasesSplit _ x y) ->
+  analyze f xy = splitCases xy \(CasesSplit _ x y) ->
     analyze f x <> analyze f y
 
 instance interpretersCasesSplit :: Interpreters (CasesSplit a b i) i where
-  caseTree = TwoCases <<< splitCases
+  caseTree = TwoCases <<< casesSplit
   interpreters = adapt caseTree identity interpreters
 
 instance analyzeCasesSplit :: Analyze (CasesSplit a b i) where
