@@ -2,8 +2,9 @@ module Widget.Unicode where
 
 import Prelude
 
-import Control.Alternative (guard)
+import Control.Alternative (alt, empty, guard)
 import Control.Apply (lift2)
+import Control.Monad.Gen (class MonadGen, chooseBool, chooseInt, sized)
 import Control.Plus ((<|>))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
@@ -26,9 +27,10 @@ import Data.String as CP
 import Data.String as String
 import Data.String.CodeUnits as CU
 import Data.Symbol (class IsSymbol, reflectSymbol)
+import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import Deku.Attribute (cb, xdata, (!:=), (<:=>))
-import Deku.Control (switcher, text_)
+import Deku.Control (switcher, text, text_)
 import Deku.Core (Domable, bussed)
 import Deku.DOM as D
 import Effect (Effect)
@@ -40,6 +42,7 @@ import Prim.RowList (class RowToList)
 import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
+import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Type.Proxy (Proxy(..))
 import Unsafe.Reference (unsafeRefEq)
 import Web.Event.Event as Event
@@ -159,6 +162,7 @@ st = D.Style !:= "font-variant-numeric: lining-nums tabular-nums"
 
 component :: forall lock payload. (String -> Effect Unit) -> Event String -> Domable lock payload
 component setGlobal resetting =
+  bussed \genNew genned -> do
     bussed \taCb taState' -> fold do
       let
         taState = dedup ({ value: _, start: 0, end: 0 } <$> (pure "" <|> resetting) <|> taState')
@@ -228,6 +232,17 @@ component setGlobal resetting =
           , uniprop { isMark }
           ]
         ]
+      , D.div_
+        [ D.button
+          ( empty
+          <|> D.OnClick !:= do genNew =<< gen (Tuple <$> randomUnicode <*> randomUnicode)
+          )
+          [ text_ "Test"
+          ]
+        , text $ alt (pure "") $ map show $ genned <#> \(Tuple a b) -> Tuple
+            (compare (String.fromCodePointArray a) (String.fromCodePointArray b))
+            (compareUTF16 a b)
+        ]
       ]
   where
   updateTA upd = cb $
@@ -246,7 +261,21 @@ component setGlobal resetting =
       , D.td_ $ pure $ flip switcher uv \(Tuple u v) -> display $ tally calc u v
       ]
 
+gen :: forall a. Gen a -> Effect a
+gen = randomSampleOne
 
+genAlt :: forall m b. MonadGen m => m b -> m b -> m b
+genAlt x y = chooseBool >>= if _ then x else y
+
+infixr 4 genAlt as <%>
+
+randomUnicode :: forall gen. MonadGen gen => gen (Array CodePoint)
+randomUnicode = sized \sz ->
+  sequence $ Array.replicate sz do
+    fromMaybe bottom <<< toEnum <$> do
+      chooseInt 0x0 0xD7FF
+        <%> chooseInt 0xE000 0xFFFF
+        <%> chooseInt 0x010000 0x10FFFF
 
 
 -- LowBMP < Astral < HighBMP
@@ -316,6 +345,7 @@ utf8' i0 = go 6 i0 []
       go (allowed - 1) (i `zshr` 6) $
         [highmask 1 .|. (i .&. bitmask 6)] <> acc
 
+-- Get `en` bytes of `by`
 bytesOf :: Int -> Int -> Array Int
 bytesOf en by =
   Array.replicate en unit # mapWithIndex \i _ ->

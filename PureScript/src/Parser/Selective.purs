@@ -8,6 +8,7 @@ import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
 import Data.Enum (class BoundedEnum, enumFromTo)
+import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
 -- Intro                                                                      --
@@ -25,7 +26,9 @@ import Data.Enum (class BoundedEnum, enumFromTo)
 
 -- The basic `select` operation. It enables some static analysis and dynamic
 -- runtime, but it does not capture exclusive choice.
-class (Functor f) <= Select f where
+--
+-- You can recover `apply` as `select <<< map Left`.
+class (Functor f, Apply f) <= Select f where
   select :: forall a r. f (Either a r) -> f (a -> r) -> f r
 
 -- Another way to express selective applicatives, with binary branching.
@@ -35,6 +38,8 @@ class (Functor f) <= Select f where
 -- represented here. In fact, it is no better than `select` in general.
 --
 -- You can recover `select` with `branch`+`pure` (in two equivalent ways).
+-- That is why I put `Applicative` as a superclass here: `Branching` is not
+-- incredibly useful without `pure`.
 class (Select f, Applicative f) <= Branching f where
   branch :: forall a b r. f (Either a b) -> f (a -> r) -> f (b -> r) -> f r
 
@@ -62,10 +67,10 @@ adapt ::
   Interpret x i f r -> Interpret y j f r
 adapt yx ji (Interpret f) = Interpret \jq x -> f (lmap ji <$> jq) (yx x)
 
-
 -- Magic up the right `Interpret` for `x` shape of cases on input `i`.
 class Interpreters x i | x -> i where
   interpreters :: forall f r. Select f => Interpret x i f r
+  caseTree :: forall f r. Functor f => x f r -> CaseTree i f r
 
 -- Static analysis via a monoid. Really it should be a semigroup, but we allowed
 -- `Zero` into the picture.
@@ -88,8 +93,97 @@ casingOn ::
   f i -> x f r -> f r
 casingOn = ap interpreters
 
+
+-- We have a canonical choice for `x` -- a case tree in the following sense:
+data CaseTree i f r
+  = ZeroCases (i -> Void)
+  | OneCase (f (i -> r))
+  | TwoCases (SplitCases i f r)
+
+-- `SplitCases i f r` is an existential of `CasesSplit a b i f r` over `a` and `b`
+foreign import data SplitCases :: Type -> (Type -> Type) -> Type -> Type
+
+-- Note that even though we are inserting an `fmap` here, we still know that
+-- the left and right cases are exclusive, because of how the types line up!
+-- The key is that we do not have to (and are not able to) map the output `r`
+-- of each computation and feed it into another. It all is branched from the
+-- input type and is up to the consumer to handle \~somehow\~.
+data CasesSplit a b i f r
+  = CasesSplit (i -> Either a b) (CaseTree a f r) (CaseTree b f r)
+
+splitCases :: forall a b i f r. CasesSplit a b i f r -> SplitCases i f r
+splitCases = unsafeCoerce
+
+casesSplit :: forall i f r. SplitCases i f r -> forall z. (forall a b. CasesSplit a b i f r -> z) -> z
+casesSplit cases f = f (unsafeCoerce cases)
+
+twoCases ::
+  forall a b i f r.
+    (i -> Either a b) ->
+    CaseTree a f r ->
+    CaseTree b f r ->
+    CaseTree i f r
+twoCases f a b = TwoCases $ splitCases $ CasesSplit f a b
+
+-- One thing you can do is apply a `CaseTree` to a specific value of `i` to see
+-- what branch it chooses.
+applyCaseTree :: forall i f r. Functor f => CaseTree i f r -> i -> f r
+applyCaseTree (ZeroCases toVoid) i = absurd (toVoid i)
+applyCaseTree (OneCase fir) i = fir <@> i
+applyCaseTree (TwoCases xy) ij =
+  casesSplit xy \(CasesSplit f x y) ->
+    case f ij of
+      Left i -> applyCaseTree x i
+      Right j -> applyCaseTree y j
+
+instance interpretersCaseTree :: Interpreters (CaseTree i) i where
+  caseTree = identity
+  interpreters = Interpret go
+    where
+    -- See specific implementations below for explanations of this code
+    go :: forall f i' q r. Select f => f (Either i' q) -> CaseTree i' f r -> f (Either q r)
+    go iq (ZeroCases toVoid) = either (absurd <<< toVoid) Left <$> iq
+    go iq (OneCase fir) =
+      select (map Left <$> iq)
+        (compose Right <$> fir)
+    go ijq (TwoCases xy) = casesSplit xy \(CasesSplit f x y) ->
+      let
+        iq = either (either Left (Right <<< Left)) (Right <<< Right) <<< lmap f <$> ijq
+        xi = go iq x
+        jq = either (either Left (Right <<< Left)) (Right <<< Right) <$> xi
+        yj = go jq y
+      in either identity Right <$> yj
+
+instance analyzeCaseTree :: Analyze (CaseTree i) where
+  analyze _ (ZeroCases _) = mempty
+  analyze f (OneCase fir) = f fir
+  analyze f (TwoCases xy) = casesSplit xy \(CasesSplit _ x y) ->
+    analyze f x <> analyze f y
+
+instance interpretersSplitCases :: Interpreters (SplitCases i) i where
+  caseTree = TwoCases
+  interpreters = adapt caseTree identity interpreters
+
+instance analyzeSplitCases :: Analyze (SplitCases i) where
+  analyze f xy = casesSplit xy \(CasesSplit _ x y) ->
+    analyze f x <> analyze f y
+
+instance interpretersCasesSplit :: Interpreters (CasesSplit a b i) i where
+  caseTree = TwoCases <<< splitCases
+  interpreters = adapt caseTree identity interpreters
+
+instance analyzeCasesSplit :: Analyze (CasesSplit a b i) where
+  analyze f (CasesSplit _ x y) =
+    analyze f x <> analyze f y
+
+-- Might as well make this a thing. Not sure if it can be usefully split into
+-- separate methods?
+class Casing f where
+  caseTreeOn :: forall i r. f i -> CaseTree i f r -> f r
+
+
 --------------------------------------------------------------------------------
--- Define some shapes of cases:                                               --
+-- Define some specific shapes of cases:                                        --
 --------------------------------------------------------------------------------
 
 data Zero :: (Type -> Type) -> Type -> Type
@@ -101,6 +195,7 @@ zero = Interpret \iq Zero -> either absurd Left <$> iq
 
 instance interpretZero :: Interpreters Zero Void where
   interpreters = zero
+  caseTree Zero = ZeroCases identity
 
 instance analyzeZero :: Analyze Zero where
   analyze _ Zero = mempty
@@ -128,6 +223,7 @@ one = Interpret \iq (One x) ->
 
 instance interpretOne :: Interpreters (One i) i where
   interpreters = one
+  caseTree (One fir) = OneCase fir
 
 instance analyzeOne :: Analyze (One i) where
   analyze f (One x) = f x
@@ -147,6 +243,7 @@ plain = Interpret \iq (Plain x) ->
 
 instance interpretPlain :: Interpreters Plain Unit where
   interpreters = plain
+  caseTree (Plain fr) = OneCase (const <$> fr)
 
 instance analyzePlain :: Analyze Plain where
   analyze f (Plain x) = f x
@@ -196,6 +293,7 @@ two _fi _fj = Interpret fij
 
 instance interpretTwo :: (Interpreters x i, Interpreters y j) => Interpreters (Two x y) (Either i j) where
   interpreters = two interpreters interpreters
+  caseTree (Two fir fjr) = twoCases identity (caseTree fir) (caseTree fjr)
 
 instance analyzeTwo :: (Analyze x, Analyze y) => Analyze (Two x y) where
   analyze f (Two x y) = analyze f x <> analyze f y
@@ -213,6 +311,7 @@ succ ifs = adapt (\(Succ fi fj) -> Two (One fi) fj) identity (two one ifs)
 
 instance interpretSucc :: Interpreters y j => Interpreters (Succ i y) (Either i j) where
   interpreters = succ interpreters
+  caseTree (Succ fi fj) = caseTree (Two (One fi) fj)
 
 instance analyzeSucc :: Analyze y => Analyze (Succ i y) where
   analyze f (Succ i y) = f i <> analyze f y
@@ -230,6 +329,7 @@ cuss ifs = adapt (\(Cuss fi fj) -> Two fi (One fj)) identity (two ifs one)
 
 instance interpretCuss :: Interpreters x i => Interpreters (Cuss x j) (Either i j) where
   interpreters = cuss interpreters
+  caseTree (Cuss fi fj) = caseTree (Two fi (One fj))
 
 instance analyzeCuss :: Analyze x => Analyze (Cuss x j) where
   analyze f (Cuss x j) = analyze f x <> f j
@@ -247,6 +347,10 @@ thenElse = adapt
 
 instance interpretThenElse :: Interpreters ThenElse Boolean where
   interpreters = thenElse
+  caseTree (ThenElse bT bF) = twoCases
+    (if _ then Left unit else Right unit)
+    (OneCase (const <$> bT))
+    (OneCase (const <$> bF))
 
 instance analyzeThenElse :: Analyze ThenElse where
   analyze f (ThenElse i j) = f i <> f j
@@ -266,16 +370,22 @@ finiteBase ::
     Select f =>
   Interpret (FiniteBase i) i f r
 finiteBase = adapt listCases identity finiteCases
-  where
-  listCases :: FiniteBase i f r -> FiniteCases i f r
-  listCases (FiniteBase f baseCase) =
-    foldr
-      (\i more -> FiniteCase (eq i) (const <$> f i) more)
-      (EndFinite baseCase)
-      (enumFromTo bottom top)
+
+listCases ::
+  forall i f r.
+    BoundedEnum i =>
+    Eq i =>
+    Functor f =>
+  FiniteBase i f r -> FiniteCases i f r
+listCases (FiniteBase f baseCase) =
+  foldr
+    (\i more -> FiniteCase (eq i) (const <$> f i) more)
+    (EndFinite baseCase)
+    (enumFromTo bottom top)
 
 instance interpretFiniteBase :: BoundedEnum i => Interpreters (FiniteBase i) i where
   interpreters = finiteBase
+  caseTree = caseTree <<< listCases
 
 instance analyzeFiniteBase :: BoundedEnum i => Analyze (FiniteBase i) where
   analyze f (FiniteBase cases empt) = Array.fold
@@ -331,6 +441,12 @@ finiteCases = Interpret \iq x -> unfoldCases (iq <#> map Left) x
 
 instance interpretFiniteCases :: Interpreters (FiniteCases i) i where
   interpreters = finiteCases
+  caseTree (EndFinite empt) = OneCase (absurd <$> empt)
+  caseTree (FiniteCase matches return more) =
+    let
+      pullOutMatch i | matches i = Left i
+      pullOutMatch i = Right i
+    in twoCases pullOutMatch (OneCase return) (caseTree more)
 
 instance analyzeFiniteCases :: Analyze (FiniteCases i) where
   analyze f = go
@@ -393,6 +509,8 @@ branch3 ::
 branch3 i a b c = casingOn i (Succ a (Succ b (One c)))
 
 
+-- (This was before I wrote CaseTree.)
+--
 -- Maybe this is enough to encode exclusive choice?? Would be complicated ...
 --
 -- I guess the problem is that it still has `Functor`, and interleaving these
@@ -401,6 +519,6 @@ branch3 i a b c = casingOn i (Succ a (Succ b (One c)))
 -- I guess you could encode all the `either` shuffling as methods here??
 -- Ugh, but then you need to be able to keep track of all the switching somehow
 -- 0.o.
-class Functor f <= Casing f where
-  oneCase :: forall i q r. f (Either i q) -> f (i -> r) -> f (Either q r)
-  zeroCases :: forall i. f (Either Void i) -> f (Either i Void)
+-- class Functor f <= Casing f where
+--   oneCase :: forall i q r. f (Either i q) -> f (i -> r) -> f (Either q r)
+--   zeroCases :: forall i. f (Either Void i) -> f (Either i Void)

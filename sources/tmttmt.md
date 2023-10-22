@@ -181,9 +181,15 @@ I think Iʼm ready to make it happen!
 
     If I did have row types, I would want to make sure they are not limited to existing constructs of records and variants (product and sum types), there are so many other symmetric tensors to think about!
     E.g. configuration options tend to come as a record of maybes, but sometimes you need a bunch of things tensored together with `These`{.haskell}, so you know that at least one is specified.
+
 - Function calls cannot be nested, functions are only applied to literals/variables.
   - This is for two reasons: it makes the syntax lighter, and it means that the user was very specific about the order of execution.
   - One concrete benefit is that you need much fewer delimiters in the syntax, since each pattern ends at a well-known point.
+
+#### Patterns
+
+https://cohost.org/monoidmusician/post/3252802-first-class-patterns
+
 - We need a way to reflect patterns into values, filling in any variables with default values.
   This is most useful to implement unification: to unify a term with a pattern, you first replace the variables with unification variables, call the unification function (which has no idea what a pattern is), and then match the pattern against the result.
 
@@ -199,6 +205,13 @@ I think Iʼm ready to make it happen!
     You can combine these applicatively and with other tools (if you can combine the shapes and pick them back apart); it is very useful, even without any language support whatsoever, just DSLs and fancy types.
     These are basically codecs in a single direction (not bidirectional).
 
+- Non-linear pattern matching.
+
+- Static evaluation of functions, so they can be considered as macros producing patterns.
+
+  This means that they have to reduce to a pattern, without running any effectful functions, and cannot have stuck case matching, and so on.
+
+- Pattern aliases?
 
 ### Use-cases to achieve
 
@@ -365,6 +378,10 @@ I want to avoid some problems:
 - Indentation. Figuring out how to indent lambdas as arguments to functions is so annoying.
 - Related: figuring out where the lambdas end is also annoying.
   I do like dangling lambdas actually.
+
+```{.js data-lang="tmTTmt"}
+["if" ($matches-tag arg1) (: MyExprType) "then" "true" "else" ($failed-match)]
+```
 :::
 
 ```haskell
