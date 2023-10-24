@@ -6,10 +6,14 @@ import Control.Apply (lift2)
 import Control.Plus (class Plus, empty)
 import Data.Array (foldr)
 import Data.Array as Array
-import Data.Bifunctor (lmap)
+import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..), either)
 import Data.Enum (class BoundedEnum, enumFromTo)
-import Data.Profunctor (lcmap)
+import Data.Profunctor (class Profunctor, dimap, lcmap)
+import Data.Profunctor.Choice (class Choice, left, right)
+import Data.Profunctor.Strong (class Strong, first, second)
+import Data.Tuple (Tuple(..), fst, snd, uncurry)
+import Safe.Coerce (coerce)
 import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
@@ -168,6 +172,22 @@ cmapCaseTree h (OneCase fir) = OneCase (lcmap h <$> fir)
 cmapCaseTree h (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
   twoCases (fg <<< h) x y
 
+-- Remove `ZeroCases` (unless that is the whole tree). This does not left- or
+-- right- associate the tree, which would be required for actually normalizing
+-- the case tree per the monoid laws, but whatever. (I think that would sort of
+-- tank performance? maybe?)
+normalizeCaseTree :: forall i f r. Functor f => CaseTree i f r -> CaseTree i f r
+normalizeCaseTree (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
+  case normalizeCaseTree x, normalizeCaseTree y of
+    ZeroCases toVoid1, ZeroCases toVoid2 ->
+      ZeroCases (either toVoid1 toVoid2 <<< fg)
+    ZeroCases toVoid, y' ->
+      cmapCaseTree (either (absurd <<< toVoid) identity <<< fg) y'
+    x', ZeroCases toVoid ->
+      cmapCaseTree (either identity (absurd <<< toVoid) <<< fg) x'
+    x', y' -> twoCases fg x' y'
+normalizeCaseTree subsingleCase = subsingleCase
+
 -- Hmm I don't think theres a satisfying way to implement this without
 -- collapsing it all via `mergeCaseTree` ... it would need to be another
 -- constructor. And it would just correspond to repeated applications of
@@ -176,9 +196,12 @@ cmapCaseTree h (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
 -- nestCaseTree :: forall i j f r. Applicative f => CaseTree i f j -> CaseTree j f r -> CaseTree i f r
 -- nestCaseTree (ZeroCases toVoid) = const (ZeroCases toVoid)
 -- nestCaseTree (OneCase fij) = case _ of
---   ZeroCases toVoid -> OneCase (map (absurd <<< toVoid) <$> fir)
+--   ZeroCases toVoid -> OneCase (map (absurd <<< toVoid) <$> fij)
 --   OneCase fjr -> OneCase (lift2 (>>>) fij fjr)
 --   TwoCases xy -> splitCases xy \(CasesSplit fg x y) ->
+--     -- in particular, we are stuck here because:
+--     --   1. we don't have an unconditional `f i` to shunt it onto
+--     --   2. we don't have a `j` to case on via `fg :: j -> Either a b`
 --     OneCase $ ?help
 -- nestCaseTree (TwoCases xy) = case _ of
 --   ZeroCases toVoid -> ?help
@@ -510,6 +533,205 @@ instance analyzeFiniteCases :: Analyze (FiniteCases i) where
     where
     go (EndFinite end) = f end
     go (FiniteCase _ return more) = f return <> go more
+
+
+--------------------------------------------------------------------------------
+-- Free constructions                                                         --
+--------------------------------------------------------------------------------
+
+-- Free composition of two arrows
+foreign import data Snuggle :: (Type -> Type -> Type) -> Type -> Type -> Type
+
+snuggle :: forall k a b c. k a b -> k b c -> Snuggle k a c
+snuggle l r = unsafeCoerce (Tuple l r)
+
+unsnuggle :: forall k a c r. Snuggle k a c -> (forall b. k a b -> k b c -> r) -> r
+unsnuggle s f = uncurry f (unsafeCoerce s)
+
+-- Free arrow kind of thing ...
+data ControlFlow f i r
+  = Action (f (i -> r))
+  | Pure (i -> r)
+  | CaseFlow (CaseTree i (ControlFlow f Unit) r)
+  | Sequencing (Snuggle (ControlFlow f) i r)
+
+-- Its profunctory instances:
+
+instance functorControlFlow :: Functor f => Functor (ControlFlow f i) where
+  map f (Action fir) = Action (map f <$> fir)
+  map f (Pure ir) = Pure (map f ir)
+  map f (CaseFlow cases) = CaseFlow (map f cases)
+  map f (Sequencing snuggles) = Sequencing $
+    unsnuggle snuggles \ab bc -> snuggle ab (map f bc)
+
+instance profunctorControlFlow :: Functor f => Profunctor (ControlFlow f) where
+  dimap f g (Action fir) = Action (dimap f g <$> fir)
+  dimap f g (Pure ir) = Pure (dimap f g ir)
+  dimap f g (CaseFlow cases) = CaseFlow (cmapCaseTree f $ map g cases)
+  dimap f g (Sequencing snuggles) = Sequencing $ unsnuggle snuggles \ab bc ->
+    snuggle (dimap f identity ab) (map g bc)
+
+instance semigroupoidControlFlow :: Semigroupoid (ControlFlow f) where
+  compose f g = Sequencing (snuggle g f)
+
+instance categoryControlFlow :: Category (ControlFlow f) where
+  identity = Pure identity
+
+firstCaseTree ::
+  forall f i j r.
+    Functor f =>
+  CaseTree j f r -> CaseTree (Tuple j i) f (Tuple r i)
+firstCaseTree (ZeroCases toVoid) = ZeroCases (fst >>> toVoid)
+firstCaseTree (OneCase fir) = OneCase (first <$> fir)
+firstCaseTree (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
+  twoCases (\(Tuple j i) -> bimap (Tuple <@> i) (Tuple <@> i) (fg j)) (firstCaseTree x) (firstCaseTree y)
+
+secondCaseTree ::
+  forall f i j r.
+    Functor f =>
+  CaseTree j f r ->
+  CaseTree (Tuple i j) f (Tuple i r)
+secondCaseTree (ZeroCases toVoid) = ZeroCases (snd >>> toVoid)
+secondCaseTree (OneCase fir) = OneCase (second <$> fir)
+secondCaseTree (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
+  twoCases (\(Tuple i j) -> bimap (Tuple i) (Tuple i) (fg j)) (secondCaseTree x) (secondCaseTree y)
+
+instance strongControlFlow :: Functor f => Strong (ControlFlow f) where
+  first :: forall i j r. ControlFlow f j r -> ControlFlow f (Tuple j i) (Tuple r i)
+  first (Action f) = Action (first <$> f)
+  first (Pure f) = Pure (first f)
+  first (CaseFlow cases) = CaseFlow $ firstCaseTree cases
+  first (Sequencing snuggles) = unsnuggle snuggles \ab bc ->
+    Sequencing $ snuggle (first ab) (first bc)
+
+  second :: forall i j r. ControlFlow f j r -> ControlFlow f (Tuple i j) (Tuple i r)
+  second (Action f) = Action (second <$> f)
+  second (Pure f) = Pure (second f)
+  second (CaseFlow cases) = CaseFlow $ secondCaseTree cases
+  second (Sequencing snuggles) = unsnuggle snuggles \ab bc ->
+    Sequencing $ snuggle (second ab) (second bc)
+
+instance costrongControlFlow :: Functor f => Choice (ControlFlow f) where
+  left :: forall i j r. ControlFlow f j r -> ControlFlow f (Either j i) (Either r i)
+  left (Action f) = Action (left <$> f)
+  left (Pure f) = Pure (left f)
+  left (CaseFlow cases) = CaseFlow $ twoCases identity (map Left cases) (OneCase (Pure (const Right)))
+  left (Sequencing snuggles) = unsnuggle snuggles \ab bc ->
+    Sequencing $ snuggle (left ab) (left bc)
+
+  right :: forall i j r. ControlFlow f j r -> ControlFlow f (Either i j) (Either i r)
+  right (Action f) = Action (right <$> f)
+  right (Pure f) = Pure (right f)
+  right (CaseFlow cases) = CaseFlow $ twoCases identity (OneCase (Pure (const Left))) (map Right cases)
+  right (Sequencing snuggles) = unsnuggle snuggles \ab bc ->
+    Sequencing $ snuggle (right ab) (right bc)
+
+-- Other helper functions for it:
+
+lowerFn :: forall f i r. Functor f => ControlFlow f Unit (i -> r) -> ControlFlow f i r
+lowerFn c = dimap pure (uncurry ($)) (first c)
+
+lowerArg :: forall f i r. Functor f => ControlFlow f Unit i -> ControlFlow f (i -> r) r
+lowerArg c = dimap pure (uncurry (#)) (first c)
+
+uncons ::
+  forall f i r.
+    Functor f =>
+  ControlFlow f i r ->
+  CaseTree i (ControlFlow f Unit) r
+uncons (Pure ir) = OneCase (Pure (const ir))
+uncons (Action fir) = OneCase (Action (const <$> fir))
+uncons (CaseFlow cases) = cases
+uncons (Sequencing snuggles) = unsnuggle snuggles \ab bc ->
+  sequenceCaseTree (uncons ab) bc
+
+sequenceCaseTree ::
+  forall i j f r.
+    Functor f =>
+  CaseTree i (ControlFlow f Unit) j ->
+  ControlFlow f j r ->
+  CaseTree i (ControlFlow f Unit) r
+sequenceCaseTree (ZeroCases toVoid) _ = ZeroCases toVoid
+sequenceCaseTree (OneCase fij) fjr = sequenceCaseTree (uncons (lowerFn fij)) fjr
+sequenceCaseTree (TwoCases xy) fjr = splitCases xy \(CasesSplit fg x y) ->
+  twoCases fg (sequenceCaseTree x fjr) (sequenceCaseTree y fjr)
+
+bifurcate ::
+  forall a b i f r.
+    Functor f =>
+  (i -> Either a b) ->
+  ControlFlow f a r ->
+  ControlFlow f b r ->
+  ControlFlow f i r
+bifurcate fg x y = CaseFlow $ twoCases fg (uncons x) (uncons y)
+
+-- Helper for all instances below
+keep :: forall i f r. Functor f => ControlFlow f i r -> ControlFlow f i (Tuple i r)
+keep f = lcmap (join Tuple) (second f)
+
+-- Helper for `caseTreeOn`
+caseTreeWith ::
+  forall i j f r.
+    Functor f =>
+  CaseTree j (ControlFlow f i) r ->
+  CaseTree (Tuple i j) (ControlFlow f Unit) r
+caseTreeWith (ZeroCases toVoid) = ZeroCases (snd >>> toVoid)
+caseTreeWith (OneCase fir) = firstCaseTree (uncons fir) <#> uncurry ($)
+caseTreeWith (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
+  twoCases (\(Tuple i j) -> bimap (Tuple i) (Tuple i) (fg j)) (caseTreeWith x) (caseTreeWith y)
+
+-- Analogue of `caseTreeWith` for `apply`/`select`/`branch`
+yoink :: forall i j f r. Functor f =>
+  ControlFlow f i (j -> r) -> ControlFlow f (Tuple i j) r
+yoink (Pure ir) = Pure (uncurry ir)
+yoink (Action fir) = Action (uncurry <$> fir)
+yoink (CaseFlow cases) = CaseFlow $ uncurry ($) <$> firstCaseTree cases
+yoink (Sequencing snuggles) = unsnuggle snuggles \ab bc ->
+  first ab >>> yoink bc
+
+instance applyControlFlow :: Functor f => Apply (ControlFlow f i) where
+  apply f g = keep f >>> yoink (map (#) g)
+
+instance applicativeControlFlow :: Functor f => Applicative (ControlFlow f i) where
+  pure r = Pure (pure r)
+
+instance casingControlFlow :: Functor f => Casing (ControlFlow f i) where
+  caseTreeOn f g = keep f >>> CaseFlow (caseTreeWith g)
+
+instance selectControlFlow :: Functor f => Select (ControlFlow f i) where
+  select f g = keep f >>> bifurcate (\(Tuple j i) -> lmap (Tuple j) i) (yoink g) identity
+
+instance branchingControlFlow :: Functor f => Branching (ControlFlow f i) where
+  branch f g h = keep f >>> bifurcate (\(Tuple j i) -> bimap (Tuple j) (Tuple j) i) (yoink g) (yoink h)
+
+
+-- The free construction for casing/selective, with instances optimized for
+-- `i = Unit`.
+newtype FreeControl f r = FreeControl (ControlFlow f Unit r)
+
+derive newtype instance functorFreeControl :: Functor f => Functor (FreeControl f)
+
+instance applyFreeControl :: Functor f => Apply (FreeControl f) where
+  apply (FreeControl f) (FreeControl g) = FreeControl $
+    f >>> lowerArg g
+
+instance applicativeFreeControl :: Functor f => Applicative (FreeControl f) where
+  pure a = FreeControl (Pure (pure a))
+
+instance casingFreeControl :: Casing (FreeControl f) where
+  caseTreeOn (FreeControl f) g = FreeControl $
+    f >>> CaseFlow (hoistCaseTree coerce g)
+
+instance selectFreeControl :: Functor f => Select (FreeControl f) where
+  select (FreeControl f) (FreeControl g) = FreeControl $
+    f >>> (left (lowerFn g) <#> either identity identity)
+
+instance branchingFreeControl :: Functor f => Branching (FreeControl f) where
+  branch (FreeControl f) (FreeControl g) (FreeControl h) = FreeControl $
+    f >>> CaseFlow (twoCases identity (OneCase g) (OneCase h))
+
+
+
 
 
 --------------------------------------------------------------------------------
