@@ -39,7 +39,7 @@ You can make a semiring out of a semilattice by adjoining a new zero element. Li
 
 ## Background
 
-(Bounded) semilattices are monoids whose operation is also idempotent: \(x \diamond x = x\) for all \(x\).
+(Bounded) semilattices are commutative monoids whose operation is also idempotent: \(x \diamond x = x\) for all \(x\).
 
 I will write the monoid operation as `x <> y`{.haskell} and as \(x \diamond y\),
 and the empty element as `mempty`{.haskell} or \(e\).
@@ -53,7 +53,7 @@ But we donʼt need the order theory here.
 Semirings are rings without subtraction: just addition and multiplication and their identities, zero and one, respectively.
 And [distributivity] and [annihilation] laws to intertwine these two monoids.
 
-The funny part of this is that “semi-” means different things: semirings are just missing subtraction (kind of a weird use of semi, which is why some call them [rigs](https://ncatlab.org/nlab/show/rig)), but semilattices are literally half of a lattice (one idempotent monoid instead of two interlinked).
+The funny part of this is that “semi-” means different things: semirings are just missing subtraction (kind of a weird use of semi, which is why some call them [rigs](https://ncatlab.org/nlab/show/rig)), but semilattices are literally half of a lattice (one idempotent commutative monoid instead of two interlinked).
 
 (Lattices are actually closely related to semirings: they have the same shape of operations, and you can turn every bounded _distributive_ lattice into a semiring – in two ways, in fact, since you can make a lattice with the opposite order.)
 
@@ -152,6 +152,10 @@ We also made \(0 + x = x = x + 0\) true by definition of `add`{.haskell}.
 So we just need to prove that \(x + (y + z) = (x + y) + z\) for \(x, y, z \neq 0\).
 But that follows from the semilatticeʼs associativity: \(x \diamond (y \diamond z) = (x \diamond y) \diamond z\).
 
+#### Commutativity
+
+Yes.
+
 ### Multiplicative monoid
 
 #### Identity
@@ -166,6 +170,10 @@ So for \(x \neq 0\) (and since \(1 \neq 0\) and \(1\) is given by the semilattic
 #### Associativity
 
 Same case analysis as usual: if \(x, y, z \neq 0\) then we get associativity from the semilattice, otherwise both sides equal \(0\) by the power of the annihilator.
+
+#### Commutativity
+
+Yes.
 
 ### Absorption laws fail
 
