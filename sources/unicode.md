@@ -221,3 +221,9 @@ https://en.wikipedia.org/wiki/Combining_character
 - Me = Mark, enclosing
 
 ## Terminology
+
+## Misc
+
+- https://github.com/kennytm/omgwtf8
+- https://www.channable.com/tech/so-long-surrogatesa
+- https://wingolog.org/archives/2023/10/19/requiem-for-a-stringref
