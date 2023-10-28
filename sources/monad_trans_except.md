@@ -16,8 +16,8 @@ ExceptT e m a = m (Either e a)
 
 StateT s m a = s -> m (a, s)
 
-ES e s m a = s -> m (Either e a, s)
-SE s e m a = s -> m (Either e (a, s))
+EST e s m a = s -> m (Either e a, s)
+SET s e m a = s -> m (Either e (a, s))
 ```
 
 it’s probably more common to want to use both directions of Except vis-a-vis Writer, but I could imagine some scenarios where you want to maintain state too, either as an optimization for something that should really use Writer, or state that represents information you accumulate regardless of errors, like in SAT solving if you keep a list of possibilities you have ruled out or something (that’s kind of like Writer but you don’t want to actually use Writer)

@@ -19,6 +19,12 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 Itʼs not a real blog though since it doesnʼt have RSS yet …
 
 ## Posts
+- [A Semiring From Any Semilattice](semilattice_semiring.html)
+
+  > You can make a semiring out of a semilattice by adjoining a new zero element. Lifting the semilattice operation in the two obvious ways gives you `+`{.haskell} and `*`{.haskell}. Idempotence gives distributivity(!).
+  >
+  > This construction answers the question, “if you need a semiring for static analysis, how do you also keep other data around that does not care about the branching structure?” (like, say, a monoid).
+
 - [The Best Errors for Solving Dependency Versions](version_solver.html)
 
   > A [novel algorithm](https://github.com/purescript/registry-dev/blob/master/lib/src/Solver.purs) for resolving dependency bounds to solved versions:
