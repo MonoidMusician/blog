@@ -3,6 +3,7 @@ title: A Semiring From Any Semilattice
 subtitle: A mathematical pun?
 author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
+date: 2023/10/28
 ---
 
 Iʼve been working on some theoretical aspects of programming recently.
@@ -193,3 +194,21 @@ However itʼs not terribly interesting.
 You end up adjoining some number of identities and annihilators to the underlying semilattice.
 (New top/bottom elements, depending on which way you look at it.)
 The order that you do this in does not matter, only how many times you choose to do each way.
+
+## Additional comments
+
+Want a semiring without zero?
+No need to adjoin a zero, then – just use the same carrier type.
+The remaining laws still just work.
+
+For static analysis, the zero is only good for representing unreachable/error cases.
+But the identity of the semilattice is indispensible: itʼs the empty analysis for when you know nothing yet or have nothing to contribute.
+
+Important to note that all of these algebraic constructs (monoids, semilattices, semirings^[but **not** fields]) are closed under taking products.
+This is why I said “how do you _also_ keep other data around” in the introduction.
+
+### Explaining to non-mathematicians
+
+The concept of a semiring is an abstract conception of what a number is.
+A particular semiring is a specific conception of what can be a number.
+We can manipulate these “numbers” in the familiar ways – mostly.

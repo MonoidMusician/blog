@@ -28,6 +28,11 @@ author:
 
 ### Runtimes/Debugging
 
+#### Browser JS
+
+- `new URLSearchParams(window.location.search).{get,getAll,has,entries,...}(...)`{.js}
+  - `.entries` returns an iterator??
+
 #### NodeJS
 
 - Full stack trace: `NODE_OPTIONS='--stack-trace-limit=10000'`{.bash}

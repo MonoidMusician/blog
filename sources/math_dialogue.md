@@ -8,3 +8,5 @@ author:
 Giving (counter)examples is like the main form of communication, rebuttal.
 
 Disambiguate and rewrite to the “nearest” true statement.
+
+“Countable”

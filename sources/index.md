@@ -19,11 +19,13 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 Itʼs not a real blog though since it doesnʼt have RSS yet …
 
 ## Posts
-- [A Semiring From Any Semilattice](semilattice_semiring.html)
+- [A Semiring From Any Semilattice: A mathematical pun?](semilattice_semiring.html) – 2023/10/28
 
   > You can make a semiring out of a semilattice by adjoining a new zero element. Lifting the semilattice operation in the two obvious ways gives you `+`{.haskell} and `*`{.haskell}. Idempotence gives distributivity(!).
   >
   > This construction answers the question, “if you need a semiring for static analysis, how do you also keep other data around that does not care about the branching structure?” (like, say, a monoid).
+
+- [TransMorphism Type Theory MetaTheory](tmttmt.html) – 2023/10/13–
 
 - [The Best Errors for Solving Dependency Versions](version_solver.html)
 
@@ -60,6 +62,9 @@ Itʼs not a real blog though since it doesnʼt have RSS yet …
   > The construction weʼll be talking about is my favorite esoteric construction of real numbers: the _[Eudoxus real numbers](https://ncatlab.org/nlab/show/Eudoxus+real+number)_.
 
 ## Series
+- Tools
+  1. WIP: [Unicode Explorer](unicode.html)
+  1. Abandoned?: [Generative Art Scratchpad](genart.html)
 - [Interactive Parser Explanations](parser.html)
   1. TODO: [Parsing By Example](parser_by_example.html)
   1. TODO: [Terminology Reference](parser_terminology.html)
@@ -68,7 +73,7 @@ Itʼs not a real blog though since it doesnʼt have RSS yet …
   1. WIP: [Basics of LR(1) Parsing](parser_lr1.html)
 
 ### Miniseries
-- [Knowlish](knowlish.html) – A list of little things I have learned.
+- [Knowlish](knowlish.html) – A list of little things I have learned and need reminders about.
 - Co-search – nothing yet, but the idea is that I will put up requests for information, and maybe passers-by can tell me what I seek
 - Don’t make me invent it – in which I finally ask for help & references for prior art, instead of just plunging in confident that I can figure it out
 
@@ -83,7 +88,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
   - Interactive type theory!
   - WIP: [User Operators with Implicits & Overloads](implicit_arguments.html), in bidirectional type checkers
   - The Algebra of Type Unification (semilattices everywhere!)
-  - [TMTTMT](https://cohost.org/monoidmusician/tagged/tmttmt)
+  - [TransMorphism Type Theory MetaTheory](tmttmt.html)
 - Programming Linguistics:
   - Iʼve been thinking a lot about [selective applicative functors](https://dl.acm.org/doi/10.1145/3341694) lately.
     Mostly through the perspective of two contrasting applications: [selective applicative parsers](https://cohost.org/monoidmusician/post/2588944-more-more-more-seman), and functors for [typechecking with better errors](comprehensive_errors.html).
@@ -118,6 +123,12 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
     > Imperative code has no passive stability: all global state is mutable, and small perturbations (say, modifying a prototype) can cause unpredictably large effects down the line, if not carefully managed. Untyped code is especially bad. Carefully managed imperative code may be stable, but this is active stability: it is not inherent to the framework but imposed on top.
     >
     > Functional code on the other hand is not only passively stable, it is anchored down solid. Each building block is given a static, local denotation, and they compose together. You may still need nonlocal knowledge of the code to understand the intent of what everything represents (ahem, [boolean blindness](https://existentialtype.wordpress.com/2011/03/15/boolean-blindness/)), but the local meaning is denotationally clear.
+
+    - I wonder: can you define a safe subset of Python/JavaScript that cannot be hijacked by mutating globals?
+      Surely it is possible at the bytecode level, but I mean in source syntax.
+      I guess if statements would be a start.
+      Are numeric operations safe in Python?
+
   - log levels considered harmful
 - Data:
   - The Anatomy of ADTs
