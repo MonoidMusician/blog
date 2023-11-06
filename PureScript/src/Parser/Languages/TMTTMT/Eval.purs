@@ -56,7 +56,7 @@ evalMacro ctx0 e allArgs = case A.uncons allArgs of
                   tryCases ctx' theseCases <#>
                     case _ of
                       Pattern final -> Pattern final
-                      Lambda cases' -> spy "newLambda1" $ Lambda $ cases' <>
+                      Lambda cases' -> Lambda $ cases' <>
                         case tryCases ctx moreCases of
                           Just (Lambda cases'') -> cases''
                           Just (Pattern fallback) -> [Case (Matching [] (Pattern fallback)) []]
@@ -76,7 +76,7 @@ evalMacro ctx0 e allArgs = case A.uncons allArgs of
                         ctx'' <- evals ctx' conds
                         evalExpr ctx'' result
                     -- Awaiting more arguments, already evaluated then
-                    _ -> Just $ spy "newLambda2" $ Lambda $ A.cons
+                    _ -> Just $ Lambda $ A.cons
                       (Case (Matching pats result)
                         -- Add this match to the local context
                         -- (TODO: destruct it??)
