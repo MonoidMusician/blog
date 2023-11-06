@@ -67,6 +67,16 @@ But I donʼt want this process to be magic!
 I just want it to look convenient for writing powerful systems of type theory.
 
 
+## Implementation
+
+AAaaahhhh
+
+::: {.widget widget="Widget.Query" widget-empty="true" widget-datakey="default" widget-data-keys="tmttmt-example"}
+:::
+
+::: {.widget widget="Parser.Main.TMTTMT" widget-datakey="default" widget-loading="true"}
+:::
+
 
 ## Motivation
 
@@ -335,14 +345,14 @@ typecheck/ ["App" fn arg] => resultType:
   typecheck fn => ["Pi" binder domain codomain]
   // See if `codomain` does not in fact depend on `binder`
   tryApplyConstant binder codomain
-  | => ["constant" resultType]?
+  ? => ["constant" resultType]:
     // `resultType` got assigned, so this case is not necessary to produce
     // *some* result that can inform further type errors, though this node does
     // not truly typecheck if it fails:
     typecheck arg => domain
     // `domain` is a non-linear pattern match, unifying `argType` and `domain`
     // (any further references to `domain` would refer to the unified node)
-  | => ["non-constant"]?
+  ? => ["non-constant"]:
     // Typecheck the argument in strict mode to ensure that type errors result
     // in an immediate failure even if an approximate result can be computed:
     // (This is simplified syntax for a lambda, to defer the typechecking.)
@@ -371,6 +381,12 @@ I donʼt know.
   strictly | [] => r:
     typecheck arg => r
   ! => domain
+```
+
+Macros for currying?
+
+```{.js data-lang="tmTTmt"}
+asdf (!2 append !1 !0 !)
 ```
 
 I want to avoid some problems:

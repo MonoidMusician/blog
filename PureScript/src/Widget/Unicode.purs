@@ -187,18 +187,20 @@ component setGlobal resetting =
               else CP.toCodePointArray r
       [ D.button (D.OnClick <:=> (setGlobal <$> taValue) <|> D.Class !:= "add") [ text_ "Save text to URL" ]
       , D.a (D.Href !:= "") [ text_ "Shareable URL" ]
-      , D.div (st <|> D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "Text")) $ pure $ D.pre_ $ pure $ D.code_ $ pure $ flip D.textarea [] $ oneOf
-        [ D.OnInput !:= updateTA taCb
-        , D.OnMousedown !:= updateTA taCb
-        , D.OnMouseup !:= updateTA taCb
-        , D.OnClick !:= updateTA taCb
-        , D.OnKeydown !:= updateTA taCb
-        , D.OnKeyup !:= updateTA taCb
-        -- D.OnKeypress will lag arrow key repetitions
-        , D.OnSelect !:= updateTA taCb
-        , D.OnSelectionchange !:= updateTA taCb
-        , D.Value <:=> resetting
-        ]
+      , D.div (st <|> D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "Text")) $
+          pure $ D.pre_ $ pure $ D.code_ $ pure $
+            flip D.textarea [] $ oneOf
+              [ D.OnInput !:= updateTA taCb
+              , D.OnMousedown !:= updateTA taCb
+              , D.OnMouseup !:= updateTA taCb
+              , D.OnClick !:= updateTA taCb
+              , D.OnKeydown !:= updateTA taCb
+              , D.OnKeyup !:= updateTA taCb
+              -- D.OnKeypress will lag arrow key repetitions
+              , D.OnSelect !:= updateTA taCb
+              , D.OnSelectionchange !:= updateTA taCb
+              , D.Value <:=> resetting
+              ]
       , D.div (D.Class !:= "full-width h-scroll") $ pure $ D.div (st <|> D.Class !:= "code-points unicode") $ pure $ flip switcher taAllCPs $ foldMap \cp ->
           D.span (D.Class !:= "code-point") [ text_ (disp cp) ]
       , D.div (D.Class !:= "table-wrapper") $ pure $ D.table (st <|> D.Class !:= "properties-table")

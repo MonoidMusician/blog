@@ -289,7 +289,7 @@ Took us long enough!
 Hereʼs the key property:
 we want to ask that the quantity $d_f(x_1, x_2) = f(x_1) + f(x_2) - f(x_1 + x_2)$ is _bounded_ for the integer functions we are considering.
 
-The [n-lab](https://ncatlab.org/nlab/show/Eudoxus+real+number) calls this property “almost linear”.
+The [nLab](https://ncatlab.org/nlab/show/Eudoxus+real+number) calls this property “almost linear”.
 Letʼs also call $d_f(x_1, x_2)$ the “wiggle” of the function $f$ between $x_1$ and $x_2$.
 :::
 
@@ -392,7 +392,7 @@ We would need to know that growing unboundedly positive to the right is the same
 This conforms with our intuition of how almost linear functions have slope, but it requires a proof.
 
 <!--
-Secondly, the [n-lab](https://ncatlab.org/nlab/show/Eudoxus+real+number) defines it as having infinitely many points on the right above an arbitrary height $C$, and we need to show that it is equivalent to what we said above: having _all_ points to the right of some point be above the height.
+Secondly, the [nLab](https://ncatlab.org/nlab/show/Eudoxus+real+number) defines it as having infinitely many points on the right above an arbitrary height $C$, and we need to show that it is equivalent to what we said above: having _all_ points to the right of some point be above the height.
 
 ::: Details
 We want some assurance that they express the same property of almost linear functions.
@@ -682,6 +682,6 @@ But this is more than enough for now – the intuition is more important than th
 
 ::: Bonus
 For more on Eudoxus reals, including a cool construction of $\pi$ as a Eudoxus real number and references to further connections made with the construction, I would recommend [Matt Baker's Math Blog](https://mattbaker.blog/2021/12/15/the-eudoxus-reals/).
-And of course see the [n-lab](https://ncatlab.org/nlab/show/Eudoxus+real+number), where I originally learned about this construction and which I already referenced several times, and [Arthanʼs exposition](http://arxiv.org/abs/math/0405454), which helped me fill in the tougher proofs.
+And of course see the [nLab](https://ncatlab.org/nlab/show/Eudoxus+real+number), where I originally learned about this construction and which I already referenced several times, and [Arthanʼs exposition](http://arxiv.org/abs/math/0405454), which helped me fill in the tougher proofs.
 :::
 <br>

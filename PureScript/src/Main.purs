@@ -2,12 +2,14 @@ module Main where
 
 import Prelude
 
+import Data.Foldable (foldl)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Ref as Ref
 import Foreign.Object as Object
 import Parser.Main as Parser
 import Parser.Main.CSS as CSS
+import Parser.Main.TMTTMT as TMTTMT
 import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
 import Web.HTML (window)
 import Web.HTML.Event.EventTypes (load)
@@ -20,10 +22,15 @@ import Widget.Unicode as Widget.Unicode
 import Widget.Widgets as Widget.Widgets
 
 widgets :: Widgets
-widgets = Parser.widgets `Object.union` CSS.widgets `Object.union` Object.fromFoldable
-  [ "Widget.Query" /\ Widget.Query.widget
-  , "Widget.Control" /\ Widget.Widgets.controlWidget
-  , "Widget.Unicode" /\ Widget.Unicode.widget
+widgets = foldl Object.union Object.empty
+  [ Parser.widgets
+  , CSS.widgets
+  , TMTTMT.widgets
+  , Object.fromFoldable
+    [ "Widget.Query" /\ Widget.Query.widget
+    , "Widget.Control" /\ Widget.Widgets.controlWidget
+    , "Widget.Unicode" /\ Widget.Unicode.widget
+    ]
   ]
 
 -- Returns a cleanup effect

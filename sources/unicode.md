@@ -227,3 +227,4 @@ https://en.wikipedia.org/wiki/Combining_character
 - https://github.com/kennytm/omgwtf8
 - https://www.channable.com/tech/so-long-surrogatesa
 - https://wingolog.org/archives/2023/10/19/requiem-for-a-stringref
+- https://news.ycombinator.com/item?id=31889544

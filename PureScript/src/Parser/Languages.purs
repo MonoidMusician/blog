@@ -171,12 +171,12 @@ manyL n p = Array.reverse <<< Array.fromFoldable <$> n #-> \more ->
 manySepBy :: forall x a. String -> Comber x -> Comber a -> Comber (Array a)
 manySepBy n s p = map Array.fromFoldable $
   pure Nil <|> lift2 Cons p do
-    n #-> \more -> pure Nil <|> s *> lift2 Cons p more
+    n #-> \more -> pure Nil <|> lift2 Cons p (s *> more)
 
 manyBaseSepBy :: forall x y a. String -> Comber x -> Comber y -> Comber a -> Comber (Array a)
 manyBaseSepBy n b s p = map Array.fromFoldable $
   Nil <$ b <|> lift2 Cons p do
-    n #-> \more -> pure Nil <|> s *> lift2 Cons p more
+    n #-> \more -> pure Nil <|> lift2 Cons p (s *> more)
 
 many1 :: forall a. String -> Comber a -> Comber (NonEmptyArray a)
 many1 n p = NEA.fromFoldable1 <$> n #-> \more ->

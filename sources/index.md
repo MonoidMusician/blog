@@ -19,13 +19,13 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 Itʼs not a real blog though since it doesnʼt have RSS yet …
 
 ## Posts
-- [A Semiring From Any Semilattice: A mathematical pun?](semilattice_semiring.html) – 2023/10/28
+- [A Semiring From Any Semilattice: A mathematical pun?](semilattice_semiring.html) [2023/10/28]{.dated}
 
   > You can make a semiring out of a semilattice by adjoining a new zero element. Lifting the semilattice operation in the two obvious ways gives you `+`{.haskell} and `*`{.haskell}. Idempotence gives distributivity(!).
   >
   > This construction answers the question, “if you need a semiring for static analysis, how do you also keep other data around that does not care about the branching structure?” (like, say, a monoid).
 
-- [TransMorphism Type Theory MetaTheory](tmttmt.html) – 2023/10/13–
+- [TransMorphism Type Theory MetaTheory](tmttmt.html) [2023/10/13 – …]{.dated}
 
 - [The Best Errors for Solving Dependency Versions](version_solver.html)
 
@@ -98,6 +98,16 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 
     My conclusion back then (2018) was that fully implementing `:not()`{.css} had edge cases that were not possible.
     But it was written before the more advanced selectors like `:has()`{.css} became standard.
+
+  - Relational operators versus algebraic operators
+
+    Infix, mixfix, distfix … but what about relfix?
+
+    I want `a < b < c`{.js} to stand for `a < b && b < c`{.js}!!
+    (And this to be an extensible system that users can add their own operators and precedences to.)
+
+    This is the main difference between how mathematicians (especially category theorists) treat \(X \to Y \to Z\) and how programmers treat `X -> Y -> Z`{.haskell}, by the way.
+    The former means “two functions, which can be composed” and the latter means “a curried function of two arguments”.
 - Paradigms:
   - I should do a blog post on what “effects” mean in FP culture
 

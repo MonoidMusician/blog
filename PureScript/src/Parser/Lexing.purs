@@ -615,7 +615,8 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
         -- traceM "drain stopped"
         Nothing
   failed (Options opts) =
-    Array.null opts
+    false
+    -- Array.null opts
   chosenAction = case _ of
     Left s /\ cat /\ o /\ _ -> Shift (s /\ cat /\ o)
     Right r /\ cat /\ o /\ _ -> Reduces $ pure $ r /\ cat /\ o

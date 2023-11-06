@@ -54,9 +54,7 @@ function makeVisibleSpaces(tab_width=2) {
         var x = tab_width;
         if (+e.dataset['tab-width']) {
           tab_width = +e.dataset['tab-width'];
-          console.log(tab_width);
         }
-        console.log(e);
         var span = document.createElement('SPAN');
         span.classList.add(cls);
         span.dataset['whitespace'] = "0x"+"\n".charCodeAt(0).toString(16);

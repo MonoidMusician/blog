@@ -166,6 +166,35 @@ a[href]
         // thin-space
         content: "§\200A"
 
+  // &[href^="https://en.wikipedia.org/"]
+  //   &::before
+  //     content: "W"
+  //     display: inline-block
+  //     font-size: 60%
+  //     line-height: 1
+  //     color: colors.$stark
+  //     // opacity: 0.5
+  //     margin-right: 0.3em
+  //     text-decoration: none !important
+  //     border-bottom: 1px dotted #35d62d
+  //     border-left: 1px dotted #35d62d
+  //     padding-left: 2px
+
+  // &[href^="https://ncatlab.org/"]
+  //   &::before
+  //     content: "n"
+  //     font-style: italic
+  //     display: inline-block
+  //     font-size: 85%
+  //     line-height: 0.8
+  //     color: colors.$stark
+  //     // opacity: 0.5
+  //     margin-right: 0.3em
+  //     text-decoration: none !important
+  //     border-bottom: 1px dotted #35d62d
+  //     border-left: 1px dotted #35d62d
+  //     padding-left: 2px
+
 a[href]:hover, a[href]:active
   text-decoration-line: underline
 
@@ -210,3 +239,11 @@ a[href]:visited
 
 pre > code .visible-space[data-whitespace]::before
   top: -0.2ex
+
+.dated, .date
+  font-variant-numeric: oldstyle-nums
+  &::before, &::after
+    content: " ~ "
+.dated
+  float: right
+  font-style: italic
