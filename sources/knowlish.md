@@ -47,7 +47,7 @@ author:
 
 ## GUI
 
-### VSCode
+### VSCodium / VSCode
 
 - Language-specific settings: see https://code.visualstudio.com/docs/getstarted/settings.
   - Settings search: `@lang:markdown`{.awk}.
@@ -57,6 +57,12 @@ author:
   - Can I just say how I miss Atomʼs settings menu?
     It was so clean, in comparison.
     (Okay, not _that_ clean.)
+- Extensions live in these places:
+  - `~/.vscode-oss/extensions`
+  - `~/.vscode/extensions`
+  - `/Applications/VSCodium.app/Contents/Resources/app/extensions`
+  - `/Applications/VSCode.app/Contents/Resources/app/extensions`
+  - other OSes??
 
 #### Shortcuts
 
