@@ -26,7 +26,7 @@ author:
   - Ignored: `git clean -fX`{.bash}, dry-run: `git clean -nX`{.bash}
   - Both: `git clean -fx`{.bash}, dry-run: `git clean -nx`{.bash}
 
-### Runtimes/Debugging
+### Runtimes & Debugging
 
 #### Browser JS
 
@@ -48,6 +48,17 @@ author:
 ## GUI
 
 ### VSCode
+
+- Language-specific settings: see https://code.visualstudio.com/docs/getstarted/settings.
+  - Settings search: `@lang:markdown`{.awk}.
+    This will apply those settings to that language specifically!
+    - You can discover this by clicking the filter icon at the far right of the search bar.
+  - Json Settings: add a key with the language name in brackets, `"[markdown]": { ... your settings ... }`{.js}.
+  - Can I just say how I miss Atomʼs settings menu?
+    It was so clean, in comparison.
+    (Okay, not _that_ clean.)
+
+#### Shortcuts
 
 - Keybinds for ctrl+(shift)+tab to just switch tabs, no “most recently used” switcher:
 
@@ -76,6 +87,10 @@ author:
 - [Right click to add file in same parent folder](https://github.com/microsoft/vscode/issues/83693#issuecomment-782810618) (extension)
 - Alt+up/down to reorder lines
 - Alt+click for multiselect
+
+#### Highlighting
+
+- Weird bug where typing `re` in a markdown makes syntax highlighting wonky: it turns out to be caused by the extension file `ocamllabs.ocaml-platform-1.13.4-universal/syntaxes/reason-markdown-codeblock.json`{.bash}, so you can just delete stuff from there until it goes away.
 
 ### ffplay
 

@@ -74,6 +74,8 @@ Itʼs not a real blog though since it doesnʼt have RSS yet …
 
 ### Miniseries
 - [Knowlish](knowlish.html) – A list of little things I have learned and need reminders about.
+- [For the Users](for_the_users.html) – My user scripts and user styles (& othersʼ!)
+- [What Means](what_means.html) – Some colloquial definitions of words/concepts
 - Co-search – nothing yet, but the idea is that I will put up requests for information, and maybe passers-by can tell me what I seek
 - Don’t make me invent it – in which I finally ask for help & references for prior art, instead of just plunging in confident that I can figure it out
 
