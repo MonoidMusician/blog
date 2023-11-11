@@ -1,6 +1,6 @@
 ---
 title: Views on Applicative Functors
-subtitle: 3+ ways to construct applicative functors
+subtitle: 3+ ways to think about applicative functors
 author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
 ---
@@ -64,6 +64,7 @@ instance Monad f => Monad (Global (Kleisli f)) where
 
 :::Bonus
 Stick around for another blog post describing selective applicative functors through this perspective too!
+That will motivate how I stumbled across this one.
 
 https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Parser/Selective.purs
 :::
@@ -191,7 +192,7 @@ applicativeCategoryFn = applicativeCategory <<< categoryFn
 -- a function from the output side of the morphism.
 categoryFn :: Arrrp f () (i -> r) <-> Arrrp f i r
 -- It is very hard to write it down as a single isomorphism, so we have to
--- write down each direction and proofs that they are equal
+-- write down each direction and prove that they are inverses
 categoryFn-> arrrp = lmap (\i -> (i, ())) (second' arrrp)
 categoryFn<- arrrp = lmap (\() -> id) (closed arrrp)
 

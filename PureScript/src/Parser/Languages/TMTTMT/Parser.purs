@@ -13,7 +13,7 @@ import Data.Maybe (maybe)
 import Data.Monoid (power)
 import Data.String as String
 import Data.String.CodeUnits as CU
-import Parser.Languages (Comber, delim, key, many, many1, many1SepBy, manySepBy, rawr, ws, wsws, wsws', (#->), (#:), (<#?>), (>==))
+import Parser.Languages (Comber, delim, key, many, many1, many1SepBy, manySepBy, opt, rawr, ws, wsws, wsws', (#->), (#:), (<#?>), (>==))
 import Parser.Languages.CSS (newline)
 import Parser.Languages.TMTTMT.Types (Calling(..), Case(..), Condition(..), Declaration(..), Expr(..), Matching(..), Pattern(..))
 
@@ -84,7 +84,7 @@ exprP = "expr"#-> \exprL ->
   let
     lambdaCaseL :: Comber Case
     lambdaCaseL = "lambdaCase"#:
-      Case <$> (matchingL <* key ":" <* ws) <*> many "conditions" conditionL
+      Case <$> matchingL <*> thenConditionsL
 
     matchingL :: Comber Matching
     matchingL = "matching"#: arrowedP Matching "patterns" patternP exprL
@@ -92,11 +92,21 @@ exprP = "expr"#-> \exprL ->
     conditionL :: Comber Condition
     conditionL = "condition"#: Condition <$> exprL <*> callingL
 
+    thenConditionsL :: Comber (Array Condition)
+    thenConditionsL = oneOf
+      [ NEA.toArray <$> do key ":" *> ws *> many1 "conditions1" conditionL
+      , [] <$ do key ";" *> ws
+      ]
+
     callingL :: Comber Calling
     callingL = "calling"#: arrowedP Calling "exprs" exprL patternP
   in oneOf
   [ Pattern <$> patternP
-  , Lambda <$> (key "|" *> ws *> map pure lambdaCaseL <* key "!" <* ws)
+  , Lambda <$> ado
+      key "?" *> ws
+      cases <- many "lambdaCases" (key "|" *> ws *> lambdaCaseL)
+      key "!" *> ws
+      in cases
   ]
 
 matchingP :: Comber Matching
@@ -105,14 +115,17 @@ matchingP = "matching"#: arrowedP Matching "patterns" patternP exprP
 conditionP :: Comber Condition
 conditionP = "condition"#: Condition <$> exprP <*> callingP
 
+thenConditionsP :: Comber (Array Condition)
+thenConditionsP = oneOf
+  [ NEA.toArray <$> do key ":" *> ws *> many1 "conditions1" conditionP
+  , [] <$ do key ";" *> ws
+  ]
+
 callingP :: Comber Calling
 callingP = "calling"#: arrowedP Calling "exprs" exprP patternP
 
 topCaseP :: Comber Case
-topCaseP = "topCase"#: oneOf
-  [ Case <$> (matchingP <* key ":" <* ws) <*> many "conditions" conditionP
-  , Case <$> (matchingP <* key ";" <* ws) <@> []
-  ]
+topCaseP = "topCase"#: Case <$> matchingP <*> thenConditionsP
 
 declarationsP :: Comber (Array Declaration)
 declarationsP = many "declarations" $ "declaration"#: oneOf
@@ -133,7 +146,7 @@ printExpr :: Expr -> String
 printExpr = printExpr' 0
 
 printExpr' :: Int -> Expr -> String
-printExpr' _ (Lambda []) = "|!"
+printExpr' _ (Lambda []) = "?!"
 printExpr' depth (Lambda cases) = A.fold
   [ cases # A.foldMap \(Case (Matching pats result) conds) -> do
       A.fold
@@ -150,8 +163,9 @@ printExpr' depth (Lambda cases) = A.fold
               , "=> "
               , printPattern' (depth+1) pat
               ]
+        , "\n" <> power "  " depth
         ]
-  , "\n" <> power "  " depth <> "!"
+  , "!"
   ]
 printExpr' depth (Pattern p) = printPattern' depth p
 

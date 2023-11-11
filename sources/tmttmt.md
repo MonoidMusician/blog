@@ -16,11 +16,11 @@ _What you write:_
 
 ```{.js data-lang="tmTTmt"}
 // If we are casing on a known boolean, we know which case to choose
-normalize/ ["if" "true" "then" exprT "else" exprF] => exprT
-normalize/ ["if" "false" "then" exprT "else" exprF] => exprF
+normalize/ ["if" "true" "then" exprT "else" exprF] => exprT;
+normalize/ ["if" "false" "then" exprT "else" exprF] => exprF;
 // If both branches have the same value, the boolean is irrelevant
 // This is an example of non-linear pattern matching, which will get desugared
-normalize/ ["if" _cond "then" expr "else" expr] => expr
+normalize/ ["if" _cond "then" expr "else" expr] => expr;
 // Fallback case, including most other nodes not specified
 normalize/ layer => normalized:
   // ^ We compute the result, `normalized`, by following these operation(s):
@@ -345,20 +345,17 @@ typecheck/ ["App" fn arg] => resultType:
   typecheck fn => ["Pi" binder domain codomain]
   // See if `codomain` does not in fact depend on `binder`
   tryApplyConstant binder codomain
-  ? => ["constant" resultType]:
+  ? ["constant" resultType]:
     // `resultType` got assigned, so this case is not necessary to produce
     // *some* result that can inform further type errors, though this node does
     // not truly typecheck if it fails:
     typecheck arg => domain
     // `domain` is a non-linear pattern match, unifying `argType` and `domain`
     // (any further references to `domain` would refer to the unified node)
-  ? => ["non-constant"]:
+  ? ["non-constant"]:
     // Typecheck the argument in strict mode to ensure that type errors result
     // in an immediate failure even if an approximate result can be computed:
-    // (This is simplified syntax for a lambda, to defer the typechecking.)
-    strictly | [] => []:
-      typecheck arg => domain
-    ! => []
+    strictly ([] => typecheck arg) => domain
     // (Unification with `domain` is always strict, it never adds soft errors.)
 
     // Now that it is safe to compute with `arg`, we apply it to compute the
