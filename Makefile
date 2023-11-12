@@ -42,8 +42,7 @@ watch-pandoc :
 	ls $(TXTDIR)/*.md pandoc/defaults.yaml pandoc/post.html | entr make pandoc
 
 ps : PureScript/src packages.dhall spago.dhall
-	spago -x prod.dhall build
-	purs-backend-es bundle-app --main Main --to static/widgets.js
+	spago -x prod.dhall bundle-app --main Main --to static/widgets.js
 
 watch-ps :
 	spago bundle-app -w --main Main --to static/widgets.js
