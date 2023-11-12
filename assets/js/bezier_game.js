@@ -469,7 +469,7 @@ var svg = SVG("svg", {
   viewBox: "0 0 1 1",
   $style: {
     width: "100%",
-    height: "80vh",
+    height: "calc(80vh - 2em)",
     display: "block",
     strokeLinecap: "round",
   },
@@ -510,6 +510,59 @@ var colors = [
   "#00AA00",
   "#0000FF",
 ];
+// https://observablehq.com/@d3/working-with-color
+// d3.quantize(d3.piecewise(d3.interpolateHsl, ["#880000", "#00DD00", "#0000FF", "#880000"]), 13)
+var radiant = [
+  "rgb(136, 0, 0)",
+  "rgb(141, 18, 0)",
+  "rgb(147, 37, 0)",
+  "rgb(152, 57, 0)",
+  "rgb(157, 79, 0)",
+  "rgb(163, 102, 0)",
+  "rgb(168, 126, 0)",
+  "rgb(173, 152, 0)",
+  "rgb(179, 179, 0)",
+  "rgb(161, 184, 0)",
+  "rgb(142, 189, 0)",
+  "rgb(122, 194, 0)",
+  "rgb(100, 200, 0)",
+  "rgb(77, 205, 0)",
+  "rgb(53, 210, 0)",
+  "rgb(27, 216, 0)",
+  "rgb(0, 221, 0)",
+  "rgb(0, 223, 28)",
+  "rgb(0, 225, 56)",
+  "rgb(0, 227, 85)",
+  "rgb(0, 230, 115)",
+  "rgb(0, 232, 145)",
+  "rgb(0, 234, 175)",
+  "rgb(0, 236, 206)",
+  "rgb(0, 238, 238)",
+  "rgb(0, 210, 240)",
+  "rgb(0, 182, 242)",
+  "rgb(0, 153, 244)",
+  "rgb(0, 123, 247)",
+  "rgb(0, 93, 249)",
+  "rgb(0, 63, 251)",
+  "rgb(0, 32, 253)",
+  "rgb(0, 0, 255)",
+  "rgb(31, 0, 248)",
+  "rgb(60, 0, 240)",
+  "rgb(87, 0, 233)",
+  "rgb(113, 0, 225)",
+  "rgb(136, 0, 218)",
+  "rgb(158, 0, 210)",
+  "rgb(178, 0, 203)",
+  "rgb(195, 0, 196)",
+  "rgb(188, 0, 165)",
+  "rgb(181, 0, 135)",
+  "rgb(173, 0, 108)",
+  "rgb(166, 0, 83)",
+  "rgb(158, 0, 59)",
+  "rgb(151, 0, 38)",
+  "rgb(143, 0, 18)",
+  "rgb(136, 0, 0)"
+];
 colors.push(colors[0]);
 
 var gradient01 = linearGradient({
@@ -523,13 +576,14 @@ var gradient23 = linearGradient({
   $view: ([[x1, y1], [x2, y2]]) => ({ x1, y1, x2, y2 }),
 }, [colors[2], colors[3]]);
 
+var splits = [0,1,2,3,4,5,6,7,8,9,10,11];
 var segmentsM = Model.map(Model(answer), {
-  segments: values => bsplitMany(values, [1/3, 2/3]),
+  segments: values => bsplitMany(values, splits.slice(1).map(x => x / splits.length)),
 });
 
 var lower = svg.SVG("g");
 
-var curves = [0,1,2].map(i => lower.SVG("path", {
+var curves = splits.map(i => lower.SVG("path", {
   $model: segmentsM,
   $view: ({ segments }) => ({ d: "M"+segments[i][0]+"C"+segments[i].slice(1) }),
   $style: {
@@ -538,11 +592,12 @@ var curves = [0,1,2].map(i => lower.SVG("path", {
     strokeWidth: "0.05",
   },
 }));
-var gradients = [0,1,2].map(i => linearGradient({
+var grab = (radiant.length-1)/splits.length;
+var gradients = splits.map(i => linearGradient({
   id: "gradient"+i,
   $model: segmentsM,
   $view: ({ segments: { [i]: [[x1, y1], _, __, [x2, y2]] } }) => ({ x1, y1, x2, y2 }),
-}, [colors[i], colors[i+1]]));
+}, radiant.slice(grab*i, grab*(i+1)+1)));
 
 var lines = [[0,1], [2,3]].map(([i,j]) =>
   lower.SVG("line", {
@@ -556,7 +611,7 @@ var lines = [[0,1], [2,3]].map(([i,j]) =>
   })
 );
 var points = guess.map((value, i) => {
-  var point = svg.SVG("circle");
+  var point = lower.SVG("circle");
   var isActive = i == 1 || i == 2;
   var ActivePoint = {
     $preview: ({ value, mouse }) => {
@@ -633,9 +688,10 @@ the("game").appendChild(svg);
 
 var controls = the("controls");
 
-var newGame = controls.DOM("button", {
+var buttons = controls.DOM("div");
+var newGame = buttons.DOM("button", {
   $model: gameState,
-  class: "add",
+  class: "big add",
   $textContent: "New",
   $view: gameState => ({
     $style: {
@@ -643,10 +699,10 @@ var newGame = controls.DOM("button", {
     },
   })
 });
-var scoreIt = controls.DOM("button", {
+var scoreIt = buttons.DOM("button", {
   $model: gameState,
-  class: "",
-  $textContent: "Score",
+  class: "big",
+  $textContent: "Guess!",
   $view: gameState => ({
     $style: {
       display: gameState.showAnswer ? "none" : "",
@@ -658,6 +714,7 @@ controls.DOM("div").DOM("span", {
   $view: ({ score }) => ({
     $textContent: Math.ceil(score*100) + "%",
     $style: {
+      fontSize: "1.5em",
       display: gameState.showAnswer ? "" : "none",
     },
   })
