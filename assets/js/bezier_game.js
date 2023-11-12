@@ -142,7 +142,16 @@ function SVG(nodeName, attrs) {
   }
   return e;
 };
-SVGElement.prototype.SVG = methody(SVG);
+Element.prototype.SVG = methody(SVG);
+function DOM(nodeName, attrs) {
+  var e = document.createElement(nodeName);
+  attrs && applyAttrs(e, attrs);
+  if (this && this instanceof Element && (!attrs || !attrs.$parent)) {
+    this.appendChild(e);
+  }
+  return e;
+}
+Element.prototype.DOM = methody(DOM);
 var SPECIALS = {
   $style: (e, style) =>
     style && Object.assign(e.style, style),
@@ -154,6 +163,8 @@ var SPECIALS = {
     preview && (e.$preview = preview),
   $model: (e, model) =>
     e.MVC(model, e.$view),
+  $textContent: (e, textContent) =>
+    e.textContent = textContent,
 };
 function applyAttrs(e, attrs) {
   var specialAttrs = {};
@@ -376,7 +387,6 @@ Model.map = function map(model, mappers) {
     return r;
   }
   const newModel = Model(mapped());
-  console.log(model, newModel);
   Model.listening(model, () => {
     Model.assign(newModel, mapped());
   });
@@ -466,8 +476,23 @@ var svg = SVG("svg", {
 });
 var defs = svg.SVG("defs");
 
-var values = [[0.1, 0.1], [0.1, 0.9], [0.9, 0.1], [0.9, 0.9]].map(Model);
+var answer = [[0.1, 0.1], [0.1, 0.9], [0.9, 0.1], [0.9, 0.9]].map(Model);
+var guess = [answer[0], Model([0.1, 0.9]), Model([0.9, 0.1]), answer[3]];
+var maxDist = 2*Math.sqrt(2);
+var minDist = 0.5*maxDist;
 
+var gameState = Model({
+  showAnswer: true,
+  answer, guess,
+  get score() {
+    let dist = 0;
+    for (let i in answer) {
+      dist += Math.hypot(guess[i][0] - answer[i][0], guess[i][1] - answer[i][1]);
+    }
+    dist = maxDist - dist - minDist;
+    return dist/(maxDist - minDist);
+  },
+});
 
 function linearGradient(attrs, stops) {
   var gradient = defs.SVG("linearGradient", attrs);
@@ -487,27 +512,24 @@ var colors = [
 ];
 colors.push(colors[0]);
 
-// var gradient0 = linearGradient({
-//   id: "gradient0",
-//   $model: [values[0], values[3]],
-//   $view: ([[x1, y1], [x2, y2]]) => ({ x1, y1, x2, y2 }),
-// }, colors);
 var gradient01 = linearGradient({
   id: "gradient01",
-  $model: [values[0], values[1]],
+  $model: [guess[0], guess[1]],
   $view: ([[x1, y1], [x2, y2]]) => ({ x1, y1, x2, y2 }),
 }, [colors[0], colors[1]]);
 var gradient23 = linearGradient({
   id: "gradient23",
-  $model: [values[2], values[3]],
+  $model: [guess[2], guess[3]],
   $view: ([[x1, y1], [x2, y2]]) => ({ x1, y1, x2, y2 }),
 }, [colors[2], colors[3]]);
 
-var segmentsM = Model.map(Model({ 0: values[0], 1: values[1], 2: values[2], 3: values[3] }), {
-  segments: values => bsplitMany([values[0],values[1],values[2],values[3]].map(x => Array.from(x)), [1/3, 2/3]),
+var segmentsM = Model.map(Model(answer), {
+  segments: values => bsplitMany(values, [1/3, 2/3]),
 });
 
-var curves = [0,1,2].map(i => svg.SVG("path", {
+var lower = svg.SVG("g");
+
+var curves = [0,1,2].map(i => lower.SVG("path", {
   $model: segmentsM,
   $view: ({ segments }) => ({ d: "M"+segments[i][0]+"C"+segments[i].slice(1) }),
   $style: {
@@ -523,8 +545,8 @@ var gradients = [0,1,2].map(i => linearGradient({
 }, [colors[i], colors[i+1]]));
 
 var lines = [[0,1], [2,3]].map(([i,j]) =>
-  svg.SVG("line", {
-    $model: [values[i], values[j]],
+  lower.SVG("line", {
+    $model: [guess[i], guess[j]],
     $view: ([[x1, y1], [x2, y2]]) => ({ x1, y1, x2, y2 }),
     $style: {
       // stroke: `url(#gradient${i}${j})`,
@@ -533,9 +555,9 @@ var lines = [[0,1], [2,3]].map(([i,j]) =>
     },
   })
 );
-var points = values.map((value, i) => {
+var points = guess.map((value, i) => {
   var point = svg.SVG("circle");
-  var isActive = true || i == 1 || i == 2;
+  var isActive = i == 1 || i == 2;
   var ActivePoint = {
     $preview: ({ value, mouse }) => {
       const r = point?.r?.animValue?.value ?? 0.05;
@@ -565,12 +587,91 @@ var points = values.map((value, i) => {
   return point;
 });
 
-document.getElementById("game").appendChild(svg);
+var overlay = svg.SVG("g");
 
-the("new").listen("click", () => {
+var answerPoints = answer.map((value, i) => {
+  var point = overlay.SVG("circle");
+  point.applyAttrs({
+    $model: { value, mouse: Handling(point), hovering: Hovering(point), gameState },
+    $view: ({ value: [cx, cy], hovering, mouse }) => ({
+      cx, cy,
+      $style: {
+        fill: "white",
+        display: gameState.showAnswer ? "" : "none",
+        pointerEvents: "none",
+      },
+    }),
+    r: 0.02,
+  });
+  return point;
+});
+
+var answerLines = [[0,1], [2,3]].map(([i,j]) =>
+  overlay.SVG("line", {
+    $model: [answer[i], answer[j], gameState],
+    $view: ([[x1, y1], [x2, y2]]) => ({ x1, y1, x2, y2, $style: {
+      display: gameState.showAnswer ? "" : "none" } }),
+    $style: {
+      stroke: "white",
+      strokeWidth: 0.01,
+    },
+  })
+);
+
+var guessCurve = overlay.SVG("path", {
+  $model: { guess, gameState },
+  $view: ({ guess, gameState }) => ({ d: "M"+guess[0]+"C"+guess.slice(1), $style: {
+      display: gameState.showAnswer ? "" : "none" } }),
+  $style: {
+    fill: "none",
+    stroke: "black",
+    strokeWidth: "0.02",
+  },
+});
+
+the("game").appendChild(svg);
+
+var controls = the("controls");
+
+var newGame = controls.DOM("button", {
+  $model: gameState,
+  class: "add",
+  $textContent: "New",
+  $view: gameState => ({
+    $style: {
+      display: gameState.showAnswer ? "" : "none",
+    },
+  })
+});
+var scoreIt = controls.DOM("button", {
+  $model: gameState,
+  class: "",
+  $textContent: "Score",
+  $view: gameState => ({
+    $style: {
+      display: gameState.showAnswer ? "none" : "",
+    },
+  })
+});
+controls.DOM("div").DOM("span", {
+  $model: gameState,
+  $view: ({ score }) => ({
+    $textContent: Math.ceil(score*100) + "%",
+    $style: {
+      display: gameState.showAnswer ? "" : "none",
+    },
+  })
+});
+
+newGame.listen("click", () => {
   var rand = () => Math.random()*0.8+0.1;
-  for (let value of values) {
+  for (let value of answer) {
     value[0] = rand();
     value[1] = rand();
   }
+  gameState.showAnswer = false;
+});
+
+scoreIt.listen("click", () => {
+  gameState.showAnswer = true;
 });
