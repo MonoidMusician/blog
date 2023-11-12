@@ -519,6 +519,10 @@ table.grammar .trouble
   /* https://stackoverflow.com/questions/3461441/prevent-flicker-on-webkit-transition-of-webkit-transform */
   -webkit-backface-visibility: hidden
 
+  user-select: none
+  -webkit-user-select: none
+  -webkit-touch-callout: none
+
   &:last-child
     margin-bottom: 2px
 
@@ -527,15 +531,16 @@ table.grammar .trouble
     padding-bottom: 0.25em
 
   &:not(:disabled):not(.disabled)
+    @if not $light
+      box-shadow: 1px 1px 0.5px 0.5px color.change($color, $alpha: 0.26), inset 1px 1px 0px 1.5px #0002
+    @else
+      box-shadow: 1px 1px 0.5px 0.5px color.change($color, $alpha: 0.26), inset 1px 1px 0px 1.5px #0001
     &:hover
       transition: border-color 0.1s, color 0.1s, box-shadow 0.1s ease-out, transform 0.1s ease-out
       color: color.change($color, $alpha: 1)
-      @if not $light
-        box-shadow: 1px 1px 0.5px 0.5px color.change($color, $alpha: 0.26), inset 1px 1px 0px 1.5px #0002
-      @else
-        box-shadow: 1px 1px 0.5px 0.5px color.change($color, $alpha: 0.26), inset 1px 1px 0px 1.5px #0001
     &:not(:hover)
       @media (hover: hover) and (pointer: fine)
+        box-shadow: 1px 1px 0.5px 0.5px transparent, inset 1px 1px 0px 1.5px transparent
         @if not $light
           border-color: color.change($color, $alpha: 0.33)
         @else
