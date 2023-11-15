@@ -48,6 +48,15 @@ instance Monoid VDOM where
 instance Semigroup VDOM where
   append (Fragment []) vdom = vdom
   append vdom (Fragment []) = vdom
+  append (Fragment v1s) (Fragment v2s) = Fragment (v1s <> v2s)
+
+  -- Keep flattening, to keep it associative
+  append v1 (Fragment v2s) = Fragment ([v1] <> v2s)
+  append (Fragment v1s) v2 = Fragment (v1s <> [v2])
+
+  -- Finally, if none of the above cases apply,
+  -- we wrap it up in a two-element array:
+  append v1 v2 = Fragment [v1, v2]
 ```
 
 You can also add special behavior if you want to collapse `Text`{.haskell} nodes:
