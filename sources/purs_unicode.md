@@ -221,7 +221,7 @@ There are two reasons:
 After some workshopping, this seems like a good API that supports multiple encoding formats abstractly, supports parsers and other use cases, and should be relatively efficient (depending on how many corners you want to cut):
 
 ```{.haskell data-lang="PureScript"}
-Enc.maxCodeSeqLength :: (0 | 1 | 2 | 3 | 4 :: Int) -- ENC
+Enc.maxCodeSeqLength :: (1 | 2 | 4 :: Int) -- ENC
 -- The number of code units expected in a sequence that
 -- starts with the given code unit (including itself).
 Enc.codeSeqLength :: CodeUnit -> (0 | 1 | 2 | 3 | 4 :: Int) -- ENC
