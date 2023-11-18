@@ -390,7 +390,6 @@ CP.head :: String -> Maybe CodePoint
   +CP.last
   +CP.unsnoc
 -- O(n)
--- Note: CP.countPrefix currently returns code units!
 CP.countPrefix'
   :: (CodePoint -> Boolean)
   -> String
