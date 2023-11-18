@@ -1,5 +1,6 @@
 ---
 title: Proposal for Unicode in PureScript
+subtitle: "Give us `CodePoint`{.haskell} literals!"
 author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
 ---
@@ -9,11 +10,18 @@ Revisiting [purescript/purescript#3362](https://github.com/purescript/purescript
 My main goals are:
 
 - Specify strings more thoroughly
-  - Let backends choose their preferred encoding, instead of trying to mandate UTF-16 (which is not what alternative backends like purerl have done in practice)
+  - Let backends choose their preferred encoding, instead of trying to mandate UTF-16 (alternative backends like purerl have already gone for UTF-8 in practice)
+  - Require literals in source code to be valid Unicode.
+  - At runtime, strings may still be invalid Unicode in the backendʼs preferred representation.
   - Provide an abstract API for code units that is **encoding-agnostic**
+    - The goal is to provide whatever operations you would need, so you donʼt ever feel tempted to do the arithmetic yourself
+    - Side goal: reduce the FFI burden of implementations a bit
+    - Provide tests for this API
 - Have the compiler produce `CodePoint`{.haskell} literals instead of `Char`{.haskell}
   - This is one of the biggest annoyances of dealing with Unicode data in PureScript today: `CodePoint`{.haskell} literals do not exist.
+  - Again: literals need to be valid (i.e. non-surrogate) code points, but at runtime there is no such guarantee.
 - Keep changes to user code minimal
+  - Besides renaming types and a few methods (sorry).
 
 The good news is that the existing string libraries are not too far from a sensible interface.
 The UTF-16ness only leaks through in a few places.
@@ -78,37 +86,32 @@ UTF-8 and UTF-32 have their own invalid sequences, but lone surrogates are parti
 The PureScript compiler already deals with lone surrogates in weird ways:
 
 - It allows lone surrogates in strings.
-  - This assumption only works if strings are UTF-16
-  - CoreFn encodes strings in as JSON strings if they are valid, but as arrays of UTF-16 code unit integers if there are lone surrogates
-- `Char`{.haskell} literals, since they are UTF-16 code units, can be lone surrogates (and cannot be code points from supplementary planes)
+  - This assumption only works if strings are UTF-16.
+    Lone surrogates cannot be represented in UTF-8 source code.^[Technically it is feasible to encode them, like any other code point, but no decoder accepts this.]
+  - CoreFn encodes strings in as JSON strings if they are valid, but as arrays of UTF-16 code unit integers if there are lone surrogates ([source](https://github.com/purescript/purescript/blob/2412101a8301f2d63e8fb8b316a23ac8ff6463e6/src/Language/PureScript/PSString.hs#L132-L134)).
+  - In fact, the whole [PSString module](https://github.com/purescript/purescript/blob/2412101a8301f2d63e8fb8b316a23ac8ff6463e6/src/Language/PureScript/PSString.hs) only exists to deal with lone surrogates.
+- `Char`{.haskell} literals, since they are UTF-16 code units, can be lone surrogates (and cannot be code points from supplementary planes).
 
 Another flaw is that `Ord String`{.haskell} has different behavior in edge cases in UTF-16 than that of UTF-8/UTF-32.
 ([Source](unicode.html#ordering).)
 Uhh I think it is beyond scope to fix that in `Data.String`{.haskell} (comparisons should reflect native comparisons, otherwise stuff will get weird).
 But technically this means that there could be some subtle nasty bugs with `Data.Map`{.haskell} and other ordered structures across backends if you are not careful.
 
-### Uhh
+### Dealing with invalid Unicode
 
 However, the silver lining of UTF-16 was that invalid UTF-16 (i.e. lone surrogates) *could* be preserved in code points.
-This is not the case with UTF-8: if you uncons a codepoint from an invalid UTF-8 string, you cannot preserve what you unconsed in any way.
-(Itʼs not even clear how much the uncons should advance the string.)
-So we need to make a decision here – and if it will be backwards compatible for the JS backend, or if it will be stricter validation.
+This is not the case with UTF-8: if you `uncons`{.haskell} a codepoint from an invalid UTF-8 string, you cannot preserve what you unconsed in any way.
 
-idk, I guess it is weird.
+I think each backend will have to choose the desired behavior:
 
-corresponds to `decode("utf-16", errors="surrogatepass")`{.python} in Python: https://docs.python.org/3/library/codecs.html#error-handlers
+- It can keep the current JS backend semantics, where UTF-16 lone surrogates become “code points”.
+<!-- - Or it has to return `U+FFFD` or crash (depending on which API is used). -->
+- Or it has to return `U+FFFD` when it sees invalid encodings.
 
-:::Note
-Interestingly, this invalidates `CP.length (fromCodePointArray cps) == Array.length cps`{.haskell}.
+:::Details
+The existing behavior of JS corresponds to `decode('utf-16', errors='surrogatepass')`{.python} in [Python](https://docs.python.org/3/library/codecs.html#error-handlers), for example.
+Throwing an error is the default Python behavior, and replacement characters can inserted instead by using `errors='replace'`.
 :::
-
-This is particularly important for `NonEmptyString`{.haskell}.
-Certainly a `NonEmptyString`{.haskell} is guaranteed to contain a `CodeUnit`{.haskell}, but is it guaranteed to contain a `CodePoint`{.haskell}??
-
-I think itʼs just Undefined Behavior.
-It should advance the state at least a little bit, though.
-Probably return `U+FFFD`.
-Or crash.
 
 ### Abstract interface
 
@@ -126,11 +129,11 @@ Then we need to design the way to parse code units into code points.
 
 <details class="Details">
 
-<summary>Abstract decoding API</summary>
+<summary>Abstract decoding API (inefficient version)</summary>
 
 It is possible to give a nice abstract API to unicode encodings that does not depend on knowledge of the particular encoding.
 This is what I claim would be an ideal interface.
-Although it has too much overhead to implement this way:
+Although it has too much overhead to implement this way, so I have used its core idea as inspiration for my proposal below.
 
 ```{.haskell data-lang="PureScript"}
 parseCodeUnit :: CodeUnit -> ParseCodeUnit
@@ -213,53 +216,111 @@ There are two reasons:
 
 </details>
 
-:::Note
-Instead of closures, we probably just want something like:
+#### Proposed
 
-```haskell
-codeSeqLength :: CodeUnit -> (0 | 1 | 2 | 3 | 4 :: Int)
+After some workshopping, this seems like a good API that supports multiple encoding formats abstractly, supports parsers and other use cases, and should be relatively efficient (depending on how many corners you want to cut):
 
-codeUnitsToPoint :: Array CodeUnit -> Maybe CodePoint
+```{.haskell data-lang="PureScript"}
+Enc.maxCodeSeqLength :: (0 | 1 | 2 | 3 | 4 :: Int) -- ENC
+-- The number of code units expected in a sequence that
+-- starts with the given code unit (including itself).
+Enc.codeSeqLength :: CodeUnit -> (0 | 1 | 2 | 3 | 4 :: Int) -- ENC
+  isSingleton = eq 1 <<< codeSeqLength
+  isContinuation = eq 0 <<< codeSeqLength
+-- The number of code units to encode this code point.
+Enc.codePointLength :: CodePoint -> (1 | 2 | 3 | 4 :: Int) -- ENC
 
-(length cus /= maybe 1 codeSeqLength (head cus))
-  `implies` (codeUnitsToPoint cus == Nothing)
+-- Decode some code units into their corresponding codepoint.
+-- This will not handle over-long arrays!
+Enc.codeUnitsToPoint :: Array CodeUnit -> Maybe CodePoint -- ENC
+-- The reverse direction, for efficiency.
+Enc.codePointToUnits :: CodePoint -> Array CodeUnit -- ENC
+
+-- Parse a code point out of a string, where the
+-- index is given in code units
+Enc.parseCodePoint ::
+  forall r.
+    -- 0 is passed to this continuation
+    -- if the index is out of bounds;
+    -- a positive number if an encoding
+    -- error occurred
+    (Int -> r) ->
+    (Int -> CodePoint -> r) ->
+    Int -> String -> r -- ENC
+
+data ParsedCodePoint
+  = OutOfBounds
+  -- number of code units involved in the error
+  = UnicodeError Int
+  -- number of code units encoding the code point
+  | UnicodeSuccess Int CodePoint
+
+-- Crash on out of bounds, and return U+FFFD replacement character
+-- for encoding errors (with the possible exception of surrogates).
+-- Meant to be used with `Enc.advance`.
+Enc.parseCodePointReplacement :: Int -> String -> CodePoint -- ENC
+
+-- Advance from a sequence boundary to the next sequence boundary.
+-- Similar to `syncFwd <<< add 1`, but assumes that it is at
+-- a sequence boundary already, and is thus more efficient.
+Enc.advance :: Int -> String -> Int
+
+-- Sync backwards to the nearest code unit sequence boundary.
+Enc.syncBwd :: Int -> String -> Int -- ENC
+-- works only if valid Unicode
+Enc.unsafeSyncBwd :: Int -> String -> Int -- ENC
+
+-- Sync forwards to the nearest code unit sequence boundary.
+-- syncFwd will return `length s` if `i` is a continuation
+-- unit of a valid sequence.
+Enc.syncFwd :: Int -> String -> Int -- ENC
+-- works only if valid Unicode
+Enc.unsafeSyncFwd :: Int -> String -> Int -- ENC
+
+
+-- Chop a string into code unit sequences. Not very useful on
+-- its own, but it explains the semantics of `syncBwd`/`syncFwd`.
+Enc.codeUnitSequences
+  :: String
+  -> Array
+    { start :: Int
+    , length :: Int
+    } -- ENC
+-- Faster version that does not check for malformed Unicode.
+Enc.unsafeCodeUnitSequences
+  :: String
+  -> Array
+    { start :: Int
+    , length :: Int
+    } -- ENC
+
+-- The length of a fragment of a code point at the end of the string
+Enc.suffixFragmentLength :: String -> (0 | 1 | 2 | 3 | 4 :: Int)
+Enc.appendWithFragment ::
+  { buffer :: String, value :: String } ->
+  { value :: String, buffer :: String }
 ```
-:::
 
 #### Use cases
 
 Parsers.
 
 NodeJS buffer stuff: need a slosh buffer to reach code point alignment.
-
-## Decisions to make
-
-- Should we rename `Char`{.haskell} to `CodeUnit`{.haskell}??
-  I would like to, but I can see why it looks like pointless code churn.
-
-- Should it be a string of length 1 (for compatibility) or an integer?
-  I think integer would be better.
-
-- Should `CodePoint`{.haskell} be a newtype over `Int`{.haskell}?
-  - Yes?
-    - It would make sense
-    - Not sure if it would stay in `Data.String`{.haskell} or move to `Prim`{.haskell} since it involves literals
-  - No?
-    - Backends might want to use their own type though (see discussion on the issue)
-      - Iʼm not sure if it would maintain the invariants for e.g. Rust `char`
-      - Yeah, we wonʼt maintain the invariants
-    - Need to see how it would affect pattern matching in CoreFn, CoreImp, or wherever, to have it not be a newtype
+See proposed `Enc.appendWithFragment`{.haskell}.
 
 ## Proposed changes
 
 ### Compiler/spec
 
+I have already implemented this.
+
 - Remove `Prim.Char`{.haskell} and char literals
 - Add `Prim.CodePoint`{.haskell} and code point literals
   - This means that code point literals are not restricted to BMP
-  - However, lone surrogates will not be allowed … but who would be using that in the first place??
-    (I think that required escape codes to even write?)
-- Define strings to be any encoding (UTF-8, UTF-16, UTF-32)
+  - However, lone surrogates will not be allowed in literals … but who would be using that in the first place??
+    (It required escape codes to even write!)
+  - It will be represented with integers
+- Define strings to be any encoding, based on the backend (UTF-8, UTF-16, UTF-32)
 - Require string literals to be valid Unicode
   - In particular, validate escape sequences
   - This is because this is the only portable way to do codegen across backends and encodings;
@@ -269,23 +330,24 @@ NodeJS buffer stuff: need a slosh buffer to reach code point alignment.
 
 - Not directly related but `Show String`{.haskell} needs to be fixed whoops
 - `codePointFromChar :: Char -> CodePoint`{.haskell} needs to be partial: it only makes sense for `Singleton`{.haskell}
-- Add `Data.String.CodeUnits.CodeUnit`{.haskell}
+- Add `Data.String.CodeUnits.CodeUnit`{.haskell} as a newtype over `Int`{.haskell}
 - `Data.String.CodePoints.uncons`{.haskell} currently assumes UTF-16 for some reason, instead of being FFI:
   https://github.com/purescript/purescript-strings/blob/v6.0.0/src/Data/String/CodePoints.purs#L191-L202
+- Update the parser libraries!
+  - Including the CST parser
 - Revamp the Unicode library a bit while I am at it
 
-Functions to add/replace:
+Rough list of functions to add/replace in the `purescript-strings` library:
 
 ```haskell
-
 CU = Data.String.CodeUnits
 Enc = Data.String.Encoding
 CP = Data.String.CodePoints
 
 Prim.String :: Type
-Prim.CodePoint :: Type
+newtype Prim.CodePoint = CodePoint Int
 
-foreign import data CU.CodeUnit :: Type
+newtype CU.CodeUnit = CodeUnit Int
 
 -- FFI means that it is implemented in FFI
 -- ENC means it is implemented in FFI, but just depends on the
@@ -294,56 +356,41 @@ fromEnum :: CodeUnit -> Int -- FFI
 fromEnum :: CodePoint -> Int -- FFI
 toEnum :: Int -> Maybe CodeUnit -- FFI
 toEnum :: Int -> Maybe CodePoint -- FFI
-top :: CodeUnit -- FFI/ENC
+top :: CodeUnit -- ENC
+cardinality :: CodeUnit -- ENC
+  -- haha, this was actually off by 1
 
-Enc.maxCodeSeqLength :: (0 | 1 | 2 | 3 | 4 :: Int) -- ENC
-Enc.codeSeqLength :: CodeUnit -> (0 | 1 | 2 | 3 | 4 :: Int) -- ENC
-  isSingleton = eq 1 <<< codeSeqLength
-  isContinuation = eq 0 <<< codeSeqLength
-Enc.codePointLength :: CodePoint -> (0 | 1 | 2 | 3 | 4 :: Int) -- ENC
-
-Enc.codeUnitsToPoint :: Array CodeUnit -> Maybe CodePoint -- ENC
-Enc.codePointToUnits :: CodePoint -> Array CodeUnit -- ENC
-
--- technically possible to do without FFI, but too complex
--- and too many allocations
--- OR: just use drop??
-Enc.parseCodePoint :: Int -> String -> Tuple Int (Maybe CodePoint) -- FFI
-
-
--- Align to the previous/next sequence boundary
-Enc.alignPrev :: Int -> String -> Int -- ENC
--- alignNext will return `length s` if `i` is a continuation
--- unit of a valid sequence
-Enc.alignNext :: Int -> String -> Int -- ENC
-
--- The length of a partial code point at the end of the string
-Enc.partialSuffixLength :: String -> (0 | 1 | 2 | 3 | 4 :: Int)
-Enc.appendPartial ::
-  { buffer :: String, value :: String } ->
-  { value :: String, buffer :: String }
-
-Enc.codeUnitSequences :: String -> Array { start :: Int, length :: Int } -- ENC
+-- See above for Enc = Data.String.Encoding module.
+-- Those are the main additions, and the rest of the
+-- API is pretty much as-is!
 
 -- O(1)
 CU.length :: String -> Int -- FFI
 -- O(1)?
 CU.slice :: Int -> Int -> String -> String -- FFI
-  CU.substring :: Int -> Int -> String -> String
+  +CU.substring :: Int -> Int -> String -> String
   CU.take :: Int -> String -> String
   CU.drop :: Int -> String -> String
   CU.takeEnd :: Int -> String -> String
   CU.dropEnd :: Int -> String -> String
+-- O(n)
+CU.countWhile :: (CodeUnit -> Boolean) -> String -> Int -- FFI
 -- O(1)
 CU.codeUnitAt :: Int -> String -> Maybe CodeUnit -- FFI
   CU.head :: String -> Maybe CodeUnit
   CU.uncons
+  +CU.last
+  +CU.unsnoc
 
 -- O(n)
 CP.length :: String -> Int -- FFI
 -- O(1)
 CP.head :: String -> Maybe CodePoint
   CP.uncons
+  +CP.last
+  +CP.unsnoc
+-- O(n)
+CU.countWhile :: (CodePoint -> Boolean) -> String -> Int
 -- O(n)
 CP.codePointAt :: Int -> String -> Maybe CodePoint -- FFI
 
@@ -354,9 +401,10 @@ CP.codePointAt :: Int -> String -> Maybe CodePoint -- FFI
 <summary>Implementations / Specs</summary>
 
 ```{.haskell data-lang="PureScript"}
-alignPrev i s
+syncBwd i s
   | i < length s && not isContinuation (unsafeCodeUnitAt i s) = i
-alignPrev i s = scanback i
+syncBwd i s | i > length s = i
+syncBwd i s = scanback (i-1)
   where
   scanback (-1) = i
   scanback j =
@@ -366,16 +414,18 @@ alignPrev i s = scanback i
       l | j+l > i -> j
       _ -> i
 
-alignNext i s
+syncFwd i s | i >= length s = i
+syncFwd i s
   | not isContinuation (unsafeCodeUnitAt i s) = i
-alignNext i s =
+syncFwd i s =
   -- Yes you have to scan back to decide what to do here
-  let j = alignPrev i s in
+  let j = syncBwd i s in
   case codeSeqLength (unsafeCodeUnitAt j s) of
     -- We have a valid sequence that continues at `i`
-    -- We can skip forward one iteration of `loop` since
-    -- we already checked that `i` is a continuation unit
-    l | i < j+l -> scanforward (i+1) ((j+l) - (i+1))
+    l | j+l > i ->
+      -- We can skip forward one iteration of `loop` since
+      -- we already checked that `i` is a continuation unit
+      scanforward (i+1) ((j+l) - (i+1))
     -- Too far back; `i` is a lone continuation unit
     _ -> i
   where
@@ -386,13 +436,13 @@ alignNext i s =
       false -> k
 
 
-partialSuffixLength s =
-  let i = alignPrev (length s - 1) in
+suffixFragmentLength s =
+  let i = syncBwd (length s - 1) in
   case codeUnitAt i of
     Nothing -> 0
     Just cu -> max 0 $ (i + codeSeqLength cu) - length s
 
-appendPartial { buffer, value } =
+appendFragment { buffer, value } =
   let total = buffer <> value in
   let r = splitAt (length total - 1 - partialSuffixLength total) total
   in { value: r.before, buffer: r.after }

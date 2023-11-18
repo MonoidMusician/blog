@@ -228,3 +228,5 @@ https://en.wikipedia.org/wiki/Combining_character
 - https://www.channable.com/tech/so-long-surrogatesa
 - https://wingolog.org/archives/2023/10/19/requiem-for-a-stringref
 - https://news.ycombinator.com/item?id=31889544
+- http://bjoern.hoehrmann.de/utf-8/decoder/dfa/
+  - https://hackage.haskell.org/package/text-2.1/docs/src/Data.Text.Internal.Encoding.Utf8.html#byteToClass
