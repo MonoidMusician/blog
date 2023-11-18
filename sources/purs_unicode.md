@@ -374,7 +374,7 @@ CU.slice :: Int -> Int -> String -> String -- FFI
   CU.takeEnd :: Int -> String -> String
   CU.dropEnd :: Int -> String -> String
 -- O(n)
-CU.countWhile :: (CodeUnit -> Boolean) -> String -> Int -- FFI
+CU.countPrefix :: (CodeUnit -> Boolean) -> String -> Int -- FFI
 -- O(1)
 CU.codeUnitAt :: Int -> String -> Maybe CodeUnit -- FFI
   CU.head :: String -> Maybe CodeUnit
@@ -390,7 +390,14 @@ CP.head :: String -> Maybe CodePoint
   +CP.last
   +CP.unsnoc
 -- O(n)
-CU.countWhile :: (CodePoint -> Boolean) -> String -> Int
+-- Note: CP.countPrefix currently returns code units!
+CP.countPrefix'
+  :: (CodePoint -> Boolean)
+  -> String
+  ->
+    { codePoints :: Int
+    , codeUnits :: Int
+    }
 -- O(n)
 CP.codePointAt :: Int -> String -> Maybe CodePoint -- FFI
 
