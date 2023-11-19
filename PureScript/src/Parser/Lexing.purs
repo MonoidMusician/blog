@@ -3,6 +3,7 @@ module Parser.Lexing where
 import Prelude
 
 import Control.Alternative (guard)
+import Control.Monad.Rec.Class (Step(..), tailRec, tailRecM)
 import Control.Plus (empty)
 import Data.Array (fold, (!!))
 import Data.Array as Array
@@ -552,7 +553,7 @@ contextLexingParse ::
   i ->
   (ContextStack s rec nt r cat o /\ String) \/ ContextStack s rec nt r cat o
 contextLexingParse { best } (initialState /\ States states) acceptings rec initialInput =
-  go (Zero (initialMeta /\ initialState)) (Left initialInput)
+  tailRecM go (Zero (initialMeta /\ initialState) /\ Left initialInput)
   where
   tabulated = indexStates (States states)
   lookupState :: s -> Maybe (StateInfo s nt r cat)
@@ -640,20 +641,24 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
             asdf $ "options " <> show i
             asdf opts
         "No best non-rejected action"? best filtered
-  go :: ContextStack s rec nt r cat o -> Either i (cat /\ o /\ i) -> (ContextStack s rec nt r cat o /\ String) \/ ContextStack s rec nt r cat o
-  go stack (Left input) | len input == 0 = pure stack
-  go stack input = do
+  go ::
+    (ContextStack s rec nt r cat o /\ Either i (cat /\ o /\ i)) ->
+    (ContextStack s rec nt r cat o /\ String) \/ Step
+      (ContextStack s rec nt r cat o /\ Either i (cat /\ o /\ i))
+      (ContextStack s rec nt r cat o)
+  go (stack /\ Left input) | len input == 0 = pure (Done stack)
+  go (stack /\ input) = do
     state <- Tuple stack "Missing state"? lookupState (snd (topOf stack))
     -- traceM input
     act <- lmap (Tuple stack) $ lookupAction stack state input
     case act of
       Left s /\ cat /\ o /\ i -> do
         { items: s' } <- Tuple stack "Could not find state"? lookupState s
-        go (Snoc stack (Leaf o) (advanceMeta (fst (topOf stack) /\ s') (Terminal (cat /\ o)) /\ s)) (Left i)
+        pure $ Loop $ (Snoc stack (Leaf o) (advanceMeta (fst (topOf stack) /\ s') (Terminal (cat /\ o)) /\ s)) /\  (Left i)
       Right r /\ cat /\ o /\ i -> do
         reduction <- Tuple stack "Unknown reduction"? lookupReduction r state
         stacked <- Tuple stack "Failed"? takeStack r stack reduction
-        go stacked (Right (cat /\ o /\ i))
+        pure $ Loop (stacked /\ Right (cat /\ o /\ i))
   lookupReduction (p /\ r) { items: State items } = items # oneOfMap case _ of
     { rule: Zipper parsed [], pName, rName } | pName == p && rName == r ->
       Just parsed
