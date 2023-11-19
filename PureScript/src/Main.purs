@@ -30,6 +30,7 @@ widgets = foldl Object.union Object.empty
     [ "Widget.Query" /\ Widget.Query.widget
     , "Widget.Control" /\ Widget.Widgets.controlWidget
     , "Widget.Unicode" /\ Widget.Unicode.widget
+    , "Widget.Show" /\ Widget.Unicode.widgetShow
     ]
   ]
 

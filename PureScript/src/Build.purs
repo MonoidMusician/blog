@@ -25,6 +25,7 @@ import Parser.Comb (Comb(..), named, parseRegex')
 import Parser.Examples (showPart)
 import Parser.Languages (Comber, mainName, printPretty, showZipper, (/|\))
 import Parser.Languages.CSS as CSS
+import Parser.Languages.Show as Show
 import Parser.Languages.TMTTMT.Parser as TMTTMT
 import Parser.Types (Fragment, OrEOF(..), Part(..), ShiftReduce(..), States(..), Zipper(..), decisionUnique)
 
@@ -68,5 +69,6 @@ main = launchAff_ do
       FS.writeTextFile UTF8 ("./assets/json/" <> filename <> ".json") $ J.stringify $ C.encode CSS.codec $
         dat
 
+  process Show.parseShown "show-parser-states"
   process CSS.selector_list "css-parser-states"
   process TMTTMT.declarationsP "tmttmt-parser-states"

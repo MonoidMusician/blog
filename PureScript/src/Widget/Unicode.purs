@@ -31,11 +31,13 @@ import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import Deku.Attribute (cb, xdata, (!:=), (<:=>))
 import Deku.Control (switcher, text, text_)
-import Deku.Core (Domable, bussed)
+import Deku.Core (Domable, bussed, envy)
 import Deku.DOM as D
 import Effect (Effect)
 import FRP.Event (Event)
 import FRP.Helpers (dedup)
+import FRP.Memoize (memoBeh)
+import Parser.Languages.Show (reShow)
 import Partial.Unsafe (unsafeCrashWith)
 import Prim.Row as Row
 import Prim.RowList (class RowToList)
@@ -372,3 +374,35 @@ highmask n = bitmask 8 - bitmask (8 - n)
 
 nbitsLE :: Int -> Int -> Boolean
 nbitsLE i n = i .&. bitmask n == i
+
+
+
+
+
+widgetShow :: Widget
+widgetShow _ = do
+  pure $ SafeNut do
+    bussed \setValue valueSet -> do
+      bussed \set get -> do
+        envy $ memoBeh (reShow <$> get) mempty \formatted -> fold do
+          [ D.div (st <|> D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "Haskell")) $
+              pure $ D.pre_ $ pure $ D.code_ $ pure $
+                flip D.textarea [] $ oneOf
+                  [ D.OnInput !:= updateTA set
+                  , D.Value <:=> valueSet
+                  , D.Style !:= "height: 40vh"
+                  ]
+          , D.div_ $ pure $ D.button
+              (D.OnClick <:=> (setValue <$> map (_ <> "\n") formatted))
+              [ text_ "Use formatted" ]
+          , D.div (st <|> D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "Haskell")) $
+              pure $ D.pre_ $ pure $ D.code_ $ pure $ text $ formatted
+          ]
+  where
+  updateTA upd = cb $
+    (Event.target >=> HTMLTextArea.fromEventTarget) >>>
+      traverse_ \ta -> do
+        value <- HTMLTextArea.value ta
+        upd value
+
+

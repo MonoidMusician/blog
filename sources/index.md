@@ -64,6 +64,7 @@ Itʼs not a real blog though since it doesnʼt have RSS yet …
 ## Series
 - Tools
   1. WIP: [Unicode Explorer](unicode.html)
+  1. [tiny tool to reformat output produced by `show`{.haskell}](show.html)
   1. Abandoned?: [Generative Art Scratchpad](genart.html)
 - [Interactive Parser Explanations](parser.html)
   1. TODO: [Parsing By Example](parser_by_example.html)

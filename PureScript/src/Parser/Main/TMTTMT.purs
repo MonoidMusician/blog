@@ -3,7 +3,7 @@ module Parser.Main.TMTTMT where
 import Prelude
 
 import Control.Plus ((<|>))
-import Data.Array (intercalate)
+import Data.Array (fold, intercalate)
 import Data.Codec.Argonaut as CA
 import Data.Either (Either(..), hush)
 import Data.Filterable (filterMap)
@@ -92,7 +92,7 @@ component setGlobal resetting =
           Update v -> false /\ v
           Reset v -> true /\ v
       envy $ memoBehFold upd (true /\ "") (Reset <$> resetting <|> pushedRaw) \currentRaw -> do
-        D.div_
+        fold
           [ D.div (D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "Text")) $
             pure $ D.pre_ $ pure $ D.code_ $ pure $
               flip D.textarea [] $ oneOf
