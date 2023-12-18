@@ -25,18 +25,17 @@ author:
   - Untracked: `git clean -f`{.bash}, dry-run: `git clean -n`{.bash}
   - Ignored: `git clean -fX`{.bash}, dry-run: `git clean -nX`{.bash}
   - Both: `git clean -fx`{.bash}, dry-run: `git clean -nx`{.bash}
-- See what changes you are about to push:
-  ```bash
-  git diff $(git rev-parse --abbrev-ref --symbolic-full-name @{upstream}) HEAD
-  ```
+- Current branch name: `git branch --show-current`{.bash}
+- Upstream for current branch (pretty name): `git rev-parse --abbrev-ref --symbolic-full-name @{upstream}`{.bash}
+- See what changes you are about to push: `git diff @{u} HEAD`{.bash}
 
   <details class="Details">
 
   <summary>Explanation</summary>
 
-  This rev-parse subcommand [finds the upstream `@{upstream}`](https://git-scm.com/docs/git-rev-parse#Documentation/git-rev-parse.txt-emltbranchnamegtupstreamemegemmasterupstreamememuem) for the current branch.
+  First it [finds the upstream `@{u}`/`@{upstream}`](https://git-scm.com/docs/git-rev-parse#Documentation/git-rev-parse.txt-emltbranchnamegtupstreamemegemmasterupstreamememuem) for the current branch.
 
-  And `HEAD` means to compare against the currently committed changes, not whatever files are in your working tree.
+  `HEAD` means to compare against the currently committed changes, not whatever files are in your working tree.
 
   </details>
 
