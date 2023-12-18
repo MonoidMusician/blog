@@ -25,6 +25,20 @@ author:
   - Untracked: `git clean -f`{.bash}, dry-run: `git clean -n`{.bash}
   - Ignored: `git clean -fX`{.bash}, dry-run: `git clean -nX`{.bash}
   - Both: `git clean -fx`{.bash}, dry-run: `git clean -nx`{.bash}
+- See what changes you are about to push:
+  ```bash
+  git diff $(git rev-parse --abbrev-ref --symbolic-full-name @{upstream}) HEAD
+  ```
+
+  <details class="Details">
+
+  <summary>Explanation</summary>
+
+  This rev-parse subcommand [finds the upstream `@{upstream}`](https://git-scm.com/docs/git-rev-parse#Documentation/git-rev-parse.txt-emltbranchnamegtupstreamemegemmasterupstreamememuem) for the current branch.
+
+  And `HEAD` means to compare against the currently committed changes, not whatever files are in your working tree.
+
+  </details>
 
 ### Runtimes & Debugging
 
@@ -69,6 +83,9 @@ author:
 - Keybinds for ctrl+(shift)+tab to just switch tabs, no “most recently used” switcher:
 
   <details class="Details">
+
+  <summary>Details</summary>
+
   From [“Is there a quick change tabs function in Visual Studio Code?”](https://stackoverflow.com/questions/38957302/is-there-a-quick-change-tabs-function-in-visual-studio-code/38978993#38978993):
 
   ```json
@@ -118,3 +135,6 @@ author:
 - https://gchq.github.io/CyberChef/
 - https://www.onlinemp4parser.com/
 
+## Misc
+
+- https://www.keycaps.info/

@@ -70,6 +70,7 @@ to generate this file without the comments in this block.
   , "quickcheck"
   , "record"
   , "refs"
+  , "run"
   , "safe-coerce"
   , "st"
   , "strings"
