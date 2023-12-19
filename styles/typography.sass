@@ -23,6 +23,9 @@ header .subtitle
 strong
   @if not $sans
     text-decoration: underline
+    & > code
+      // Does not work ...
+      text-decoration: none
 
 code
   font-size: 0.75em

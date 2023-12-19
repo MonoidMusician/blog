@@ -4,16 +4,24 @@ author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
 ---
 
+Little bits of tips ʼnʼ tricks I want to keep around.
+You may find it useful too sometimes \^.\^
+
 ## CLI
 
-- MacOS SIGINFO: Ctrl+T, https://stuff-things.net/2016/04/06/that-one-stupid-dd-trick-and-the-ballad-of-siginfo/
-- Mac `pbpaste`{.bash}/`pbcopy`{.bash} (stdout/stdin only)
 - Print side-by-side: `pr -mtw $(tput cols)`{.bash}
   - not a great way to do it
   - will cut off long lines
   - does not automatically size to content, just console widith
 - Type decimal numbers, echo and copy hexadecimal escapes: `cat (echo "obase=16" | psub) - | bc | xargs -I % -n 1 bash -c "echo -n \\\\x% | pbcopy; echo \\\\x%"`{.fish}
 - [`entr`](http://eradman.com/entrproject/) is pretty useful, a little tricky to use ... maybe `watchexec` is better? never used it
+- [`date '+%Y-%m-%d-%H-%M-%S'`{.bash}](https://stackoverflow.com/questions/1401482/yyyy-mm-dd-format-date-in-shell-script#answer-1401495)
+
+### MacOS
+
+- SIGINFO: Ctrl+T, https://stuff-things.net/2016/04/06/that-one-stupid-dd-trick-and-the-ballad-of-siginfo/
+- Clipboard: `pbpaste`{.bash}/`pbcopy`{.bash} (stdout/stdin only)
+- Network name (SSID): [`/System/Library/PrivateFrameworks/Apple80211.framework/Resources/airport -I  | awk -F' SSID: '  '/ SSID: / {print $2}'`{.bash}](https://stackoverflow.com/questions/4481005/get-wireless-ssid-through-shell-script-on-mac-os-x#answer-4481019)
 
 ### Git
 
@@ -39,22 +47,22 @@ author:
 
   </details>
 
-### Runtimes & Debugging
+## Runtimes & Debugging
 
-#### Browser JS
+### Browser JS
 
 - `new URLSearchParams(window.location.search).{get,getAll,has,entries,...}(...)`{.js}
   - `.entries` returns an iterator??
 
-#### NodeJS
+### NodeJS
 
 - Full stack trace: `NODE_OPTIONS='--stack-trace-limit=10000'`{.bash}
 - `util.inspect.defaultOptions.depth = null;`{.js} (no commandline option :sad:)
 
-#### Erlang
+### Erlang
 - `io:format(user, <<"~p~n">>, [Object])`{.erl} in tests and `rp(Object).`{.erl} in the REPL
 
-#### Bash
+### Bash
 
 - [`set -euxo pipefail`{.bash}](https://gist.github.com/mohanpedala/1e2ff5661761d3abd0385e8223e16425)
 
@@ -76,6 +84,7 @@ author:
   - `/Applications/VSCodium.app/Contents/Resources/app/extensions`
   - `/Applications/VSCode.app/Contents/Resources/app/extensions`
   - other OSes??
+- `codium --list-extensions`{.bash} & `codium --install-extension`{.bash}
 
 #### Shortcuts
 
@@ -119,15 +128,6 @@ author:
 - `p`{.key}/`Space`{.key} to pause
 - `s`{.key} to step to next frame
 
-## OSes
-
-### MacOS nonsense
-
-- > [“VSCodium.app” can’t be opened because Apple cannot check it for malicious software.](https://github.com/VSCodium/vscodium/issues/228#issuecomment-510788465)
-
-  Alt + right click > open the app once, the security dialog will now have an “Open” button, and then it will be fine.
-
-
 ## Data Formats/Parsers
 
 - [Common MIME types](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types)
@@ -137,3 +137,9 @@ author:
 ## Misc
 
 - https://www.keycaps.info/
+
+### MacOS nonsense
+
+- > [“VSCodium.app” can’t be opened because Apple cannot check it for malicious software.](https://github.com/VSCodium/vscodium/issues/228#issuecomment-510788465)
+
+  **Alt** + right click > open the app once, the security dialog will now have an “Open” button, and then it will be fine.
