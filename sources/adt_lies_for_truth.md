@@ -17,7 +17,7 @@ If you arenʼt familiar with Algebraic Data Types (ADTs), theyʼre great and I h
 
 ADTs are a huge upgrade in expressivity compared to C- or Java-like datatypes, but they still have their limitations.
 They do a great job at representing the _structure_ of data but fail to capture all of the _invariants_ that apply.
-These limitations can be seen in informal assumptions that code is expected to maintain when working with particular ADTs.^[By “informal” I just mean “not written into the programming language one is using” (e.g. Haskell/PureScript).]
+These limitations can be seen in informal assumptions that code is expected to maintain when working with particular ADTs.^[By “informal” I just mean “not written into the programming language one is using” ([e.g.]{t=} Haskell/PureScript).]
 
 Weʼll be exploring how safe interfaces with ADTs actually work (for example, the common approach of “smart constructors”) as well as how more sophisticated type systems (ahem, dependent type systems) can precisely specify the invariants.
 

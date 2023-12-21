@@ -18,7 +18,7 @@ What functions are safe?
 
 ------
 
-The purpose of this thought experiment is to reveal how much power of a lanugage (that you use every day!) comes from unstated assumptions made about the runtime – assupmtions that cannot be made by, e.g., optimizers.
+The purpose of this thought experiment is to reveal how much power of a lanugage (that you use every day!) comes from unstated assumptions made about the runtime – assupmtions that cannot be made by, [e.g.]{t=}, optimizers.
 
 I guess it is kind of like reverse mathematics?
 

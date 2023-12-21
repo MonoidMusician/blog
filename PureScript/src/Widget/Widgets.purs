@@ -6,9 +6,9 @@ import Control.Alt ((<|>))
 import Data.Codec.Argonaut as CA
 import Data.Maybe (fromMaybe)
 import Data.Traversable (for_, oneOf)
+import Deku.Attribute ((!:=))
 import Deku.Control (text)
 import Deku.DOM as D
-import FRP.Deku ((!:=))
 import Web.DOM.DOMTokenList as TL
 import Web.DOM.Element (classList)
 import Web.HTML (window)

@@ -19,6 +19,7 @@ import FRP.Event (Event, makeEvent, subscribe)
 import Foreign (unsafeToForeign)
 import Foreign.Object (Object)
 import Foreign.Object as Object
+import Idiolect ((>==))
 import Parsing (runParser)
 import URI.Extra.QueryPairs as QueryPairs
 import URI.Query as Query
@@ -104,6 +105,6 @@ widget { interface, attrs } = do
   prefix <- attrs "prefix" <#> Json.toString >>> maybe "" (_ <> "-")
   keys <- map (fromMaybe []) $ attrs "keys" <#>
     (Json.toArray >=> traverse Json.toString) <>
-    (Json.toString >>> map (String.split (String.Pattern ",") >>> map String.trim))
+    (Json.toString >== (String.split (String.Pattern ",") >== String.trim))
   let interfaces = ({ key: _, io: _ } <*> interface) <$> keys
   pure $ widgetFromEvent $ sideInterface prefix interfaces

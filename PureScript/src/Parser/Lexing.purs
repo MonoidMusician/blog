@@ -38,6 +38,7 @@ import Debug (spy, traceM)
 import Effect (Effect)
 import Effect.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
+import Idiolect ((>==))
 import Parser.Algorithms (indexStates)
 import Parser.Comb.Types (LogicParts(..), Options(..), Option, applyLogic)
 import Parser.Proto (Stack(..), statesOn, topOf)
@@ -329,7 +330,7 @@ lexingParse { best } (initialState /\ States states) initialInput =
         let rules = Array.fromFoldable (statesOn stack) # Array.mapMaybe lookupState
         asdf "rules"
         for_ rules $ asdf <<< do
-          _.items >>> unwrap >>> map do
+          _.items >>> unwrap >==
             _.rule >>> \(Zipper l r) -> fold
               [ map (unsafeCoerce _.value0 >>> _.value0) l
               , [ "•" ]
@@ -345,7 +346,7 @@ lexingParse { best } (initialState /\ States states) initialInput =
           Shift s -> do
             asdf "rules to just shift to?"
             for_ (lookupState s) $ asdf <<< do
-              _.items >>> unwrap >>> map do
+              _.items >>> unwrap >==
                 _.rule >>> \(Zipper l r) -> fold
                   [ map (unsafeCoerce _.value0 >>> _.value0) l
                   , [ "•" ]
@@ -357,7 +358,7 @@ lexingParse { best } (initialState /\ States states) initialInput =
           ShiftReduces s rs -> do
             asdf "rules to shift to?"
             for_ (lookupState s) $ asdf <<< do
-              _.items >>> unwrap >>> map do
+              _.items >>> unwrap >==
                 _.rule >>> \(Zipper l r) -> fold
                   [ map (unsafeCoerce _.value0 >>> _.value0) l
                   , [ "•" ]
@@ -374,7 +375,7 @@ lexingParse { best } (initialState /\ States states) initialInput =
           Shift s -> do
             asdf "rules to just shift to?"
             for_ (lookupState s) $ asdf <<< do
-              _.items >>> unwrap >>> map do
+              _.items >>> unwrap >==
                 _.rule >>> \(Zipper l r) -> fold
                   [ map (unsafeCoerce _.value0 >>> _.value0) l
                   , [ "•" ]
@@ -386,7 +387,7 @@ lexingParse { best } (initialState /\ States states) initialInput =
           ShiftReduces s rs -> do
             asdf "rules to shift to?"
             for_ (lookupState s) $ asdf <<< do
-              _.items >>> unwrap >>> map do
+              _.items >>> unwrap >==
                 _.rule >>> \(Zipper l r) -> fold
                   [ map (unsafeCoerce _.value0 >>> _.value0) l
                   , [ "•" ]
@@ -397,7 +398,7 @@ lexingParse { best } (initialState /\ States states) initialInput =
         let rules = Array.fromFoldable (statesOn stack) # Array.mapMaybe lookupState
         asdf "rules"
         for_ rules $ asdf <<< do
-          _.items >>> unwrap >>> map do
+          _.items >>> unwrap >==
             _.rule >>> \(Zipper l r) -> fold
               [ map (unsafeCoerce _.value0 >>> _.value0) l
               , [ "•" ]
@@ -572,7 +573,7 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
         let rules = Array.fromFoldable (statesOn stack) # Array.mapMaybe (snd >>> lookupState)
         asdf "rules"
         for_ rules $ asdf <<< do
-          _.items >>> unwrap >>> map do
+          _.items >>> unwrap >==
             _.rule >>> \(Zipper l r) -> fold
               [ map (unsafeCoerce _.value0 >>> _.value0) l
               , [ "•" ]

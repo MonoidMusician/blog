@@ -127,7 +127,7 @@ And we come up with some rules for figuring out the modes of each argument:
 - Rule 4: We have to know all of the implicits by the end of this process.
   If there are implicits that are not uniquely determined from the types of the explicit arguments, they cannot be implicits.
 
-An important edge case to keep in mind: there will be some times where an argument needs to be synthesized, because we don’t know all of its implicits, but yet it does not uniquely determine any implicits (e.g. if there is a complex type function based on the implicit).
+An important edge case to keep in mind: there will be some times where an argument needs to be synthesized, because we don’t know all of its implicits, but yet it does not uniquely determine any implicits ([e.g.]{t=} if there is a complex type function based on the implicit).
 
 #### Starting in _syn_
 
@@ -156,7 +156,7 @@ But still have the obvious issue of data in types.
 #### Faking it
 
 For some implicits, they may not be used directly.
-E.g. `(a -> b) -> (fin n -> a) -> (fin n -> b)`.
+[E.g.]{t=} `(a -> b) -> (fin n -> a) -> (fin n -> b)`.
 Ugh but that gets weird semantically though.
 Parameters.
 

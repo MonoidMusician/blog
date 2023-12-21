@@ -12,7 +12,7 @@ Choose your fighter!
 - `liftA2 (.) :: f (y -> z) -> f (x -> y) -> f (x -> z)`{.haskell}
 
 Applicative functors are very important.
-The first two ways of constructing them are often talked about, e.g. see [“The monoidal presentation”](https://en.wikibooks.org/wiki/Haskell/Applicative_functors#The_monoidal_presentation) on Haskellʼs WikiBook.
+The first two ways of constructing them are often talked about, [e.g.]{t=} see [“The monoidal presentation”](https://en.wikibooks.org/wiki/Haskell/Applicative_functors#The_monoidal_presentation) on Haskellʼs WikiBook.
 
 But thereʼs a third way that I find really interesting!
 
@@ -32,7 +32,7 @@ instance Applicative f => Category (Kleisli f) where
   Kleisli f . Kleisli g = Kleisli (\a -> f =<< g a)
 ```
 
-:::{.Details box-name="c.f."}
+:::{.Details box-name="cf."}
 https://hackage.haskell.org/package/profunctors-5.6.2/docs/Data-Profunctor-Cayley.html
 :::
 
@@ -110,7 +110,7 @@ newtype FreeCategory arr x y = FreeCategory (Coproduct2 (->) (FreeGroupoid arr) 
 newtype FreeGroupoid arr x y = FreeGroupoid (Snuggles arr (FreeCategory arr) x y)
 ```
 
-:::{.Details box-name="c.f."}
+:::{.Details box-name="cf."}
 https://hackage.haskell.org/package/profunctors-5.6.2/docs/Data-Profunctor-Composition.html
 :::
 

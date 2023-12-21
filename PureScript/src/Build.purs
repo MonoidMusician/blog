@@ -19,11 +19,12 @@ import Effect (Effect)
 import Effect.Aff (Aff, launchAff_, try)
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
+import Idiolect ((/|\))
 import Node.Encoding (Encoding(..))
 import Node.FS.Aff as FS
 import Parser.Comb (Comb(..), named, parseRegex')
 import Parser.Examples (showPart)
-import Parser.Languages (Comber, mainName, printPretty, showZipper, (/|\))
+import Parser.Languages (Comber, mainName, printPretty, showZipper)
 import Parser.Languages.CSS as CSS
 import Parser.Languages.Show as Show
 import Parser.Languages.TMTTMT.Parser as TMTTMT

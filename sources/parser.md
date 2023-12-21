@@ -64,30 +64,30 @@ You can bug or help me write more ^^
 
 ### Topics
 
-- TODO: [Using this tool by example](parser_by_example.html)
-- TODO: [Terminology reference](parser_terminology)
-- WIP: [Basics: What are grammars](parser_basics.html) (BNF, RegExp)
-  1. Nonterminals and terminals
-  1. Sequencing and alternation (regexes)
-- WIP: [Uses of grammars](parser_applications.html):
-  1. Generators: nondeterministically generate strings in the grammar by following the rules as state transitions
-  1. Recognition: recognize which strings belong to the grammar and which do not
-  1. Syntax highlighting: cursed.
-  1. Parsing: find an unambiguous parse tree for inputs that belong to the grammar
-- WIP: [Basics of LR(1) Parsing](parser_lr1.html)
-  1. States
-  1. State transitions
-  1. Closure of states
-  1. Lookahead
+- [TODO]{t=}: [Using this tool by example](parser_by_example.html)
+- [TODO]{t=}: [Terminology reference](parser_terminology)
+- [WIP]{t=}: [Basics: What are grammars](parser_basics.html) (BNF, RegExp)
+  #. Nonterminals and terminals
+  #. Sequencing and alternation (regexes)
+- [WIP]{t=}: [Uses of grammars](parser_applications.html):
+  #. Generators: nondeterministically generate strings in the grammar by following the rules as state transitions
+  #. Recognition: recognize which strings belong to the grammar and which do not
+  #. Syntax highlighting: cursed.
+  #. Parsing: find an unambiguous parse tree for inputs that belong to the grammar
+- [WIP]{t=}: [Basics of LR(1) Parsing](parser_lr1.html)
+  #. States
+  #. State transitions
+  #. Closure of states
+  #. Lookahead
 - Precedence
-  1. Refresher on operator precedence
-  1. Operator precedence mapped to LR(1) table parsing
-  1. Conflict resolution using precedence operators à la Happy.
+  #. Refresher on operator precedence
+  #. Operator precedence mapped to LR(1) table parsing
+  #. Conflict resolution using precedence operators à la Happy.
 - Grammars as datatypes
-  1. AST/CSTs as ADTs
-  1. Data associated with tokens
-  1. Finding perfect representations, e.g. no leading zeroes, if you want it to encode data exactly
-  1. Common practice of using grammars this way (e.g. in type theory papers)
+  #. AST/CSTs as ADTs
+  #. Data associated with tokens
+  #. Finding perfect representations, [e.g.]{t=} no leading zeroes, if you want it to encode data exactly
+  #. Common practice of using grammars this way ([e.g.]{t=} in type theory papers)
 
 ### Ideas & Questions
 

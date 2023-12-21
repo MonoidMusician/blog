@@ -7,7 +7,7 @@ author:
 When dealing with monad transformers, how do you want to stack `ExceptT`{.haskell} and `StateT`{.haskell}?
 
 :::{.Key_Idea box-name="tl;dr"}
-The tl;dr is that you probably want `StateT`{.haskell} on the outside and `ExceptT`{.haskell} on the inside.
+The [tl;dr]{t=} is that you probably want `StateT`{.haskell} on the outside and `ExceptT`{.haskell} on the inside.
 This is the one that has good backtracking!
 :::
 

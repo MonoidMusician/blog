@@ -25,7 +25,7 @@ You need to learn how to program effectively in *some* language, and it takes so
 
 In contrast, my perspective as an outsider is that a lot of the simple operations that machinists do every day would take ages, a lot of experimentation, and ingenuity to recreate.
 You canʼt just make that stuff up. Gotta respect the tools, the materials, the processes.
-[TODO: give specific examples.]
+[[TODO]{t=}: give specific examples.]
 
 I was reading a Gizmodo article on the state of VFX production studios, how theyʼre overworked and underbidding to Marvel/Disney and such, really horrible conditions, and they mentioned that a lot of the work is basically one-off, reinvented for each film.
 (And thus costs a lot of man-hours.)

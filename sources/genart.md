@@ -95,19 +95,19 @@ Changing it will load whatever is at the label, or save to it if it is blank (ct
 The color input component live replaces whatever selection you have in the text area with the chosen hex color of the form `#RRGGBB`.
 
 The canvas size is currently fixed to 1500x500.
-(TODO: make configurable.)
+([TODO]{t=}: make configurable.)
 
 Press on the canvas to advance frames.
 Shift-click to keep/stop animating, or spacebar.
 (Shift+spacebar to enter/leave fullscreen as well.)
 
-TODO: upscaling
+[TODO]{t=}: upscaling
 
-TODO: make more interactive components.
+[TODO]{t=}: make more interactive components.
 
-TODO: autocomplete for names
+[TODO]{t=}: autocomplete for names
 
-TODO: proper JS editor???
+[TODO]{t=}: proper JS editor???
 
 ```bash
 ffmpeg -framerate 30 -i 'frame%04d.png' -vf scale=844:1500 -c:v libx264 -preset slow -crf 16 -profile:v high -pix_fmt yuv420p out.mp4

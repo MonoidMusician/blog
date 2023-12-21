@@ -1,6 +1,7 @@
 module Parser.Languages.TMTTMT.Parser where
 
 import Prelude
+import Idiolect ((<#?>), (>==))
 
 import Control.Alt ((<|>))
 import Data.Array as A
@@ -9,11 +10,10 @@ import Data.Enum (toEnum)
 import Data.Foldable (fold, oneOf)
 import Data.Int (hexadecimal)
 import Data.Int as Int
-import Data.Maybe (maybe)
 import Data.Monoid (power)
 import Data.String as String
 import Data.String.CodeUnits as CU
-import Parser.Languages (Comber, delim, key, many, many1, many1SepBy, manySepBy, opt, rawr, ws, wsws, wsws', (#->), (#:), (<#?>), (>==))
+import Parser.Languages (Comber, delim, key, many, many1, rawr, ws, (#->), (#:))
 import Parser.Languages.CSS (newline)
 import Parser.Languages.TMTTMT.Types (Calling(..), Case(..), Condition(..), Declaration(..), Expr(..), Matching(..), Pattern(..))
 

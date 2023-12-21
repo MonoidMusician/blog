@@ -13,3 +13,5 @@ filters:
 css:
   - https://cdn.jsdelivr.net/npm/katex@0.15.6/dist/katex.min.css
   - https://cdn.jsdelivr.net/npm/katex@0.13.23/dist/contrib/copy-tex.css
+metadata:
+  lang: en

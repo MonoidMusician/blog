@@ -63,7 +63,7 @@ color.addEventListener('input', (e) => {
 });
 </script>
 
-## TODO
+## [TODO]{t=}
 - generate permutations
 - don't have whole style reload
 - Sass user styles

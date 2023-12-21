@@ -10,7 +10,7 @@ Thereʼs a couple distinct ways to use grammars, and this is why some of the exp
 The differences manifest on both sides:
 
 - On the grammar side/as a user of parsing tools, the kinds of grammars you write for efficient recognition are not the kinds of grammars you would write for unambiguous parsing.
-- On the algorithm side/as a designer of parsing tools, parsing algorithms often are more complex than recognition algorithms, sometimes in surprising ways (c.f. [Earley parsers](https://en.wikipedia.org/wiki/Earley_parser#Constructing_the_parse_forest)).
+- On the algorithm side/as a designer of parsing tools, parsing algorithms often are more complex than recognition algorithms, sometimes in surprising ways ([cf.]{t=} [Earley parsers](https://en.wikipedia.org/wiki/Earley_parser#Constructing_the_parse_forest)).
 
 ## List of Uses
 

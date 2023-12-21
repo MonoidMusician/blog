@@ -125,7 +125,7 @@ Iʼve been ranting about tmTTmt on cohost as an outlet until I have the time to 
 The real genesis of the project was when I was attempting to write Dhall-PureScript (many apologies for dropping the ball on that one).
 I wanted to go all in on extensible row types and recursion schemes.
 I think theyʼre awesome tools, but they proved too impractical to use in PureScript, since they wrecked the existing pattern matching facilities of the core logic of PureScript.
-I have also learned a lot in the meantime (e.g. about parsing, about languages like Erlang) and developed a lot more ideas.
+I have also learned a lot in the meantime ([e.g.]{t=} about parsing, about languages like Erlang) and developed a lot more ideas.
 I think Iʼm ready to make it happen!
 
 ## General design goals
@@ -170,7 +170,7 @@ I think Iʼm ready to make it happen!
   - :::Key_Idea
     In particular, by committing ourselves to _this_ logic of **literals as ground truth for comparing _across types_**, we can generate automatic coercions between subsets of complex types.
 
-    I understand why a lot of languages want literals to have distinct types (e.g. Haskell ADTs all have distinct, named constructors), but it just poses a barrier to the fluidity I want to have in this system for language design of all things. If you name something `["if" _ "then" _ "else" _]`{.js} then you know what it represents! No matter if it is in the source CST, the desugared AST, or a final core pass …
+    I understand why a lot of languages want literals to have distinct types ([e.g.]{t=} Haskell ADTs all have distinct, named constructors), but it just poses a barrier to the fluidity I want to have in this system for language design of all things. If you name something `["if" _ "then" _ "else" _]`{.js} then you know what it represents! No matter if it is in the source CST, the desugared AST, or a final core pass …
     :::
 
     In some target runtimes, if they are faithful to the literals, these will be actual zero-cost coercions.
@@ -178,7 +178,7 @@ I think Iʼm ready to make it happen!
 
   - Restriction types, of nominal types constrained to fewer possible cases, would be incredibly useful.
 
-  - tl;dr is that this should help with the [“trees that grow”](https://www.microsoft.com/en-us/research/uploads/prod/2016/11/trees-that-grow.pdf) problem of multiple related ASTs.
+  - [tl;dr]{t=} is that this should help with the [“trees that grow”](https://www.microsoft.com/en-us/research/uploads/prod/2016/11/trees-that-grow.pdf) problem of multiple related ASTs.
 
   - Iʼm wavering on including records: I think they donʼt mesh well with the system of inference.
     But there is an alternative, which is to include sort of “grab bags”: where you donʼt pretend to know the totality of the record (in particular, there is no sensible way to implement `Eq`{.haskell} for records), but you have some partial knowledge of what you want to be in there.
@@ -190,7 +190,7 @@ I think Iʼm ready to make it happen!
     In particular, having union types (and maybe restriction types) means that you can talk about parts of the AST.
 
     If I did have row types, I would want to make sure they are not limited to existing constructs of records and variants (product and sum types), there are so many other symmetric tensors to think about!
-    E.g. configuration options tend to come as a record of maybes, but sometimes you need a bunch of things tensored together with `These`{.haskell}, so you know that at least one is specified.
+    [E.g.]{t=} configuration options tend to come as a record of maybes, but sometimes you need a bunch of things tensored together with `These`{.haskell}, so you know that at least one is specified.
 
 - Function calls cannot be nested, functions are only applied to literals/variables.
   - This is for two reasons: it makes the syntax lighter, and it means that the user was very specific about the order of execution.
@@ -246,7 +246,7 @@ https://cohost.org/monoidmusician/post/3252802-first-class-patterns
   (These get pretty onerous to work with, when you have to write completely separate types for non empty things, and make sure you preserve non-emptiness in the right places. Trust me, Iʼve tried!)
 - Simplify writing advanced programming techniques:
   - Continuation Passing Style (CPS).
-    This is (apparently) really great for efficiency for a bunch of reasons (e.g. quicker backtracking), but can be mind-bending to write directly.
+    This is (apparently) really great for efficiency for a bunch of reasons ([e.g.]{t=} quicker backtracking), but can be mind-bending to write directly.
   - Deriving zippers/one-hole contexts for datatypes, possibly even [Clowns & Jokers](http://strictlypositive.org/CJ.pdf) style for incremental stack-safe computations.
     (One-hole contexts are possible to derive generically with typeclass machinery.
     But the conversions get super annoying...)
@@ -337,7 +337,7 @@ I would like to be able to short-circuit typechecking non-dependent functions, a
 (Why? Because having a more global view of errors is often useful, since the hyperlocal errors we are used to can obscure the real problem.)
 
 This would show up as a soft error that allows further typechecking to proceed.
-Soft errors can be turned into critical errors when we need to be able to trust the result of typechecking, e.g. to know that normalization is going to complete.
+Soft errors can be turned into critical errors when we need to be able to trust the result of typechecking, [e.g.]{t=} to know that normalization is going to complete.
 
 ```{.js data-lang="tmTTmt"}
 typecheck/ ["App" fn arg] => resultType:

@@ -144,7 +144,7 @@ I also implemented SSR for some of my extensions.
 [canvas.lua](https://github.com/MonoidMusician/blog/blob/main/pandoc/lua/canvas.lua)
   : Renders the dynamic canvas content Iʼve added to my post on [Eudoxus real numbers](Eudoxus.html) to static PNGs that are loaded with `<noscript>`{.html} tags.
     Uses [parse5](https://parse5.js.org/) to parse the [raw HTML](https://pandoc.org/lua-filters.html#type-rawblock) embedded in the Pandoc and the node [canvas](https://www.npmjs.com/package/canvas) library (based on [Cairo](https://www.cairographics.org/)!) to run the canvas.
-    It renders to a default size based on the attributes, e.g. `<canvas data-graph="[x => x]" class="pixelated" width="1000" height="500" style="width: 100%;"></canvas>`{.html}.
+    It renders to a default size based on the attributes, [e.g.]{t=} `<canvas data-graph="[x => x]" class="pixelated" width="1000" height="500" style="width: 100%;"></canvas>`{.html}.
 
 ## Widgets
 
@@ -175,8 +175,8 @@ Maybe SCSS support is better just because the syntax definitions could be based 
 ### SCSS as a language
 
 SCSS^[And by extension Sass – since SCSS includes certain novel features and Sass merely includes a new syntax, I should mention the new features by the name SCSS for brevity.] really needs antiquotation for selectors, attributes, and other core parts of syntax.
-That is, since SCSS is 90% a glorified string concatenation library – mainly running on manipulating strings – one of its key usefulnesses is in providing feedback (e.g. in the form of syntax highlighting) on whether the user has entered sensible strings.
-So it would be great to have helpers like `$sel: syntax.selector(details > :not(summary))`{.sass} to quote that selector expression into `$sel: "details > :not(summary)"`{.sass} so it can be used in metaprogramming (i.e. passed to the rest of the utility of SCSS) while maintaining the syntactic discipline and feedback of the selector class specifically.
+That is, since SCSS is 90% a glorified string concatenation library – mainly running on manipulating strings – one of its key usefulnesses is in providing feedback ([e.g.]{t=} in the form of syntax highlighting) on whether the user has entered sensible strings.
+So it would be great to have helpers like `$sel: syntax.selector(details > :not(summary))`{.sass} to quote that selector expression into `$sel: "details > :not(summary)"`{.sass} so it can be used in metaprogramming ([i.e.]{t=} passed to the rest of the utility of SCSS) while maintaining the syntactic discipline and feedback of the selector class specifically.
 
 As a specific example, SCSS docs themselves recommend [this helper function](https://sass-lang.com/documentation/style-rules/parent-selector#advanced-nesting) (to paste over other limitations of their implementation of selector extension with `&`{.sass}).
 But in doing so you lose the semantic intention that `$child: "input"`{.sass} means a selector specifically, so if you misspell it you will not have any quick feedback to correct the issue.

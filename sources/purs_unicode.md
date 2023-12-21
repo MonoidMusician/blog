@@ -19,7 +19,7 @@ My main goals are:
     - Provide tests for this API
 - Have the compiler produce `CodePoint`{.haskell} literals instead of `Char`{.haskell}
   - This is one of the biggest annoyances of dealing with Unicode data in PureScript today: `CodePoint`{.haskell} literals do not exist.
-  - Again: literals need to be valid (i.e. non-surrogate) code points, but at runtime there is no such guarantee.
+  - Again: literals need to be valid ([i.e.]{t=} non-surrogate) code points, but at runtime there is no such guarantee.
 - Keep changes to user code minimal
   - Besides renaming types and a few methods (sorry).
 
@@ -99,7 +99,7 @@ But technically this means that there could be some subtle nasty bugs with `Data
 
 ### Dealing with invalid Unicode
 
-However, the silver lining of UTF-16 was that invalid UTF-16 (i.e. lone surrogates) *could* be preserved in code points.
+However, the silver lining of UTF-16 was that invalid UTF-16 ([i.e.]{t=} lone surrogates) *could* be preserved in code points.
 This is not the case with UTF-8: if you `uncons`{.haskell} a codepoint from an invalid UTF-8 string, you cannot preserve what you unconsed in any way.
 
 I think each backend will have to choose the desired behavior:

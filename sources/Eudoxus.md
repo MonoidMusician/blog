@@ -50,8 +50,8 @@ So if some set we are studying is countable/serializable, meaning it can be unde
 
 Thereʼs much more to say about this kind of process, indeed I hope to write a whole nother blog post about it, but for now know that there are two main questions to ask:
 
-(1) When are approximations consistent enough so they ought to represent _a thing_ (e.g. “when does a sequence of rationals converge?”), and
-(2) When do two approximations approximate the _same_ thing (e.g. “when do two convergent sequences converge to the same point?”).
+(1) When are approximations consistent enough so they ought to represent _a thing_ ([e.g.]{t=} “when does a sequence of rationals converge?”), and
+(2) When do two approximations approximate the _same_ thing ([e.g.]{t=} “when do two convergent sequences converge to the same point?”).
 <!-- https://mathoverflow.net/questions/239921/concept-associated-to-the-eudoxus-reals -->
 
 ::: Example
@@ -383,11 +383,11 @@ Positive and negative, then, are going to be unbounded functions.
 How do we distinguish them?
 
 The basic idea is that positive will grow unboundedly _positive_ to the right and negative will grow unboundedly _negative_ to the right.
-In formal terms, we say that $f$ is positive if, upon picking some arbitrary height $C$, it is eventually always above $C$ as it goes towards the right: i.e. there is some $N$ such that for all $m > N$, $f(m) > C$.
+In formal terms, we say that $f$ is positive if, upon picking some arbitrary height $C$, it is eventually always above $C$ as it goes towards the right: [i.e.]{t=} there is some $N$ such that for all $m > N$, $f(m) > C$.
 
 There are some properties to verify.
 
-First off, why is it sufficient to just consider the behavior of the function to the right (i.e. for $m > 0$)?
+First off, why is it sufficient to just consider the behavior of the function to the right ([i.e.]{t=} for $m > 0$)?
 We would need to know that growing unboundedly positive to the right is the same as growing unboundedly negative to the left.
 This conforms with our intuition of how almost linear functions have slope, but it requires a proof.
 
@@ -549,7 +549,7 @@ But weʼre done now, since $g_2(x) - g_1(x)$ is bounded, making its image under 
 Following [Arthanʼs exposition](http://arxiv.org/abs/math/0405454), we will need some more machinery before we tackle the rest of the proofs.
 Using the tools of [mathematical analysis](https://en.wikipedia.org/wiki/Mathematical_analysis) we will establish further properties that capture the almost-linearity of functions, using the existing property of bounded wiggle.
 
-Let $C$ be a bound for the wiggle of the function; i.e. $d_f(p, q) < C$ for all $p$ and $q$.
+Let $C$ be a bound for the wiggle of the function; [i.e.]{t=} $d_f(p, q) < C$ for all $p$ and $q$.
 
 The first lemma^[Part of lemma 7 in Arthan] we want to establish is the following^[Exercise: Why is this related to $f$ being an almost linear function? What if $f$ was actually a linear function?]:
 $$|f(pq) − pf(q)| < (|p| + 1)C.$$

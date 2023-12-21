@@ -81,7 +81,7 @@ Applicatives have an additional operation called `apply :: forall a b. f (a -> b
 
 Except, it is not quite so obvious. Is the first argument run first, or the second argument run first? Are they run in parallel? Does it matter??
 
-The beauty in applicatives is that there is the freedom to choose. In fact, it is a simple matter to swap effects around and run them in reverse order, for any applicative. For some applicatives (e.g. `Maybe`), this doesn't make a difference. But for our story here, the ability to have them run in “parallel” is crucial, and we will gradually clarify what this means.
+The beauty in applicatives is that there is the freedom to choose. In fact, it is a simple matter to swap effects around and run them in reverse order, for any applicative. For some applicatives ([e.g.]{t=} `Maybe`), this doesn't make a difference. But for our story here, the ability to have them run in “parallel” is crucial, and we will gradually clarify what this means.
 
 Back to monads now. Monads have a further operation called `bind :: forall a b. m a -> (a -> m b) -> m b` (written infix as `>>=`). This is the key that allows for sequencing effects. The intuition is is that the effects that need to be run to obtain the `b` are not known until the effects from the `m a` are run to obtain the `a` needed to pass to `a -> m b`. (This is not to suggest that there _must_ be a result `a` or _only one_ – indeed, that's part of the magic of monads: they can handle errors and nondeterminacy gracefully, meaning zero or multiple results respectively.)
 
@@ -107,7 +107,7 @@ Now we will go through some examples of common monads and how they are already p
 
 In some sense, this is nicest monad to work in. It encodes local context – some form of read-only data that is kept around and accessible during all parts of the program, and nested computations can even receive modified context. Note that this isn't quite state: the local context cannot be changed for sequential computations like state would do, only nested ones. Context flows top-down through the computational tree instead of linearly through execution.
 
-The reason why it is the most well-behaved is that it is literally just an extra function argument being carried around. And since we are working in languages derived from lambda calculi, function arguments (i.e. variables) are freely accessible everywhere in scope anywhere, so implementing local context is trivial.
+The reason why it is the most well-behaved is that it is literally just an extra function argument being carried around. And since we are working in languages derived from lambda calculi, function arguments ([i.e.]{t=} variables) are freely accessible everywhere in scope anywhere, so implementing local context is trivial.
 
 It is for this reason that the parallel counterpart of this monad is literally itself, as an applicative. There is no notion of sequencing effects versus running them independently if the only effect is accessing read-only data, which is oblivious to whether other reads have occurred.
 
@@ -133,7 +133,7 @@ State is kind of the beast of monad transformers. By state we finally mean reada
 
 So … how in the world do we make this readwritable state parallel? … well, we don't.
 
-In fact, it's worse: if we stack errors and state in the useful way (i.e. `StateT (ExceptT e m) s`)., we only get state information when no error has occurred. Thus the sequential nature of state infects the potentially-parallel errors portion of the stack, and we're back to only getting a single error at a time.
+In fact, it's worse: if we stack errors and state in the useful way ([i.e.]{t=} `StateT (ExceptT e m) s`)., we only get state information when no error has occurred. Thus the sequential nature of state infects the potentially-parallel errors portion of the stack, and we're back to only getting a single error at a time.
 
 <!-- TODO: applicative state composing wrong -->
 
@@ -180,7 +180,7 @@ This is arguably the single most important judgment in type theories, since they
 
 It is also where what I said about “no subsumption” becomes important: there's nothing fancy we need to do at function application, just ensure the type of the argument and the function domain match.
 
-Notice how I phrased it like “ensure that X and Y match” (i.e. “unify X and Y”). This is because there’s no bias in the rules: it's not “ensure X matches Y” or “ensure Y matches X”.
+Notice how I phrased it like “ensure that X and Y match” ([i.e.]{t=} “unify X and Y”). This is because there’s no bias in the rules: it's not “ensure X matches Y” or “ensure Y matches X”.
 
 In a lot of systems it would be the case that one wants to infer either the function first, and then check the argument against its domain, or check the argument first and then check the function type so it satisfies that. This is because the additional information from the first piece guides the typechecker to make various choices to end up with the right type for the second piece of the equation.
 
@@ -407,7 +407,7 @@ So given a particular source expression, there is a **function from provenances 
 - For type-of provenance, the function is partial because an expression may not typecheck, producing the errors we have been talking about.
 - Beta normalization provenance is also partial in the sense that it may not terminate, but again, a well-written typechecker implementation will make sure that only expressions that are known to typecheck are normalized, used, and could appear in the output.
 - Alpha-normalization is well-behaved and does not require.
-- Substitution might require a reader context to know what values to substitute for what variables? Haven't quite figured it out yet TODO
+- Substitution might require a reader context to know what values to substitute for what variables? Haven't quite figured it out yet [TODO]{t=}
 - Resolving imports generally requires an async context as I've mentioned above. However, since all of the necessary imports were already resolving, we can get away with the import cache that was maintained during the import process. Lookups in this cache will still be partial, though.
 
 ### Multiple Source Files

@@ -407,7 +407,7 @@ Again, a topic for another blog post, but I love monoids, especially semilattice
 
 In particular, because of their idempotence, semilattices are great because you just need to make sure you cover all cases.
 Thereʼs no such thing as double-counting in a semilattice computation!
-When youʼre dealing with a well-behaved logical scenario, if have written your logic correctly (i.e. each derivation is valid) and you cover all the cases (you eventually produce every fact you are allowed to derive), thereʼs no chance that you accidentally make things break.^[
+When youʼre dealing with a well-behaved logical scenario, if have written your logic correctly ([i.e.]{t=} each derivation is valid) and you cover all the cases (you eventually produce every fact you are allowed to derive), thereʼs no chance that you accidentally make things break.^[
 If the logical scenario does not have a finite upper bound of information to derive, this naïve process may not terminate, but in our case it is certainly finite: the registry itself is finite, so any logical derivations from it will eventually be saturated.]
 
 We already saw our first semilattice `Semigroup (App (Map PackageName) Loose)`{.haskell data-lang=PureScript} above.
@@ -742,7 +742,7 @@ data SolverPosition = Pos LocalSolverPosition (Set PackageName)
 ```
 
 It seems that it weakens the logical connection just a bit, I donʼt know if they can be put into formal properties anymore.
-(E.g. “Deleting the mentioned constraint from the current manifest affects it in _this_ way.”)
+([E.g.]{t=} “Deleting the mentioned constraint from the current manifest affects it in _this_ way.”)
 
 But I believe it is the information that users want to see; it certainly falls into the category of making it actionable so they can fix things and run it again to make progress.
 In the case that it is a local error, knowing which clauses of the current manifest led to it is crucial in answering the question, “What do I need to change to fix the error”.

@@ -314,7 +314,7 @@ import Data::Polynomial::Fin
 -- Tensor in the Poly category (Day convolution)
 -- Not the categorical product!
 -- Actually the one you want to use most of the time.
--- (e.g. used for juxtaposition in wiring diagrams)
+-- ([e.g.]{t=} used for juxtaposition in wiring diagrams)
 def tensor-⊗ : Poly → Poly → Poly :=
   λ P Q → Σ ((p , q) : base P × base Q), y^(fib P p × fib Q q)
 

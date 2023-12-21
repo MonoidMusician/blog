@@ -27,10 +27,11 @@ strong
       // Does not work ...
       text-decoration: none
 
-code
-  font-size: 0.75em
+code, .code, .meta-code
   font-weight: 300
   hyphens: none
+code
+  font-size: 0.75em
 .sidenote code
   font-size: 0.75em
 
@@ -70,6 +71,18 @@ p, li
   font-variant-numeric: lining-nums
 li::marker
   font-variant-numeric: oldstyle-nums
+
+.foreign[lang]
+  font-style: italic
+  > em
+    font-style: normal
+
+blockquote
+  font-style: italic
+  em, .foreign[lang], code
+    font-style: normal
+  em em, em code, .foreign[lang] em
+    font-style: italic
 
 //
   header ~ section > p:first-child, h1 + p, h2 + p

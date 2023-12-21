@@ -1,0 +1,25 @@
+@use "colors.sass" as *
+
+.numeric
+  font-feature-settings: "cv11"
+  letter-spacing: -0.5px
+
+.meta-code
+  font-feature-settings: "cv12"
+  color: gray
+
+.sample
+  display: inline-block
+  vertical-align: baseline
+.sample-after
+  margin-left: 0.5em
+  code + &
+    margin-left: 0.25em
+.color-sample
+  width: 1em
+  height: 1em
+  code > &
+    width:  0.7em
+    height: 0.7em
+.unicode-sample
+  color: $stark

@@ -1,6 +1,7 @@
 module Parser.Languages.Polish where
 
 import Prelude
+import Idiolect ((/|\))
 
 import Control.Alternative (guard)
 import Data.Array as Array
@@ -9,14 +10,13 @@ import Data.Either (Either(..))
 import Data.Foldable (foldMap, oneOf)
 import Data.Maybe (Maybe)
 import Data.Number as Number
-import Data.String as String
 import Data.Traversable (sequence)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Parser.Comb (namedRec)
 import Parser.Comb.Types ((<?>))
-import Parser.Languages (Comber, many, manyL, rawr, (#:), (/|\))
+import Parser.Languages (Comber, many, manyL, rawr, (#:))
 import Parser.Languages as Languages
 import Parser.Languages.CSS (test)
 import Parser.Types (CST(..))

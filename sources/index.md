@@ -32,10 +32,10 @@ Itʼs not a real blog though since it doesnʼt have RSS yet …
   > A [novel algorithm](https://github.com/purescript/registry-dev/blob/master/lib/src/Solver.purs) for resolving dependency bounds to solved versions:
   >
   > - Incorporates [transitive dependency bounds](version_solver.html#intuitive-foundations-quasi-transitive-dependencies) for a breadth-first search:
-  >   1. What dependencies are required no matter which package version in the range we commit to?
+  >   #. What dependencies are required no matter which package version in the range we commit to?
   >   2. Whatʼs the loosest bound for each dependency then?
   > - By taking this intuitive approach, we gain two things:
-  >   1. [Better errors](version_solver.html#errors), matching what users would expect.
+  >   #. [Better errors](version_solver.html#errors), matching what users would expect.
   >   2. Efficiency too, if you could believe it.
   > - Implemented using semilattices ([monoids](version_solver.html#monoids-monoids-everywhere)).
 
@@ -63,22 +63,25 @@ Itʼs not a real blog though since it doesnʼt have RSS yet …
 
 ## Series
 - Tools
-  1. WIP: [Unicode Explorer](unicode.html)
-  1. [tiny tool to reformat output produced by `show`{.haskell}](show.html)
-  1. Abandoned?: [Generative Art Scratchpad](genart.html)
-  1. TODO: Aspect ratio calculator/database
-  1. TODO: macOS version lookupper
+  #. [WIP]{t=}: [Unicode Explorer](unicode.html)
+  #. [tiny tool to reformat output produced by `show`{.haskell}](show.html)
+  #. Abandoned?: [Generative Art Scratchpad](genart.html)
+  #. [TODO]{t=}: Aspect ratio calculator/database
+  #.
+    [TODO]{t=}: macOS version lookupper
     - This is my philosophy of just make tools to do the things you need … wow thatʼs not a good way to articulate it sorry.
-  1. TODO: magic constants (in hexadecimal and base64) for file hacking
-  1. TODO: Unit/base calculator and such (c.f. [insect](https://github.com/sharkdp/insect) and [numbat](https://github.com/sharkdp/numbat))
+  #. [TODO]{t=}: magic constants (in hexadecimal and base64) for file hacking
+  #.
+    [TODO]{t=}: Unit/base calculator and such ([cf.]{t=} [insect](https://github.com/sharkdp/insect) and [numbat](https://github.com/sharkdp/numbat))
     - Would be cool to have better precision, or even use [Towards an API for the Real Numbers](https://dl.acm.org/doi/pdf/10.1145/3385412.3386037).
-  1. TODO: QR code generator and reader and formats and suchs, and bar code, and PDF417, ...
+  #. [TODO]{t=}: QR code generator and reader and formats and suchs, and bar code, and PDF417, ...
+  #. CSS → Sass
 - [Interactive Parser Explanations](parser.html)
-  1. TODO: [Parsing By Example](parser_by_example.html)
-  1. TODO: [Terminology Reference](parser_terminology.html)
-  1. WIP: [Basics: What Are Grammars](parser_basics.html)
-  1. WIP: [Uses of Grammars](parser_applications.html)
-  1. WIP: [Basics of LR(1) Parsing](parser_lr1.html)
+  #. [TODO]{t=}: [Parsing By Example](parser_by_example.html)
+  #. [TODO]{t=}: [Terminology Reference](parser_terminology.html)
+  #. [WIP]{t=}: [Basics: What Are Grammars](parser_basics.html)
+  #. [WIP]{t=}: [Uses of Grammars](parser_applications.html)
+  #. [WIP]{t=}: [Basics of LR(1) Parsing](parser_lr1.html)
 
 ### Miniseries
 - [Knowlish](knowlish.html) – A list of little things I have learned and need reminders about.
@@ -87,7 +90,7 @@ Itʼs not a real blog though since it doesnʼt have RSS yet …
 - Co-search – nothing yet, but the idea is that I will put up requests for information, and maybe passers-by can tell me what I seek
 - Don’t make me invent it – in which I finally ask for help & references for prior art, instead of just plunging in confident that I can figure it out
 
-## Ideas/WIP
+## Ideas/[WIP]{t=}
 I post these for a few reasons.
 I donʼt really have the energy to write these things properly (and I am ever so ambitious in my goals).
 But if you want to nudge me to write on them – or even better, if you want to contribute in some way, even just chatting or pairing on it – Iʼd be willing to prioritize them.
@@ -96,7 +99,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 
 - Type Theory
   - Interactive type theory!
-  - WIP: [User Operators with Implicits & Overloads](implicit_arguments.html), in bidirectional type checkers
+  - [WIP]{t=}: [User Operators with Implicits & Overloads](implicit_arguments.html), in bidirectional type checkers
   - The Algebra of Type Unification (semilattices everywhere!)
   - [TransMorphism Type Theory MetaTheory](tmttmt.html)
 - Programming Linguistics:
@@ -121,7 +124,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 - Paradigms:
   - I should do a blog post on what “effects” mean in FP culture
 
-    tl;dr is “effects are as effects do”
+    [tl;dr]{t=} is “effects are as effects do”
 
     likeeee the real important point is itʼs all about what you leave implicit in your notation
 
@@ -137,7 +140,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
     the main problem is that we donʼt have a good way to talk about them without invoking a metatheory of Haskell, with unification and possibly parametricity (Iʼll need to see if that comes up)
 
     actually, maybe parametricity is “just” the answer, and we can extract a free law from the stated laws!
-  - WIP: [Why you should believe in HoTT Path Induction as a (Haskell) Programmer](programming_paths.html)
+  - [WIP]{t=}: [Why you should believe in HoTT Path Induction as a (Haskell) Programmer](programming_paths.html)
   - Passive stability:
 
     > Imperative code has no passive stability: all global state is mutable, and small perturbations (say, modifying a prototype) can cause unpredictably large effects down the line, if not carefully managed. Untyped code is especially bad. Carefully managed imperative code may be stable, but this is active stability: it is not inherent to the framework but imposed on top.
@@ -152,7 +155,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
   - log levels considered harmful
 - Data:
   - The Anatomy of ADTs
-  - WIP: [Subtypes/Quotients: Lies Told in Defense of the Truth](adt_lies_for_truth.html)
+  - [WIP]{t=}: [Subtypes/Quotients: Lies Told in Defense of the Truth](adt_lies_for_truth.html)
   - Quotients: Lets us have nice cake and eat things too.
   - Hereditarily Finite Sets
   - I should do a blog post on why [pickling](https://docs.python.org/3/library/pickle.html#what-can-be-pickled-and-unpickled) (in the sense of Python) is so cool and important, and what “data” means in general (to Pythoners, to JavaScripters, to Haskellers, to Agdaers, …)
@@ -169,7 +172,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 
     My two observations:
 
-    1. I love how in order to prove how the old-fashioned Riemann integral works (characterizing what functions are Riemann integrable), you essentially have to come up with the Lebesgue measure, which paves the way for the Lebesgue integral.
+    #. I love how in order to prove how the old-fashioned Riemann integral works (characterizing what functions are Riemann integrable), you essentially have to come up with the Lebesgue measure, which paves the way for the Lebesgue integral.
     2. It is incredibly cool and incredibly counterintuitive how turning integration on its *side* produces better results.
 - Typeclasses:
   - Fundeps: how they affect defining instances and instance resolution

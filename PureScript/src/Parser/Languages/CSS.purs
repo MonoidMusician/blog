@@ -1,6 +1,7 @@
 module Parser.Languages.CSS where
 
 import Prelude
+import Idiolect ((/\\/), (/|\), (<#?>), (>==))
 
 import Ansi.Codes as Ansi
 import Control.Alt ((<|>))
@@ -18,7 +19,7 @@ import Data.Codec.Argonaut as CA
 import Data.Codec.Argonaut.Common as CAC
 import Data.Codec.Argonaut.Record as CAR
 import Data.Codec.Argonaut.Variant as CAV
-import Data.Either (Either(..), either, hush, isLeft, isRight)
+import Data.Either (Either(..), either, hush, isRight)
 import Data.Either.Nested (type (\/))
 import Data.Enum (toEnum)
 import Data.Foldable (all, and, any, fold, foldMap, for_, oneOf, sum, traverse_)
@@ -49,7 +50,7 @@ import Parser.Comb.Combinators (buildTree)
 import Parser.Comb.Run (Parsing, resultantsOf, withReparser)
 import Parser.Debug (thingy)
 import Parser.Examples (showPart)
-import Parser.Languages (Comber, colorful, delim, key, mainName, many, many1, many1SepBy, mopt, opt, printPretty, rawr, result, showZipper, ws, wss, wsws, wsws', (#->), (#:), (/\\/), (/|\), (<#?>), (>==))
+import Parser.Languages (Comber, colorful, delim, key, mainName, many, many1, many1SepBy, mopt, opt, printPretty, rawr, result, showZipper, ws, wss, wsws, wsws', (#->), (#:))
 import Parser.Lexing (type (~), Rawr, asdf, bestRegexOrString, unRawr, (?>))
 import Parser.Lexing as Lex
 import Parser.Types (Fragment, OrEOF(..), Part(..), ShiftReduce(..), State, States(..), Zipper(..), decisionUnique, notEOF)

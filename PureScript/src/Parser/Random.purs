@@ -9,6 +9,7 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.String as String
 import Data.Traversable (for, sequence)
 import Effect (Effect)
+import Idiolect ((>==))
 import Parser.Algorithms (chooseBySize, countTs)
 import Parser.Types (Fragment, Part(..), Producible, SProducible, Produced, getRulesFor)
 import Random.LCG as LCG
@@ -77,4 +78,4 @@ sampleE grammar = sequence $
   QC.randomSampleOne <$> genNT grammar.produced grammar.grammar.entry
 
 sampleSE :: SProducible -> Effect String
-sampleSE = sampleE >>> map (maybe "" String.fromCodePointArray)
+sampleSE = sampleE >== maybe "" String.fromCodePointArray

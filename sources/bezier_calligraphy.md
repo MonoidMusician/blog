@@ -686,7 +686,7 @@ For example, `bsplit(points, t0)`{.javascript} returns a vector of two new Bézi
 The important functions in [`calligraphy.js`](https://github.com/MonoidMusician/blog/blob/main/assets/js/calligraphy.js) are as follows:
 
 - [`compositeI(P,Q)`{.javascript}](https://github.com/MonoidMusician/blog/blob/4147508e0dfd2e0451ba89a5e6ed5116e9628d73/assets/js/calligraphy.js#L464-L481) computes the approximate Bézier convolution of `P` with `Q`.
-- [`PQ_CURVATURE(P,Q)(p,q=T_SOL(P,Q)(p))`{.javascript}](https://github.com/MonoidMusician/blog/blob/4147508e0dfd2e0451ba89a5e6ed5116e9628d73/assets/js/calligraphy.js#L414-L444) computes the curvature of the exact convolution between `P` and `Q` at `(p,q)` (where `q` should be the point on `Q` corresponding to `p` on `P`, i.e. parallel).
+- [`PQ_CURVATURE(P,Q)(p,q=T_SOL(P,Q)(p))`{.javascript}](https://github.com/MonoidMusician/blog/blob/4147508e0dfd2e0451ba89a5e6ed5116e9628d73/assets/js/calligraphy.js#L414-L444) computes the curvature of the exact convolution between `P` and `Q` at `(p,q)` (where `q` should be the point on `Q` corresponding to `p` on `P`, [i.e.]{t=} parallel).
 - [`INFLXNS(P)`{.javascript}](https://github.com/MonoidMusician/blog/blob/4147508e0dfd2e0451ba89a5e6ed5116e9628d73/assets/js/calligraphy.js#L483-L490) computes the inflection points of `P`.
 
 And the full algorithm is put together (with visualization) in [`minkowski.js`](https://github.com/MonoidMusician/blog/blob/main/assets/js/minkowski.js):

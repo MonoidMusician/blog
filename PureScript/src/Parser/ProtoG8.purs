@@ -17,6 +17,7 @@ import Data.String (CodePoint, codePointFromChar)
 import Data.String as String
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
+import Idiolect ((>==))
 import Parser.Proto (Stack(..), Table(..), parseMany, parseOne, topOf)
 
 data State
@@ -209,7 +210,9 @@ g8FromString :: String -> Maybe (List Tok)
 g8FromString =
   String.toCodePointArray
   >>> traverse (flip Map.lookup g8Toks)
-  >>> map (Array.catMaybes >>> ensureEOF >>> Array.toUnfoldable)
+  >== Array.catMaybes
+  >>> ensureEOF
+  >>> Array.toUnfoldable
 ensureEOF :: Array Tok -> Array Tok
 ensureEOF toks = case Array.last toks of
   Just EOF -> toks

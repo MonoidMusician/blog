@@ -14,6 +14,7 @@ import Data.NonEmpty (NonEmpty(..))
 import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested ((/\))
+import Idiolect ((>==))
 import Parser.Comb.Syntax (Syntax(..))
 import Parser.Comb.Types (Comb(..), Options(..), PartialResult(..), Resultant(..), component, components, matchRule, withCST', withCST_)
 import Parser.Lexing (class ToString, class Token, type (~), Rawr, Similar(..), rawr, rerecognize, toString)
@@ -106,7 +107,7 @@ named name = namedRec name <<< const
 -- | Return the source parsed by the given parser, instead of whatever its
 -- | applicative result was.
 sourceOf :: forall rec nt cat o a. Monoid o => Comb rec nt cat o a -> Comb rec nt cat o o
-sourceOf = tokensSourceOf >>> map fold
+sourceOf = tokensSourceOf >== fold
 
 -- | Return the source tokens parsed by the given parser, instead of whatever
 -- | its applicative result was.

@@ -1,11 +1,11 @@
 It seems like we should have a primary data language and then primitives for drawing and audio.
 
 - Configuration, parameters from user-space. Great if it could be a UI!
-- Different unit systems. E.g. `px` and `%` in CSS.
-- Unit truncation. E.g. pixel-perfect alignment.
-- Different coordinate systems. E.g. rectangles in terms of center and size or top-left and size or opposite corners.
+- Different unit systems. [E.g.]{t=} `px` and `%` in CSS.
+- Unit truncation. [E.g.]{t=} pixel-perfect alignment.
+- Different coordinate systems. [E.g.]{t=} rectangles in terms of center and size or top-left and size or opposite corners.
   A description in one coordinate system should be able to be converted into any other equally good coordinate system.
-- Segmentation, e.g. dividing time up into measures, notes.
+- Segmentation, [e.g.]{t=} dividing time up into measures, notes.
   Maybe it reduces to flexbox lol.
 
 ---
@@ -23,7 +23,7 @@ Shaders??
 Examples to build:
 
 - Mandelbrot set
-- Patterns, e.g. interlocking circles
+- Patterns, [e.g.]{t=} interlocking circles
 - Perlin noise
 - Animations
 - Synths

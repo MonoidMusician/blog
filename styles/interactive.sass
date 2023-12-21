@@ -1,0 +1,70 @@
+/* Adapted from https://codepen.io/notouchz33/pen/BayLyow */
+.tooltipped
+  $caret-height: 4px
+  $caret-width: 6px
+  $distance: 10px
+  $tooltip-bg-color: rgba(39, 39, 39, 1)
+  $min-width: 80px
+
+  position: relative
+
+  & > .tooltip
+    position: absolute
+    font-size: 14px
+    text-align: center
+    display: block
+    left: 50%
+
+    min-width: $min-width
+    max-width: 200px
+
+    bottom: calc(100% + #{$distance})
+    transform: translate(-50%)
+
+    opacity: 0
+    background: $tooltip-bg-color
+    border-radius: 4px
+    padding: 6px
+    color: #ffffff
+    z-index: 1
+  &::before
+    content: ''
+    position: absolute
+    display: block
+    left: 50%
+    width: 0
+    height: 0
+    bottom: calc(100% + #{$distance - $caret-height})
+    margin-left: #{-$caret-width}
+    border-style: solid
+    border-color: $tooltip-bg-color transparent transparent transparent
+    border-width: $caret-height $caret-width 0
+    opacity: 0
+    z-index: 1
+  // Extra padding to keep mouse captured during hover
+  &::after
+    $overlap: 2px
+    content: ''
+    position: absolute
+    display: block
+    left: 50%
+    width: $min-width
+    height: $distance + $caret-height + $overlap
+    bottom: calc(100% - $overlap)
+    transform: translateX(-50%)
+    opacity: 0
+
+  &:not(:hover)
+    & > .tooltip, &::before, &::after
+      pointer-events: none
+  &:hover
+    & > .tooltip, &::before, &::after
+      animation: fade-in 300ms ease
+      opacity: 0.985
+      pointer-events: auto
+
+@keyframes fade-in
+  from
+    opacity: 0
+  to
+    opacity: 0.985

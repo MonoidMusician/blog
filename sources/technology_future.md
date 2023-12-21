@@ -153,7 +153,7 @@ It might be a way to reorganize your code to fix it.
 Importantly, there might be very canonical answers for these things.
 The main problem is that we have no central locations for these bits of knowledge.
 And then you run into outdated answers, because there is no reason to update those non-canonical source of knowledge.
-E.g. `git clone --depth 1`{.bash}.
+[E.g.]{t=} `git clone --depth 1`{.bash}.
 
 So what do we do instead?
 We google.
@@ -165,7 +165,7 @@ Seeing if it is outdated – if thereʼs better answers out there (although some
 
 
 Another complaint is that we very rarely archive the clues we gathered along the way to know what to do in the end, focusing on the last symptom as opposed to the telltale clue that will tip us off to the situation in the future, and the false branches we explored that were not in fact the answer.
-(E.g. confusing error messages that really have some simple solution unrelated to what they seem to be saying.)
+([E.g.]{t=} confusing error messages that really have some simple solution unrelated to what they seem to be saying.)
 
 Anyways, that all requires a new post.
 I call it my spaghetti model of knowledge via experience, where I conceptualize finding information about something as a path of questioning, and knowledge is the answer or value associated with it.
@@ -235,7 +235,7 @@ As one example, I want to expand on how image editors are broken, under-performi
 For fun, I do a lot of image editing on my phone with Snapseed, an app developed by a startup and bought by Google.
 Itʼs a really cool app, it has a slick UI that is perfect for the phone and easy to use, and it has a bunch of nice ways to edit things.
 
-These edits range from the more autofilter-like (e.g. sepia filter, automatic white balance) to the more fine-grained tools (color curves editor, healing tool).
+These edits range from the more autofilter-like ([e.g.]{t=} sepia filter, automatic white balance) to the more fine-grained tools (color curves editor, healing tool).
 Additionally, you can see how these edits stack up in history and selectively remove them.
 While applying each edit, you can hold the screen to flip between the previous edit and current edit of the image, and afterwards you can compare to the original loaded image.
 One of the best features is that each edit admits masking, so you can paint it on to certain parts of the image.

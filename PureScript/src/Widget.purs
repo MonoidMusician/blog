@@ -34,6 +34,7 @@ import Foreign.Object (Object)
 import Foreign.Object as Object
 import Foreign.Object.ST (STObject)
 import Foreign.Object.ST as STO
+import Idiolect ((>==))
 import Web.DOM (Element, ParentNode)
 import Web.DOM.AttrName (AttrName(..))
 import Web.DOM.Document as Document
@@ -239,12 +240,11 @@ queryElements :: QuerySelector -> ParentNode -> Effect (Array Element)
 queryElements query parent =
   querySelectorAll query parent
     >>= NodeList.toArray
-    >>> map (Array.mapMaybe Element.fromNode)
+    >== Array.mapMaybe Element.fromNode
 
 instantiateAll :: Widgets -> Effect (Effect Unit)
 instantiateAll widgets = do
-  d <- window >>= document
-    >>> map (HTMLDocument.toDocument >>> Document.toParentNode)
+  d <- window >>= document >== HTMLDocument.toDocument >>> Document.toParentNode
   share <- liftST STO.new
   -- Add data-widget to those that only have data-t
   queryElements (QuerySelector "[data-t]:not(data-widget)") d >>=

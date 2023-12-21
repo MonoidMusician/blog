@@ -1,6 +1,7 @@
 module Parser.Languages where
 
 import Prelude
+import Idiolect ((<#?>), (<$?>), (>==))
 
 import Ansi.Codes as Ansi
 import Ansi.Output (withGraphics)
@@ -77,14 +78,6 @@ int = Int.fromString <$?> rawr "\\d+"
 number :: Comber Number
 number = named "number" do
   Number.fromString <$?> rawr "[-]?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][-+]?\\d+)?"
-
-compactMap :: forall f a b. Compactable f => Functor f => (a -> Maybe b) -> f a -> f b
-compactMap = map compact <<< map
-infixl 4 compactMap as <$?>
-
-compactMapFlipped :: forall f a b. Compactable f => Functor f => f a -> (a -> Maybe b) -> f b
-compactMapFlipped = flip compactMap
-infixl 1 compactMapFlipped as <#?>
 
 -- optional whitespace needs to be optional at the parser combinator level, not
 -- the regex level (where it would both conflict with nonempty whitespace, and
@@ -215,26 +208,6 @@ string = named "string" $ join delim "\"" $
 
 infixr 2 named as #:
 infixr 5 namedRec as #->
-
-composeMap :: forall f a b c. Functor f => (b -> c) -> (a -> f b) -> (a -> f c)
-composeMap f g = map f <<< g
-infixr 9 composeMap as ==<
-
-composeMapFlipped :: forall f a b c. Functor f => (a -> f b) -> (b -> c) -> (a -> f c)
-composeMapFlipped f g = f >>> map g
-infixr 9 composeMapFlipped as >==
-
-infixr 5 choose as \|/
-
-tupling :: forall f a b. Applicative f => f a -> f b -> f (a /\ b)
-tupling = lift2 Tuple
-infixr 6 tupling as /|\
-
-theseing :: forall f a b. Alternative f => f a -> f b -> f (a /\/ b)
-theseing a b = This <$> a <|> That <$> b <|> Both <$> a <*> b
-infixr 6 theseing as /\\/
-infixr 6 type These as /\/
-
 
 arrayOf :: forall a. Comber a -> Comber (Array a)
 arrayOf value = delim "[" "]" do

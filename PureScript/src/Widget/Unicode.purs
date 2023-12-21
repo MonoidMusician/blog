@@ -40,6 +40,7 @@ import FRP.Event (Event)
 import FRP.Helpers (dedup)
 import FRP.Memoize (memoBeh, memoLast)
 import Fetch (fetch)
+import Idiolect ((>==))
 import Parser.Languages.Show (mkReShow)
 import Partial.Unsafe (unsafeCrashWith)
 import Prim.Row as Row
@@ -222,8 +223,8 @@ component setGlobal resetting =
           , Tuple "Binary" $ foldMap $ fromEnum >>> Number (Just Bin)
           , Tuple "General Category" $ foldMap $ Unicode.generalCategory >>> foldMap \cat ->
               Text (show cat) <> Text " (" <> Code (show (generalCatToUnicodeCat cat)) <> Text ")"
-          , Tuple "UTF-8" $ foldMap $ fromEnum >>> utf8 >>> map Byte >>> ManySep (Text " ")
-          , Tuple "UTF-16" $ foldMap $ String.singleton >>> CU.toCharArray >>> map (fromEnum >>> Bytes 2) >>> ManySep (Text " ")
+          , Tuple "UTF-8" $ foldMap $ ManySep (Text " ") <<< (fromEnum >>> utf8 >== Byte)
+          , Tuple "UTF-16" $ foldMap $ ManySep (Text " ") <<< (String.singleton >>> CU.toCharArray >== fromEnum >>> Bytes 2)
           , Tuple "UTF-32" $ foldMap $ fromEnum >>> Bytes 4
           ]
         , renderInfos allsomenone taCPs taAllCPs
