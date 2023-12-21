@@ -12,12 +12,15 @@ import Data.Argonaut as Json
 import Data.Array as Array
 import Data.Codec (Codec', decode, encode)
 import Data.Either (Either(..))
+import Data.Enum (fromEnum)
 import Data.Foldable (class Foldable, foldMap, for_, oneOfMap, traverse_)
 import Data.Maybe (Maybe(..))
 import Data.Maybe.Last (Last(..))
 import Data.Newtype (unwrap)
+import Data.Traversable (for)
 import Data.Tuple (snd)
 import Data.Tuple.Nested (type (/\), (/\))
+import Deku.Control (text_)
 import Deku.Core (fixed)
 import Deku.Toplevel (runInElement')
 import Effect (Effect)
@@ -31,19 +34,20 @@ import Foreign.Object (Object)
 import Foreign.Object as Object
 import Foreign.Object.ST (STObject)
 import Foreign.Object.ST as STO
-import Web.DOM (Element)
+import Web.DOM (Element, ParentNode)
+import Web.DOM.AttrName (AttrName(..))
 import Web.DOM.Document as Document
-import Web.DOM.Element (getAttribute, removeAttribute)
+import Web.DOM.Element (getAttribute, removeAttribute, setAttribute)
 import Web.DOM.Element as Element
-import Web.DOM.HTMLCollection as HTMLCollection
-import Web.DOM.Node (appendChild, removeChild)
+import Web.DOM.Node (Node, appendChild, nodeTypeIndex, removeChild, textContent)
+import Web.DOM.Node as Node
 import Web.DOM.NodeList as NodeList
+import Web.DOM.NodeType (NodeType(..))
 import Web.DOM.ParentNode (QuerySelector(..), querySelectorAll)
-import Web.DOM.ParentNode as ParentNode
 import Web.HTML (window)
 import Web.HTML.HTMLDocument as HTMLDocument
 import Web.HTML.Window (cancelAnimationFrame, document, requestAnimationFrame)
-import Widget.Types (SafeNut(..))
+import Widget.Types (SafeNut(..), snapshot)
 
 type Interface a =
   { send :: a -> Effect Unit
@@ -133,6 +137,9 @@ adaptInterface codec interface =
 type KeyedInterfaceWithAttrs =
   { interface :: KeyedInterface
   , attrs :: String -> Effect Json
+  , rawAttr :: AttrName -> Effect (Maybe String)
+  , text :: Effect String
+  , children :: Effect (Array SafeNut)
   }
 
 type Widget = KeyedInterfaceWithAttrs -> Effect SafeNut
@@ -142,7 +149,7 @@ type Widgets = Object Widget
 
 lookupWidget :: Widgets -> Element -> Effect Widget
 lookupWidget widgets target = do
-  mname <- getAttribute "data-widget" target
+  mname <- getAttribute (AttrName "data-widget") target
   let
     mwidget = mname >>= \name -> Object.lookup name widgets
   case mwidget of
@@ -155,7 +162,7 @@ lookupWidget widgets target = do
 
 lookupInterface :: DataShare -> Element -> Effect KeyedInterface
 lookupInterface share target =
-  getAttribute "data-widget-datakey" target >>=
+  getAttribute (AttrName "data-widget-datakey") target >>=
     case _ of
       Nothing -> pure (const disconnected)
       Just name -> do
@@ -163,7 +170,7 @@ lookupInterface share target =
 
 collectAttrs :: Element -> Effect (String -> Effect Json)
 collectAttrs target = pure \name ->
-  getAttribute ("data-widget-data-" <> name) target <#> case _ of
+  getAttribute (AttrName ("data-widget-data-" <> name)) target <#> case _ of
     Nothing -> Json.jsonNull
     Just astr ->
       case Json.parseJson astr of
@@ -174,34 +181,81 @@ instantiateWidget :: Widgets -> DataShare -> Element -> Effect (Effect Unit)
 instantiateWidget widgets share target = do
   widget <- lookupWidget widgets target
   interface <- lookupInterface share target
-  getAttribute "data-widget-parent" target >>= traverse_ \search ->
+  attrs <- collectAttrs target
+  -- data-widget-parent lets it teleport to a different spot on the page
+  -- based on the specified selector
+  getAttribute (AttrName "data-widget-parent") target >>= traverse_ \search ->
     window >>= document >>= HTMLDocument.toParentNode >>> querySelectorAll (QuerySelector search) >>= NodeList.toArray >>= case _ of
       [newParent] -> appendChild (Element.toNode target) newParent
       [] -> log $ "No elements found matching selector " <> search
       _ -> log $ "Multiple elements found matching selector " <> search
-  attrs <- collectAttrs target
-  safenut <- widget { interface, attrs }
+  -- call the widget code
+  safenut <- widget
+    { interface
+    , attrs
+    , rawAttr: getAttribute <@> target
+    , text: textContent (Element.toNode target)
+    , children: do
+        snapshots <- forElementChildNodes target \node -> do
+          case Element.fromNode node of
+            Just e -> Just <$> snapshot e
+            Nothing
+              | nodeTypeIndex node == fromEnum TextNode -> do
+                t <- Node.textContent node
+                pure $ Just $ SafeNut do text_ t
+              | otherwise -> pure Nothing
+        removeChildNodes target
+        pure $ Array.catMaybes snapshots
+    }
+  -- run the tree in the target
   unsub <- runInElement' target case safenut of
     SafeNut nut -> nut
-  removeAttribute "data-widget-loading" target
-  pure $ unsub <> do
-    childs <- HTMLCollection.toArray =<< (Element.toParentNode target # ParentNode.children)
-    for_ childs \child ->
-      Element.toNode target # removeChild (Element.toNode child)
+
+  -- final stuff
+  removeAttribute (AttrName "data-widget-loading") target
+  pure $ unsub <> removeChildNodes target
 
 raf :: Aff Unit
 raf = makeAff \cb -> do
   id <- requestAnimationFrame (cb (Right unit)) =<< window
   pure $ Canceler \_ -> liftEffect (cancelAnimationFrame id =<< window)
 
+removeChildNodes :: Element -> Effect Unit
+removeChildNodes target =
+  forElementChildNodes_ target \child ->
+    Element.toNode target # removeChild child
+
+forElementChildNodes_ :: forall a. Element -> (Node -> Effect a) -> Effect Unit
+forElementChildNodes_ target fn = do
+  childs <- Node.childNodes (Element.toNode target) >>= NodeList.toArray
+  for_ childs fn
+
+forElementChildNodes :: forall a. Element -> (Node -> Effect a) -> Effect (Array a)
+forElementChildNodes target fn = do
+  childs <- Node.childNodes (Element.toNode target) >>= NodeList.toArray
+  for childs fn
+
+queryElements :: QuerySelector -> ParentNode -> Effect (Array Element)
+queryElements query parent =
+  querySelectorAll query parent
+    >>= NodeList.toArray
+    >>> map (Array.mapMaybe Element.fromNode)
+
 instantiateAll :: Widgets -> Effect (Effect Unit)
 instantiateAll widgets = do
-  d <- window >>= document >>= HTMLDocument.toDocument >>> pure
+  d <- window >>= document
+    >>> map (HTMLDocument.toDocument >>> Document.toParentNode)
   share <- liftST STO.new
-  targetsN <- NodeList.toArray =<< querySelectorAll (QuerySelector "[data-widget]") (Document.toParentNode d)
-  let targetsE = Array.mapMaybe Element.fromNode targetsN
+  -- Add data-widget to those that only have data-t
+  queryElements (QuerySelector "[data-t]:not(data-widget)") d >>=
+    traverse_ (setAttribute (AttrName "data-widget") "")
+  -- Collect all the widgets
+  targets <- queryElements (QuerySelector "[data-widget]") d
+  -- Make a ref to accumulate unsubscribing actions
   unsub <- Ref.new mempty
-  launchAff_ $ for_ targetsE \target -> do
+  -- Asynchronously instantiate widgets
+  -- I guess it should be cancellable for edge cases? eh
+  launchAff_ $ for_ targets \target -> do
     raf
     u <- liftEffect $ instantiateWidget widgets share target
     liftEffect $ Ref.modify_ (_ <> u) unsub

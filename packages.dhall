@@ -2,7 +2,7 @@ let upstream =
       https://github.com/purescript/package-sets/releases/download/psc-0.15.4-20221229/packages.dhall
         sha256:a6af1091425f806ec0da34934bb6c0ab0ac1598620bbcbb60a7d463354e7d87c
 
-in  upstream /\
+in  (upstream with web-dom.version = "326c125d2f9dd5c5c1e74ac17fb95d5ddd7b4450") /\
   { free-boolean =
     { dependencies =
       [ "arrays"

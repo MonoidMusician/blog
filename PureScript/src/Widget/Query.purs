@@ -2,7 +2,7 @@ module Widget.Query where
 
 import Prelude
 
-import Control.Plus (empty, (<|>))
+import Control.Plus ((<|>))
 import Data.Argonaut (Json)
 import Data.Argonaut as Json
 import Data.Array as Array
@@ -13,7 +13,6 @@ import Data.Semigroup.Last (Last(..))
 import Data.String as String
 import Data.Traversable (foldMap, for_, traverse)
 import Data.Tuple.Nested ((/\))
-import Deku.Core (envy, fixed)
 import Effect (Effect)
 import Effect.Ref as Ref
 import FRP.Event (Event, makeEvent, subscribe)
@@ -30,7 +29,7 @@ import Web.HTML.History as History
 import Web.HTML.Location as Location
 import Web.HTML.Window as Window
 import Widget (Widget, Interface)
-import Widget.Types (SafeNut(..))
+import Widget.Types (widgetFromEvent)
 
 getQueryPairs :: Effect (QueryPairs.QueryPairs QueryPairs.Key QueryPairs.Value)
 getQueryPairs = do
@@ -80,9 +79,6 @@ queryChanges = makeEvent \push -> do
   e <- eventListener \_ -> push =<< getQueryKeys
   addEventListener popstate e false (Window.toEventTarget w)
   pure $ removeEventListener popstate e false (Window.toEventTarget w)
-
-widgetFromEvent :: forall a. Event a -> SafeNut
-widgetFromEvent e = SafeNut (envy (fixed empty <$ e))
 
 sideInterface :: String -> Array { key :: String, io :: Interface Json } -> Event (Object Json)
 sideInterface prefix interfaces = makeEvent \k -> do
