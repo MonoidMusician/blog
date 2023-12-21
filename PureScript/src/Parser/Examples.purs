@@ -54,7 +54,7 @@ showFragmentR =
 
 showPart :: Part String (String ~ Rawr) -> String
 showPart (Terminal (Similar (Left tok))) = colorful Ansi.Yellow $ show tok
-showPart (Terminal (Similar (Right (Rawr re)))) = colorful Ansi.Green $ show re
+showPart (Terminal (Similar (Right re))) = colorful Ansi.Green $ show re
 showPart (NonTerminal nt) = colorful Ansi.Blue nt
 
 colorful :: Ansi.Color -> String -> String

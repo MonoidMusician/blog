@@ -16,11 +16,11 @@ import Effect.Ref as Ref
 import Node.Encoding (Encoding(..))
 import Node.Process (argv, exit, stdin)
 import Node.Stream (onDataString, onEnd, onError)
-import Parser.Languages.Show (reShow)
+import Parser.Languages.Show (mkReShow)
 
 scripts :: Map String (Array String -> Either String (String -> String))
 scripts = Map.fromFoldable
-  [ Tuple "reShow" (const (Right reShow))
+  [ Tuple "reShow" \_ -> Right (mkReShow Nothing)
   , Tuple "echo" (const (Right identity))
   ]
 

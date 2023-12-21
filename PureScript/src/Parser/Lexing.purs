@@ -141,17 +141,19 @@ instance fromStringString :: FromString String where
   fromString = identity
 
 
-newtype Rawr = Rawr Regex
-derive instance newtypeRawr :: Newtype Rawr _
-derive newtype instance showRawr :: Show Rawr
+data Rawr = Rawr Regex String
+instance showRawr :: Show Rawr where
+  show (Rawr _ r) = r
 instance eqRaw :: Eq Rawr where
-  eq (Rawr r1) (Rawr r2) = show r1 == show r2
+  eq (Rawr _ r1) (Rawr _ r2) = r1 == r2
 instance ordRaw :: Ord Rawr where
-  compare (Rawr r1) (Rawr r2) = show r1 `compare` show r2
+  compare (Rawr _ r1) (Rawr _ r2) = r1 `compare` r2
 rawr :: String -> Rawr
-rawr source = Rawr $ unsafeRegex ("^(?:" <> source <> ")") $ unicode <> dotAll
+rawr source =
+  let r = unsafeRegex ("^(?:" <> source <> ")") $ unicode <> dotAll
+  in Rawr r (show r)
 unRawr :: Rawr -> String
-unRawr (Rawr re) = fromMaybe (Re.source re) do
+unRawr (Rawr re _) = fromMaybe (Re.source re) do
   x <- String.stripPrefix (String.Pattern "^(?:") (Re.source re)
   y <- String.stripSuffix (String.Pattern ")") x
   pure y
@@ -162,7 +164,7 @@ unRawr (Rawr re) = fromMaybe (Re.source re) do
 -- - fucking terrible API
 -- - why does every high-level regex API suck ;.;
 instance tokenizeRawr :: Tokenize Rawr String String where
-  recognize (Rawr re) current = do
+  recognize (Rawr re _) current = do
     groups <- Regex.match re current
     matched <- NEA.head groups
     pure (Tuple matched (CU.drop (CU.length matched) current))

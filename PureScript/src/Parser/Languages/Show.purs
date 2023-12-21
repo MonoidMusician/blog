@@ -4,11 +4,13 @@ import Prelude
 
 import Control.Alt ((<|>))
 import Control.Apply (lift2)
+import Data.Argonaut as Json
 import Data.Array (fold, intercalate)
 import Data.Array as A
 import Data.Array.NonEmpty as NEA
 import Data.Bitraversable (ltraverse)
-import Data.Either (either, isLeft)
+import Data.Codec as CA
+import Data.Either (Either(..), either, isLeft)
 import Data.Foldable (foldMap, oneOf)
 import Data.List (List(..))
 import Data.List.NonEmpty as NEL
@@ -17,8 +19,11 @@ import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested ((/\))
 import Dodo (Doc)
 import Dodo as D
-import Parser.Comb (parseWith)
-import Parser.Languages (Comber, key, many1SepBy, rawr, (#->))
+import Parser.Comb (execute, parseWith)
+import Parser.Comb.Combinators (buildTree)
+import Parser.Comb.Run (resultantsOf)
+import Parser.Languages (Comber, key, mainName, many1SepBy, rawr, (#->))
+import Parser.Languages.CSS (codec)
 import Parser.Lexing (Best, Rawr, Similar(..), len, prioritize)
 import Parser.Types (OrEOF(..), decide)
 
@@ -89,8 +94,15 @@ many1SurBy n s p = (\ps -> s *> ps) $
   NEA.fromFoldable1 <$> n #-> \more ->
     lift2 NEL.cons' p (s *> (pure Nil <|> NEL.toList <$> more))
 
-reShow :: String -> String
-reShow = parseWith { best: lazyBest } "main" (layers parseShown <|> pure mempty)
+lazyTop :: Comber (Doc Void)
+lazyTop = layers parseShown <|> pure mempty
+
+mkReShow :: Maybe String -> String -> String
+mkReShow (Just json)
+  | Right (Right states) <- CA.decode codec <$> Json.parseJson json =
+    execute { best: lazyBest } { states, resultants: mainName /\ resultantsOf lazyTop, options: buildTree mainName lazyTop }
+      >>> either identity (D.print D.plainText D.twoSpaces)
+mkReShow _ = parseWith { best: lazyBest } mainName lazyTop
   >>> either identity (D.print D.plainText D.twoSpaces)
 
 lazyBest :: forall s r. Best s r (OrEOF (Similar String Rawr)) (OrEOF String) (OrEOF String)

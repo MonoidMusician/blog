@@ -139,7 +139,7 @@ type KeyedInterfaceWithAttrs =
   , attrs :: String -> Effect Json
   , rawAttr :: AttrName -> Effect (Maybe String)
   , text :: Effect String
-  , children :: Effect (Array SafeNut)
+  , content :: Effect SafeNut
   }
 
 type Widget = KeyedInterfaceWithAttrs -> Effect SafeNut
@@ -195,7 +195,7 @@ instantiateWidget widgets share target = do
     , attrs
     , rawAttr: getAttribute <@> target
     , text: textContent (Element.toNode target)
-    , children: do
+    , content: do
         snapshots <- forElementChildNodes target \node -> do
           case Element.fromNode node of
             Just e -> Just <$> snapshot e
@@ -205,7 +205,7 @@ instantiateWidget widgets share target = do
                 pure $ Just $ SafeNut do text_ t
               | otherwise -> pure Nothing
         removeChildNodes target
-        pure $ Array.catMaybes snapshots
+        pure $ Array.fold $ Array.catMaybes snapshots
     }
   -- run the tree in the target
   unsub <- runInElement' target case safenut of

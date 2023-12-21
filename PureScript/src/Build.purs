@@ -69,6 +69,6 @@ main = launchAff_ do
       FS.writeTextFile UTF8 ("./assets/json/" <> filename <> ".json") $ J.stringify $ C.encode CSS.codec $
         dat
 
-  process Show.parseShown "show-parser-states"
+  process Show.lazyTop "show-parser-states"
   process CSS.selector_list "css-parser-states"
   process TMTTMT.declarationsP "tmttmt-parser-states"

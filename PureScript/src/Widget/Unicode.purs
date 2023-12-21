@@ -34,10 +34,13 @@ import Deku.Control (switcher, text, text_)
 import Deku.Core (Domable, bussed, envy)
 import Deku.DOM as D
 import Effect (Effect)
+import Effect.Aff (Aff)
+import FRP.Aff (affToEvent)
 import FRP.Event (Event)
 import FRP.Helpers (dedup)
-import FRP.Memoize (memoBeh)
-import Parser.Languages.Show (reShow)
+import FRP.Memoize (memoBeh, memoLast)
+import Fetch (fetch)
+import Parser.Languages.Show (mkReShow)
 import Partial.Unsafe (unsafeCrashWith)
 import Prim.Row as Row
 import Prim.RowList (class RowToList)
@@ -378,26 +381,29 @@ nbitsLE i n = i .&. bitmask n == i
 
 
 
+fetchParser :: Aff String
+fetchParser = _.text =<< fetch "assets/json/show-parser-states.json" {}
 
 widgetShow :: Widget
 widgetShow _ = do
   pure $ SafeNut do
-    bussed \setValue valueSet -> do
-      bussed \set get -> do
-        envy $ memoBeh (reShow <$> get) mempty \formatted -> fold do
-          [ D.div (st <|> D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "Haskell")) $
-              pure $ D.pre_ $ pure $ D.code_ $ pure $
-                flip D.textarea [] $ oneOf
-                  [ D.OnInput !:= updateTA set
-                  , D.Value <:=> valueSet
-                  , D.Style !:= "height: 40vh"
-                  ]
-          , D.div_ $ pure $ D.button
-              (D.OnClick <:=> (setValue <$> map (_ <> "\n") formatted))
-              [ text_ "Use formatted" ]
-          , D.div (st <|> D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "Haskell")) $
-              pure $ D.pre_ $ pure $ D.code_ $ pure $ text $ formatted
-          ]
+    envy $ memoLast (mkReShow <$> affToEvent fetchParser) \reShow -> do
+      bussed \setValue valueSet -> do
+        bussed \set get -> do
+          envy $ memoBeh (reShow <*> get) mempty \formatted -> fold do
+            [ D.div (st <|> D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "Haskell")) $
+                pure $ D.pre_ $ pure $ D.code_ $ pure $
+                  flip D.textarea [] $ oneOf
+                    [ D.OnInput !:= updateTA set
+                    , D.Value <:=> valueSet
+                    , D.Style !:= "height: 40vh"
+                    ]
+            , D.div_ $ pure $ D.button
+                (D.OnClick <:=> (setValue <$> map (_ <> "\n") formatted))
+                [ text_ "Use formatted" ]
+            , D.div (st <|> D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "Haskell")) $
+                pure $ D.pre_ $ pure $ D.code_ $ pure $ text $ formatted
+            ]
   where
   updateTA upd = cb $
     (Event.target >=> HTMLTextArea.fromEventTarget) >>>

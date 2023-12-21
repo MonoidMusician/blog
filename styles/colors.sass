@@ -301,12 +301,19 @@ svg.kgt
   background: $background
 
 
-.color-sample
+.sample
   display: inline-block
   vertical-align: baseline
+.sample-after
+  margin-left: 0.5em
+  code + &
+    margin-left: 0.25em
+.color-sample
   width: 1em
   height: 1em
   code > &
-    width:  0.75em
-    height: 0.75em
-
+    width:  0.7em
+    height: 0.7em
+.unicode-sample
+  font: serif
+  color: $stark
