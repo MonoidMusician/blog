@@ -66,6 +66,13 @@ Itʼs not a real blog though since it doesnʼt have RSS yet …
   1. WIP: [Unicode Explorer](unicode.html)
   1. [tiny tool to reformat output produced by `show`{.haskell}](show.html)
   1. Abandoned?: [Generative Art Scratchpad](genart.html)
+  1. TODO: Aspect ratio calculator/database
+  1. TODO: macOS version lookupper
+    - This is my philosophy of just make tools to do the things you need … wow thatʼs not a good way to articulate it sorry.
+  1. TODO: magic constants (in hexadecimal and base64) for file hacking
+  1. TODO: Unit/base calculator and such (c.f. [insect](https://github.com/sharkdp/insect) and [numbat](https://github.com/sharkdp/numbat))
+    - Would be cool to have better precision, or even use [Towards an API for the Real Numbers](https://dl.acm.org/doi/pdf/10.1145/3385412.3386037).
+  1. TODO: QR code generator and reader and formats and suchs, and bar code, and PDF417, ...
 - [Interactive Parser Explanations](parser.html)
   1. TODO: [Parsing By Example](parser_by_example.html)
   1. TODO: [Terminology Reference](parser_terminology.html)

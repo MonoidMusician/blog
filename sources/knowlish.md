@@ -1,11 +1,9 @@
 ---
 title: Knowlish
+subtitle: "Little bits of tips ʼnʼ tricks I want to keep around.\n\nYou may find it useful too sometimes \\^.\\^"
 author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
 ---
-
-Little bits of tips ʼnʼ tricks I want to keep around.
-You may find it useful too sometimes \^.\^
 
 ## CLI
 
@@ -16,6 +14,7 @@ You may find it useful too sometimes \^.\^
 - Type decimal numbers, echo and copy hexadecimal escapes: `cat (echo "obase=16" | psub) - | bc | xargs -I % -n 1 bash -c "echo -n \\\\x% | pbcopy; echo \\\\x%"`{.fish}
 - [`entr`](http://eradman.com/entrproject/) is pretty useful, a little tricky to use ... maybe `watchexec` is better? never used it
 - [`date '+%Y-%m-%d-%H-%M-%S'`{.bash}](https://stackoverflow.com/questions/1401482/yyyy-mm-dd-format-date-in-shell-script#answer-1401495)
+- [`grep -Fxq "One specific line exists in" many_lines.txt`{.bash}](https://stackoverflow.com/questions/4749330/how-to-test-if-string-exists-in-file-with-bash#answer-4749368)
 
 ### MacOS
 
@@ -60,11 +59,19 @@ You may find it useful too sometimes \^.\^
 - `util.inspect.defaultOptions.depth = null;`{.js} (no commandline option :sad:)
 
 ### Erlang
+
 - `io:format(user, <<"~p~n">>, [Object])`{.erl} in tests and `rp(Object).`{.erl} in the REPL
 
 ### Bash
 
 - [`set -euxo pipefail`{.bash}](https://gist.github.com/mohanpedala/1e2ff5661761d3abd0385e8223e16425)
+- `cd -- "$(dirname $0)"`{.bash}
+
+### Fish
+
+- `cd (dirname (status -f))`{.fish} (or `status --current-filename`{.fish})
+
+  (do I need quotes? did we fix that in fish?)
 
 ## GUI
 
@@ -133,6 +140,8 @@ You may find it useful too sometimes \^.\^
 - [Common MIME types](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types)
 - https://gchq.github.io/CyberChef/
 - https://www.onlinemp4parser.com/
+- https://explainshell.com/
+- https://regex101.com/
 
 ## Misc
 
