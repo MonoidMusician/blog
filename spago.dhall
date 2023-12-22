@@ -46,6 +46,7 @@ to generate this file without the comments in this block.
   , "identity"
   , "integers"
   , "js-uri"
+  , "language-cst-parser"
   , "lazy"
   , "lcg"
   , "lists"

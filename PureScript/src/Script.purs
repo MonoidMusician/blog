@@ -17,11 +17,14 @@ import Node.Encoding (Encoding(..))
 import Node.Process (argv, exit, stdin)
 import Node.Stream (onDataString, onEnd, onError)
 import Parser.Languages.Show (mkReShow)
+import PureScript.Highlight (highlight, highlightPandoc)
 
 scripts :: Map String (Array String -> Either String (String -> String))
 scripts = Map.fromFoldable
   [ Tuple "reShow" \_ -> Right (mkReShow Nothing)
   , Tuple "echo" (const (Right identity))
+  , Tuple "highlight" (const (Right highlight))
+  , Tuple "highlightPandoc" (const (Right highlightPandoc))
   ]
 
 main :: Effect Unit

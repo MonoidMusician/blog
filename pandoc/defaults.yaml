@@ -5,11 +5,13 @@ section-divs: true
 template: pandoc/post
 preserve-tabs: true
 filters:
+  - pandoc/lua/PureScript.lua
   - pandoc/lua/sidenotes.lua
   - pandoc/lua/anchor-links.lua
   - pandoc/lua/static-katex.lua
   - pandoc/lua/concat.lua
   - pandoc/lua/canvas.lua
+  - pandoc/lua/widgets.lua
 css:
   - https://cdn.jsdelivr.net/npm/katex@0.15.6/dist/katex.min.css
   - https://cdn.jsdelivr.net/npm/katex@0.13.23/dist/contrib/copy-tex.css
