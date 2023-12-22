@@ -36,7 +36,7 @@ $(BUILDIR)/styles/bundles.css : styles/*.sass $(BUILDIR)
 $(BUILDIR) :
 	mkdir -p $(BUILDIR)
 
-pandoc : $(HTMLS)
+pandoc : quick-ps $(HTMLS)
 
 $(BUILDIR)/%.html : $(TXTDIR)/%.md $(BUILDIR) pandoc/defaults.yaml pandoc/post.html
 	pandoc --defaults=pandoc/defaults.yaml $< -o $@
@@ -49,6 +49,9 @@ ps : $(BUILDIR) PureScript/src packages.dhall spago.dhall
 	spago build --purs-args "-g corefn"
 	purs-backend-es bundle-app --main Main --to $(BUILDIR)/widgets.js
 	gzip -f9k $(BUILDIR)/widgets.js
+
+quick-ps : $(BUILDIR) PureScript/src packages.dhall spago.dhall
+	spago build
 
 watch-ps : $(BUILDIR)
 	rm -f $(BUILDIR)/widgets.js.gz

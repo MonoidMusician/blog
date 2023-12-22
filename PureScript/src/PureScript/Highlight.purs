@@ -126,7 +126,7 @@ classify = case _ of
   TokEquals ->
     COther
   TokPipe ->
-    COperator
+    COther
   TokTick ->
     COther
   TokDot ->
@@ -138,7 +138,7 @@ classify = case _ of
   TokBackslash ->
     CNone
   TokAt ->
-    COperator
+    COther
   TokLowerName _ ident | Set.member ident reservedKeywords ->
     CKeyword
   TokLowerName _ _ ->

@@ -16,7 +16,7 @@ escape = identity
 toHTML :: Dodo.Printer String String String
 toHTML = Dodo.Printer
   { emptyBuffer: ""
-  , writeText: \_ str buff -> buff <> str
+  , writeText: \_ str buff -> buff <> escape str
   , writeIndent: \_ str buff -> buff <> str
   , writeBreak: \buff -> buff <> "\n"
   , enterAnnotation: \ann _ buff -> buff <> "<span class=\"" <> escape ann <> "\">"

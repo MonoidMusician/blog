@@ -4,7 +4,7 @@ function CodeBlock(h)
     local fname = 'cache/render-purescript-' .. pandoc.sha1(h.text)
     local output = io.open(fname .. '.html')
     if output == nil then
-      local t = pandoc.pipe(pandoc.path.directory(PANDOC_SCRIPT_FILE) .. '/../../script.sh', {'highlightPandoc'}, h.text)
+      local t = pandoc.pipe(pandoc.path.directory(PANDOC_SCRIPT_FILE) .. '/../../script.sh', {'--no-build', 'highlightPandoc'}, h.text)
       output = io.open(fname .. '.html', 'w')
       output:write(t)
       output:close()
