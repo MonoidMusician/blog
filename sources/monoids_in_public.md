@@ -9,7 +9,7 @@ author:
 
 Imagine you have your favorite VDOM model:
 
-```{.haskell data-lang="PureScript"}
+```purescript
 data VDOM
   = Text String
   | Node
@@ -28,7 +28,7 @@ That would solve lots of problems!
 
 This is basically what React Fragments are, so we add a new constructor:
 
-```{.haskell data-lang="PureScript"}
+```purescript
 data VDOM
   = Text String
   | Node
@@ -49,7 +49,7 @@ The children of a `VDOM`{.haskell} do not have to be an array anymore, which mak
 
 Now we can write an interesting monoid instance for this, which builds up a fragment but tries to remove nesting as it does so.
 
-```{.haskell data-lang="PureScript"}
+```purescript
 instance Monoid VDOM where
   mempty = Fragment []
 instance Semigroup VDOM where
@@ -72,7 +72,7 @@ instance Semigroup VDOM where
 
 You can also add special behavior if you want to collapse `Text`{.haskell} nodes, but this starts to get a little ugly since it needs to look inside `Fragment`{.haskell} too:
 
-```{.haskell data-lang="PureScript"}
+```purescript
 instance Semigroup VDOM where
   append (Fragment []) vdom = vdom
   append vdom (Fragment []) = vdom
@@ -128,7 +128,7 @@ I confess that this is also motivated by webdev: for the class attribute, which 
 
 We do a similar trick: we detect the identity and handle it specially.^[Pedagogically I probably should have started with this example, but I donʼt really feel like re-working this post right now.]
 
-```{.haskell data-lang="PureScript"}
+```purescript
 newtype ClassName = ClassName String
 
 instance Monoid ClassName where
@@ -148,7 +148,7 @@ Without dependent types, you have to tie it to some typeclass, like some kind of
 
 For the case of strings in PureScript, we can use symbols (type-level strings):
 
-```{.haskell data-lang="PureScript"}
+```purescript
 newtype JoinWith (s :: Symbol) = JoinedWith String
 
 instance IsSymbol s => Monoid (JoinWith s) where
@@ -166,7 +166,7 @@ You could also easily adapt this for any type that you can construct with string
 (You also need to be able to check whether it [is empty](https://pursuit.purescript.org/packages/purescript-dodo-printer/2.2.1/docs/Dodo.Internal#v:isEmpty), of course.)
 
 Now you can do such fun stuff as:
-```{.haskell data-lang="PureScript"}
+```purescript
 joinWithComma :: Array String -> String
 joinWithComma = unwrap <<< foldMap
   (JoinedWith :: String -> JoinWith ", " String)

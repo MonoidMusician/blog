@@ -32,7 +32,7 @@ normalize/ layer => normalized:
 
 _What it means:_
 
-```{.haskell data-lang="Haskell"}
+```haskell
 normalize (Roll (IfThenElse metadata cond exprT exprF)) =
   case normalize cond of
     -- Note that "true" above is allowed to stand for the literal in the AST

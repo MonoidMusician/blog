@@ -69,7 +69,7 @@ It needs to ensure that every function that uses a value from a quotient returns
 That is, destructing a quotient type with a function \(f\) requires a proof that for all \(x\) and \(y\) related by the quotientʼs relation, the function returns the same thing for both inputs.
 \[x R y \to f(x) = f(y)\]
 
-```{.haskell data-lang=PureScript}
+```purescript
 data Quotient (t :: Type) (r :: t -> t -> Prop)
 
 -- Property: `r x y` implies `mk x = mk y :: Quotient t r`
@@ -142,7 +142,7 @@ type Size     = Int
 
 And PureScriptʼs [`Data.Map.Map`](https://github.com/purescript/purescript-ordered-collections/blob/v3.0.0/src/Data/Map/Internal.purs#L70-L73) (since `Data.Set.Set k`{.haskell} is just `Data.Map.Map k Unit`{.haskell}):
 
-```{.haskell data-lang=PureScript}
+```purescript
 data Map k v
   = Leaf
   | Two (Map k v) k v (Map k v)
@@ -151,7 +151,7 @@ data Map k v
 
 Which we can specialize to `v = Unit`{.haskell}:
 
-```{.haskell data-lang=PureScript}
+```purescript
 data Set k
   = Leaf
   | Two (Set k) k (Set k)

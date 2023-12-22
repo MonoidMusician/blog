@@ -7,8 +7,7 @@ import Control.Plus (empty)
 import Data.Array (fold)
 import Data.Array as Array
 import Data.Enum (fromEnum, toEnum)
-import Data.Foldable (oneOf, oneOfMap)
-import Data.FunctorWithIndex (mapWithIndex)
+import Data.Foldable (oneOf)
 import Data.Int (hexadecimal)
 import Data.Int as Int
 import Data.Map (Map)
@@ -166,6 +165,12 @@ abbreviations = Map.fromFoldable
   , "cf." /\ Foreign "la" "co\x0304nfer"
       (Just "https://en.wiktionary.org/wiki/cf.#English")
       ["see also", "compare with"]
+  , "viz." /\ Foreign "la" "vide\x0304licet"
+      (Just "https://en.wiktionary.org/wiki/viz.#English")
+      ["namely", "specifically"]
+  , "sc." /\ Foreign "la" "sci\x0304licet"
+      (Just "https://en.wiktionary.org/wiki/sc.#English")
+      ["namely", "as follows"]
   , "tl;dr" /\ Acronym "too long; didnʼt read"
   ]
 

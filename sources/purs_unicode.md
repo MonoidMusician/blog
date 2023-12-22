@@ -135,7 +135,7 @@ It is possible to give a nice abstract API to unicode encodings that does not de
 This is what I claim would be an ideal interface.
 Although it has too much overhead to implement this way, so I have used its core idea as inspiration for my proposal below.
 
-```{.haskell data-lang="PureScript"}
+```purescript
 parseCodeUnit :: CodeUnit -> ParseCodeUnit
 
 data ParseCodeUnit
@@ -220,7 +220,7 @@ There are two reasons:
 
 After some workshopping, this seems like a good API that supports multiple encoding formats abstractly, supports parsers and other use cases, and should be relatively efficient (depending on how many corners you want to cut):
 
-```{.haskell data-lang="PureScript"}
+```purescript
 Enc.maxCodeSeqLength :: (1 | 2 | 4 :: Int) -- ENC
 -- The number of code units expected in a sequence that
 -- starts with the given code unit (including itself).
@@ -406,7 +406,7 @@ CP.codePointAt :: Int -> String -> Maybe CodePoint -- FFI
 
 <summary>Implementations / Specs</summary>
 
-```{.haskell data-lang="PureScript"}
+```purescript
 syncBwd i s
   | i < length s && not isContinuation (unsafeCodeUnitAt i s) = i
 syncBwd i s | i > length s = i

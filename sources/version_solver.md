@@ -72,7 +72,7 @@ Supporting more complex queries is asking for trouble.
 Finally, from a version-solving point of view, a registry contains information of what versions of packages there are, and for each package version a record of what dependencies it requires and the appropriate version ranges for those packages.
 That is, it can be represented with the following PureScript datatype:
 
-```{.haskell data-lang=PureScript}
+```purescript
 -- A list of required dependencies
 -- with their version ranges
 type Manifest = Map PackageName Range
@@ -87,7 +87,7 @@ type RegistryIndex =
 
 Solving means taking a manifest and finding versions for each package in it, preferring later versions^[This is actually a weird requirement, since there can be incomparable solutions that need to be tie-broken arbitrarily. In practice I do it alphabetically just by dint of how the package versions are tried.]:
 
-```{.haskell data-lang=PureScript}
+```purescript
 solve
   :: RegistryIndex
   -> Manifest
@@ -100,7 +100,7 @@ Along with some correctness constraints to ensure it is the solution we want.
 <details class="Details" data-box-name="CSS">
 <summary>Correctness constraints</summary>
 
-```{.haskell data-lang=PureScript}
+```purescript
 let r :: RegistryIndex
 let m :: Manifest
 let otherSol :: Map PackageName Version
@@ -214,7 +214,7 @@ I briefly glanced at them, but they donʼt seem to address the heart of the issu
 
 In a solver algorithm, we write programs in terms of some error monad.
 The backtracking algorithm essentially corresponds to a complicated Boolean expression, a tree of various constraints joined with conjunction and disjunction.
-Thinking of it as `Applicative`{.haskell data-lang=PureScript}+`Alternative`{.haskell data-lang=PureScript}, we see that `<*>`{.haskell data-lang=PureScript} corresponds to conjunction `&&`{.haskell data-lang=PureScript} and `<|>`{.haskell data-lang=PureScript} corresponds to disjunction `||`{.haskell data-lang=PureScript}.
+Thinking of it as `Applicative`purescript+`Alternative`purescript, we see that `<*>`purescript corresponds to conjunction `&&`purescript and `<|>`purescript corresponds to disjunction `||`purescript.
 
 ```boo
 console >=5.0.0 <6.0.0
@@ -306,7 +306,7 @@ There are two rules here:
 :::
 
 It turns out that we can formulate this rule as a [semigroup instance](https://pursuit.purescript.org/packages/purescript-functors/5.0.0/docs/Data.Functor.App#v:semigroupApp) that applies the logic for us to a collection of manifests:
-```{.haskell data-lang=PureScript}
+```purescript
 instance Semigroup (App (Map PackageName) Loose) where
   append (App m1) (App m2) = append <$> m1 <*> m2
 
@@ -317,13 +317,13 @@ foldMap1
 instance Coercible Manifest (App (Map PackageName) Loose)
 ```
 
-Note that this is in fact not a monoid: [`Map`{.haskell data-lang=PureScript}](https://pursuit.purescript.org/packages/purescript-ordered-collections/docs/Data.Map#t:Map) only has an [`Apply`{.haskell data-lang=PureScript}](https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Apply#t:Apply) instance (which gives the `<*>`{.haskell data-lang=PureScript} operator to merge common keys), not [`Applicative`{.haskell data-lang=PureScript}](https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Applicative#t:Applicative) (which would give `pure`{.haskell data-lang=PureScript} but does not make sense for `Map`{.haskell data-lang=PureScript} since it would have to contain _all_ possible keys!).
+Note that this is in fact not a monoid: [`Map`purescript](https://pursuit.purescript.org/packages/purescript-ordered-collections/docs/Data.Map#t:Map) only has an [`Apply`purescript](https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Apply#t:Apply) instance (which gives the `<*>`purescript operator to merge common keys), not [`Applicative`purescript](https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Applicative#t:Applicative) (which would give `pure`purescript but does not make sense for `Map`purescript since it would have to contain _all_ possible keys!).
 
 As a further optimization, while we are checking package versions, we may discard those that do not solve due to an obvious conflict.
 This may seem strange: In the PureScript registry, each package will solve individually, we check that on upload.
 But given the additional constraints of a particular manifest we are solving, we may end up with conflicts against various package versions that are incompatible with the global requirements, especially as we continue to aggregate quasi-transitive dependencies.
 
-```{.haskell data-lang=PureScript}
+```purescript
 -- | We record what dependency ranges are required no matter which version
 -- | of the package we pick from the registry. That is, we report the loosest
 -- | bounds when all packages report a bound for it. By filling in transitive
@@ -410,16 +410,16 @@ Thereʼs no such thing as double-counting in a semilattice computation!
 When youʼre dealing with a well-behaved logical scenario, if have written your logic correctly ([i.e.]{t=} each derivation is valid) and you cover all the cases (you eventually produce every fact you are allowed to derive), thereʼs no chance that you accidentally make things break.^[
 If the logical scenario does not have a finite upper bound of information to derive, this naïve process may not terminate, but in our case it is certainly finite: the registry itself is finite, so any logical derivations from it will eventually be saturated.]
 
-We already saw our first semilattice `Semigroup (App (Map PackageName) Loose)`{.haskell data-lang=PureScript} above.
-However, I left out the definition of `Loose`{.haskell data-lang=PureScript} and its `Semigroup`{.haskell data-lang=PureScript} instance.
+We already saw our first semilattice `Semigroup (App (Map PackageName) Loose)`purescript above.
+However, I left out the definition of `Loose`purescript and its `Semigroup`purescript instance.
 
-The _data_ contained in `Loose`{.haskell data-lang=PureScript} is just a lower bound and an upper bound, and we want the lower bound to be less than the upper bound for it to be valid.
-We also pack in _metadata_ that describes where each bound came from, the `SolverPosition`{.haskell data-lang=PureScript} datatype which we will discuss below in [Provenance].
+The _data_ contained in `Loose`purescript is just a lower bound and an upper bound, and we want the lower bound to be less than the upper bound for it to be valid.
+We also pack in _metadata_ that describes where each bound came from, the `SolverPosition`purescript datatype which we will discuss below in [Provenance].
 
 To achieve this, we first define a type that describes a bound with metadata packed in.
 Then we add to this operations that take the maximum and minimum of the bounds, and _aggregate_ the metadata if they were the same bound.
 Thatʼs right, **the metadata itself forms a semilattice!**^[I cannot emphasize how key this is to a lot of the work of carrying around metadata by bundling it in with data like this.]
-```{.haskell data-lang=PureScript}
+```purescript
 data Sourced = Sourced Version SolverPosition
 
 newtype MinSourced = MinSourced Sourced
@@ -441,9 +441,9 @@ instance Semigroup MaxSourced where
       EQ -> MaxSourced (Sourced av (as <> bs))
 ```
 
-Now we get both `Loose`{.haskell data-lang=PureScript} and `Intersection`{.haskell data-lang=PureScript} for free by the right arrangement of these types.
+Now we get both `Loose`purescript and `Intersection`purescript for free by the right arrangement of these types.
 Heck, we even get their coercion for free:
-```{.haskell data-lang=PureScript}
+```purescript
 newtype Loose = Loose
   { lower :: MinSourced
   , upper :: MaxSourced
@@ -480,11 +480,11 @@ fromLoose :: Loose -> Intersection
 fromLoose = coerce
 ```
 
-Why donʼt we require `Intersection`{.haskell data-lang=PureScript} to be a valid interval?
-As we will talk about in the next section, `Intersection`{.haskell data-lang=PureScript} is the primary way we keep track of the knowledge we have learned already.
+Why donʼt we require `Intersection`purescript to be a valid interval?
+As we will talk about in the next section, `Intersection`purescript is the primary way we keep track of the knowledge we have learned already.
 Being in the business of aggregating information, we want to know all we can about the situation our solver is confronted with, and we just can accumulate knowledge by throwing it into this semilattice.
 
-We could make taking the intersection of intervals a partially-defined operation (`Intersection -> Intersection -> Either Error Intersection`{.haskell data-lang=PureScript}), but that means we have to bail out once a single intersection becomes invalid.
+We could make taking the intersection of intervals a partially-defined operation (`Intersection -> Intersection -> Either Error Intersection`purescript), but that means we have to bail out once a single intersection becomes invalid.
 Instead, we integrate them directly into the semilattice structure by keeping invalid intervals around and turning them into [errors] later (this is why we give them the metadata about [provenance]!).
 This gives us multiple errors emerging from one step for free, it is incredibly convenient.
 
@@ -493,8 +493,8 @@ This gives us multiple errors emerging from one step for free, it is incredibly 
 Figuring out the correct way to propagate known requirements kept me occupied for days.
 It turns out I had done it wrong the first time, so it is good I thought it over again!
 
-Our goal is to implement `solveStep`{.haskell data-lang=PureScript} here using `commonDependencies`{.haskell data-lang=PureScript} (see [above](#intuitive-foundations-quasi-transitive-dependencies)) and `exploreTransitiveDependencies`{.haskell data-lang=PureScript}:
-```{.haskell data-lang=PureScript}
+Our goal is to implement `solveStep`purescript here using `commonDependencies`purescript (see [above](#intuitive-foundations-quasi-transitive-dependencies)) and `exploreTransitiveDependencies`purescript:
+```purescript
 -- Semilattice version of `Registry`
 type TransitivizedRegistry =
   SemigroupMap PackageName
@@ -516,21 +516,21 @@ solveStep :: RRU -> RRU
 exploreTransitiveDependencies :: RRU -> RRU
 ```
 
-The `registry :: TransitivizedRegistry`{.haskell data-lang=PureScript} and `required :: SemigroupMap PackageName Intersection`{.haskell data-lang=PureScript} represent the local dependencies for each package version and the global requirements of the initial manifest given to the solver, respectively.
+The `registry :: TransitivizedRegistry`purescript and `required :: SemigroupMap PackageName Intersection`purescript represent the local dependencies for each package version and the global requirements of the initial manifest given to the solver, respectively.
 They both are purely accumulative: what goes in comes out with some more information.
 The additional information will simply be added dependencies and tightened bounds on existing dependencies.
 Provenance metadata may accumulate too (we donʼt really need to care about that, it is just along for the ride).
 
-The other field, `updated :: TransitivizedRegistry`{.haskell data-lang=PureScript}, is a bit different: it does not carry over from step to step, it only talks about what changed at the last step.
-This is because as weʼre keeping `registry :: TransitivizedRegistry`{.haskell data-lang=PureScript} updated, we want to only calculate updates to the things that might need it.
+The other field, `updated :: TransitivizedRegistry`purescript, is a bit different: it does not carry over from step to step, it only talks about what changed at the last step.
+This is because as weʼre keeping `registry :: TransitivizedRegistry`purescript updated, we want to only calculate updates to the things that might need it.
 
-When we first call `solveStep`{.haskell data-lang=PureScript}, we treat everything as updated:
-```{.haskell data-lang=PureScript}
+When we first call `solveStep`purescript, we treat everything as updated:
+```purescript
 solveSeed :: RR () -> RRU
 solveSeed { registry, required } = { registry, required, updated: registry }
 ```
 and the process stabilizes when there are no updates:
-```{.haskell data-lang=PureScript}
+```purescript
 -- | Add quasi transitive dependencies until it stabilizes (no more updates).
 -- | Needs to know what was updated since it last ran.
 solveSteps :: RRU -> RR ()
@@ -553,7 +553,7 @@ The other case is that if a package version picks up an obvious failure, its rev
 They may pick up a quasi-transitive dependency once this failing package version is dropped, if it was missing that particular dependency but others had it.
 :::
 
-```{.haskell data-lang=PureScript}
+```purescript
 -- | A package may update because its dependencies tightened, but any reverse
 -- | dependencies should have already caught that update in this same tick.
 -- | So what we look for is either a new transitive dependency picked up (which
@@ -630,7 +630,7 @@ It turns out that the algorithm is naturally efficient, with some help.
 The biggest trick is _using global constraints to discard redundant local constraints_.
 That is, if the manifest you are solving already constrains `prelude >=6.0.0 <7.0.0`{.boo}, then each package that lists that requirement or a looser one can ignore it.
 
-```{.haskell data-lang=PureScript}
+```purescript
 -- | The key to efficiency: take information from the bounds of global
 -- | requirements and add it to the local requirements of each package version
 -- | in the registry, BUT remove redundant bounds as we do so.
@@ -671,10 +671,10 @@ I also needed a histogram viewer.
 
 Lots of micro optimizations.
 
-- Using a specific order of `<>`{.haskell data-lang=PureScript}, since `Map`{.haskell data-lang=PureScript} appends are implemented as a fold over the second argument so it should be the smaller argument.
+- Using a specific order of `<>`purescript, since `Map`purescript appends are implemented as a fold over the second argument so it should be the smaller argument.
 - Using a difflist (Cayley) representation when I know Iʼm only appending one key at a time but with mixed associativity.
-- Implementing `wouldUpdate`{.haskell data-lang=PureScript} directly instead of using the semigroup operation.
-- Optimizing the `Ord Version`{.haskell data-lang=PureScript} instance since it is the most common operation in this whole thing.
+- Implementing `wouldUpdate`purescript directly instead of using the semigroup operation.
+- Optimizing the `Ord Version`purescript instance since it is the most common operation in this whole thing.
 
 Did they make a difference?
 I donʼt know!
@@ -702,7 +702,7 @@ There are two ways we combine these errors within the logic of the solver:
   (We actually just do a [very shallow check of this](https://github.com/purescript/registry-dev/blob/30a88ac7bd48a73bb2bcf9240b20b09a713ee0b9/lib/src/Solver.purs#L300-L304).)
 
 This gets us [this data type for errors](https://github.com/purescript/registry-dev/blob/30a88ac7bd48a73bb2bcf9240b20b09a713ee0b9/lib/src/Solver.purs#L149-L151):
-```{.haskell data-lang=PureScript}
+```purescript
 data SolverError
   = Conflicts (Map PackageName Intersection)
   | WhileSolving PackageName (Map Version SolverError)
@@ -721,10 +721,10 @@ Especially because once separate terms are unified, you donʼt want to arbitrari
 ]
 However, it is really slick in this domain: we only need to keep track of the endpoints, users donʼt exactly care about what came in between (just that it is reasonable to assume, because it is in fact correct).
 
-So in this case I keep track of which particular package version manifest(s) gave us the constraint we are talking about (`LocalSolverPosition`{.haskell data-lang=PureScript}), and which constraints in the current manifest caused it to be required.
+So in this case I keep track of which particular package version manifest(s) gave us the constraint we are talking about (`LocalSolverPosition`purescript), and which constraints in the current manifest caused it to be required.
 Thereʼs some logic to combine these positions which I will not reproduce here.
 
-```{.haskell data-lang=PureScript}
+```purescript
 data LocalSolverPosition
   -- | Dependency asked for in manifest
   = Root

@@ -69,7 +69,7 @@ Thatʼs it.
 
 The rest of the moves can be determined from that premise, so letʼs see how it works:
 
-```{.haskell data-lang="PureScript"}
+```purescript
 data WithZero t = Zero | NonZero t
 
 -- Imagine that `t` is really a `Semilattice`

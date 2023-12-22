@@ -84,7 +84,6 @@ author:
   - Json Settings: add a key with the language name in brackets, `"[markdown]": { ... your settings ... }`{.js}.
   - Can I just say how I miss Atomʼs settings menu?
     It was so clean, in comparison.
-    (Okay, not _that_ clean.)
 - Extensions live in these places:
   - `~/.vscode-oss/extensions`
   - `~/.vscode/extensions`
@@ -107,16 +106,16 @@ author:
   [
     {
         "key": "ctrl+tab",
-        "command": "workbench.action.nextEditor"
+        "command": "workbench.action.nextEditorInGroup"
     },
     {
         "key": "ctrl+shift+tab",
-        "command": "workbench.action.previousEditor"
+        "command": "workbench.action.previousEditorInGroup"
     },
   ]
   ```
 
-  (or `{next,previous}EditorInGroup`{.bash})
+  (or `{next,previous}Editor`{.bash} to have it apply across windows instead of wrapping around)
 
   > By default, Ctrl+Tab in Visual Studio Code cycles through tabs in order of most recently used. This is confusing because it depends on hidden state.
   >
@@ -138,6 +137,7 @@ author:
 ## Data Formats/Parsers
 
 - [Common MIME types](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types)
+- [List of file signatures](https://en.wikipedia.org/wiki/List_of_file_signatures)
 - https://gchq.github.io/CyberChef/
 - https://www.onlinemp4parser.com/
 - https://explainshell.com/

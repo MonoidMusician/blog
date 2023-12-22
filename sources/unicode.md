@@ -118,7 +118,7 @@ Things get worse if you allow unpaired surrogates …
 <details class="Details">
 <summary>Code</summary>
 
-```{.haskell data-lang=PureScript}
+```purescript
 import Prelude
 import Control.Alternative (guard)
 import Data.Array as Array

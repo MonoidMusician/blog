@@ -19,7 +19,7 @@ I used to be scared of parser generators, but once I was introduced to them I fo
 As (functional) programmers, weʼre used to learning topics in terms of the appropriate datatypes and operations for the job, and thatʼs what I will go through for you here.
 Hint: weʼll use a lot of monoids!
 
-```haskell
+```{.purescript}
 data ShiftReduce s r
   = Shift s
   | Reduces (NonEmptyArray r)

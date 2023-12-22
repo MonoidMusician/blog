@@ -106,7 +106,11 @@ pre > code
 code
   position: relative
 
-div.sourceCode
+/* The HTML structure and classes/attributes are a bit of a mess, so we attach
+ * language markers to both the top-level <div> and the enclosed <pre> and
+ * cancel the latter if the former exists
+ */
+div.sourceCode[data-lang], pre.sourceCode
   position: relative
   &::before
     font-family: 'Fira Code'
@@ -122,9 +126,11 @@ div.sourceCode
     opacity: 0.6
   &:not([data-lang]).haskell::before
     content: "Haskell"
+  &:not([data-lang]).purescript::before
+    content: "PureScript"
   &:not([data-lang]).agda::before
     content: "Agda"
-  &:not([data-lang]).javascript::before
+  &:not([data-lang]).javascript::before, &:not([data-lang]).js::before
     content: "JS"
   &:not([data-lang]).css::before
     content: "CSS"
@@ -138,6 +144,9 @@ div.sourceCode
     content: "Markdown"
   &[data-lang]::before
     content: attr(data-lang)
+  div.sourceCode[data-lang] > &::before
+    display: none
+    content: none
 
 pre:hover
   /*box-shadow: inset 0px 0px 4px 1px #e010105c, -1px -1px 3px 0px #4362b114;*/
