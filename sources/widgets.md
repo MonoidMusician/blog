@@ -21,6 +21,16 @@ subtitle: little widgets that tag prose as belonging to various types of data
 
 ## Wanted
 
+- date `/\/` time
+  - date
+    - era
+  - time
+  - timezones
+  - ranges
+    - time – time
+    - date – date
+    - date time – time
+    - date time – date time
 - IPA (Junicode!)
 - keyboard shortcuts (whatʼs the datatype/language for that?)
   - both DOM keys and Libertinus Sans

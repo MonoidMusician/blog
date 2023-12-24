@@ -21,14 +21,15 @@ This is my unreasonably effective dark mode that I apply to more and more websit
 
 ```css
 html {
-    background: #191919;
+    background: #191919 !important;
 }
 body {
-    background: white;
+    background: white !important;
     filter: invert(0.9) hue-rotate(180deg);
+    box-shadow: none;
 }
-img {
-    filter: invert(1.1) hue-rotate(180deg);
+img, video {
+    filter: invert(1) contrast(111%) hue-rotate(180deg);
 }
 ```
 
@@ -135,22 +136,43 @@ It will mostly still flash on page load though …
 (async function() {
     'use strict';
 
-    if (!(document.querySelector("link[rel='stylesheet']") || document.querySelector("style") || document.querySelector("link[href$='.css']"))) {
-        var style = document.createElement("style");
-        style.textContent = `
-        html {
-            background: #191919;
-        }
-        body {
-            background: white;
-            filter: invert(0.9) hue-rotate(180deg);
-        }
-        img {
-            filter: invert(1.1) hue-rotate(180deg);
-        }
-        `;
-        document.head.appendChild(style);
+    try {
+        if (window.self !== window.top) return;
+    } catch (e) {
+        return;
     }
+
+    var href = window.location.href;
+    if (href.endsWith(".pdf") || href.endsWith(".ps") || href.endsWith(".m3u8")) {
+        return;
+    }
+    if (document.querySelector("body > embed")) {
+        return;
+    }
+    if (href.includes("/bitstream")) {
+        return;
+    }
+    if (document.querySelector("link[rel='stylesheet'], style, link[href$='.css']")) {
+        return;
+    }
+    if (document.querySelector(":root[style], body[style], body > :first-child:last-child[style]")) {
+        return;
+    }
+    var style = document.createElement("style");
+    style.textContent = `
+            html {
+                background: #191919 !important;
+            }
+            body {
+                background: white !important;
+                filter: invert(0.9) hue-rotate(180deg);
+                box-shadow: none;
+            }
+            img, video {
+                filter: invert(1) contrast(111%) hue-rotate(180deg);
+            }
+    `;
+    document.head.appendChild(style);
 })();
 ```
 
@@ -187,6 +209,7 @@ But you can of course scope it to just the websites you want!
     var matches = Object.entries({
         'https://cofree.coffee/~verity': 'http://localhost:7933',
         'https://monoidmusician.github.io': 'http://localhost',
+        // ^ unfortunately this captures all of localhost, even different ports ...
     });
 
     var here = window.location.href;

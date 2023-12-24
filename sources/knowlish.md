@@ -11,7 +11,10 @@ author:
   - not a great way to do it
   - will cut off long lines
   - does not automatically size to content, just console widith
-- Type decimal numbers, echo and copy hexadecimal escapes: `cat (echo "obase=16" | psub) - | bc | xargs -I % -n 1 bash -c "echo -n \\\\x% | pbcopy; echo \\\\x%"`{.fish}
+- Type decimal numbers, echo and copy hexadecimal escapes:
+  ```fish
+  cat (echo "obase=16" | psub) - | bc | xargs -I % -n 1 bash -c "echo -n \\\\x% | pbcopy; echo \\\\x%"
+  ```
 - [`entr`](http://eradman.com/entrproject/) is pretty useful, a little tricky to use ... maybe `watchexec` is better? never used it
 - [`date '+%Y-%m-%d-%H-%M-%S'`{.bash}](https://stackoverflow.com/questions/1401482/yyyy-mm-dd-format-date-in-shell-script#answer-1401495)
 - [`grep -Fxq "One specific line exists in" many_lines.txt`{.bash}](https://stackoverflow.com/questions/4749330/how-to-test-if-string-exists-in-file-with-bash#answer-4749368)
@@ -66,6 +69,16 @@ author:
 
 - [`set -euxo pipefail`{.bash}](https://gist.github.com/mohanpedala/1e2ff5661761d3abd0385e8223e16425)
 - `cd -- "$(dirname $0)"`{.bash}
+- Simple argument handling:
+  ```bash
+  case $1 in
+    "--no-build")
+      shift 1;;
+    *)
+      make;;
+  esac
+  ```
+- Conditionals, flags like `-e`, `-f`: https://tldp.org/LDP/Bash-Beginners-Guide/html/sect_07_01.html
 
 ### Fish
 
