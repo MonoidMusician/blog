@@ -7,7 +7,7 @@ import Control.Apply (lift2)
 import Control.Plus (class Plus)
 import Data.Compactable (class Compactable, compact)
 import Data.Decide (choose)
-import Data.Foldable (class Foldable, oneOfMap)
+import Data.Foldable (class Foldable, intercalate, oneOfMap)
 import Data.Maybe (Maybe)
 import Data.These (These(..))
 import Data.Traversable (class Traversable, traverse)
@@ -16,6 +16,9 @@ import Data.Tuple.Nested (type (/\))
 
 morph :: forall f g b. Foldable f => Plus g => Applicative g => f b -> g b
 morph = oneOfMap pure
+
+intercalateMap :: forall f a m. Foldable f => Monoid m => Functor f => m -> (a -> m) -> f a -> m
+intercalateMap sep f = intercalate sep <<< map f
 
 
 compactMap :: forall f a b. Compactable f => Functor f => (a -> Maybe b) -> f a -> f b

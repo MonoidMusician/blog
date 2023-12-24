@@ -11,6 +11,7 @@ output-es/
 /PureScript/ssr.js
 /PureScript/dist/
 /PureScript/src/scratch/
+/PureScript/src/Parser/Template.purs
 /cache/
 /static/
 /rendered/
