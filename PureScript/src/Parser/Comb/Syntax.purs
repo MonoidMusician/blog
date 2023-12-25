@@ -18,16 +18,19 @@ derive instance eqSyntax :: (Eq nt, Eq tok) => Eq (Syntax nt tok)
 derive instance ordSyntax :: (Ord nt, Ord tok) => Ord (Syntax nt tok)
 
 printSyntax' :: forall nt tok. (Fragment nt tok -> String) -> Syntax nt tok -> Array (Either String (Fragment nt tok))
-printSyntax' f (Conj l r) =
+printSyntax' = printSyntax'' identity
+
+printSyntax'' :: forall m nt tok. Semigroup m => (String -> m) -> (Fragment nt tok -> m) -> Syntax nt tok -> Array (Either m (Fragment nt tok))
+printSyntax'' t f (Conj l r) =
   let
     p x = case x of
       Null -> empty
-      Disj _ _ -> pure $ Left $ "(" <> printSyntax f x <> ")"
-      _ -> printSyntax' f x
+      Disj _ _ -> [ Left $ t "(" ] <> printSyntax'' t f x <> [ Left $ t ")" ]
+      _ -> printSyntax'' t f x
   in join [ p l, p r ]
-printSyntax' f (Disj l r) = [ Left $ printSyntax f l <> " | " <> printSyntax f r ]
-printSyntax' _ (Part p) = [ Right [ p ] ]
-printSyntax' _ Null = [ Right [] ]
+printSyntax'' t f (Disj l r) = printSyntax'' t f l <> [ Left $ t " | " ] <> printSyntax'' t f r
+printSyntax'' _ _ (Part p) = [ Right [ p ] ]
+printSyntax'' _ _ Null = [ Right [] ]
 
 printSyntax :: forall nt tok. (Fragment nt tok -> String) -> Syntax nt tok -> String
 printSyntax f syntax =

@@ -9,6 +9,7 @@ import Effect.Ref as Ref
 import Foreign.Object as Object
 import Parser.Main as Parser
 import Parser.Main.CSS as CSS
+import Parser.Main.Comb as Parser.Main.Comb
 import Parser.Main.TMTTMT as TMTTMT
 import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
 import Web.HTML (window)
@@ -32,6 +33,7 @@ widgets = foldl Object.union Object.empty
     , "Widget.Control" /\ Widget.Widgets.controlWidget
     , "Widget.Unicode" /\ Widget.Unicode.widget
     , "Widget.Show" /\ Widget.Unicode.widgetShow
+    , "Parser.Main.Comb" /\ Parser.Main.Comb.widget
     , "" /\ Widget.Datatypes.widget
     ]
   ]
