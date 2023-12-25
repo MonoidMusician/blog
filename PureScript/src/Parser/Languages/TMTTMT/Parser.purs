@@ -13,16 +13,16 @@ import Data.Int as Int
 import Data.Monoid (power)
 import Data.String as String
 import Data.String.CodeUnits as CU
-import Parser.Languages (Comber, delim, key, many, many1, rawr, ws, (#->), (#:))
+import Parser.Comb.Comber (Comber, delim, token, many, many1, rawr, ws, (#->), (#:))
 import Parser.Languages.CSS (newline)
 import Parser.Languages.TMTTMT.Types (Calling(..), Case(..), Condition(..), Declaration(..), Expr(..), Matching(..), Pattern(..))
 
 stringP :: Comber String
 stringP = "string"#: oneOf
   [ join delim "\"" $ fold <$> many "double-string-contents" do
-      rawr "[^\\\\\"\\n\\r\\f]+" <|> escapeP <|> key "\\" *> newline
+      rawr "[^\\\\\"\\n\\r\\f]+" <|> escapeP <|> token "\\" *> newline
   , join delim "\'" $ fold <$> many "single-string-contents" do
-      rawr "[^\\\\'\\n\\r\\f]+" <|> escapeP <|> key "\\" *> newline
+      rawr "[^\\\\'\\n\\r\\f]+" <|> escapeP <|> token "\\" *> newline
   ]
 
 nameP :: Comber String
@@ -49,7 +49,7 @@ data Token
 -- type Toker = Comb (Rec String (OrEOF String) String) String (String ~ Rawr) String
 
 escapeP :: Comber String
-escapeP = "escape"#: key "\\" *> oneOf
+escapeP = "escape"#: token "\\" *> oneOf
   [ rawr "[^0-9a-fA-F\\r\\n\\f]"
   , rawr "[0-9a-fA-F]{1,6}\\s?" <#?> do
       String.trim >>> Int.fromStringAs hexadecimal >=> toEnum >== String.singleton
@@ -58,7 +58,7 @@ escapeP = "escape"#: key "\\" *> oneOf
 arrowedP :: forall a b c. (Array a -> b -> c) -> String -> Comber a -> Comber b -> Comber c
 arrowedP c name aP bP = ado
   a <- many name aP
-  key "=>" *> ws
+  token "=>" *> ws
   b <- bP
   in c a b
 
@@ -69,7 +69,7 @@ patternP = "pattern"#-> \pat -> oneOf
   , "vector"#: Vector <$> delim "[" "]" do
       ws *> many "patterns" pat
   , "macro"#: delim "(" ")" do
-      ws *> key "$" *> ws *> ado
+      ws *> token "$" *> ws *> ado
         { head, tail } <- NEA.uncons <$> many1 "patterns1" (Pattern <$> pat)
         in Macro head tail
   ] <* ws
@@ -94,8 +94,8 @@ exprP = "expr"#-> \exprL ->
 
     thenConditionsL :: Comber (Array Condition)
     thenConditionsL = oneOf
-      [ NEA.toArray <$> do key ":" *> ws *> many1 "conditions1" conditionL
-      , [] <$ do key ";" *> ws
+      [ NEA.toArray <$> do token ":" *> ws *> many1 "conditions1" conditionL
+      , [] <$ do token ";" *> ws
       ]
 
     callingL :: Comber Calling
@@ -103,9 +103,9 @@ exprP = "expr"#-> \exprL ->
   in oneOf
   [ Pattern <$> patternP
   , Lambda <$> ado
-      key "?" *> ws
-      cases <- many "lambdaCases" (key "|" *> ws *> lambdaCaseL)
-      key "!" *> ws
+      token "?" *> ws
+      cases <- many "lambdaCases" (token "|" *> ws *> lambdaCaseL)
+      token "!" *> ws
       in cases
   ]
 
@@ -117,8 +117,8 @@ conditionP = "condition"#: Condition <$> exprP <*> callingP
 
 thenConditionsP :: Comber (Array Condition)
 thenConditionsP = oneOf
-  [ NEA.toArray <$> do key ":" *> ws *> many1 "conditions1" conditionP
-  , [] <$ do key ";" *> ws
+  [ NEA.toArray <$> do token ":" *> ws *> many1 "conditions1" conditionP
+  , [] <$ do token ";" *> ws
   ]
 
 callingP :: Comber Calling
@@ -135,9 +135,9 @@ declarationsP = many "declarations" $ "declaration"#: oneOf
     ws
     desc <- topCaseP
     in DefineCase fnName caseName desc
-  , Comment <$> do (key "--" <|> key "//") *> rawr "[^\\r\\n]*"
+  , Comment <$> do (token "--" <|> token "//") *> rawr "[^\\r\\n]*"
   , Query <$> ado
-      key ">" *> ws
+      token ">" *> ws
       { head, tail } <- NEA.uncons <$> many1 "exprs1" exprP
       in Pattern (Macro head tail)
   ]

@@ -9,6 +9,7 @@ import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (class Bifunctor)
 import Data.Either (Either(..), hush)
+import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.Map (Map, SemigroupMap)
 import Data.Maybe (Maybe(..))
@@ -17,7 +18,7 @@ import Data.Show.Generic (genericShow)
 import Data.String (CodePoint)
 import Data.String.NonEmpty as NES
 import Data.String.NonEmpty.Internal (NonEmptyString)
-import Data.Traversable (mapAccumL, traverse)
+import Data.Traversable (foldMap, mapAccumL, traverse)
 import Data.Tuple (fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Proto as Proto
@@ -227,6 +228,11 @@ unShift (Shift s) = Just s
 unShift (ShiftReduces s _) = Just s
 unShift (Reduces _) = Nothing
 
+reductions :: forall s r. ShiftReduce s r -> Array r
+reductions (Shift _) = []
+reductions (ShiftReduces _ rs) = NEA.toArray rs
+reductions (Reduces rs) = NEA.toArray rs
+
 -- Prefer shifts because they are unique
 decide :: forall s r. ShiftReduce s r -> Maybe (Either s r)
 decide (Shift s) = Just (Left s)
@@ -285,6 +291,20 @@ derive instance newtypeStates :: Newtype (States s nt r tok) _
 
 type SStates = States Int NonEmptyString String CodePoint
 
+conflicts ::
+  forall s nt r tok.
+  States s nt r tok ->
+  Array
+    { sName :: s
+    , items :: State nt r tok
+    , advance :: tok
+    , conflict :: ShiftReduce s (nt /\ r)
+    }
+conflicts (States states) =
+  states # foldMap \{ sName, items, advance } ->
+  advance # foldMapWithIndex \tok sr ->
+    { sName, items, advance: tok, conflict: sr } <$
+      guard (not decisionUnique sr)
 
 
 data CST r tok

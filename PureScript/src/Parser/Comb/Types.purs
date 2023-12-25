@@ -4,26 +4,21 @@ import Prelude
 
 import Control.Alternative (class Alternative)
 import Control.Apply (lift2)
-import Control.Monad.ST.Global as ST
 import Control.Plus (class Alt, class Plus, empty, (<|>))
 import Data.Array (head, length, splitAt, zipWith, (!!))
-import Data.Array as Array
 import Data.Bifunctor (bimap, lmap)
 import Data.Compactable (class Compactable, compact, separateDefault)
 import Data.Either (Either)
 import Data.Functor.Contravariant (class Contravariant, cmap)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Lazy (Lazy)
-import Data.List (List)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, over)
-import Data.NonEmpty (NonEmpty(..))
 import Data.Profunctor (class Profunctor, dimap, lcmap)
 import Data.String (CodePoint)
 import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\))
-import Effect.Unsafe (unsafePerformEffect)
 import Parser.Comb.Syntax (Syntax(..))
 import Parser.Types (CST(..), Fragment, Grammar)
 import Unsafe.Coerce (unsafeCoerce)
@@ -207,7 +202,7 @@ over2Logic ::
 over2Logic op f g = logicful (op (applyLogic f) (applyLogic g))
 instance eqLogicful :: Eq (Logicful i r) where
   eq = unsafeRefEq
-instance HeytingAlgebra (Logicful i r) where
+instance heytingAlgebraLogicful :: HeytingAlgebra (Logicful i r) where
   tt = logicful tt
   ff = logicful ff
   not = overLogic not
@@ -266,6 +261,13 @@ instance semigroupComb :: Semigroup a => Semigroup (Comb rec nt cat o a) where
   append = lift2 append
 instance monoidComb :: Monoid a => Monoid (Comb rec nt cat o a) where
   mempty = pure mempty
+instance heytingAlgebraComb :: HeytingAlgebra a => HeytingAlgebra (Comb rec nt cat o a) where
+  tt = pure tt
+  ff = pure ff
+  not = map not
+  disj = lift2 disj
+  conj = lift2 conj
+  implies = lift2 implies
 
 -- | Matched a named rule against a CST, with codecs for each production.
 matchRule :: forall rec nt o a. Ord nt => rec -> nt -> Array (CResultant rec nt o a) -> CCST nt o -> Maybe a
@@ -323,11 +325,7 @@ mapMaybe f = withCST' \_ _ da -> da unit >>= \a ->
     Nothing -> Failed
     Just r -> Result r
 
-mapMaybeFlipped :: forall rec nt cat o a b. Comb rec nt cat o a -> (a -> Maybe b) -> Comb rec nt cat o b
-mapMaybeFlipped = flip mapMaybe
-
-infixl 1 mapMaybeFlipped as <?>
-
+-- | Get access to the recursive parser machinery. (Advanced.)
 withRec :: forall rec nt cat o a b. (rec -> a -> b) -> Comb rec nt cat o a -> Comb rec nt cat o b
 withRec f = withCST' \rec _ prev -> f rec <$> prev unit
 

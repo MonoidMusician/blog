@@ -1,5 +1,6 @@
 module Parser.Parserlude where
 
+import Parser.Comb.Comber
 import Prelude
 
 import Control.Alt (class Alt, (<|>))
@@ -35,9 +36,11 @@ import Dodo.Common as DC
 import Effect (Effect)
 import Idiolect (type (/\/), compactMap, compactMapFlipped, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, morph, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/))
 import Parser.Comb (Comb(..), named, namedRec)
-import Parser.Languages (Comber, arrayOf, delim, digit, int, json, key, many, many1, many1SepBy, manyBaseSepBy, manySepBy, mopt, objectOf, opt, rawr, ws, wss, wsws, wsws', (#->), (#:))
+import Parser.Languages (digit, int, json)
 import Parser.Languages.CSS (combinator, escape, ident, many1Comma, newline, number, percentage, string, url)
 import Parser.Main.Comb as Parser.Main.Comb
+import Prim.TypeError (class Fail, Beside, Quote, Text)
+import Type.Equality (class TypeEquals, proof)
 
 main :: Effect Unit
 main = Parser.Main.Comb.mainForParser parser
@@ -45,3 +48,12 @@ main = Parser.Main.Comb.mainForParser parser
 parser :: Comber (D.Doc Void)
 parser = empty
 
+class StringOrDoc t where
+  toDoc :: t -> D.Doc Void
+
+instance StringOrDoc String where
+  toDoc = D.text
+else instance TypeEquals ann Void => StringOrDoc (D.Doc ann) where
+  toDoc = proof
+else instance Fail (Beside (Text "Parser must produce String or Doc, not ") (Quote t)) => StringOrDoc t where
+  toDoc = mempty

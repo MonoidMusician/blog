@@ -3,25 +3,25 @@ module Parser.Lexing where
 import Prelude
 
 import Control.Alternative (guard)
-import Control.Monad.Rec.Class (Step(..), tailRec, tailRecM)
+import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Control.Plus (empty)
 import Data.Array (fold, (!!))
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
+import Data.Bitraversable (ltraverse)
 import Data.Either (Either(..), either, isLeft, note)
 import Data.Either.Nested (type (\/))
 import Data.Foldable (class Foldable, foldMap, foldr, for_, null, oneOfMap, sum, traverse_)
 import Data.FoldableWithIndex (forWithIndex_)
-import Data.Lazy (Lazy, force)
+import Data.Lazy (force)
 import Data.List (List)
 import Data.List as List
 import Data.Map (SemigroupMap(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isJust)
-import Data.Newtype (class Newtype, over, over2, unwrap)
-import Data.NonEmpty (NonEmpty(..), (:|))
+import Data.Newtype (class Newtype, over2, unwrap)
 import Data.Semigroup.Foldable (maximum)
 import Data.String (CodePoint)
 import Data.String as String
@@ -34,7 +34,6 @@ import Data.String.Regex.Unsafe (unsafeRegex)
 import Data.Traversable (class Traversable, sequence)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import Debug (spy, traceM)
 import Effect (Effect)
 import Effect.Console (log)
 import Effect.Unsafe (unsafePerformEffect)
@@ -42,7 +41,7 @@ import Idiolect ((>==))
 import Parser.Algorithms (indexStates)
 import Parser.Comb.Types (LogicParts(..), Options(..), Option, applyLogic)
 import Parser.Proto (Stack(..), statesOn, topOf)
-import Parser.Types (CST(..), Fragment, OrEOF(..), Part(..), ShiftReduce(..), State(..), StateInfo, States(..), Zipper(..), decide, decisionUnique, filterSR)
+import Parser.Types (CST(..), OrEOF(..), Part(..), ShiftReduce(..), State(..), StateInfo, States(..), Zipper(..), decide, decisionUnique, filterSR)
 import Partial.Unsafe (unsafeCrashWith)
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -299,6 +298,11 @@ longest = guessBest <<< prioritize \(_ /\ _ /\ _ /\ i) -> negate (len i)
 
 bestRegexOrString :: forall s r. Best s r (OrEOF (Similar String Rawr)) (OrEOF String) (OrEOF String)
 bestRegexOrString options = options # guessBest <<< prioritize case _ of
+  (_ /\ (Continue (Similar cat)) /\ _ /\ Continue i) -> Just $ Tuple (isLeft cat) (negate (len i))
+  _ -> Nothing
+
+lazyBest :: forall s r. Best s r (OrEOF (Similar String Rawr)) (OrEOF String) (OrEOF String)
+lazyBest = ltraverse decide <<< NEA.head <<< prioritize case _ of
   (_ /\ (Continue (Similar cat)) /\ _ /\ Continue i) -> Just $ Tuple (isLeft cat) (negate (len i))
   _ -> Nothing
 

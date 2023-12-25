@@ -17,24 +17,21 @@ data Syntax nt tok
 derive instance eqSyntax :: (Eq nt, Eq tok) => Eq (Syntax nt tok)
 derive instance ordSyntax :: (Ord nt, Ord tok) => Ord (Syntax nt tok)
 
-printSyntax' :: forall nt tok. (Fragment nt tok -> String) -> Syntax nt tok -> Array (Either String (Fragment nt tok))
-printSyntax' = printSyntax'' identity
-
-printSyntax'' :: forall m nt tok. Semigroup m => (String -> m) -> (Fragment nt tok -> m) -> Syntax nt tok -> Array (Either m (Fragment nt tok))
-printSyntax'' t f (Conj l r) =
+printSyntax' :: forall m nt tok. Semigroup m => (String -> m) -> Syntax nt tok -> Array (Either m (Part nt tok))
+printSyntax' t (Conj l r) =
   let
     p x = case x of
       Null -> empty
-      Disj _ _ -> [ Left $ t "(" ] <> printSyntax'' t f x <> [ Left $ t ")" ]
-      _ -> printSyntax'' t f x
+      Disj _ _ -> [ Left $ t "(" ] <> printSyntax' t x <> [ Left $ t ")" ]
+      _ -> printSyntax' t x
   in join [ p l, p r ]
-printSyntax'' t f (Disj l r) = printSyntax'' t f l <> [ Left $ t " | " ] <> printSyntax'' t f r
-printSyntax'' _ _ (Part p) = [ Right [ p ] ]
-printSyntax'' _ _ Null = [ Right [] ]
+printSyntax' t (Disj l r) = printSyntax' t l <> [ Left $ t " | " ] <> printSyntax' t r
+printSyntax' _ (Part p) = [ Right p ]
+printSyntax' _ Null = []
 
 printSyntax :: forall nt tok. (Fragment nt tok -> String) -> Syntax nt tok -> String
 printSyntax f syntax =
-  intercalate " " $ map (either identity f) $ coalesce $ printSyntax' f syntax
+  intercalate " " $ map (either identity f) $ coalesce $ map (map pure) $ printSyntax' identity syntax
 
 coalesce :: forall x m. Monoid m => Array (Either x m) -> Array (Either x m)
 coalesce = toUnfoldable >>> coalesce' >>> fromFoldable

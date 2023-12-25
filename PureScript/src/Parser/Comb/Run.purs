@@ -9,14 +9,13 @@ import Data.Either (Either(..), note)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Newtype (over)
 import Data.Tuple (Tuple, fst, snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Algorithms (getResultCM', revertCST', statesNumberedByMany)
 import Parser.Comb.Combinators (buildTree, named)
 import Parser.Comb.Types (CGrammar, COptions, CResultant, CSyntax, Comb(..), Options(..), ParseError, Rec(..), Resultant(..), fullMapOptions, matchRule)
 import Parser.Lexing (class Tokenize, Best, Rawr, Similar, bestRegexOrString, contextLexingParse, longest, (?))
-import Parser.Types (Grammar(..), OrEOF(..), Part(..), States)
+import Parser.Types (Grammar(..), OrEOF(..), Part(..), State, StateInfo, States)
 
 type CBest nt cat i o =
   Best Int (Either nt nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
@@ -25,6 +24,16 @@ type CConf nt cat i o =
   }
 type CStates nt cat =
   States Int (Either nt nt) (Maybe Int) (OrEOF cat)
+type CStateInfo nt cat =
+  StateInfo Int (Either nt nt) (Maybe Int) (OrEOF cat)
+type CState nt cat =
+  State (Either nt nt) (Maybe Int) (OrEOF cat)
+
+type StateTable nt cat =
+  { stateMap :: Map nt Int
+  , start :: Int
+  , states :: CStates nt cat
+  }
 
 -- | Parse an input. You should partially apply it, and reuse that same
 -- | partially applied function for multiple inputs.
@@ -65,18 +74,18 @@ parseWith' ::
     Tokenize cat i o =>
     Eq o =>
   CConf nt cat i o -> nt -> Comb (Rec nt (OrEOF i) o) nt cat o a ->
-  (Map nt Int /\ Int /\ CStates nt cat) /\ (i -> Either ParseError a)
+  StateTable nt cat /\ (i -> Either ParseError a)
 parseWith' conf name parser = do
   -- First we build the LR(1) parsing table
-  let { states, resultants } = compile name parser
+  let compiled = compile name parser
   -- Then we can run it on an input
-  states /\ execute conf { states, resultants, options: buildTree name parser }
+  compiled.states /\ execute conf compiled
 
 parseRegex' ::
   forall nt a.
     Ord nt =>
   nt -> Comb (Rec nt (OrEOF String) String) nt (Similar String Rawr) String a ->
-  (Map nt Int /\ Int /\ CStates nt (Similar String Rawr)) /\ (String -> Either ParseError a)
+  StateTable nt (Similar String Rawr) /\ (String -> Either ParseError a)
 parseRegex' = parseWith' { best: bestRegexOrString }
 
 -- | Compile the LR(1) state table for the grammar
@@ -85,16 +94,18 @@ compile ::
     Ord nt =>
     Ord cat =>
   nt -> Comb rec nt cat o a ->
-  { states :: Map nt Int /\ Int /\ CStates nt cat
+  { states :: StateTable nt cat
   , resultants :: nt /\ Array (CResultant rec nt o a)
+  , options :: COptions rec nt cat o
   }
 compile name parser = do
   let Comb { grammar: MkGrammar initial, entrypoints } = named name parser
   let grammar = MkGrammar (Array.nub initial)
   let stateAssoc /\ generated = statesNumberedByMany identity grammar $ Array.nub $ [ name ] <> entrypoints
   let stateMap = Map.fromFoldable stateAssoc
-  let tgt = Map.lookup name stateMap # fromMaybe 0
-  { states: stateMap /\ tgt /\ generated
+  let start = Map.lookup name stateMap # fromMaybe 0
+  { states: { stateMap, start, states: generated }
+  , options: buildTree name parser
   , resultants: name /\ resultantsOf parser
   }
 
@@ -115,12 +126,12 @@ execute ::
     Eq o =>
   { best :: Best Int (Either nt nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
   } ->
-  { states :: Map nt Int /\ Int /\ States Int (Either nt nt) (Maybe Int) (OrEOF cat)
+  { states :: StateTable nt cat
   , resultants :: nt /\ Array (CResultant (Rec nt (OrEOF i) o) nt o a)
   , options :: COptions (Rec nt (OrEOF i) o) nt cat o
   } ->
   (i -> Either ParseError a)
-execute conf { states: stateMap /\ tgt /\ states, resultants, options } = do
+execute conf { states: { stateMap, start, states }, resultants, options } = do
   let
     options' ::
       nt -> Options (Rec nt (OrEOF i) o) (Either nt nt) (Maybe Int) (OrEOF cat) (OrEOF o)
@@ -148,7 +159,7 @@ execute conf { states: stateMap /\ tgt /\ states, resultants, options } = do
       stack <- lmap snd $ contextLexingParse conf (state /\ states) (options' name) rec input
       "Failed to extract result"? getResultCM' stack
   \(input :: i) -> do
-    stack <- lmap snd $ contextLexingParse conf (tgt /\ states) (options' (fst resultants)) rec (Continue input)
+    stack <- lmap snd $ contextLexingParse conf (start /\ states) (options' (fst resultants)) rec (Continue input)
     cst <- "Failed to extract result"? getResultCM' stack
     -- Apply the function that parses from the CST to the desired result type
     "Failed to match rule"? uncurry (matchRule rec) resultants cst
@@ -202,7 +213,7 @@ coll name parser@(Comb c) = Coll
           Left "Internal error: Failed to find entrypoint for parser"
         Just state ->
           \conf -> execute conf
-            { states: entrypoints /\ state /\ states
+            { states: { stateMap: entrypoints, start: state, states }
             , resultants: name /\ resultantsOf parser
             , options: buildTree name parser
             }
@@ -227,7 +238,17 @@ collect conf (Coll { grammar: MkGrammar initial, entrypoints, compilation }) = d
 
 
 
-withReparser ::
+-- | Name the first parser so it can be used (recursively!) while handling the
+-- | result of the second parser.
+-- |
+-- | This is pretty niche but it is useful for parsing CSS as specified:
+-- | see https://www.w3.org/TR/css-syntax-3/#any-value.
+-- |
+-- | > In some grammars, it is useful to accept any reasonable input in the
+-- | grammar, and do more specific error-handling on the contents manually
+-- | (rather than simply invalidating the construct, as grammar mismatches
+-- | tend to do).
+withReparserFor ::
   forall nt cat i o a b c.
     Ord nt =>
   nt ->
@@ -235,7 +256,7 @@ withReparser ::
   Comb (Rec nt (OrEOF i) o) nt cat o b ->
   ((i -> Either ParseError a) -> b -> c) ->
   Comb (Rec nt (OrEOF i) o) nt cat o c
-withReparser name aux (Comb cb) f = do
+withReparserFor name aux (Comb cb) f = do
   let Comb ca = named name aux
   Comb
     { grammar: cb.grammar <> ca.grammar

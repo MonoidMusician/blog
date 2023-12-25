@@ -8,24 +8,15 @@ import Data.Argonaut as Json
 import Data.Array (fold, intercalate)
 import Data.Array as A
 import Data.Array.NonEmpty as NEA
-import Data.Bitraversable (ltraverse)
-import Data.Codec as CA
-import Data.Either (Either(..), either, isLeft)
+import Data.Either (either)
 import Data.Foldable (foldMap, oneOf)
 import Data.List (List(..))
 import Data.List.NonEmpty as NEL
-import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple(..))
-import Data.Tuple.Nested ((/\))
+import Data.Maybe (Maybe(..), fromMaybe)
 import Dodo (Doc)
 import Dodo as D
-import Parser.Comb (execute, parseWith)
-import Parser.Comb.Combinators (buildTree)
-import Parser.Comb.Run (resultantsOf)
-import Parser.Languages (Comber, key, mainName, many1SepBy, rawr, (#->))
-import Parser.Languages.CSS (codec)
-import Parser.Lexing (Best, Rawr, Similar(..), len, prioritize)
-import Parser.Types (OrEOF(..), decide)
+import Parser.Comb.Comber (Comber, many1SepBy, rawr, thawWith, token, (#->))
+import Parser.Lexing as L
 
 string :: Comber String
 string = rawr $ "\"" <> """([^"\\]+|\\.)*?""" <> "\""
@@ -51,7 +42,7 @@ parseShown = "stuff" #-> \more -> do
   matched :: String -> Comber (Doc Void) -> String -> Comber (Doc Void)
   matched o more c =
     D.flexGroup <<< D.alignCurrentColumn <$> fold
-      [ D.text <$> key o
+      [ D.text <$> token o
       , oneOf
           [ fold
             [ pure D.space
@@ -60,7 +51,7 @@ parseShown = "stuff" #-> \more -> do
             ]
           , pure mempty
           ]
-      , D.text <$> key c
+      , D.text <$> token c
       ]
 
 layers :: Comber (Doc Void) -> Comber (Doc Void)
@@ -98,14 +89,6 @@ lazyTop :: Comber (Doc Void)
 lazyTop = layers parseShown <|> pure mempty
 
 mkReShow :: Maybe String -> String -> String
-mkReShow (Just json)
-  | Right (Right states) <- CA.decode codec <$> Json.parseJson json =
-    execute { best: lazyBest } { states, resultants: mainName /\ resultantsOf lazyTop, options: buildTree mainName lazyTop }
-      >>> either identity (D.print D.plainText D.twoSpaces)
-mkReShow _ = parseWith { best: lazyBest } mainName lazyTop
-  >>> either identity (D.print D.plainText D.twoSpaces)
-
-lazyBest :: forall s r. Best s r (OrEOF (Similar String Rawr)) (OrEOF String) (OrEOF String)
-lazyBest = ltraverse decide <<< NEA.head <<< prioritize case _ of
-  (_ /\ (Continue (Similar cat)) /\ _ /\ Continue i) -> Just $ Tuple (isLeft cat) (negate (len i))
-  _ -> Nothing
+mkReShow json =
+  thawWith { best: L.lazyBest } lazyTop (Json.parseJson (fromMaybe "" json))
+    >>> either identity (D.print D.plainText D.twoSpaces)

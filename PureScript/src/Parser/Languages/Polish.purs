@@ -1,7 +1,6 @@
 module Parser.Languages.Polish where
 
 import Prelude
-import Idiolect ((/|\))
 
 import Control.Alternative (guard)
 import Data.Array as Array
@@ -14,10 +13,9 @@ import Data.Traversable (sequence)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
-import Parser.Comb (namedRec)
-import Parser.Comb.Types ((<?>))
-import Parser.Languages (Comber, many, manyL, rawr, (#:))
-import Parser.Languages as Languages
+import Idiolect ((/|\), (<#?>))
+import Parser.Comb.Comber (Comber, many, manyL, namedRec, rawr, (#:))
+import Parser.Comb.Comber as Comber
 import Parser.Languages.CSS (test)
 import Parser.Types (CST(..))
 
@@ -29,7 +27,7 @@ trimWS = identity
 -- trimWS = String.replaceAll (String.Pattern " ") (String.Replacement "")
 
 wss :: Comber Unit
-wss | useWS = Languages.wss
+wss | useWS = Comber.wss
 wss = pure unit
 
 operators :: Array (String /\ Int)
@@ -63,7 +61,7 @@ op :: Comber String
 op = rawr $ "[a-zA-Z]+" <> wsrawr
 
 num :: Comber Number
-num = rawr ("\\d+(\\.\\d+)?" <> wsrawr) <?> Number.fromString
+num = rawr ("\\d+(\\.\\d+)?" <> wsrawr) <#?> Number.fromString
 
 data Strat = Explicit | ManyR | ManyL
 -- 16 10 13
@@ -77,15 +75,15 @@ polish strat =
       , case strat of
           Explicit ->
             oneOf $ arities <#> \i -> ado
-              b <- "op"#: op <?> arityEq i
+              b <- "op"#: op <#?> arityEq i
               cs <- sequence $ Array.replicate i $ wss *> rec
               in Branch b cs
           ManyR -> ado
-            b /\ cs <- ((op <?> arity) /|\ many "arguments" (wss *> rec)) <?>
+            b /\ cs <- ((op <#?> arity) /|\ many "arguments" (wss *> rec)) <#?>
               \((b /\ i) /\ cs) -> b /\ cs <$ guard (Array.length cs == i)
             in Branch b cs
           ManyL -> ado
-            b /\ cs <- ((op <?> arity) /|\ manyL "arguments" (wss *> rec)) <?>
+            b /\ cs <- ((op <#?> arity) /|\ manyL "arguments" (wss *> rec)) <#?>
               \((b /\ i) /\ cs) -> b /\ cs <$ guard (Array.length cs == i)
             in Branch b cs
       ]

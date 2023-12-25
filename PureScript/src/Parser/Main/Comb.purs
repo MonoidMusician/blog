@@ -4,18 +4,12 @@ import Prelude
 
 import Ansi.Codes as Ansi
 import Control.Monad.Except (runExcept)
-import Control.Plus (empty, (<|>))
-import Data.Argonaut as JSON
-import Data.Array (intercalate, nub, (!!))
-import Data.Array as Array
+import Control.Plus ((<|>))
+import Data.Array (intercalate)
 import Data.Array.NonEmpty (NonEmptyArray)
-import Data.BooleanAlgebra.CSS (Vert, combineFold, printVerts, subsumptite)
-import Data.Codec.Argonaut as CA
-import Data.Either (Either(..), blush, either, hush)
-import Data.Filterable (filter, filterMap, partitionMap, separate)
-import Data.Foldable (fold, foldMap, oneOf, oneOfMap, traverse_)
-import Data.FunctorWithIndex (mapWithIndex)
-import Data.HeytingAlgebra (tt)
+import Data.Either (Either(..), either)
+import Data.Filterable (separate)
+import Data.Foldable (fold, foldMap, oneOf, traverse_)
 import Data.Lens (traversed)
 import Data.Lens.Iso.Newtype (_Newtype)
 import Data.Lens.Record (prop)
@@ -24,14 +18,9 @@ import Data.Semigroup.Foldable (intercalateMap)
 import Data.String as String
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags as RegexFlags
-import Data.These (that)
-import Data.Traversable (sequence, traverse)
-import Data.Tuple (Tuple(..), fst, snd)
-import Data.Tuple.Nested ((/\))
-import Debug (spy)
-import Deku.Attribute (cb, prop', unsafeAttribute, xdata, (!:=), (<:=>))
+import Data.Traversable (traverse)
+import Deku.Attribute (Cb, cb, prop', unsafeAttribute, xdata, (!:=), (<:=>))
 import Deku.Control (switcher, text, text_)
-import Deku.Control as DC
 import Deku.Core (Domable, Nut, bussed, envy)
 import Deku.DOM as D
 import Deku.Toplevel (runInElement')
@@ -39,63 +28,34 @@ import Dodo as Dodo
 import Effect (Effect)
 import Effect.Aff (Aff, error, launchAff_, message, runAff, throwError)
 import Effect.Aff as Aff
-import Effect.Class (liftEffect)
 import Effect.Console (log)
 import Effect.Ref as Ref
-import FRP.Aff (affToEvent)
-import FRP.Event (Event, fix, makeEvent, memoize, subscribe)
+import FRP.Event (Event, makeEvent, subscribe)
 import FRP.Helpers (dedup)
-import FRP.Memoize (memoBehFold, memoLast)
+import FRP.Memoize (memoLast)
 import Fetch (Method(..), fetch)
 import Foreign (readArray, readString)
 import Foreign.Index (readProp)
-import Foreign.Object (Object)
-import Foreign.Object as Object
-import Idiolect ((==<), (>==))
+import Idiolect ((<#?>), (>==))
 import JSURI (encodeURIComponent)
-import Parser.Comb (Comb(..), Syntax, coalesce, printSyntax, printSyntax')
-import Parser.Comb.Syntax (printSyntax'')
-import Parser.Examples (showPart)
-import Parser.Languages (Comber, printPretty, showFragment)
-import Parser.Languages.CSS (mkCSSParser)
-import Parser.Lexing (type (~), Rawr(..), Similar(..))
-import Parser.Main (inputValidated)
+import Parser.Comb.Comber (Comber, Printer, parse, printGrammarWsn, toAnsi)
 import Parser.Template (template)
-import Parser.Types (Part(..))
 import Partial.Unsafe (unsafeCrashWith)
 import PureScript.CST as CST
 import PureScript.CST.Errors (printParseError)
 import PureScript.CST.Parser.Monad as CST.M
 import PureScript.CST.Types as CST.T
-import Tidy (toDoc)
-import Tidy as Tidy
 import Tidy.Codegen as TC
 import Type.Proxy (Proxy(..))
-import Unsafe.Coerce (unsafeCoerce)
-import Web.DOM.AttrName (AttrName(..))
-import Web.DOM.Document (createElement)
-import Web.DOM.Document as Document
-import Web.DOM.Element (setAttribute)
-import Web.DOM.Element as Element
 import Web.DOM.ElementId (ElementId(..))
-import Web.DOM.ElementName (ElementName(..))
-import Web.DOM.Node (appendChild, removeChild)
 import Web.DOM.NonElementParentNode (getElementById)
 import Web.Event.Event as Event
 import Web.HTML (window)
-import Web.HTML.HTMLDocument (body, toDocument)
 import Web.HTML.HTMLDocument as HTMLDocument
-import Web.HTML.HTMLElement as HTMLElement
 import Web.HTML.HTMLTextAreaElement as HTMLTextArea
 import Web.HTML.Window (document)
-import Widget (Widget, adaptInterface)
+import Widget (Widget)
 import Widget.Types (SafeNut(..))
-
-printUgly :: forall a. Comber a -> String
-printUgly (Comb { prettyGrammar }) = fst $ nub prettyGrammar #
-  traverse_ \(name /\ msyntax) ->
-    msyntax # traverse_ \syntax ->
-      flip Tuple unit $ showPart (NonTerminal name) <> " = " <> printSyntax showFragment syntax <> " .\n"
 
 color :: Ansi.Color -> String
 color = case _ of
@@ -107,32 +67,47 @@ colorful x t = D.span
   (D.Style !:= do "color:" <> color x)
   [ text_ t ]
 
-renderPart :: Part String (String ~ Rawr) -> Nut
-renderPart (Terminal (Similar (Left tok))) = colorful Ansi.Yellow $ show tok
-renderPart (Terminal (Similar (Right re))) = colorful Ansi.Green $ show re
-renderPart (NonTerminal nt) = colorful Ansi.Blue nt
-
-renderParts :: Array (Part String (String ~ Rawr)) -> Nut
-renderParts parts = intercalate (text_ " ") $ renderPart <$> parts
-
-renderSyntax :: Syntax String (String ~ Rawr) -> Nut
-renderSyntax syntax =
-  intercalate (text_ " ") $
-    map (either identity renderParts) $
-      coalesce $ printSyntax'' text_ renderParts syntax
-
-renderGrammar :: forall a. Comber a -> Nut
-renderGrammar (Comb { prettyGrammar }) =
-  D.ul_ $ nub prettyGrammar <#> \(name /\ msyntax) ->
-    msyntax # foldMap \syntax ->
-      D.li_ $ pure $
-        renderPart (NonTerminal name) <> text_ " = " <> renderSyntax syntax <> text_ " .\n"
+toDeku :: forall lock payload. Printer (Domable lock payload)
+toDeku =
+  { nonTerminal: colorful Ansi.Blue
+  , literal: colorful Ansi.Yellow <<< show
+  , regex: colorful Ansi.Green
+  , rule: colorful Ansi.Cyan <<< show
+  , meta: text_
+  , lines: foldMap (D.div_ <<< pure)
+  }
 
 mainForParser :: Comber (Dodo.Doc Void) -> Effect Unit
 mainForParser parser = do
-  printPretty parser
+  log $ printGrammarWsn toAnsi parser
   window >>= document >== HTMLDocument.toNonElementParentNode >>= getElementById (ElementId "grammar") >>= traverse_ \grammarEl -> do
-    runInElement' grammarEl (renderGrammar parser)
+    runInElement' grammarEl (printGrammarWsn toDeku parser)
+  messageInBottle
+    { parser: parse parser >>> case _ of
+        Left err -> { success: false, result: err }
+        Right doc -> { success: true, result: Dodo.print Dodo.plainText Dodo.twoSpaces doc }
+    , grammar: \_ -> []
+    }
+
+type IntoGrammar m =
+  { terminal :: String -> m
+  , nonTerminal :: String -> m
+  , regex :: String -> m
+  , meta :: String -> m
+  }
+
+type SideChannel =
+  { parser :: String -> { success :: Boolean, result :: String }
+  , grammar :: forall m. Monoid m =>
+    IntoGrammar m ->
+    Array { name :: String, syntax :: m }
+  }
+
+foreign import messageInBottle :: SideChannel -> Effect Unit
+foreign import installSideChannel :: (SideChannel -> Effect Unit) -> Effect Unit
+
+sideChannel :: Event SideChannel
+sideChannel = makeEvent \cb -> mempty <$ installSideChannel cb
 
 fake :: CST.T.SourceRange
 fake =
@@ -219,20 +194,6 @@ bundle js =
   -- Actually call the `main` function
   in codeWithRemappedImports <> "\n\nmain();\n"
 
-run :: String -> Effect (Effect Unit)
-run js = do
-  doc <- document =<< window
-  script <- createElement (ElementName "script") (toDocument doc)
-  setAttribute (AttrName "type") "module" script
-  encodeURIComponent js # traverse_ \escaped -> do
-    let
-      src = "data:text/javascript;utf8," <> escaped
-    setAttribute (AttrName "src") src script
-  map (fromMaybe mempty) $ body doc >>= traverse \htmlElement -> do
-    let bdy = HTMLElement.toNode htmlElement
-    appendChild (Element.toNode script) bdy
-    pure $ removeChild (Element.toNode script) bdy
-
 printErrors :: NonEmptyArray CST.M.PositionedError -> String
 printErrors = intercalateMap "\n" printPositionedError
 
@@ -243,16 +204,13 @@ printPositionedError { error, position } =
 throwEither :: forall e a. (e -> String) -> Either e a -> Aff a
 throwEither f = either (throwError <<< error <<< f) pure
 
--- widget :: Widget
--- widget _ = mempty <$ launchAff_ do
---   let parserCombinator = "string <#> D.text"
---   liftEffect $ log parserCombinator
---   assembled <- assemble parserCombinator # throwEither printErrors
---   compiled <- compile assembled >>= throwEither (intercalate "\n")
---   liftEffect $ void $ run $ bundle compiled
+data Status
+  = Compiling
+  | Failed String
+  | Compiled String
 
 pipeline ::
-  Event String -> Event (Either String String)
+  Event String -> Event Status
 pipeline incoming = makeEvent \sub -> do
   cancel <- Ref.new mempty
   unsub <- subscribe incoming \parserCombinator -> do
@@ -261,17 +219,17 @@ pipeline incoming = makeEvent \sub -> do
     Ref.write mempty cancel
     log parserCombinator
     case assemble parserCombinator of
-      Left errs -> sub $ Left $ printErrors errs
+      Left errs -> sub $ Failed $ printErrors errs
       Right assembled -> do
         log "Compiling"
-        sub $ Left "Compiling ..."
+        sub Compiling
         fiber <- compile assembled # runAff case _ of
-          Left kaboom -> sub $ Left $ message kaboom
-          Right (Left err) -> sub $ Left $ intercalate "\n" err
+          Left kaboom -> sub $ Failed $ message kaboom
+          Right (Left err) -> sub $ Failed $ intercalate "\n" err
           Right (Right compiled) -> do
             log ":3"
             Ref.write mempty cancel
-            sub $ Right $ bundle compiled
+            sub $ Compiled $ bundle compiled
         Ref.write (Aff.killFiber (error "Canceled due to new input") fiber) cancel
   pure do
     unsub
@@ -281,13 +239,32 @@ embed :: Event String -> Nut
 embed incomingRaw =
   envy $ memoLast (dedup incomingRaw) \incoming ->
   envy $ memoLast (pipeline incoming) \pipelined ->
+  envy $ memoLast sideChannel \gotParser ->
   let
-    { left: errors, right: bundled } = separate pipelined
-    status = errors <|> "" <$ bundled
+    bundled = pipelined <#?> case _ of
+      Compiled result -> Just result
+      _ -> Nothing
+    status = mempty <$ gotParser <|> do
+      pipelined <#> case _ of
+        Compiling -> text_ "Compiling ..."
+        Failed err -> D.pre_ [ text_ err ]
+        Compiled _ -> text_ "Loading ..."
   in fold
-    [ D.div (D.Style !:= "white-space: pre") [ text status ]
+    [ D.div (D.Style !:= "white-space: pre") [ switcher identity status ]
     , bundled # switcher \latestBundle -> fold
       [ D.div (D.Id !:= "grammar") []
+      , gotParser # switcher \parser ->
+          bussed \setValue getValue -> fold
+          [ D.div (D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "In")) $
+              pure $ D.pre_ $ pure $ D.code_ $ pure $
+                flip D.textarea [] $ oneOf
+                  [ D.OnInput !:= updateTA setValue
+                  , D.Value !:= ""
+                  , D.Style !:= "height: 15vh"
+                  ]
+          , D.div (D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "Out")) $
+              pure $ D.pre_ $ pure $ D.code_ $ pure $ text $ _.result <<< parser.parser <$> getValue
+          ]
       , flip D.script [] $ oneOf
           [ D.Src !:= do
               fromMaybe "" $ encodeURIComponent latestBundle <#> \escaped ->
@@ -315,11 +292,12 @@ widget _ = do
             [ text_ "Compile!" ]
         , embed compiling
         ]
-  where
-  updateTA upd = cb $
-    (Event.target >=> HTMLTextArea.fromEventTarget) >>>
-      traverse_ \ta -> do
-        value <- HTMLTextArea.value ta
-        upd value
+
+updateTA :: (String -> Effect Unit) -> Cb
+updateTA upd = cb $
+  (Event.target >=> HTMLTextArea.fromEventTarget) >>>
+    traverse_ \ta -> do
+      value <- HTMLTextArea.value ta
+      upd value
 
 
