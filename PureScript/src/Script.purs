@@ -2,14 +2,17 @@ module Script where
 
 import Prelude
 
+import Conversions.Index (conversions)
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
 import Data.Foldable (intercalate)
+import Data.Functor (mapFlipped)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
+import Dodo as Dodo
 import Effect (Effect)
 import Effect.Aff (Aff, launchAff_, makeAff)
 import Effect.Class (liftEffect)
@@ -19,6 +22,8 @@ import Idiolect ((==<), (>==))
 import Node.Encoding (Encoding(..))
 import Node.Process (argv, exit, stderr, stdin, stdout)
 import Node.Stream (onDataString, onEnd, onError, writeString)
+import Parser.Comb.Comber ((<|>))
+import Parser.Comb.Comber as Comber
 import Parser.Languages.Show (mkReShow)
 import Parser.Main.Comb (assemble, bundle, compile, printErrors)
 import PureScript.Highlight (highlight, highlightPandoc)
@@ -40,7 +45,8 @@ scripts = Map.fromFoldable
       Right assembled -> compile assembled <#> case _ of
         Left errs -> Left $ intercalate "\n" errs
         Right result -> Right $ bundle result
-  ]
+  ] <|> mapFlipped conversions \parserPrinter -> const $ Right $ \input -> pure $
+      Comber.parse parserPrinter input <#> Dodo.print Dodo.plainText Dodo.twoSpaces
 
 main :: Effect Unit
 main = do

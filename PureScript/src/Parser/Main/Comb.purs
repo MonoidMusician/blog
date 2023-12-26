@@ -8,7 +8,6 @@ import Control.Plus ((<|>))
 import Data.Array (intercalate)
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Either (Either(..), either)
-import Data.Filterable (separate)
 import Data.Foldable (fold, foldMap, oneOf, traverse_)
 import Data.Lens (traversed)
 import Data.Lens.Iso.Newtype (_Newtype)
@@ -247,7 +246,7 @@ embed incomingRaw =
     status = mempty <$ gotParser <|> do
       pipelined <#> case _ of
         Compiling -> text_ "Compiling ..."
-        Failed err -> D.pre_ [ text_ err ]
+        Failed err -> D.pre (D.Style !:= "overflow-x: auto") [ text_ err ]
         Compiled _ -> text_ "Loading ..."
   in fold
     [ D.div (D.Style !:= "white-space: pre") [ switcher identity status ]

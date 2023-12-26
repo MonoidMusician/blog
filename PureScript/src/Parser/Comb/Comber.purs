@@ -248,7 +248,7 @@ manySepBy n s p = map Array.fromFoldable $
 manyBaseSepBy :: forall x y a. String -> Comber x -> Comber y -> Comber a -> Comber (Array a)
 manyBaseSepBy n b s p = map Array.fromFoldable $
   Nil <$ b <|> lift2 Cons p do
-    n #-> \more -> pure Nil <|> lift2 Cons p (s *> more)
+    n #-> \more -> pure Nil <|> lift2 Cons (s *> p) more
 
 many1 :: forall a. String -> Comber a -> Comber (NonEmptyArray a)
 many1 n p = NEA.fromFoldable1 <$> n #-> \more ->

@@ -85,10 +85,10 @@ main = do
 string :: Comber String
 string = named "string" $ join delim "\"" $
   map fold $ many "string_contents" $ oneOf
-    -- rawr "[\\u0020-\\u10FFFF]" also works
-    -- the only reason we need to exclude \ and " is because of the
-    -- repetition operator, which is good for efficiency
-    [ rawr "[\\u0020-\\u0021\\u0023-\\u005B\\u005C-\\u10FFFF]+"
+    -- `rawr "[\\u0020-\\u10FFFF]"` also works
+    -- the only reason we need to exclude \ U+005C and " U+0022 is because of
+    -- the repetition operator, which is good for efficiency
+    [ rawr "[\\u0020-\\u0021\\u0023-\\u005B\\u005D-\\u{10FFFF}]+"
     , token "\\" *> oneOf
       [ token "\"" $> "\""
       , token "\\" $> "\\"

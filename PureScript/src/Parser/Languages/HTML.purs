@@ -1,4 +1,4 @@
-module PureScript.ToHTML where
+module Parser.Languages.HTML where
 
 import Prelude
 

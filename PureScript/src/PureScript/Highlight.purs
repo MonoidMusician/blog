@@ -14,7 +14,7 @@ import PureScript.CST.Lexer (lex)
 import PureScript.CST.Print as CST
 import PureScript.CST.TokenStream (TokenStep(..), TokenStream, step)
 import PureScript.CST.Types (Comment(..), Token(..), SourceToken)
-import PureScript.ToHTML (toHTML)
+import Parser.Languages.HTML (toHTML)
 
 highlight :: String -> String
 highlight = lex
