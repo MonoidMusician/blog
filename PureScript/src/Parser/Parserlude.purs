@@ -36,7 +36,7 @@ import Dodo.Common as DC
 import Effect (Effect)
 import Idiolect (type (/\/), compactMap, compactMapFlipped, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, morph, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/))
 import Parser.Comb (Comb(..), named, namedRec)
-import Parser.Languages (digit, int, json, string, number)
+import Parser.Languages (digit, int, json, string, digit, int, number)
 import Parser.Languages.CSS (combinator, escape, ident, many1Comma, newline, percentage, url)
 import Parser.Main.Comb as Parser.Main.Comb
 import Prim.TypeError (class Fail, Beside, Quote, Text)

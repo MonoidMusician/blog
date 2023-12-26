@@ -55,6 +55,14 @@ author:
 
 - `new URLSearchParams(window.location.search).{get,getAll,has,entries,...}(...)`{.js}
   - `.entries` returns an iterator??
+- POST JSON to server:
+
+  ```js
+  fetch('localhost', {
+      method: 'POST', body: JSON.stringify(yourData),
+      headers: { "Content-Type": "application/json" },
+  }).then(r => r.json());
+  ```
 
 ### NodeJS
 
@@ -151,6 +159,7 @@ author:
 
 - [Common MIME types](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types)
 - [List of file signatures](https://en.wikipedia.org/wiki/List_of_file_signatures)
+- [List of TCP and UDP port numbers](https://en.wikipedia.org/wiki/List_of_TCP_and_UDP_port_numbers)
 - https://gchq.github.io/CyberChef/
 - https://www.onlinemp4parser.com/
 - https://explainshell.com/

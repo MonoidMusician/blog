@@ -14,13 +14,11 @@ import Data.Int (hexadecimal)
 import Data.Int as Int
 import Data.Number as Number
 import Data.String as String
-import Data.Tuple (Tuple(..))
-import Data.Tuple.Nested (type (/\))
 import Effect (Effect)
 import Effect.Console (log)
 import Foreign.Object as Object
 import Idiolect ((<#?>), (<$?>), (>==))
-import Parser.Comb.Comber (Comber, delim, many, manyBaseSepBy, named, namedRec, parse, printGrammarWsn, rawr, toAnsi, token, ws, wsws)
+import Parser.Comb.Comber (Comber, delim, many, named, namedRec, parse, printGrammarWsn, rawr, toAnsi, token, wsws, arrayOf, objectOf)
 
 digit :: Comber Int
 digit = named "digit" $ oneOf $ mapWithIndex (<$) $
@@ -105,17 +103,6 @@ string = named "string" $ join delim "\"" $
 
 infixr 2 named as #:
 infixr 5 namedRec as #->
-
-arrayOf :: forall a. String -> Comber a -> Comber (Array a)
-arrayOf name value = delim "[" "]" do
-  manyBaseSepBy name ws (token ",") value
-
-objectOf :: forall k a. String -> String -> Comber k -> Comber a -> Comber (Array (k /\ a))
-objectOf name entry keyP value = delim "{" "}" do
-  manyBaseSepBy name ws (token ",") do
-    entry#: Tuple <$> wsws keyP <* token ":" <*> value
-
--- Comb Combinator
 
 json :: Comber Json
 json = namedRec "value" \value -> wsws $ oneOf
