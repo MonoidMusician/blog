@@ -107,6 +107,18 @@ I add these rules to smooth out the rough edges:
 
 </details>
 
+#### Haskell Discourse
+
+To make the logo fit in:
+
+```css
+@-moz-document domain("discourse.haskell.org") {
+    .d-header #site-logo {
+        filter: invert(1) contrast(87%) hue-rotate(180deg);
+    }
+}
+```
+
 ## User scripts
 
 I use TamperMonkey extension on Chrome.

@@ -242,7 +242,7 @@ manyL n p = Array.reverse <<< Array.fromFoldable <$> n #-> \more ->
 manySepBy :: forall x a. String -> Comber x -> Comber a -> Comber (Array a)
 manySepBy n s p = map Array.fromFoldable $
   pure Nil <|> lift2 Cons p do
-    n #-> \more -> pure Nil <|> lift2 Cons p (s *> more)
+    n #-> \more -> pure Nil <|> lift2 Cons (s *> p) more
 
 -- | Have a specific parser for the `Nil` base case (usually `ws`).
 manyBaseSepBy :: forall x y a. String -> Comber x -> Comber y -> Comber a -> Comber (Array a)

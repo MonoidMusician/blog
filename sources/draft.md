@@ -51,10 +51,10 @@ author:
 <div style="font-variant-numeric: lining-nums tabular-nums" class="sourceCode unicode" data-lang="Markdown"><pre><code><textarea id="markdown" style="min-height: calc(75vh - 40px - 40px)"></textarea></code></pre></div>
 
 <div>
+  <label class="input-wrapper text"><span>Slug</span><input id="slug"/></label>
+  <button id="load" class="">Load</button>
+  <button id="post" class="add">Post</button>
   <button id="preview" class="big">Preview</button>
-  <label class="input-wrapper text"><span>Slug</span><input class="terminal" id="slug"/></label>
-  <button id="load" class="big">Load</button>
-  <button id="post" class="big add">Post</button>
 
   <ul id="posts" style="max-height: calc(10vh + 20px); overflow: auto; border-width: 1px; border-color: #2372ffaa; border-radius: 4px;">
   </ul>
@@ -68,6 +68,7 @@ author:
 
 <script>
   const the = (...arg) => document.getElementById(...arg);
+  the("slug").value = new URLSearchParams(window.location.search).get("post");
   async function preview() {
     const r = await fetch('http://localhost:5656', {
       method: 'PUT', body: the("markdown").value,

@@ -26,6 +26,9 @@ import Parser.Comb.Comber (Comber, parse)
 -- `x${y}z${u}v` :: i -> String -| y, u :: i -> String
 -- :json :: Json -> String
 
+
+-- "\n":string:CSS = "\\n":CSS
+
 {-
 -- Indicate that we will parse JSON data which is passed through each part
 JSON:
@@ -52,6 +55,7 @@ JSON:
     -- If only .source is present
     / $.source
     )? -- Turn failure into mempty
+    -- `_?` binds tighter than `_/_`
 
     {|
     * "servings":

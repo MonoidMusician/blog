@@ -73,7 +73,7 @@ Itʼs not a real blog though since it doesnʼt have RSS yet …
   #. [TODO]{t=}: magic constants (in hexadecimal and base64) for file hacking
   #.
     [TODO]{t=}: Unit/base calculator and such ([cf.]{t=} [insect](https://github.com/sharkdp/insect) and [numbat](https://github.com/sharkdp/numbat))
-    - Would be cool to have better precision, or even use [Towards an API for the Real Numbers](https://dl.acm.org/doi/pdf/10.1145/3385412.3386037).
+    - Would be cool to have better precision than `Number`{.purescript}, or even use [Towards an API for the Real Numbers](https://dl.acm.org/doi/pdf/10.1145/3385412.3386037).
   #. [TODO]{t=}: QR code generator and reader and formats and suchs, and bar code, and PDF417, ...
   #. CSS → Sass
 - [Interactive Parser Explanations](parser.html)
@@ -104,6 +104,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
   - [WIP]{t=}: [User Operators with Implicits & Overloads](implicit_arguments.html), in bidirectional type checkers
   - The Algebra of Type Unification (semilattices everywhere!)
   - [TransMorphism Type Theory MetaTheory](tmttmt.html)
+  - Nontermination and inconsistency
 - Programming Linguistics:
   - Iʼve been thinking a lot about [selective applicative functors](https://dl.acm.org/doi/10.1145/3341694) lately.
     Mostly through the perspective of two contrasting applications: [selective applicative parsers](https://cohost.org/monoidmusician/post/2588944-more-more-more-seman), and functors for [typechecking with better errors](comprehensive_errors.html).

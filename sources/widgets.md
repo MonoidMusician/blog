@@ -32,6 +32,8 @@ subtitle: little widgets that tag prose as belonging to various types of data
     - date time – time
     - date time – date time
 - IPA (Junicode!)
+  - pronunciator
+    - [la-pronounc](https://en.wiktionary.org/wiki/Module:la-pronunc)
 - keyboard shortcuts (whatʼs the datatype/language for that?)
   - both DOM keys and Libertinus Sans
   - modifiers
@@ -41,4 +43,5 @@ subtitle: little widgets that tag prose as belonging to various types of data
   - weak sequencing?
 - number stuffs, units
   - see I told you I want to make a calculator
+  - calculator specialized for probability calculations! like Pokémon challenge run odds!
 - documentation
