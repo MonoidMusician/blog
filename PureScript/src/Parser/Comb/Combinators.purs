@@ -11,9 +11,10 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.Lazy (defer)
 import Data.Maybe (Maybe(..))
 import Data.NonEmpty (NonEmpty(..))
+import Data.Profunctor.Strong ((&&&))
 import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..), fst, snd)
-import Data.Tuple.Nested ((/\))
+import Data.Tuple.Nested (type (/\), (/\))
 import Idiolect ((>==))
 import Parser.Comb.Syntax (Syntax(..))
 import Parser.Comb.Types (Comb(..), Options(..), PartialResult(..), Resultant(..), component, components, matchRule, withCST', withCST_)
@@ -67,22 +68,36 @@ buildTree name (Comb c) = Options $
     }
 
 -- | Name a nonterminal production, this allows recursion.
-namedRec :: forall rec nt cat o a. Ord nt => nt -> (Comb rec nt cat o a -> Comb rec nt cat o a) -> Comb rec nt cat o a
-namedRec name parseRec =
+namedRec ::
+  forall rec nt cat o a.
+    Ord nt =>
+  nt ->
+  (Comb rec nt cat o a -> Comb rec nt cat o a) ->
+  Comb rec nt cat o a
+namedRec name defineParser = fst $
+  namedRec' name (Tuple <$> defineParser <@> unit)
+
+namedRec' ::
+  forall rec nt cat o a r.
+    Ord nt =>
+  nt ->
+  (Comb rec nt cat o a -> Comb rec nt cat o a /\ r) ->
+  Comb rec nt cat o a /\ r
+namedRec' name defineParser =
   let
-    recursive = parseRec $ Comb
+    recursive = defineParser $ Comb
       { grammar: mempty
       , entrypoints: empty
       , pretty: Just $ Part $ NonTerminal name
       , prettyGrammar: empty
       , rules: pure
-        { rule: pure $ NonTerminal $ Tuple (defer \_ -> buildTree name recursive) name
+        { rule: pure $ NonTerminal $ Tuple (defer \_ -> buildTree name (fst recursive)) name
         , resultant: component \rec cst ->
-            let Comb borrowed = recursive in
+            let Comb borrowed = fst recursive in
             matchRule rec name (borrowed.rules <#> _.resultant) cst
         }
       }
-    Comb produced = recursive
+    Comb produced = fst recursive
     newRules = MkGrammar $ produced.rules # mapWithIndex \i { rule } ->
       { pName: name
       , rName: i
@@ -95,10 +110,10 @@ namedRec name parseRec =
     , pretty: Just $ Part $ NonTerminal name
     , rules: pure
         -- not quite sure why defer is needed here?
-        { rule: pure $ NonTerminal $ Tuple (defer \_ -> buildTree name recursive) name
+        { rule: pure $ NonTerminal $ Tuple (defer \_ -> buildTree name (fst recursive)) name
         , resultant: component \rec -> matchRule rec name (produced.rules <#> _.resultant)
         }
-    }
+    } /\ snd recursive
 
 -- | Name a parser. This may introduce ambiguity into the grammar.
 named :: forall rec nt cat o a. Ord nt => nt -> Comb rec nt cat o a -> Comb rec nt cat o a

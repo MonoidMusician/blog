@@ -1,6 +1,7 @@
 module Parser.Parserlude ( module ReExports ) where
 
 import Parser.Comb.Comber
+import Parser.Comb.Comber as ReExports
 import Prelude
 import Prelude as ReExports
 
@@ -26,6 +27,8 @@ import Control.Apply (lift2)
 import Control.Apply (lift2) as ReExports
 import Control.Plus (class Plus, empty)
 import Control.Plus (class Plus, empty) as ReExports
+import Data.Argonaut (Json)
+import Data.Argonaut (Json) as ReExports
 import Data.Array as A
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty (NonEmptyArray) as ReExports
@@ -46,6 +49,8 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.FunctorWithIndex (mapWithIndex) as ReExports
 import Data.HeytingAlgebra (tt, ff, implies)
 import Data.HeytingAlgebra (tt, ff, implies) as ReExports
+import Data.Identity (Identity(..))
+import Data.Identity (Identity(..)) as ReExports
 import Data.Int (hexadecimal, decimal, base36, binary)
 import Data.Int (hexadecimal, decimal, base36, binary) as ReExports
 import Data.Int as Int
@@ -58,12 +63,16 @@ import Data.Monoid (power)
 import Data.Monoid (power) as ReExports
 import Data.Monoid.Additive (Additive(..))
 import Data.Monoid.Additive (Additive(..)) as ReExports
+import Data.Monoid.Endo (Endo(..))
+import Data.Monoid.Endo (Endo(..)) as ReExports
 import Data.Monoid.Multiplicative (Multiplicative(..))
 import Data.Monoid.Multiplicative (Multiplicative(..)) as ReExports
-import Data.Newtype (unwrap, wrap, un)
-import Data.Newtype (unwrap, wrap, un) as ReExports
+import Data.Newtype (unwrap, wrap, un, class Newtype)
+import Data.Newtype (unwrap, wrap, un, class Newtype) as ReExports
 import Data.Profunctor.Choice ((|||))
 import Data.Profunctor.Choice ((|||)) as ReExports
+import Data.Profunctor.Star (Star(..))
+import Data.Profunctor.Star (Star(..)) as ReExports
 import Data.Profunctor.Strong ((&&&), (***))
 import Data.Profunctor.Strong ((&&&), (***)) as ReExports
 import Data.Set (Set)

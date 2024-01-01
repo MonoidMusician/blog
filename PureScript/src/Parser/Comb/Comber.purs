@@ -31,6 +31,7 @@ import Data.Map (Map)
 import Data.Maybe (Maybe(..))
 import Data.Maybe (optional) as ReExports
 import Data.Newtype (class Newtype, over, un)
+import Data.Symbol (class IsSymbol, reflectSymbol)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
@@ -41,7 +42,7 @@ import Fetch (fetch)
 import Parser.Comb (Comb(..), execute)
 import Parser.Comb as Comb
 import Parser.Comb.Codec (stateTableCodec)
-import Parser.Comb.Combinators (buildTree)
+import Parser.Comb.Combinators (buildTree, namedRec')
 import Parser.Comb.Run (resultantsOf)
 import Parser.Comb.Run as CombR
 import Parser.Comb.Syntax (printSyntax')
@@ -53,7 +54,12 @@ import Parser.Lexing (class ToString, type (~), Rawr, Similar(..), bestRegexOrSt
 import Parser.Types (OrEOF)
 import Parser.Types (OrEOF) as ReExports
 import Parser.Types as P
+import Prim.Row as Row
+import Prim.RowList as RL
+import Record as Record
 import Safe.Coerce (coerce)
+import Type.Equality (class TypeEquals, to, from)
+import Type.Proxy (Proxy(..))
 
 newtype Comber a = Comber
   (Comb Rec String (String ~ Rawr) String a)
@@ -362,8 +368,7 @@ printRules ::
 printRules p = named topName >>>
   \(Comber (Comb { prettyGrammar })) ->
     Array.nub prettyGrammar # (map <<< map <<< map) \syntax ->
-      spaced (either identity (printPart p)) $
-        printSyntax' p.meta syntax
+      printSyntax' p.meta (spaced (printPart p)) syntax
   where
   spaced :: forall b. (b -> m) -> Array b -> m
   spaced f = intercalate (p.meta " ") <<< map f
@@ -454,3 +459,60 @@ printConflicts p { states: states@(P.States index) } =
             , p.lines $ (p.meta "  - " <> _) <$> printState p items
             ]
       ]
+
+--------------------------------------------------------------------------------
+
+-- | Define mutually recursive parsers all at once, through a fixpoint of
+-- | a record of fields of type `Comber`. Each parser may return its own type.
+mutual ::
+  forall r rl.
+    RL.RowToList r rl =>
+    MutualCombers rl r =>
+  (Record r -> Record r) -> Record r
+mutual defineParsers =
+  fst $ mutual' (Tuple <$> defineParsers <@> unit)
+
+mutual' ::
+  forall r rl o.
+    RL.RowToList r rl =>
+    MutualCombers rl r =>
+  (Record r -> Record r /\ o) -> Record r /\ o
+mutual' = mutualRL (Proxy :: Proxy rl)
+
+class MutualCombers :: RL.RowList Type -> Row Type -> Constraint
+class MutualCombers rl r | rl -> r where
+  mutualRL :: forall o. Proxy rl -> (Record r -> Record r /\ o) -> Record r /\ o
+
+instance mutualNil :: MutualCombers RL.Nil () where
+  mutualRL _ f = f {}
+
+instance mutualCons ::
+  ( MutualCombers rl' r'
+  , IsSymbol sym
+  , Row.Lacks sym r'
+  , Row.Cons sym c r' r
+  , TypeEquals (Comber a) c
+  ) => MutualCombers (RL.Cons sym c rl') r where
+    mutualRL _ f = rOut /\ o
+      where
+      sym = Proxy :: Proxy sym
+      -- Save the recursive invocation of the parser
+      defineParser prsRec = (#)
+        -- Tell the typeclass we are handling this field
+        -- if it will handle the rest of them
+        do mutualRL (Proxy :: Proxy rl') \r'Rec ->
+            let
+              -- Accumulate it in the other recursive invocations
+              rRec = Record.insert sym (to (Comber prsRec) :: c) r'Rec
+              -- Call the parser definition
+              rDef /\ o = f rRec
+              -- Split out the current parser definition
+              r'Def = Record.delete sym rDef
+              Comber prsDef = from (Record.get sym rDef)
+            in r'Def /\ Tuple o prsDef
+        -- Shuffle outputs
+        do \(r'Def /\ Tuple o prsDef) -> prsDef /\ Tuple r'Def o
+      -- Dispatch through `namedRec'`
+      prsOut /\ Tuple r'Out o = namedRec' (reflectSymbol sym) defineParser
+      -- Accumulate the external invocation of the parser to return
+      rOut = Record.insert sym (to (Comber prsOut)) r'Out

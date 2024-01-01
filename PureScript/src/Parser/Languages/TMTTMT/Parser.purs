@@ -1,7 +1,6 @@
 module Parser.Languages.TMTTMT.Parser where
 
 import Prelude
-import Idiolect ((<#?>), (>==))
 
 import Control.Alt ((<|>))
 import Data.Array as A
@@ -13,7 +12,8 @@ import Data.Int as Int
 import Data.Monoid (power)
 import Data.String as String
 import Data.String.CodeUnits as CU
-import Parser.Comb.Comber (Comber, delim, token, many, many1, rawr, ws, (#->), (#:))
+import Idiolect ((<#?>), (>==))
+import Parser.Comb.Comber (Comber, delim, many, many1, mutual, rawr, token, ws, (#->), (#:))
 import Parser.Languages.CSS (newline)
 import Parser.Languages.TMTTMT.Types (Calling(..), Case(..), Condition(..), Declaration(..), Expr(..), Matching(..), Pattern(..))
 
@@ -79,50 +79,47 @@ wswsMany name parser =
   [] <$ ws <|> NEA.toArray <$> do
     ws *> many1 name (parser <* ws)
 
+exprPG ::
+  { callingP :: Comber Calling
+  , conditionP :: Comber Condition
+  , exprP :: Comber Expr
+  , lambdaCaseP :: Comber Case
+  , matchingP :: Comber Matching
+  , thenConditionsP :: Comber (Array Condition)
+  }
+exprPG =
+  mutual \{ exprP, lambdaCaseP, matchingP, conditionP, thenConditionsP, callingP } ->
+    { exprP: oneOf
+        [ Pattern <$> patternP
+        , Lambda <$> ado
+            token "?" *> ws
+            cases <- many "lambdaCases" (token "|" *> ws *> lambdaCaseP)
+            token "!" *> ws
+            in cases
+        ]
+    , lambdaCaseP: "lambdaCase"#:
+        Case <$> matchingP <*> thenConditionsP
+    , matchingP: "matching"#: arrowedP Matching "patterns" patternP exprP
+    , conditionP: "condition"#: Condition <$> exprP <*> callingP
+    , thenConditionsP: oneOf
+        [ NEA.toArray <$> do token ":" *> ws *> many1 "conditions1" conditionP
+        , [] <$ do token ";" *> ws
+        ]
+    , callingP: "calling"#: arrowedP Calling "exprs" exprP patternP
+    }
+
 exprP :: Comber Expr
-exprP = "expr"#-> \exprL ->
-  let
-    lambdaCaseL :: Comber Case
-    lambdaCaseL = "lambdaCase"#:
-      Case <$> matchingL <*> thenConditionsL
-
-    matchingL :: Comber Matching
-    matchingL = "matching"#: arrowedP Matching "patterns" patternP exprL
-
-    conditionL :: Comber Condition
-    conditionL = "condition"#: Condition <$> exprL <*> callingL
-
-    thenConditionsL :: Comber (Array Condition)
-    thenConditionsL = oneOf
-      [ NEA.toArray <$> do token ":" *> ws *> many1 "conditions1" conditionL
-      , [] <$ do token ";" *> ws
-      ]
-
-    callingL :: Comber Calling
-    callingL = "calling"#: arrowedP Calling "exprs" exprL patternP
-  in oneOf
-  [ Pattern <$> patternP
-  , Lambda <$> ado
-      token "?" *> ws
-      cases <- many "lambdaCases" (token "|" *> ws *> lambdaCaseL)
-      token "!" *> ws
-      in cases
-  ]
-
+exprP = exprPG.exprP
+lambdaCaseP :: Comber Case
+lambdaCaseP = exprPG.lambdaCaseP
 matchingP :: Comber Matching
-matchingP = "matching"#: arrowedP Matching "patterns" patternP exprP
-
+matchingP = exprPG.matchingP
 conditionP :: Comber Condition
-conditionP = "condition"#: Condition <$> exprP <*> callingP
-
+conditionP = exprPG.conditionP
 thenConditionsP :: Comber (Array Condition)
-thenConditionsP = oneOf
-  [ NEA.toArray <$> do token ":" *> ws *> many1 "conditions1" conditionP
-  , [] <$ do token ";" *> ws
-  ]
-
+thenConditionsP = exprPG.thenConditionsP
 callingP :: Comber Calling
-callingP = "calling"#: arrowedP Calling "exprs" exprP patternP
+callingP = exprPG.callingP
 
 topCaseP :: Comber Case
 topCaseP = "topCase"#: Case <$> matchingP <*> thenConditionsP

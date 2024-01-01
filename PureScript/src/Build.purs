@@ -5,7 +5,9 @@ import Prelude
 import Data.Argonaut as J
 import Data.Array as Array
 import Data.DateTime.Instant (unInstant)
+import Data.Monoid (power)
 import Data.Newtype (unwrap)
+import Data.String as String
 import Data.Tuple (fst)
 import Effect (Effect)
 import Effect.Aff (Aff, launchAff_, try)
@@ -27,6 +29,8 @@ main = launchAff_ do
   let
     process :: forall a. Comber a -> String -> Aff Unit
     process parser filename = do
+      log filename
+      log $ power "=" (String.length filename)
       log $ printGrammarWsn toAnsi parser
       let Comber (Comb info) = parser
       log $ show $ info.entrypoints
