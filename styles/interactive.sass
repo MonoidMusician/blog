@@ -1,3 +1,217 @@
+@use "sass:color"
+@use "colors.sass" as *
+@use "variables.sass" as *
+
+@mixin button($color)
+  font-family: "Amaranth"
+  font-size: 0.9em
+  line-height: 1.2
+  border-radius: 1em
+  color: color.change($color, $alpha: 0.73)
+  border-color: color.change($color, $alpha: 0.66)
+  border-width: 2px
+  border-style: solid
+  background: none
+  padding: 0 0.5em
+  margin: 0 0.25em
+  transition: border-color 0.2s, color 0.2s, box-shadow 0.1s ease-out, transform 0.1s ease-out
+  box-shadow: 1px 1px 0.5px 0.5px transparent, inset 1px 1px 0px 1.5px transparent
+  /* https://stackoverflow.com/questions/3461441/prevent-flicker-on-webkit-transition-of-webkit-transform */
+  -webkit-backface-visibility: hidden
+
+  user-select: none
+  -webkit-user-select: none
+  -webkit-touch-callout: none
+
+  &:last-child
+    margin-bottom: 2px
+
+  &.big
+    padding-top: 0.2em
+    padding-bottom: 0.25em
+
+  &:not(:disabled):not(.disabled)
+    @if not $light
+      box-shadow: 1px 1px 0.5px 0.5px color.change($color, $alpha: 0.26), inset 1px 1px 0px 1.5px #0002
+    @else
+      box-shadow: 1px 1px 0.5px 0.5px color.change($color, $alpha: 0.26), inset 1px 1px 0px 1.5px #0001
+    &:hover
+      transition: border-color 0.1s, color 0.1s, box-shadow 0.1s ease-out, transform 0.1s ease-out
+      color: color.change($color, $alpha: 1)
+    &:not(:hover)
+      @media (hover: hover) and (pointer: fine)
+        box-shadow: 1px 1px 0.5px 0.5px transparent, inset 1px 1px 0px 1.5px transparent
+        @if not $light
+          border-color: color.change($color, $alpha: 0.33)
+        @else
+          border-color: color.change($color, $alpha: 0.45)
+
+    &:active
+      color: color.change($color, $alpha: 1)
+      border-color: color.change($color, $alpha: 1)
+      @if not $light
+        box-shadow: 0px 0px 0px 0px transparent, inset 1px 1px 0px 0.5px #0002
+      @else
+        box-shadow: 0px 0px 0px 0px transparent, inset 1px 1px 0px 0.5px #0001
+      transform: translate(1.1px, 1.1px)
+
+  &:focus-visible
+    outline: 1px solid white
+    color: color.change($color, $alpha: 1)
+
+  &:disabled, &.disabled
+    border-color: color.change($color, $alpha: 0.33)
+
+    color: transparent
+    @if not $light
+      background: repeating-linear-gradient(12deg,#707070,#707070 4px,#888888 4px,#888888 8px)
+    @else
+      background: repeating-linear-gradient(12deg,#bbbbbb,#bbbbbb 4px,#888888 4px,#888888 8px)
+    background-clip: text
+    -webkit-background-clip: text
+
+button:not(.icon)
+  @include button(#2372ff)
+  &.delete
+    @include button(#ff004d)
+  &.add
+    @include button(#1dca24)
+  &.bonus
+    @include button(#e86db7)
+
+label:not([for]):not(.sidenote-number):not(.margin-toggle)
+  //@extend .input-wrapper
+.input-wrapper
+  margin: 2px
+  position: relative
+  display: inline-block
+  border-radius: 4px
+
+  vertical-align: bottom
+  transform: translateY(0.1em)
+
+  & > span:not(.error), & > label
+    margin: 0
+    border-radius: 0
+    vertical-align: initial
+    transform: none
+    font-family: "Amaranth"
+    font-weight: 400
+    font-style: italic
+    font-size: 12px
+    display: block
+    position: absolute
+    padding: 0 4px
+    top: -1px
+    left: 7px
+    background: $background
+    letter-spacing: normal
+    color: #f0e8d4
+    color: #2372ff
+    line-height: 3px
+    pointer-events: none
+
+    &:last-child
+      left: initial
+      right: 4px
+
+  & > span.error
+    position: absolute
+    top: calc(100% - 1px)
+    background: $background
+    display: block
+    font-family: "Cormorant"
+    font-size: 80%
+    color: $text
+    line-height: 1
+    letter-spacing: normal
+    border: 1px solid #ff004daa
+    border-radius: 4px
+    padding: 4px
+    z-index: 2
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out
+  &:hover > span.error, & > input:focus ~ span.error
+    pointer-events: all
+    opacity: 1
+    transform: translate(0, 0)
+  &:not(:hover) > input:not(:focus) ~ span.error
+    // so that it does not reveal itself
+    pointer-events: none
+    opacity: 0
+    transform: translate(0px, -10px)
+  & > span.error:empty
+    display: none
+  & > span.error:blank
+    display: none
+
+  &.range
+    transform: translateY(10px)
+
+  &.range > span:not(.error)
+    top: -8px
+
+  &.text.invalid::after
+    content: "!"
+    font-family: 'Fira Code'
+    font-weight: 600
+    position: absolute
+    right: 8px
+    top: calc(50% - 0.5em - 0.4em)
+    color: rgba(255, 0, 77)
+    background: linear-gradient(90deg, transparent, $background-color 0.7em)
+    padding-left: 0.7em
+    padding-bottom: 0.2em
+    padding-top: 0.3em
+    letter-spacing: normal
+
+  & > input
+    background: none
+    border: none
+    padding: 0 8px
+    margin: 0
+    font: inherit
+    color: inherit
+    height: 34px
+    border-style: solid
+    border-width: 1px
+    border-color: #2372ffaa
+    border-radius: 4px
+    transition: border-color 0.2s
+
+    @media (hover: hover) and (pointer: fine)
+      &:not([type=range]):not(:hover)
+        @if not $light
+          border-color: #2373ff55
+        @else
+          border-color: #2373ff66
+
+    &:not([type=range]):focus
+      outline: none
+      border-color: #2372ff
+
+    &[type=range]
+      border: none
+      padding: 0
+      height: auto
+
+    &::placeholder
+      opacity: 0.4
+
+  &.invalid
+    & > label
+      color: #ff004daa
+    & > input
+      border-color: #ff004daa
+      @media (hover: hover) and (pointer: fine)
+        &:not([type=range]):not(:hover)
+          border-color: #ff004d55
+      &:not([type=range]):focus
+        outline: none
+        border-color: #ff004d
+
+
+
+
 /* Adapted from https://codepen.io/notouchz33/pen/BayLyow */
 .tooltipped
   $caret-height: 4px

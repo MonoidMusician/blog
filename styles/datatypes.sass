@@ -1,4 +1,5 @@
 @use "colors.sass" as *
+@use "variables.sass" as *
 
 .numeric
   font-feature-settings: "cv11"
@@ -23,3 +24,77 @@
     height: 0.7em
 .unicode-sample
   color: $stark
+
+
+
+// Parser datatypes
+
+.keyword,
+.terminal,
+.meta,
+.cmd,
+.non-terminal,
+.rule,
+.state
+  line-height: 1em
+
+.keyword
+  font-family: "Sofia"
+  color: #918b8e
+
+.terminal, .input-wrapper > input.terminal
+  font-weight: bolder
+  font-family: "Fira Code"
+  @if not $light
+    color: #c2d3d3
+  @else
+    color: #8093a6
+
+.terminal:not(:last-child)
+  letter-spacing: 1.5px
+
+.terminal.clickable
+  padding: 0 0.2em
+
+.meta
+  font-family: "Oswald"
+  font-weight: 300
+  @if not $light
+    color: #7a6565
+  @else
+    color: #b59f9f
+  font-size: 1em
+  line-height: 1em
+  margin: 0 calc(0.1em + 1.5px) 0 0.1em
+
+.cmd
+  color: #cc82a9
+  font-weight: 600
+  font-family: "Cormorant"
+  font-style: italic
+
+.non-terminal,
+.rule
+  font-family: "Oswald"
+  font-weight: 200
+  @if not $light
+    color: #47cf6e
+  @else
+    color: #028928
+  margin: 0 3.5px 0 2px
+
+.non-terminal:last-child,
+.rule:last-child
+  margin: 0 2px 0 2px
+
+.rule
+  font-weight: 400
+  color: #2c9f9b
+
+.state
+  //font-family: "Cormorant"
+  font-variant-numeric: lining-nums tabular-nums
+  @if not $light
+    color: #ccb11c
+  @else
+    color: #b39907

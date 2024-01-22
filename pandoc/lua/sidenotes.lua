@@ -45,7 +45,7 @@ function Note (h)
   local text = pandoc.utils.blocks_to_inlines(h.content, { pandoc.LineBreak(), pandoc.LineBreak() })
   i = i + 1
   local label_class = "margin-toggle"
-  -- Note: I itentionally leave this blank so it can be styled with CSS
+  -- Note: I intentionally leave this blank so it can be styled with CSS
   local label_sym = "" -- "&#8853;"
   if type == "sidenote" then
     label_class = label_class .. " sidenote-number"
