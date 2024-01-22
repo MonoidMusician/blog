@@ -1,4 +1,6 @@
-svg.lilypond, .lilypond > svg
+@use "variables.sass" as *
+
+svg.lilypond, .lilypond > svg, .lilypond > div > svg
   width: 100%
   height: auto
   overflow: visible
@@ -10,3 +12,35 @@ svg.lilypond, .lilypond > svg
 
 .lilypond:not(.error) > .log
   display: none
+
+.lilypond > div.narrow > svg
+  display: none
+
+.lilypond > div.extra-narrow > svg
+  display: none
+
+@media (max-width: $breakpoint-500-wide)
+  .lilypond > div.wide > svg
+    display: none
+  .lilypond > div.narrow > svg
+    display: block
+
+@media (max-width: $breakpoint)
+  .lilypond > div.wide > svg
+    display: block
+  .lilypond > div.narrow > svg
+    display: none
+
+@media (max-width: $breakpoint-500-narrow)
+  .lilypond > div.wide > svg
+    display: none
+  .lilypond > div.narrow > svg
+    display: block
+
+@media (max-width: $breakpoint-narrow)
+  .lilypond > div.wide > svg
+    display: none
+  .lilypond > div.narrow > svg
+    display: none
+  .lilypond > div.extra-narrow > svg
+    display: block

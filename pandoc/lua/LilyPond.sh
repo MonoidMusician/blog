@@ -1,2 +1,2 @@
 #!/bin/bash
-lilypond --svg --output=$1 $1.ly > $1.out 2>&1 || (cat $1.out; exit 1)
+lilypond --svg -dno-point-and-click --output="$2" "${@:3}" "$1".ly > "$2".out 2>&1 || (cat "$2".out; exit 1)

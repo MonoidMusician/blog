@@ -21,7 +21,7 @@ lineTop = \relative {
   a8-\thumb r8 d8-3 r8 g,8-\thumb r8 c4-3~ | % 17
   c8\glide-3[ bes-3] bes[ bes-3] bes[ a16-1 g-\thumb] a8[ bes16 a] | % 18
   g8-\thumb r8 c8 r8 c8[ bes16-2 a\glide-1] bes8-1[ c16 bes] | % 19
-  a8-\thumb r8 d8 r8 d8 r8 | % 20
+  a8-\thumb r8 d8 r8 d8 | % 20
 }
 
 lineBottom = \relative {

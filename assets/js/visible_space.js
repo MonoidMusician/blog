@@ -51,7 +51,7 @@ function makeVisibleSpaces(tab_width=2) {
       // Convert the children to a static list so we don't iterate over what we are mutating
       forEach(Array.from(e.childNodes), visit);
       if (e.nodeName === 'CODE' && e.parentNode.nodeName === 'PRE'
-        && e.lastChild.textContent && e.lastChild.textContent !== "\n"
+        && e.lastChild && e.lastChild.textContent && e.lastChild.textContent !== "\n"
         && !e.querySelector('textarea')) {
         var x = tab_width;
         if (+e.dataset['tab-width']) {
