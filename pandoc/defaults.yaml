@@ -5,6 +5,7 @@ section-divs: true
 template: pandoc/post
 preserve-tabs: true
 filters:
+  - pandoc/lua/LilyPond.lua
   - pandoc/lua/PureScript.lua
   - pandoc/lua/sidenotes.lua
   - pandoc/lua/anchor-links.lua

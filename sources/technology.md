@@ -227,6 +227,7 @@ Some weird quirks and anti-quirks Iʼve run into while implementing stuff:
   Nobody else seems to like doing this anyways …
 1. Workaround: Safari on iOS wanted to open the background image^[In light theme, I have a subtle background texture.] on long-press^[Erm, I think itʼs actually called 3D Touch].
   It was very annoying when scrolling and pausing, so I had to have a fake `{background-image: linear-gradient(transparent, transparent), …}`{.css} appear before the actual background image, since iOS does not want to open up a `linear-gradient`{.fu} image.
+1. Firefox bug: https://aileenrae.co.uk/blog/firefox-scroll-padding-bug/
 
 ## KaTeX
 
@@ -236,7 +237,19 @@ Some weird quirks and anti-quirks Iʼve run into while implementing stuff:
 
 ## LilyPond
 
-Coming soon??
+I finally added LilyPond support!
+
+I wrote a [Pandoc plugin](https://github.com/MonoidMusician/blog/blob/main/pandoc/lua/LilyPond.lua) to take LilyPond source out of the markdown and render it to SVG.
+Then I style it a little bit.
+It is pretty simple!
+
+I would like to get the measure numbers to show up on the right margin, centered on the staff.
+But I donʼt know how to do that yet.
+
+In dark mode, the ruled staff was visually overwhelming, so I added `{opacity: 0.75}`{.css} to it.
+
+Still need more output formats.
+And interactivity!!
 
 <!--
 ## Makefile

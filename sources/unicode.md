@@ -60,11 +60,21 @@ author:
     overflow-x: scroll;
     overflow-y: visible;
     /* for mask-image */
-    padding: 0 5%;
+
+    /* does not work in Firefox */
+    /* https://aileenrae.co.uk/blog/firefox-scroll-padding-bug/ */
+    /* padding: 0 5%; */
+
     /* This does nothing lol */
     scrollbar-gutter: stable;
     /* So we do this */
     padding-bottom: 15px;
+  }
+  .code-points > .code-point:first-child {
+    margin-left: 5vw;
+  }
+  .code-points > .code-point:last-child {
+    margin-right: 5vw;
   }
   .code-points > .code-point {
     display: inline-block;

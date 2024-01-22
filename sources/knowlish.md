@@ -26,6 +26,10 @@ author:
 - Clipboard: `pbpaste`{.bash}/`pbcopy`{.bash} (stdout/stdin only)
 - Network name (SSID): [`/System/Library/PrivateFrameworks/Apple80211.framework/Resources/airport -I  | awk -F' SSID: '  '/ SSID: / {print $2}'`{.bash}](https://stackoverflow.com/questions/4481005/get-wireless-ssid-through-shell-script-on-mac-os-x#answer-4481019)
 
+### Ubuntu
+
+- MouseKeys fast: `xkbset ma 60 10 10 5 2`{.bash}
+
 ### Git
 
 - [`git clone --filter=blob:none <url>`{.bash}](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) is a new better alternative to `git clone --depth=1 <url>` (with `git clone --filter=tree:0 <url>` skipping downloading trees but not recommended for dev work since it will redownload trees more often than necessary)
