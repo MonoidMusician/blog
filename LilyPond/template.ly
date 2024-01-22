@@ -20,7 +20,7 @@
     \context {
       \Score
       \override BarNumber.font-size = #-4
-      \override BarNumber.break-visibility = ##(#t #f #t)
+      \override BarNumber.break-visibility = ##(#f #f #t)
       \override BarNumber.Y-offset = -0.5
       % \override BarNumber.side-axis = X
       % \override BarNumber.direction = CENTER
@@ -29,3 +29,4 @@
     }
   }
 }
+
