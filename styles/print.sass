@@ -9,6 +9,7 @@
   *, section p, h1, h2, h3, h4, h5
     color: black
     text-shadow: none !important
+    box-shadow: none !important
 
   p, h2, h3
     orphans: 3
@@ -16,6 +17,15 @@
 
   h2, h3, h4
     page-break-after: avoid
+
+  h1 .icon > svg
+    filter: none
+
+  h3
+    border-bottom-color: black
+
+  code, pre > code
+    background-color: transparent
 
   canvas
     @if not $light

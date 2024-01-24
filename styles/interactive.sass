@@ -69,6 +69,11 @@
       background: repeating-linear-gradient(12deg,#bbbbbb,#bbbbbb 4px,#888888 4px,#888888 8px)
     background-clip: text
     -webkit-background-clip: text
+    @media print
+      color: #707070
+      background: none
+      background-clip: revert
+      -webkit-background-clip: revert
 
 button:not(.icon)
   @include button(#2372ff)
@@ -105,6 +110,8 @@ label:not([for]):not(.sidenote-number):not(.margin-toggle)
     top: -1px
     left: 7px
     background: $background
+    @media print
+      background: white
     letter-spacing: normal
     color: #f0e8d4
     color: #2372ff
@@ -119,6 +126,8 @@ label:not([for]):not(.sidenote-number):not(.margin-toggle)
     position: absolute
     top: calc(100% - 1px)
     background: $background
+    @media print
+      background: white
     display: block
     font-family: "Cormorant"
     font-size: 80%

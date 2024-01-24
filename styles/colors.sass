@@ -106,6 +106,8 @@ a[href]::selection, a[href] ::selection
 .Box
   @include whether("details", "& > summary", "&::before")
     background: $background
+    @media print
+      background: white
 
 
 .Box > .Box
