@@ -11,8 +11,9 @@ In particular, I want to talk about runtime representations of data, **real** da
 
 You shouldnʼt just throw up your hands once you have cyclic references!
 Itʼs possible and worthwhile to design tools to work with the raw graph of runtime data, no matter its shape.
+With the proper metaprogramming hooks, you could save and restore a whole runtime environment, which is pretty amazing to think about.
 
-(Well, okay, you might give up at things like functions and sockets, for example – thatʼs okay!)
+(Well, okay, you might give up at things like functions, if there isnʼt enough metaprogramming, or running sockets, for example – thatʼs okay!)
 
 The main thing we will work up to (and go beyond) is Pythonʼs [`pickle`{.python} module](https://docs.python.org/3/library/pickle.html), including my own implementation of it for the [Nasal scripting language](https://wiki.flightgear.org/Nasal_scripting_language) (which I believe is cleaner in some respects, although obviously less industrial).
 
@@ -604,11 +605,24 @@ Iʼll call this … “graph equality”?
 “Stable equality”?
 It is what Iʼve meant by “equivalence” all along.
 
-### Ghost objects (foreigns)
+### Ghost objects (foreigns), property tree
 
 Nasal has a concept of “ghost” objects which are pointers to foreign objects, literally just C pointers with some associated data to help the garbage collector.
 
 These are constructed by C APIs, and the only way to reconstruct them would be if you can call those APIs again to produce equivalent objects – which may not always be possible.
+
+One of the main foreign interfaces of Nasal is [FlightGearʼs property tree](https://wiki.flightgear.org/Property_tree) – a central store of important simulator values that is accessible from all of FlightGearʼs subsystems, not just Nasal.
+References to these nodes can be stored (making use of ghost objects) and manipulated through [an API](https://wiki.flightgear.org/Nasal_library/props), in a way that is somewhat like accessing the DOM in JavaScript.
+
+This is one type of ghost reference that could easily be handled by a pickling script: since the path of the node is available, you just have to serialize that, and then obtain the node again when deserializing.
+However, there still is some rough edges: what if the node doesnʼt exist when it is getting loaded again?
+It could be possibly recreated, but now the deserialization has side-effects, which is weird.
+Or a separate property tree could be created to sandbox the script, and relevant nodes created there.
+
+Property trees can also be saved to XML and loaded from there, although there are various details that donʼt translate well regardless of serialization format.
+One example is properties that are managed by C++ code, instead of having their data be managed by the property tree – but those properties typically exist by the time Nasal is initialized.
+
+So thereʼs always some details that need to be figured out or approximated when dealing with external APIs and data that is not managed in the language itself.
 
 ### Strings
 
