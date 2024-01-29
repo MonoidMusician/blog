@@ -65,10 +65,11 @@ I hope it is something you can grasp fully, explain fully, and write out to a fi
 I think I have definitions of equal and equivalent that are useful.
 
 Equality in the classical sense^[Leibniz equality, “Identity of indiscernibles”] is going to be too strict, I argue, for the notion of data I want to consider.
-This happens as soon as you have references with mutable identity.
 First of all, it is hard to compare values across runtimes, which is silly!
 Data does not only exist for an instant in time!
 And two mutable objects can be _interchangeable_ even if they are not _identical_ references.
+
+This discrepancy happens as soon as you have mutable references, which you could tell apart if you have both to compare, but otherwise would act similar.
 
 :::Key_Idea
 So I will use “equal” to mean “values that live within the same run of the runtime and will definitely act the same, thus equal in all ways the language could distinguish^[besides performance – we always disregard performance here]”.
@@ -77,7 +78,7 @@ And I will use “equivalent” to mean “values that, if they exist in the sam
 :::
 
 :::Example
-We definitely need to walk through an example of what “equivalent” means, unpack my definition.
+We definitely need to walk through an example of what “equivalent” means to unpack my definition.
 Hereʼs one in JavaScript, although the particulars of JavaScript do not matter:
 
 ```javascript
@@ -147,14 +148,16 @@ assert(shared[1] === v1);
 Note that “equal” and “equivalent” are, strictly speaking, external notions.
 However, “equal” is often testable internally, such as by `===`{.javascript}.
 (Except for the case of `NaN`{.javascript} – you technically have to use `a === b || (a !== a && b !== b)`{.javascript} to detect `NaN ==== NaN`{.javascript}, and I believe that different `NaN`{.javascript}s are indistinguishable.)
+
+“Equivalent” is much harder to test: for functions it will be impossible, but even for data made out of simple JSON-like structures it takes a fair amount of bookkeeping and some trickery to truly decide it.
 :::
 
 In Dhall, equal and equivalent happen to be the same!^[Citation needed.]
 Unfortunately this is more a reflection of the rather stagnant notion of data in Dhall – no mutability, no references, no cyclic structures.
 
-In general, as soon as you have references, equality and equivalence will not be the same.
+As soon as you have mutable references, equality and equivalence will not be the same.
 
-(You can always^[] use test mutations to tell when two references are identical or not, so you cannot just outlaw referential equality and hope that they become indiscernable.)
+(This is because you can always^[] use test mutations to tell when two references are identical or not, so you cannot just outlaw referential equality and hope that they become indiscernable.)
 
 And practically speaking, there are always wrinkles.
 
@@ -186,7 +189,8 @@ Then it has the task of fixing up the references to those slices to refer to the
 This is definitely mutating data at some level ([e.g.]{t=} the level of raw memory), but it is not visible from Erlang at all.
 
 Anyways, this is just a nicer example of stuff the runtime can do behind the scenes that has a very precise semantic description.
-As we start to think about references and managed pointers and external references and functions, it gets less clear!
+It happens “behind the scenes” because changes occur in memory that do not effect equality, as seen from the language.
+As we start to think about references and managed pointers and external references and functions, it gets more complicated!
 
 It is also a good warning to be careful about what “immutable” means: since every runtime uses mutation at some level, we only care about immutability as viewed from the language itself.
 
@@ -244,7 +248,7 @@ However, in languages like Agda, each function definition is considered distinct
 
 ## By Language
 
-To really talk about data though, we have to talk about specific runtimes.
+To really talk about data, we have to talk about specific runtimes.
 Weʼll work our way up from simplest to more thorny.
 
 ### Fantasy
@@ -348,12 +352,12 @@ Except it isnʼt so naughty (if you do it right), it is just a different layer o
 
 In fact, if you drill down, Haskell has some kind of data model that its runtime operates on.
 This will tell you when it is okay to use `unsafeCoerce`{.haskell}, for example.
-Itʼs maybe worth talking about the way Haskell evaluates, what its thunks represent, how mutable and immutable data work, STM, FFI,— but it just goes on for ages.
+Itʼs maybe worth talking about the way Haskell evaluates, what its thunks represent, how mutable and immutable data work, [STM](https://hackage.haskell.org/package/stm-2.5.3.0/docs/Control-Concurrent-STM.html), FFI,— but it just goes on for ages.
 
 I think itʼs really worth thinking about this deeply, taking seriously the kinds of data that Haskell uses at runtime, and how references to them interact, how the garbage collector makes sense of it all.
 
 But as we will see, an awful lot of runtimes seem to be about managing the graph of references of data, and itʼs useful to be able to work with those graphs at some point, even if the language is hesitant to give it up so easily.
-(Clearly allowing a program unmanaged access to its own heap would be a disaster.)
+(Allowing a program unmanaged access to its own heap would be a disaster. Itʼs understandable, really.)
 
 #### JavaScript
 
@@ -361,6 +365,7 @@ JavaScript will be our stand-in for a scripting language with a simple, dynamica
 
 Everyoneʼs familiar with the JSON side of JavaScript: it stands for JavaScript Object Notation, after all.
 But once you embed in the larger language, you can get things like cyclic references via mutation.
+Even things like arrays work differently than JSON promised.^[JS arrays can be sparse. Still mad about that.]
 
 As a silly example,
 ```javascript
@@ -528,16 +533,16 @@ However, it does reinforce the point: at a very very basic level, OSes and memor
 Yeah, it gets its own section and backstory!!
 
 [Nasal](https://wiki.flightgear.org/Nasal_scripting_language) is a small embedded scripting language.
-Its name stands for “Not another scripting language”^[[“Nasl” was already taken](https://github.com/andyross/nasal/blob/088be4d3642f696ad99bad3c79d15b692b368934/www/index.html#L182-L186)].
-Its only notable use is in the [FlightGear open-source flight simulator](https://wiki.flightgear.org/Main_Page), although [AlgoScore](https://kymatica.com/apps/algoscore) and a tiny handful of other projects use it.
+Its name stands for “Not another scripting language”.^[[“Nasl” was already taken](https://github.com/andyross/nasal/blob/088be4d3642f696ad99bad3c79d15b692b368934/www/index.html#L182-L186)]
+Its only notable use is in the [FlightGear open-source flight simulator](https://wiki.flightgear.org/Main_Page), although [AlgoScore](https://kymatica.com/apps/algoscore) and a tiny handful of other tiny projects use it.
 
 Its data model is basically JavaScript, but simpler and better.
-(Arrays are their own data type, and you can actually iterate over collections in a sensible manner. Good riddance to Lua and JavaScript. Ugh.)
+(Arrays are their own data type, are not allowed to be sparse, and you can actually iterate over collections in a sensible manner. Good riddance to Lua and JavaScript. Ugh.)
 
 It has some metaprogramming facilities by default, plus I prototyped some more of my own, including full bytecode decompilation.
 
 Finally it has this one special function: `id(obj)`{.javascript}.
-It returns a string representation of the pointer for any object!
+It returns a string representation of the (stable) pointer for any object!
 ```{.javascript data-lang=Nasal}
 >>> id([])
 'vec:0x7fea11014c40'
@@ -555,11 +560,11 @@ Pickling consists of writing out a file that, when executed, returns an equivale
 
 - You initialize a hashmap of object ids that have been seen.
 - For each object you see, you look at the hashmap:
-  - If it exists, you reference the existing variable and stop walking the structure.
-  - If not, you add it to the map, and add a variable to the file to save the reference.
+  - If not, you add the reference to the hashmap, and add a variable to the file to save the reference in case you need it later.
+  - If it exists, you insert code to reference the existing variable and stop walking the structure.
 - For non-recursive data, you just set it directly.
-- For recursive data (objects and arrays), to handle cyclic references, you initialize it to an empty value and add items via mutation.
-  Thus if those items mention cyclic references, that reference exists, and will continue to be built as necessary.
+- For recursive data (objects and arrays), to handle cyclic references you may need to initialize it to an empty value and add items via mutation.
+  Thus when those items mention their (grand)parent, that reference already exists in a variable, and the rest of the structure will continue to be built as necessary.
 
 In lieu of a hashmap, you could even use a list of objects, and traverse it in linear time to compare referential identity.
 This is possible in most dynamic languages, just really slow.
@@ -659,7 +664,7 @@ What about deep (explicitly non-referential) equality?
 Emphatically no – but, it is probably not worth it.
 
 See, we could have the notion of equality that pickling and unpickling preserve.
-Graph equality, where the sharing of mutable references is tracked and tabulated by their role, instead of exact referential identity^[think: pointer].
+Graph equality, where the sharing of mutable references is tracked and tabulated by their role, instead of exact referential identity.^[think: pointer]
 
 If you have two data graphs where pointers are shared in equivalent ways, sure, they could totally be considered parallel universes and interchangeable amongst themselves.
 (Obviously if something external holds references to them and you donʼt have a way to swap them out, this can break.)
@@ -711,6 +716,10 @@ I think itʼs instructive to pin down a model of garbage collectable data in Has
 
 This is enough to model the fragment of JavaScript values I said should be covered by the pickling function I sketched.
 (Well, you could easily add `undefined`{.javascript}.)
+
+<details class="Details">
+
+<summary>Code</summary>
 
 ```haskell
 -- The managed heap for the runtime data.
@@ -775,11 +784,12 @@ data Idx
 -- A machine for creating a graph in
 -- the mutable JSON structure
 data Machine ref
-  = SetKey ref Text ref (Machine ref)
-  | Push ref ref (Machine ref)
-  | Get ref Idx (ref -> Machine ref)
+  = SetKey ref Text (JSONValue ref) (Machine ref)
+  | Push ref (JSONValue ref) (Machine ref)
+  | Get ref Idx (JSONValue ref -> Machine ref)
   | NewArray (ref -> Machine ref)
   | NewObject (ref -> Machine ref)
+  | Return (JSONValue ref)
 ```
 
 Now we can talk about the concepts from above.
@@ -817,12 +827,68 @@ equivalent :: Ord ref =>
   JSONValue ref ->
   JSONValue ref ->
   m Boolean
-equivalent read = comparing Map.empty
+equivalent read l0 r0 =
+  runStateT (comparing [] (l0, r0)) empty
   where
-  comparing seen =
+  comparing ::
+    [Idx] ->
+    (JSONValue ref, JSONValue ref) ->
+    StateT (Map ref [Idx], Map ref [Idx]) m Boolean
+  comparing path (l, r) =
+    -- Try to match up the values
+    case zipMatch l r of
+      -- They are both references
+      Just (ByRef (ll, rr)) -> do
+        -- First we check if we should short circuit
+        -- if they have been seen before
+        (seenL, seenR) <- get
+        case (lookup ll seenL, lookup rr seenR) of
+          -- Seen both
+          (Just p1, Just p2) -> do
+            -- We have to have seen them at the same path,
+            -- since we are traversing in the same order
+            pure (p1 == p2)
+          -- Seen neither
+          Nothing, Nothing -> do
+            -- Keep track of where we saw this
+            -- reference, separately for left and right
+            -- (since it is valid for both to use the
+            -- same reference for different purposes)
+            modify
+              (insert ll path *** insert rr path)
+            -- Read the current values of the reference
+            x <- lift (read ll)
+            y <- lift (read rr)
+            -- Try to match them up
+            case zipMatch x y of
+              -- Failed: different types
+              Nothing -> pure False
+              -- Similar arrays: recurse into children
+              Just (Array xys) ->
+                allM (uncurry comparing)
+                  -- Add the index onto the path
+                  (intoArray path <$> enumerate xys)
+              -- Similar objects: recurse into children
+              Just (Object xys) ->
+                allM (uncurry comparing)
+                  -- Add the key onto the path
+                  (intoObject path <$> xys)
+          -- Failed: seen one but not the other
+          _, _ -> pure False
+      -- Succeed if it is a pure value
+      -- that is equal on both sides
+      lr -> pure (isJust lr)
+
+intoArray path = first $ \idx -> ArrayIdx idx : path
+intoObject path = first $ \key -> ObjectIdx key : path
 ```
 
-However, we donʼt even really need this arena/managed heap.
+</details>
+
+Hopefully you can see from the implementation of the `equivalent`{.haskell} function how two distinct references can still be interchangeable for all intents and purposes.
+We could write out this interchange formally, since all the references are visible on the heap, and then state some theorems about some functions.
+
+However, for other processing, we donʼt even really need this arena/managed heap.
 We can use the Haskell runtime itself!
 
 I havenʼt worked out the details ([stable names](https://hackage.haskell.org/package/base-4.17.0.0/docs/GHC-StableName.html)?), but we should be able to reify the graph of a cyclic `JSON`{.haskell} value too.

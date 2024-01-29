@@ -19,6 +19,16 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 Itʼs not a real blog though since it doesnʼt have RSS yet …
 
 ## Posts
+- [Pickling Tasty Data: The essence of runtime data (itʼs a graph!)](pickling.html) [2024/01/28]{.dated}
+
+  > I want to talk about data today.
+  > In particular, I want to talk about runtime representations of data, **real** data – data that can be mutable and referentially opaque at runtime – and demystify what they actually are in terms of more familiar notions of data.
+  >
+  > You shouldnʼt just throw up your hands once you have cyclic references!
+  > Itʼs possible and worthwhile to design tools to work with the raw graph of runtime data, no matter its shape.
+  >
+  > The main thing we will work up to (and go beyond) is Pythonʼs [`pickle`{.python} module](https://docs.python.org/3/library/pickle.html), including my own implementation of it for the [Nasal scripting language](https://wiki.flightgear.org/Nasal_scripting_language) (which I believe is cleaner in some respects, although obviously less industrial).
+
 - [A Semiring From Any Semilattice: A mathematical pun?](semilattice_semiring.html) [2023/10/28]{.dated}
 
   > You can make a semiring out of a semilattice by adjoining a new zero element. Lifting the semilattice operation in the two obvious ways gives you `+`{.haskell} and `*`{.haskell}. Idempotence gives distributivity(!).
