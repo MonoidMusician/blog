@@ -1,18 +1,18 @@
 ---
-title: Shapes and Flavors of Data
-subtitle: The essence of runtime, and what graphs have to do with it
+title: Pickling Tasty Data
+subtitle: The essence of runtime data (itʼs a graph!)
 author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
 date: 2024/01/28
 ---
 
 I want to talk about data today.
-In particular, I want to talk about runtime representations of data, **real** data – that is, potentially mutable and referentially opaque data – and demystify what they actually are in terms of more familiar notions of data.
+In particular, I want to talk about runtime representations of data, **real** data – data that can be mutable and referentially opaque at runtime – and demystify what they actually are in terms of more familiar notions of data.
 
 You shouldnʼt just throw up your hands once you have cyclic references!
 Itʼs possible and worthwhile to design tools to work with the raw graph of runtime data, no matter its shape.
 
-(Well, okay, you might give up at functions and sockets, for example – thatʼs okay!)
+(Well, okay, you might give up at things like functions and sockets, for example – thatʼs okay!)
 
 The main thing we will work up to (and go beyond) is Pythonʼs [`pickle`{.python} module](https://docs.python.org/3/library/pickle.html), including my own implementation of it for the [Nasal scripting language](https://wiki.flightgear.org/Nasal_scripting_language) (which I believe is cleaner in some respects, although obviously less industrial).
 
@@ -20,7 +20,7 @@ The main thing we will work up to (and go beyond) is Pythonʼs [`pickle`{.python
 
 This post has spent a long time marinating in my mind, so Iʼm happy to finally get it on the page!
 
-Iʼve identified some basic flavor profiles of data:
+Iʼve identified some basic aspects of data:
 
 #. Pure (immutable) data
     - Either acyclic …
@@ -151,9 +151,6 @@ However, “equal” is often testable internally, such as by `===`{.javascript}
 
 In Dhall, equal and equivalent happen to be the same!^[Citation needed.]
 Unfortunately this is more a reflection of the rather stagnant notion of data in Dhall – no mutability, no references, no cyclic structures.
-
-<!-- Iʼm trying to think about whether In some hypothetical dynamically typed, imperative runtime they could also be the same – if you outlawed referential equality comparisons.
-(Thatʼs kind of the whole point of this article!) -->
 
 In general, as soon as you have references, equality and equivalence will not be the same.
 
@@ -653,15 +650,6 @@ But if we can expose the underlying graph of referential relationships, we have 
 :::
 
 
-<!-- The main take-away is that there is *some* notion of equality that your runtime respects.
-
-One of the main ways you see this is in the functionality afforded to you by the code you are allowed to write in the language.
-The flip side of that is that the runtime does its best to preserve these semantics, particularly the garbage collector, which has to shuffle objects around without you noticing!
-
-Thereʼs always some layer of abstraction between you and the raw data that the garbage collector sees, otherwise each garbage collection would have the potential to break your world if you are not careful.
-
-This -->
-
 ### Graph equality of mutable data
 
 :::Key_Idea
@@ -693,40 +681,6 @@ To chart our own course through the graph, traversing references and recording w
 
 We can have very nice things if we give up the dichotomy of referential identity versus deep equality, and embrace the graph nature of runtimes.
 :::
-
-<!-- ### Notions of references
-
-Erlang????
-Stable, bookkeeped to actual pointers by [GC]{t=}?
-Idek.
-
-Like, it is kind of fucked up that some languages would let you serialize a pointer, and then lose it. -->
-<!--
-### Semantic identity of _external_ references…?
-
-Well, thereʼs what I talked about above in graph equality.
-If you have two data graphs where pointers are shared in equivalent ways, sure, they could totally be considered parallel universes and interchangeable amongst themselves.
-(Obviously if something external holds references to them and you donʼt have a way to swap them out, this can break.)
-
-But more generally, you cannot know if two references are supposed to be “the same” – [e.g.]{t=} across runs of a program (where you cannot even compare pointers, or, well, you at least would know it is a foolsʼ errand to compare pointers).
-It becomes about _intention_.
-Are the references created by the same code, during calls in different runs that are meant to be equivalent?
-Itʼs really hard to know!
-
-The main difficulty is in dealing with external APIs and external resources, as we have talked about.
-
-Think about external file references: technically they are just numbers, at like the POSIX level!
-Itʼs pointers again!
-But maybe you want to consider.
-But that doesnʼt actually mean that they were intended to be the same.
-Or on the flip side, what if they are pointers to tmp files?
-Symlinks?
-Bind mounts?
-It gets really complicated.
-
-The best you can do when serializing it would be to write out the `open()`{.python} call, basically.
-The file name.
-(What if you run as a different user and donʼt have the necessary permissions anymore? lol) -->
 
 ### Constructors
 
