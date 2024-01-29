@@ -3,6 +3,7 @@ title: TransMorphism Type Theory MetaTheory
 subtitle: A programming language (front-end?) for making other programming languages!
 author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
+date: 2023/10/13 – …
 ---
 
 

@@ -5,9 +5,15 @@ const canvas = require('../../assets/js/canvas.js');
 const process2 = require("process");
 const crypto = require("crypto");
 
-var output_dir = process2.argv[2];
+var replace = false;
+var i = 2;
+var output_dir = process2.argv[i];
+if (output_dir === '--replace') {
+  replace = true;
+  output_dir = process2.argv[++i];
+}
 if (output_dir === '--') {
-  output_dir = process2.argv[3];
+  output_dir = process2.argv[++i];
 }
 
 registerFont('assets/fonts/KaTeX/KaTeX_Math-Italic.ttf', { family: "KaTeX Math", style: "italic" });
@@ -18,12 +24,13 @@ const document = parse5.parseFragment(stdin);
 
 function visit(node) {
   if (node.tagName === 'canvas') {
-    process(node);
+    return process(node);
   } else if (node.childNodes) {
     for (let child of node.childNodes) {
-      visit(child);
+      node.childNodes[node.childNodes.indexOf(child)] = visit(child);
     }
   }
+  return node;
 }
 
 function attrs(node) {
@@ -82,9 +89,14 @@ function process(node) {
     };
     noscript.childNodes.push(img);
     node.childNodes = [noscript];
+    if (replace) {
+      img.parentNode = node.parentNode;
+      return img;
+    }
   }
+  return node;
 }
 
-visit(document);
+const newDocument = visit(document);
 
-fs.writeFileSync(1, parse5.serialize(document), "utf-8")
+fs.writeFileSync(1, parse5.serialize(newDocument), "utf-8")

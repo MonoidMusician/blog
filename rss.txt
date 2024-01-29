@@ -1,0 +1,7 @@
+sources/pickling.md
+sources/semilattice_semiring.md
+sources/tmttmt.md
+sources/version_solver.md
+sources/bezier_calligraphy.md
+sources/parser.md
+sources/Eudoxus.md

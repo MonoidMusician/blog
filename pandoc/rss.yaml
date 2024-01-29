@@ -1,0 +1,15 @@
+from: markdown+tex_math_single_backslash+footnotes+inline_notes+autolink_bare_uris
+toc: false
+section-divs: false
+preserve-tabs: true
+filters:
+  - pandoc/lua/LilyPond.lua
+  - pandoc/lua/staticer-katex.lua
+  - pandoc/lua/concat.lua
+  - pandoc/lua/canvas-static.lua
+  - pandoc/lua/widgets.lua
+syntax-definition:
+  - pandoc/skylighting/fish.xml
+  - pandoc/skylighting/purescript.xml
+metadata:
+  lang: en

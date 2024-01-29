@@ -2,6 +2,7 @@
 title: Interactive Parser Explanations
 author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
+date: 2022/07/20
 ---
 
 I have been building this framework for explaining, analyzing, and teaching about LR(1) grammars for a couple months now.
