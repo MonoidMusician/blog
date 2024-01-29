@@ -182,13 +182,13 @@ bundle :: String -> String
 bundle js =
   -- Adapted from TryPureScript client
   let
-    importRegex :: Regex.Regex
-    importRegex = either (\_ -> unsafeCrashWith "Invalid regex") identity
-      $ Regex.regex """^import (.+) from "../([^"]+)";$""" RegexFlags.noFlags
-    replacement = "import $1 from \"http://localhost:7933/assets/ps/$2\";"
+    importExportRegex :: Regex.Regex
+    importExportRegex = either (\_ -> unsafeCrashWith "Invalid regex") identity
+      $ Regex.regex """ from "../([^"]+)";$""" RegexFlags.noFlags
+    replacement = " from \"http://localhost:7933/assets/ps/$1\";"
     codeWithRemappedImports = js
       # String.split (String.Pattern "\n")
-      # map (Regex.replace importRegex replacement)
+      # map (Regex.replace importExportRegex replacement)
       # String.joinWith "\n"
   -- Actually call the `main` function
   in codeWithRemappedImports <> "\n\nmain();\n"

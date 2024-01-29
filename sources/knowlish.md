@@ -5,6 +5,8 @@ author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
 ---
 
+_[Overflow](knowlish_overflow.html)_
+
 ## CLI
 
 - Print side-by-side: `pr -mtw $(tput cols)`{.bash}
@@ -18,7 +20,7 @@ author:
 - [`entr`](http://eradman.com/entrproject/) is pretty useful, a little tricky to use ... maybe `watchexec` is better? never used it
 - [`date '+%Y-%m-%d-%H-%M-%S'`{.bash}](https://stackoverflow.com/questions/1401482/yyyy-mm-dd-format-date-in-shell-script#answer-1401495)
 - [`grep -Fxq "One specific line exists in" many_lines.txt`{.bash}](https://stackoverflow.com/questions/4749330/how-to-test-if-string-exists-in-file-with-bash#answer-4749368)
-- `sponge`
+- pipe into `sponge filename.txt`{.bash} if `filename.txt` is used earlier in the command (since output redirection erases the file)
 
 ### MacOS
 
@@ -26,7 +28,7 @@ author:
 - Clipboard: `pbpaste`{.bash}/`pbcopy`{.bash} (stdout/stdin only)
 - Network name (SSID): [`/System/Library/PrivateFrameworks/Apple80211.framework/Resources/airport -I  | awk -F' SSID: '  '/ SSID: / {print $2}'`{.bash}](https://stackoverflow.com/questions/4481005/get-wireless-ssid-through-shell-script-on-mac-os-x#answer-4481019)
 
-### Ubuntu
+### Ubuntu (GNOME?)
 
 - MouseKeys fast: `xkbset ma 60 10 10 5 2`{.bash}
 
@@ -142,7 +144,7 @@ author:
   ]
   ```
 
-  (or `{next,previous}Editor`{.bash} to have it apply across windows instead of wrapping around)
+  (or `workbench.action.{next,previous}Editor`{.bash} to have it apply across windows instead of wrapping around)
 
   > By default, Ctrl+Tab in Visual Studio Code cycles through tabs in order of most recently used. This is confusing because it depends on hidden state.
   >
@@ -154,7 +156,7 @@ author:
 
 #### Highlighting
 
-- Weird bug where typing `re` in a markdown makes syntax highlighting wonky: it turns out to be caused by the extension file `ocamllabs.ocaml-platform-1.13.4-universal/syntaxes/reason-markdown-codeblock.json`{.bash}, so you can just delete stuff from there until it goes away.
+- Weird bug where typing `re` in a markdown makes syntax highlighting wonky: it turns out to be caused by the extension file `ocamllabs.ocaml-platform-1.*.*-universal/syntaxes/reason-markdown-codeblock.json`{.bash}, so you can just delete that whole file (you will have to do this at every update).
 
 ### ffplay
 

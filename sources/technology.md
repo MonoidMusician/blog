@@ -229,6 +229,11 @@ Some weird quirks and anti-quirks Iʼve run into while implementing stuff:
   It was very annoying when scrolling and pausing, so I had to have a fake `{background-image: linear-gradient(transparent, transparent), …}`{.css} appear before the actual background image, since iOS does not want to open up a `linear-gradient`{.fu} image.
 1. Firefox bug: https://aileenrae.co.uk/blog/firefox-scroll-padding-bug/
 
+### TODO
+
+- Get TOC to appear inline on mobile
+- Print footnotes as footnotes for print view (or at least after the paragraph)
+
 ## KaTeX
 
 ### Quirks
@@ -243,13 +248,13 @@ I wrote a [Pandoc plugin](https://github.com/MonoidMusician/blog/blob/main/pando
 Then I style it a little bit.
 It is pretty simple!
 
-I would like to get the measure numbers to show up on the right margin, centered on the staff.
-But I donʼt know how to do that yet.
-
 In dark mode, the ruled staff was visually overwhelming, so I added `{opacity: 0.75}`{.css} to it.
 
 Still need more output formats.
 And interactivity!!
+
+I would like to make a nice editor for it.
+Perhaps based on [Spontini](https://github.com/paopre/Spontini) (CodeMirror).
 
 <!--
 ## Makefile

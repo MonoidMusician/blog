@@ -65,7 +65,7 @@ You can bug or help me write more ^^
 ### Topics
 
 - [TODO]{t=}: [Using this tool by example](parser_by_example.html)
-- [TODO]{t=}: [Terminology reference](parser_terminology)
+- [TODO]{t=}: [Terminology reference](parser_terminology.html)
 - [WIP]{t=}: [Basics: What are grammars](parser_basics.html) (BNF, RegExp)
   #. Nonterminals and terminals
   #. Sequencing and alternation (regexes)

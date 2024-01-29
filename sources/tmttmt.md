@@ -112,7 +112,7 @@ If you arenʼt forced to work in the base logic of Haskell, and instead have mor
 
   :::Bonus
   You may still want separate sets of rules for conventional “paper” presentations, however.
-  Like as a term rewriting system, instead of NbE, for example.
+  Like as a term rewriting system, instead of [NbE]{t=}, for example.
   But if both of them are executable, you can test whether they are equivalent!
   (With QuickCheck, unit tests, or assertions.)
   :::

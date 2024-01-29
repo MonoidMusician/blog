@@ -27,7 +27,7 @@ Itʼs not a real blog though since it doesnʼt have RSS yet …
 
 - [TransMorphism Type Theory MetaTheory](tmttmt.html) [2023/10/13 – …]{.dated}
 
-- [The Best Errors for Solving Dependency Versions](version_solver.html)
+- [The Best Errors for Solving Dependency Versions](version_solver.html) [2023/01/02 – 2023/01/21]{.dated}
 
   > A [novel algorithm](https://github.com/purescript/registry-dev/blob/master/lib/src/Solver.purs) for resolving dependency bounds to solved versions:
   >
@@ -39,7 +39,7 @@ Itʼs not a real blog though since it doesnʼt have RSS yet …
   >   2. Efficiency too, if you could believe it.
   > - Implemented using semilattices ([monoids](version_solver.html#monoids-monoids-everywhere)).
 
-- [Impossible Bézier Calligraphy: Approximating cubic nibs drawn along cubic strokes](bezier_calligraphy.html)
+- [Impossible Bézier Calligraphy: Approximating cubic nibs drawn along cubic strokes](bezier_calligraphy.html) [2022/09/18 – 2023/04/23]{.dated}
 
   > Given a pen nib of some shape, what composite shape is produced when that pen is drawn along any particular path?
   > If the inputs are cubic Bézier curves, is the output as well?
@@ -49,13 +49,13 @@ Itʼs not a real blog though since it doesnʼt have RSS yet …
   > However, that doesnʼt prevent us from getting pretty darn close.
   > Let me show you how it works out.
 
-- [Interactive Parser Explanations](parser.html)
+- [Interactive Parser Explanations](parser.html) [2022/07/20]{.dated}
 
   > I have been building this framework for explaining, analyzing, and teaching about LR(1) grammars for a couple months now.
   > The interactive widgets here will allow you to build and verify your intuition by clicking through examples, because I believe that once you are armed with the basic ideas and the right intuition, you can figure out the rest of details for yourself.
   > Alternatively, it can serve as a playground to test out hypotheses about grammars, see exactly where things go wrong when conflicts occur, and what to do to fix those errors.
 
-- [Eudoxus Real Numbers as Slopes of Pixelated Graphs](Eudoxus.html)
+- [Eudoxus Real Numbers as Slopes of Pixelated Graphs](Eudoxus.html) [2022/07/20]{.dated}
 
   > This is a post on constructing real numbers without constructing rational numbers. Along the way the rationals will sort of be constructed, or at least heavily implied, but they donʼt directly figure into the definition! Instead all we need is functions from integers to integers.
   >
@@ -99,13 +99,16 @@ But if you want to nudge me to write on them – or even better, if you want to 
 
 Admittedly the “finished” posts are only 80–90% complete themselves, _shhh…_
 
-- Type Theory
+### Type Theory
+
   - Interactive type theory!
   - [WIP]{t=}: [User Operators with Implicits & Overloads](implicit_arguments.html), in bidirectional type checkers
   - The Algebra of Type Unification (semilattices everywhere!)
   - [TransMorphism Type Theory MetaTheory](tmttmt.html)
   - Nontermination and inconsistency
-- Programming Linguistics:
+
+### Programming Linguistics
+
   - Iʼve been thinking a lot about [selective applicative functors](https://dl.acm.org/doi/10.1145/3341694) lately.
     Mostly through the perspective of two contrasting applications: [selective applicative parsers](https://cohost.org/monoidmusician/post/2588944-more-more-more-seman), and functors for [typechecking with better errors](comprehensive_errors.html).
   - [Algebra of CSS Selectors](css_selectors.html)
@@ -124,7 +127,9 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 
     This is the main difference between how mathematicians (especially category theorists) treat \(X \to Y \to Z\) and how programmers treat `X -> Y -> Z`{.haskell}, by the way.
     The former means “two functions, which can be composed” and the latter means “a curried function of two arguments”.
-- Paradigms:
+
+### Paradigms
+
   - I should do a blog post on what “effects” mean in FP culture
 
     [tl;dr]{t=} is “effects are as effects do”
@@ -156,11 +161,13 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
       Are numeric operations safe in Python?
 
   - log levels considered harmful
-- Data:
+
+### Data
+
   - The Anatomy of ADTs
   - [WIP]{t=}: [Subtypes/Quotients: Lies Told in Defense of the Truth](adt_lies_for_truth.html)
   - Quotients: Lets us have nice cake and eat things too.
-  - Hereditarily Finite Sets
+  - [Hereditarily Finite Sets](hereditarily_finite_sets.html)
   - I should do a blog post on why [pickling](https://docs.python.org/3/library/pickle.html#what-can-be-pickled-and-unpickled) (in the sense of Python) is so cool and important, and what “data” means in general (to Pythoners, to JavaScripters, to Haskellers, to Agdaers, …)
 
     pickling is cool because it forces you to acknowledge that—
@@ -170,15 +177,30 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
     —that your ephemeral mutable data that only exists at runtime and is guarded behind weird constructors, actually has existence (and therefore meaning) in a persistent manner, that can be locked away and reconstituted into an equivalent but not identical runtime representation
 
     and it forces you to declare what parts of your API are foreign mumbo jumbo
-- Mathematics
+
+    [Draft](flavors_of_data.html)
+
+### Mathematics
+
   - [Lebesgue measure](https://en.wikipedia.org/wiki/Lebesgue_measure) and [Lebesgue integration](https://en.wikipedia.org/wiki/Lebesgue_integration)
 
     My two observations:
 
     #. I love how in order to prove how the old-fashioned Riemann integral works (characterizing what functions are Riemann integrable), you essentially have to come up with the Lebesgue measure, which paves the way for the Lebesgue integral.
     2. It is incredibly cool and incredibly counterintuitive how turning integration on its *side* produces better results.
-- Typeclasses:
+
+### Typeclasses
+
   - Fundeps: how they affect defining instances and instance resolution
   - Instances as biïmplications, and the unfortunate consequences
     (It is really hard to actually come up for a use for this, outside of specific reflection/reification contexts ... harrumph maybe it actually breaks that too.)
-  - Coercible redesign
+    (Actually I think it is fine, but it needs to be opt-in for the sake of APIs/incremental builds.)
+  - [`Coercible`{.purescript}](https://pursuit.purescript.org/builtins/docs/Prim.Coerce#t:Coercible) redesign
+    - I want to get rid of “roles” as a hardcoded feature.
+      I donʼt know of anyone proposing a solid theory of higher-order roles yet.
+      But itʼs not necessary, in any case: itʼs much better to use quantified constraints.
+
+      [tl;dr]{t=}:
+      - roles now establish the canonical instance for a type constructor; the translation should be pretty obvious
+      - all of these are symmetric, so that doesnʼt need to be baked into the solver (except for new abstract instances in scope)
+      - `Coercible`{.purescript} then is also generated using transitivity and reflexivity and application: `Coercible f g => forall a. Coercible (f a) (g a)`{.purescript}

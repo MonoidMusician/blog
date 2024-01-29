@@ -3,6 +3,7 @@ title: Impossible Bézier Calligraphy
 subtitle: Approximating cubic nibs drawn along cubic strokes
 author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
+date: 2022/09/18 – 2023/04/23
 ---
 
 The story of how I implemented calligraphy for [cubic Bézier curves](https://www.jasondavies.com/animated-bezier/) (the kind widely used in graphics programs, especially the common [Scalable Vector Graphics (SVG) format](https://en.wikipedia.org/wiki/Scalable_Vector_Graphics)).

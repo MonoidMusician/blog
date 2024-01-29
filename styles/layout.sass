@@ -35,6 +35,9 @@ table
 
 dd
   margin-bottom: 1em
+  display: list-item
+  &::marker
+    content: "= "
 dd > p:first-child
   margin-top: 0
 
@@ -62,6 +65,9 @@ code
   padding-bottom: 1px
   margin-left: -1px
   margin-right: -1px
+pre
+  /* Silly firefox */
+  margin: 0
 pre > code
   border-radius: 0
   padding: 0
