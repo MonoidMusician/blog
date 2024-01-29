@@ -11,7 +11,7 @@ In particular, I want to talk about runtime representations of data, **real** da
 
 You shouldnʼt just throw up your hands once you have cyclic references!
 Itʼs possible and worthwhile to design tools to work with the raw graph of runtime data, no matter its shape.
-With the proper metaprogramming hooks, you could save and restore a whole runtime environment, which is pretty amazing to think about.
+With the proper metaprogramming hooks, you could save and restore a whole runtime environment *from the inside*, which is pretty amazing to think about.
 
 (Well, okay, you might give up at things like functions, if there isnʼt enough metaprogramming, or running sockets, for example – thatʼs okay!)
 
