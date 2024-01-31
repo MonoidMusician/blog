@@ -45,7 +45,7 @@ things are a little trickier for recursive things: `data Free f a = Pure a | Wr
 
 (this might not be a problem in Haskell, but I would definitely worry about it in PureScript)
 
-this eliminates a weird thing where newtypes and data worked differently wrt coercibility: it was always the case that `data App f a = App (f a)`{.haskell} effectively has instance `Coercible (f a) (g b) => Coercible (App f a) (App g b)`{.haskell} by transitivity of Coercible; namely, unwrapping and rewrapping
+this eliminates a weird thing where newtypes and data worked differently wrt coercibility: it was always the case that `newtype App f a = App (f a)`{.haskell} effectively has instance `Coercible (f a) (g b) => Coercible (App f a) (App g b)`{.haskell} by transitivity of Coercible; namely, unwrapping and rewrapping
 
 so I would like that for all datatypes
 
