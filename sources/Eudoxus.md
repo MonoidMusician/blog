@@ -2,7 +2,7 @@
 title: Eudoxus Real Numbers as Slopes of Pixelated Graphs
 author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
-date: 2022/07/20
+date: 2022/05/10 – 2022/07/20
 ---
 
 If you have a little background in classical constructions of the real numbers, you might have noticed that all of the usual constructions start with the rational numbers as a base, and then build up to real numbers.

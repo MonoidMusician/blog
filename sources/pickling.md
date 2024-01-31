@@ -910,3 +910,16 @@ I havenʼt worked out the details ([stable names](https://hackage.haskell.org/pa
 :::Warning
 The main difference is that, in Haskell, the infinite `JSON`{.haskell} could be truly infinite (like, procedurally generated) – it does not need to be backed by a finite amount of data like it would be in JavaScript.
 :::
+
+<!--
+I should do a blog post on why [pickling](https://docs.python.org/3/library/pickle.html#what-can-be-pickled-and-unpickled) (in the sense of Python) is so cool and important, and what “data” means in general (to Pythoners, to JavaScripters, to Haskellers, to Agdaers, …)
+
+pickling is cool because it forces you to acknowledge that—
+
+_oh! spaghetti code is spaghetti because its data is spaghetti!_
+
+—that your ephemeral mutable data that only exists at runtime and is guarded behind weird constructors, actually has existence (and therefore meaning) in a persistent manner, that can be locked away and reconstituted into an equivalent but not identical runtime representation
+
+and it forces you to declare what parts of your API are foreign mumbo jumbo
+-->
+

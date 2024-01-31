@@ -65,7 +65,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   > The interactive widgets here will allow you to build and verify your intuition by clicking through examples, because I believe that once you are armed with the basic ideas and the right intuition, you can figure out the rest of details for yourself.
   > Alternatively, it can serve as a playground to test out hypotheses about grammars, see exactly where things go wrong when conflicts occur, and what to do to fix those errors.
 
-- [Eudoxus Real Numbers as Slopes of Pixelated Graphs](Eudoxus.html) [2022/07/20]{.dated}
+- [Eudoxus Real Numbers as Slopes of Pixelated Graphs](Eudoxus.html) [2022/05/10 – 2022/07/20]{.dated}
 
   > This is a post on constructing real numbers without constructing rational numbers. Along the way the rationals will sort of be constructed, or at least heavily implied, but they donʼt directly figure into the definition! Instead all we need is functions from integers to integers.
   >
@@ -116,6 +116,8 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
   - The Algebra of Type Unification (semilattices everywhere!)
   - [TransMorphism Type Theory MetaTheory](tmttmt.html)
   - Nontermination and inconsistency
+  - [Source spans/provenance](https://gist.github.com/MonoidMusician/2e2b6bcbd60c056083a720921589ec8d) [2020/09/26 – 2020/09/30]{.dated}
+  - [Type theory introduction?](https://gist.github.com/MonoidMusician/c42361964ece15c9a883c005282c9614) [2019/09/04 – 2020/07/24]{.dated}
 
 ### Programming Linguistics
 
@@ -174,21 +176,12 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 
 ### Data
 
+_data = information + structure_
+
   - The Anatomy of ADTs
   - [WIP]{t=}: [Subtypes/Quotients: Lies Told in Defense of the Truth](adt_lies_for_truth.html)
   - Quotients: Lets us have nice cake and eat things too.
   - [Hereditarily Finite Sets](hereditarily_finite_sets.html)
-  - I should do a blog post on why [pickling](https://docs.python.org/3/library/pickle.html#what-can-be-pickled-and-unpickled) (in the sense of Python) is so cool and important, and what “data” means in general (to Pythoners, to JavaScripters, to Haskellers, to Agdaers, …)
-
-    pickling is cool because it forces you to acknowledge that—
-
-    _oh! spaghetti code is spaghetti because its data is spaghetti!_
-
-    —that your ephemeral mutable data that only exists at runtime and is guarded behind weird constructors, actually has existence (and therefore meaning) in a persistent manner, that can be locked away and reconstituted into an equivalent but not identical runtime representation
-
-    and it forces you to declare what parts of your API are foreign mumbo jumbo
-
-    [Draft](flavors_of_data.html)
 
 ### Mathematics
 
@@ -205,12 +198,4 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
   - Instances as biïmplications, and the unfortunate consequences
     (It is really hard to actually come up for a use for this, outside of specific reflection/reification contexts ... harrumph maybe it actually breaks that too.)
     (Actually I think it is fine, but it needs to be opt-in for the sake of APIs/incremental builds.)
-  - [`Coercible`{.purescript}](https://pursuit.purescript.org/builtins/docs/Prim.Coerce#t:Coercible) redesign
-    - I want to get rid of “roles” as a hardcoded feature.
-      I donʼt know of anyone proposing a solid theory of higher-order roles yet.
-      But itʼs not necessary, in any case: itʼs much better to use quantified constraints.
-
-      [tl;dr]{t=}:
-      - roles now establish the canonical instance for a type constructor; the translation should be pretty obvious
-      - all of these are symmetric, so that doesnʼt need to be baked into the solver (except for new abstract instances in scope)
-      - `Coercible`{.purescript} then is also generated using transitivity and reflexivity and application: `Coercible f g => forall a. Coercible (f a) (g a)`{.purescript}
+  - [Redesigning `Coercible`{.purescript}](coercible.html)
