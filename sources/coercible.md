@@ -56,3 +56,19 @@ and also helps out with the whole discussion around monad/functor coercing, yeah
 - https://gitlab.haskell.org/ghc/ghc/-/wikis/roles2#join
 - https://ryanglscott.github.io/2018/03/04/how-quantifiedconstraints-can-let-us-put-join-back-in-monad/
 - https://github.com/purescript/documentation/blob/master/language/Roles.md
+
+----
+
+Coercible and polymorphic subsumption donʼt play well together?
+
+```haskell
+lmap :: forall p a b. (FunctorOf Op ((->) ~> (->)) p) => (a -> b) -> forall x. p b x -> p a x
+lmap f = coerce (map @_ @_ @p (Op f))
+```
+
+```
+    • Couldn't match representation of type: forall x1.
+                                             p b x1 -> p a x1
+                               with that of: p b x -> p a x
+        arising from a use of ‘coerce’
+```

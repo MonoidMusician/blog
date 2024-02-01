@@ -176,7 +176,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 
 ### Data
 
-_data = information + structure_
+_data = information^[bits & bytes] + structure^[expectations of what the bits & bytes can be and what they mean]_
 
   - The Anatomy of ADTs
   - [WIP]{t=}: [Subtypes/Quotients: Lies Told in Defense of the Truth](adt_lies_for_truth.html)
