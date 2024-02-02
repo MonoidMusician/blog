@@ -5,8 +5,8 @@ author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
 ---
 
-Okay, let me start off by saying I’m not a huge fan of bidirectional type theory.
-It is not a satisfying explanation of typechecking for me, I feel like you run into its limitations way too quickly.^[I feel like I can say this now that I’ve worked on getting [PolyTT](https://github.com/ToposInstitute/polytt) off the ground!]
+Okay, let me start off by saying Iʼm not a huge fan of bidirectional type theory.
+It is not a satisfying explanation of typechecking for me, I feel like you run into its limitations way too quickly.^[I feel like I can say this now that Iʼve worked on getting [PolyTT](https://github.com/ToposInstitute/polytt) off the ground!]
 
 However, it is quite useful, especially for quickly getting started with a type theory implementation.
 It has a specific philosophical tack, which is commendable (“redexes need annotations”).
@@ -20,14 +20,14 @@ Of course, for builtins, the typechecker can do whatever it want, but a common f
 However, these overloads and coercions are limited to _builtin_ types and functions.
 They need to be baked into the implementation.
 
-In particular, if you’re implementing a dependent type theory and choose a naïve bidirectional type checking algorithm, you’re limiting implicit arguments to be only for builtins.
+In particular, if youʼre implementing a dependent type theory and choose a naïve bidirectional type checking algorithm, youʼre limiting implicit arguments to be only for builtins.
 
 And any user of that theory is going to be frustrated at the verbosity of it.
 And maybe a little miffed at the unfairness of it.
 
 How come the implementer keeps the cool tricks to herself?!
 
-Let’s try to fix this.
+Letʼs try to fix this.
 How can we give the user access to implicit arguments for their own functions too?
 
 As usual with type theory, it requires being more disciplined and systematic.
@@ -35,14 +35,14 @@ Formalizing the unstated conventions underpinning common practice – this is th
 
 ## Game plan
 
-Our first observation comes from a page stolen out of the builtins’ book:
+Our first observation comes from a page stolen out of the builtinsʼ book:
 
 :::Key_Idea
 Require that user-defined operators are fully applied enough, in order to infer implicits.
 :::
 
 What does this mean, “enough”?
-We’ll need to do some work to figure it out.
+Weʼll need to do some work to figure it out.
 
 But what it accomplishes is clear:
 
@@ -57,10 +57,10 @@ Thus we would say that we need to be able to _syn_ enough arguments to determine
 The remaining arguments can (and should) be _chk_​ed – and since normal function arguments are also _chk_​ed, this means they can be unapplied arguments.
 
 :::Note
-I won’t be addressing how to parse user-defined operators.
-That’s a difficult enough problem on its own.
+I wonʼt be addressing how to parse user-defined operators.
+Thatʼs a difficult enough problem on its own.
 
-Just note that I’ll include prefix operators that look like normal function application (separated by a space), but differ in requiring a certain number of arguments to be applied.
+Just note that Iʼll include prefix operators that look like normal function application (separated by a space), but differ in requiring a certain number of arguments to be applied.
 In fact, these are the easiest to parse, and the best source of examples.
 :::
 
@@ -71,16 +71,16 @@ In fact, this is strictly better: if we are typing the (partially-applied, or no
 Thus the main improvement in this case is (wait for it): emulating mixed-mode typing for functions.
 (Having some arguments in _syn_, and determining some information from the expected type `T` of the whole partially applied function `f a b : T`.)
 
-Which is why you shouldn’t even be using bidirectional typing in the first place! Urgh!
+Which is why you shouldnʼt even be using bidirectional typing in the first place! Urgh!
 (Unification handles this exact problem more elegantly. And it forces you to make your coercions coherent!)
 
-Thus we’ve already gone from “let’s add implicits to bidirectional typing” to “let’s emulate unification except worse”.
+Thus weʼve already gone from “letʼs add implicits to bidirectional typing” to “letʼs emulate unification except worse”.
 
-In particular, one way that it is worse is that we have to commit to modes up-front: we can’t decide to _try_ infering this argument as _syn_, then fall back to infering something else and returning to _chk_ it, etc.
+In particular, one way that it is worse is that we have to commit to modes up-front: we canʼt decide to _try_ infering this argument as _syn_, then fall back to infering something else and returning to _chk_ it, etc.
 
-The other way that it is worse is that we can’t provide partial types to anything.
+The other way that it is worse is that we canʼt provide partial types to anything.
 
-So we’ll see what we’re able to make of it.
+So weʼll see what weʼre able to make of it.
 
 ### Inferring patterns of _syn/chk_ for arguments
 
@@ -102,7 +102,7 @@ Since normal function applications _chk_ their argument, we have this equation f
 That is, if we can _syn_ a function type (in result position), it is equivalent to _chk_​ing its arguments and _syn_​ing its result.
 Thus the argument does not need to be provided, and so we will prefer the first notation to indicate that.
 
-It’s instructive to consider a bunch of examples to get our bearings:
+Itʼs instructive to consider a bunch of examples to get our bearings:
 
 ```{.agda data-lang=Pseudo}
 id {A : Type} : ~syn:A → ~syn:A
@@ -121,13 +121,13 @@ compose : ~syn:Poly → ~chk:Poly → ~syn:Poly
 And we come up with some rules for figuring out the modes of each argument:
 
 - Rule 1: We typecheck strictly from left to right (this could be improved with fancy heuristics but eh).
-- Rule 2: If an argument’s type mentions none of the remaining implicit parameters, it is in _chk_.
-- Rule 3: Based on types we know (if the result is in _chk_ they we know that up front, otherwise we will be _syn_​ing arguments), we fill in the implicits that can be uniquely determined in that argument’s type.
+- Rule 2: If an argumentʼs type mentions none of the remaining implicit parameters, it is in _chk_.
+- Rule 3: Based on types we know (if the result is in _chk_ they we know that up front, otherwise we will be _syn_​ing arguments), we fill in the implicits that can be uniquely determined in that argumentʼs type.
   See [picking apart types] for more details.
 - Rule 4: We have to know all of the implicits by the end of this process.
   If there are implicits that are not uniquely determined from the types of the explicit arguments, they cannot be implicits.
 
-An important edge case to keep in mind: there will be some times where an argument needs to be synthesized, because we don’t know all of its implicits, but yet it does not uniquely determine any implicits ([e.g.]{t=} if there is a complex type function based on the implicit).
+An important edge case to keep in mind: there will be some times where an argument needs to be synthesized, because we donʼt know all of its implicits, but yet it does not uniquely determine any implicits ([e.g.]{t=} if there is a complex type function based on the implicit).
 
 #### Starting in _syn_
 
@@ -149,7 +149,7 @@ Injective type constructors uniquely determine their arguments.
 
 Eurgh.
 
-Actually I don’t think it’s quite so bad.
+Actually I donʼt think itʼs quite so bad.
 
 But still have the obvious issue of data in types.
 
@@ -166,7 +166,7 @@ Or QTT (Quantitative Type Theory), with quantity 0.
 
 ### Overloads
 
-Now that we’re picking apart types, we might as well throw in overloads.
+Now that weʼre picking apart types, we might as well throw in overloads.
 
 ```{.agda data-lang=Pseudo}
 compose {A B C : Type}
@@ -206,9 +206,9 @@ Where I rant about unification.
 
 Like, consider overloaded numeric literals and operators.
 `0 + n`{.agda data-lang=PolyTT} is going to fail without an annotation, but `n + 0`{.agda data-lang=PolyTT} would succeed.
-Thus the operator is commutative, but typechecking it isn’t!
-(Yeah, yeah, depending on how you implement `+`{.agda data-lang=PolyTT} that’ll be a beta-redex, but the point stands.
+Thus the operator is commutative, but typechecking it isnʼt!
+(Yeah, yeah, depending on how you implement `+`{.agda data-lang=PolyTT} thatʼll be a beta-redex, but the point stands.
 The same issue occurs with `= {A : Type} : A → A → Type`{.agda data-lang=PolyTT}, for example.)
 
-It’s really tempting to do speculative typechecking, and trying to _syn_ an argument but fall back to _syn_​ing another if it is not a _syn_​able argument.
+Itʼs really tempting to do speculative typechecking, and trying to _syn_ an argument but fall back to _syn_​ing another if it is not a _syn_​able argument.
 But that just gets to be ridiculous.

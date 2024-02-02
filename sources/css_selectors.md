@@ -29,10 +29,10 @@ Some examples to get you started:
   (actually not optimal, oops …)
 - `.a ~ .c`{.css}, `.a + .b + .c`{.css} []{.widget widget="Parser.Main.CSS.Example" widget-datakey="default" widget-data-example="[&quot;.a ~ .c&quot;,&quot;.a + .b + .c&quot;]"}
   <br/>
-  (what’s the difference? why? but this is also not optimal)
+  (whatʼs the difference? why? but this is also not optimal)
 - `.a ~ .b + .c ~ .d`{.css}, `.w + .x ~ .y ~ .z`{.css} []{.widget widget="Parser.Main.CSS.Example" widget-datakey="default" widget-data-example="[&quot;.a ~ .b + .c ~ .d&quot;,&quot;.w + .x ~ .y ~ .z&quot;]"}
   <br/>
-  (okay, you’re not guessing this one!)
+  (okay, youʼre not guessing this one!)
 
 Can you guess what the result will be?
 See if you can figure out the rules for how it works!

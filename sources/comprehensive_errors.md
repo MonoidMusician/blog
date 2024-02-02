@@ -4,7 +4,7 @@ author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
 ---
 
-I am on a quest for the best errors out there. Will I ever realize it? Nope, I clearly don’t have the time. But here’s my blueprint for what I believe are my most significant contributions to it so far.
+I am on a quest for the best errors out there. Will I ever realize it? Nope, I clearly donʼt have the time. But hereʼs my blueprint for what I believe are my most significant contributions to it so far.
 
 Despite thinking these are my most significant contributions, I also believe that what I am doing is obvious and not at all surprising. I am not making creative choices of my own, I am eliminating choices from the implementation. Just takes the right lens to look at it, in theory!
 
@@ -33,25 +33,25 @@ In particular, I have begun to suspect that the effectful structure of typecheck
 
 ## Part 1: Monads? Applicatives! Both?!
 
-This part is ostensibly a dive about the nitty gritty details of the practical implementation of a typechecker. More specifically, it’s about how I believe they should be implemented (at least for simple type theories!) in a purely functional way, particularly in languages like PureScript and Haskell.
+This part is ostensibly a dive about the nitty gritty details of the practical implementation of a typechecker. More specifically, itʼs about how I believe they should be implemented (at least for simple type theories!) in a purely functional way, particularly in languages like PureScript and Haskell.
 
 However, it is also the story of how effects are useful for thinking about type theory and how the effectful structure of type theory can begin to be isolated from its algebraic structure.
 
 ### The Story
 
-To step back a bit, let’s revisit the question of how do we write down/communicate/learn the rules of a particular type theory?
+To step back a bit, letʼs revisit the question of how do we write down/communicate/learn the rules of a particular type theory?
 
-There’s two main ways: the presentation of the rules in terms of logic with fake syntax, and the implementation of the rules in an actual programming language.
+Thereʼs two main ways: the presentation of the rules in terms of logic with fake syntax, and the implementation of the rules in an actual programming language.
 
 Despite the many axes I have to grind with the fake syntax of logic-style presentations of type theory, they are quite effective at communicating rules concisely. At least to humans who are familiar with the white lies of type theory, certainly they are not detailed enough for computers to understand. However, one big downside is that they do not encode errors at all: the error state is just “no derivation found within this system of rules”.
 
-So with compilers, we want to give more specific errors. Like, “Expected this to be a type but it was a number.” These errors really represent the fact that the system of rules forced us to commit to a derivation, but one – or more! – of the assumptions wasn’t satisfied.
+So with compilers, we want to give more specific errors. Like, “Expected this to be a type but it was a number.” These errors really represent the fact that the system of rules forced us to commit to a derivation, but one – or more! – of the assumptions wasnʼt satisfied.
 
 This “or more!” part here is what is most important to me: due to how typecheckers are implemented, they usually bail on the first error. I want to avoid that. For example, when typechecking a list, in theory all the expressions could be typechecked independently and the results combined, and this includes combining all the errors that might have occurred. (It also includes combining the state changes – ponder that for later.)
 
-A similarly suboptimal behavior is that when some knowledge is gained by the typechecker, it commits to that and judges all further knowledge against what it has committed to. (Again, this gets particularly tricky with state, but exists before it.) Returning to the list example, if the first item in the list has a particular type, all others are judged against that type – and even if the first is wrong while _all_ the others agree with each other, you’ll get many errors despite only having one problem!
+A similarly suboptimal behavior is that when some knowledge is gained by the typechecker, it commits to that and judges all further knowledge against what it has committed to. (Again, this gets particularly tricky with state, but exists before it.) Returning to the list example, if the first item in the list has a particular type, all others are judged against that type – and even if the first is wrong while _all_ the others agree with each other, youʼll get many errors despite only having one problem!
 
-So my idea is basically to step away from the nitty gritty details of the sequential algorithm implementing the rules, and take a bird’s eye view of what’s going on at each step, in order to get better errors.
+So my idea is basically to step away from the nitty gritty details of the sequential algorithm implementing the rules, and take a birdʼs eye view of whatʼs going on at each step, in order to get better errors.
 
 In particular, this will mean **performing as many pieces in parallel at once as make sense**. If we get errors, then we can report all errors that occurred, not just the first. Or if no errors occur, then we should continue on the sequence of actions with knowledge of all of those results. And, **if those results were on equal footing (like the elements of a list), we should consider them on equal footing, and compare them not just to the first element but holistically as a group**.
 
@@ -59,7 +59,7 @@ Finally the conclusion of this perspective is that the actual algebraic checks t
 
 ### Monads and Applicatives in Parallel
 
-Functional implementations use monads to sequence effects in the compiler. We’ll talk about the details of what these effects are later, since it matters more in the applicative version, but for now assume it has errors (via `ExceptT`), local context (via `ReaderT`), information reporting (via `WriterT`), and eventually state (via `StateT` … but actually not).
+Functional implementations use monads to sequence effects in the compiler. Weʼll talk about the details of what these effects are later, since it matters more in the applicative version, but for now assume it has errors (via `ExceptT`), local context (via `ReaderT`), information reporting (via `WriterT`), and eventually state (via `StateT` … but actually not).
 
 The original motivation for the parallel class is asynchronous operations. Strictly speaking, we do not need to talk about asynchronous effects here – static language semantics (for Dhall in particular) should not need to talk about disk or network access, for typechecking or evaluation. Still, it is worth it to provide context on parallel effects for one paragraph.
 
@@ -180,7 +180,7 @@ This is arguably the single most important judgment in type theories, since they
 
 It is also where what I said about “no subsumption” becomes important: there's nothing fancy we need to do at function application, just ensure the type of the argument and the function domain match.
 
-Notice how I phrased it like “ensure that X and Y match” ([i.e.]{t=} “unify X and Y”). This is because there’s no bias in the rules: it's not “ensure X matches Y” or “ensure Y matches X”.
+Notice how I phrased it like “ensure that X and Y match” ([i.e.]{t=} “unify X and Y”). This is because thereʼs no bias in the rules: it's not “ensure X matches Y” or “ensure Y matches X”.
 
 In a lot of systems it would be the case that one wants to infer either the function first, and then check the argument against its domain, or check the argument first and then check the function type so it satisfies that. This is because the additional information from the first piece guides the typechecker to make various choices to end up with the right type for the second piece of the equation.
 

@@ -102,6 +102,12 @@ _[Overflow](knowlish_overflow.html)_
 
   (do I need quotes? did we fix that in fish?)
 
+- Compare directory listings, excluding hidden files
+
+  ```fish
+  git diff --no-index (cd $ROOT1; find . -not -path '*/\.*' -type f | sort | psub) (cd $ROOT2; find . -not -path '*/\.*' -type f | sort | psub)
+  ```
+
 ## GUI
 
 ### VSCodium / VSCode

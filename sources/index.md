@@ -99,7 +99,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 <!--
 - [What Means](what_means.html) – Some colloquial definitions of words/concepts
 - Co-search – nothing yet, but the idea is that I will put up requests for information, and maybe passers-by can tell me what I seek
-- Don’t make me invent it – in which I finally ask for help & references for prior art, instead of just plunging in confident that I can figure it out
+- Donʼt make me invent it – in which I finally ask for help & references for prior art, instead of just plunging in confident that I can figure it out
 -->
 
 ## Ideas/[WIP]{t=}
@@ -118,6 +118,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
   - Nontermination and inconsistency
   - [Source spans/provenance](https://gist.github.com/MonoidMusician/2e2b6bcbd60c056083a720921589ec8d) [2020/09/26 – 2020/09/30]{.dated}
   - [Type theory introduction?](https://gist.github.com/MonoidMusician/c42361964ece15c9a883c005282c9614) [2019/09/04 – 2020/07/24]{.dated}
+  - [Extra induction (notes)](extra_induction.html) [2021/04/03 – 2021/04/10]{.dated}
 
 ### Programming Linguistics
 

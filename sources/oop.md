@@ -11,7 +11,7 @@ Modern Java(Script)-style OOP is terrible because it focuses on something that r
 
 FP teaches us that the only things that matter are: the shape of data we choose to work with, [i.e.]{t=} (G)ADTs and a few effectful and/or mutable constructs as a treat, and the structure of plain old functions
 
-that’s it
+thatʼs it
 
 Attaching these functions to particular objects is at most a convenient calling convention, or maybe a nice hack for dynamic overloading, which can quickly become unpredictable; at worst, methods being tied to objects is an utter distraction from choices that actually matter
 
@@ -24,6 +24,6 @@ Erlang on the other hand actually does cool things with OOP from two perspective
   - having an explicit mailbox lets you flush message queues, important for [e.g.]{t=} if you need to deregister a supervisor on another process that may have already failed in the meantime
 - Erlang also uses modules as overloading, but again there is actual meaning here:
   - It guarantees that abstractions like gen_server (the basic worker process implementation) have to pass you your process state manually – and that process state is immutable because Erlang data is immutable
-  - This also enables hot reloading: you can reload the module with a code patch to seamlessly start calling the new functions, and if you’re careful/lucky it will keep state
+  - This also enables hot reloading: you can reload the module with a code patch to seamlessly start calling the new functions, and if youʼre careful/lucky it will keep state
 
 

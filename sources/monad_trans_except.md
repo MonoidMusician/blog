@@ -53,11 +53,11 @@ If youʼre doing
 
 ## When `EST`{.haskell} makes more sense
 
-It’s probably more common to want to use both directions of `ExceptT`{.haskell} vis-a-vis `Writer`{.haskell}, but I could imagine some scenarios where you want to maintain state too, either as an optimization for something that should really use Writer, or state that represents information you accumulate regardless of errors, like in SAT solving if you keep a list of possibilities you have ruled out or something (that’s kind of like `Writer`{.haskell} but you don’t want to actually use `Writer`{.haskell}).
+Itʼs probably more common to want to use both directions of `ExceptT`{.haskell} vis-a-vis `Writer`{.haskell}, but I could imagine some scenarios where you want to maintain state too, either as an optimization for something that should really use Writer, or state that represents information you accumulate regardless of errors, like in SAT solving if you keep a list of possibilities you have ruled out or something (thatʼs kind of like `Writer`{.haskell} but you donʼt want to actually use `Writer`{.haskell}).
 
-Or if you’re running network requests and want fine-grained retries, you would keep a map of `RequestID`{.haskell} to `Either FailureCount SuccessData`{.haskell} in state and persist that across retries
+Or if youʼre running network requests and want fine-grained retries, you would keep a map of `RequestID`{.haskell} to `Either FailureCount SuccessData`{.haskell} in state and persist that across retries
 
 The failure at the atomic (single request) level is relevant, and the failure at the global (monadic computation) level is also relevant, but the failure of an individual request does not invalidate the state (in fact, it needs to contribute to it)
 
-The plot twist is that the SAT solving model is not so different from the request retry model – they’re just nondeterministic in different ways.
+The plot twist is that the SAT solving model is not so different from the request retry model – theyʼre just nondeterministic in different ways.
 
