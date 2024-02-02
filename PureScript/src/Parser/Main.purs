@@ -220,7 +220,7 @@ renderParseTable info (MkGrammar grammar) (States states) =
         $
           mapWithIndex (\i -> D.td (col (Array.length terminals) i)) (cols state)
     in
-      D.table (D.Class !:= "parse-table")
+      D.table (D.Class !:= "data-table parse-table")
         [ D.thead_ [ header ]
         , D.tbody_ rows
         ]
@@ -402,7 +402,7 @@ renderStateTable info (States states) = do
         n = Array.length items
       in
         items # mapWithIndex \j -> D.tr_ <<< mapWithIndex (\i -> mkTH n j i <<< pure)
-  D.table (D.Class !:= "state-table")
+  D.table (D.Class !:= "data-table state-table")
     $ states <#>
         \s@{ sName, items } ->
           D.tbody (D.Class <:=> stateClass sName)
@@ -709,7 +709,7 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                     , join (inputValidated "terminal" "Final token") initialTop.eof inputs.eof.error (putEofError <> putInput.eof.value)
                     , join (inputValidated "rule" "Top rule name") initialTop.topName inputs.topName.error (const (putInput.topName.error "") <> putInput.topName.value)
                     ]
-                , D.table (D.Class !:= "grammar")
+                , D.table (D.Class !:= "data-table grammar")
                     [ D.tr_
                         [ D.td_ $ pure $ switcher (\x -> renderNT mempty x) (currentTopParsed <#> _.top)
                         , D.td_ [ renderMeta mempty " : " ]
@@ -910,7 +910,7 @@ explorerComponent { produced: producedRules, grammar: { augmented: MkGrammar rul
                   <|> D.OnClick !:= push.select [ NonTerminal entry ]
               )
               [ text_ "Reset" ]
-          , D.table (D.Class !:= "explorer-table")
+          , D.table (D.Class !:= "data-table explorer-table")
               [ D.tbody_ $ rules <#> \rule -> do
                   let
                     focusHere = currentFocused # map (any (snd >>> eq rule.pName))

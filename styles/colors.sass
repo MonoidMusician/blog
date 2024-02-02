@@ -304,3 +304,23 @@ svg.kgt
 .parse-table > thead > tr > th:not(:first-child), .parse-table tr > th:first-child
   background: $background
 
+
+table:not(.data-table)
+  caption
+    margin: 4px
+  border-collapse: collapse
+  & tbody, & td
+    border: 1px solid color.adjust($text, $alpha: -0.65)
+    padding: 10px 12px
+    transition: border-bottom-color 0.2s
+  & td:hover
+    border-bottom-color: color.adjust($text, $alpha: -0.2)
+  & th
+    padding: 12px 12px
+  & th
+    border-top: 1px solid color.adjust($text, $alpha: -0.85)
+    border-left: 1px solid color.adjust($text, $alpha: -0.85)
+    border-right: 1px solid color.adjust($text, $alpha: -0.85)
+    transition: border-top-color 0.2s
+  & th:hover
+    border-top-color: color.adjust($text, $alpha: -0.2)

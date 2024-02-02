@@ -64,6 +64,12 @@ bind mounts
     > Disadvantage of fuse is that it do not support inotify events
 :   https://jcol.me/2019/12/20/bind-mounting-on-macos/
 
+Samba
+
+:   https://docs.fedoraproject.org/en-US/quick-docs/samba/
+
+    Note: `[share]` in `/etc/samba/smb.conf`{.path} is the name of the share, visible over the network.
+
 ## Misc. links
 
 - https://github.com/paopre/Spontini (LilyPond, CodeMirror)

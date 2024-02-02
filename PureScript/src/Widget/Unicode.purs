@@ -209,7 +209,7 @@ component setGlobal resetting =
               ]
       , D.div (D.Class !:= "full-width h-scroll") $ pure $ D.div (st <|> D.Class !:= "code-points unicode") $ pure $ flip switcher taAllCPs $ foldMap \cp ->
           D.span (D.Class !:= "code-point") [ text_ (disp cp) ]
-      , D.div (D.Class !:= "table-wrapper") $ pure $ D.table (st <|> D.Class !:= "properties-table")
+      , D.div (D.Class !:= "table-wrapper") $ pure $ D.table (st <|> D.Class !:= "data-table properties-table")
         [ renderInfos tallyComp taSelected taValue
           [ Tuple "Code Point(s)" $ CP.length >>> Number (Just Dec)
           , Tuple "UTF-16 Code Unit(s)" $ CU.length >>> Number (Just Dec)
