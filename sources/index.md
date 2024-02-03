@@ -118,7 +118,14 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
   - Nontermination and inconsistency
   - [Source spans/provenance](https://gist.github.com/MonoidMusician/2e2b6bcbd60c056083a720921589ec8d) [2020/09/26 – 2020/09/30]{.dated}
   - [Type theory introduction?](https://gist.github.com/MonoidMusician/c42361964ece15c9a883c005282c9614) [2019/09/04 – 2020/07/24]{.dated}
-  - [Extra induction (notes)](extra_induction.html) [2021/04/03 – 2021/04/10]{.dated}
+    - [0](tt0.html) [1](tt1.html) [2](tt2.html) [3](tt3.html) [4](tt4.html) [5](tt5.html) [6](tt6.html) [7](tt7.html) [8](tt8.html)
+  - [Trying extra reduction rules for induction (notes)](extra_induction.html) [2021/04/03 – 2021/04/10]{.dated}
+  - Idea for a tool for versioning Dhall configs
+    - Maintain a category whose objects are versions and whose morphisms are Dhall functions for upgrading between those versions
+    - Might require it to be a [thin category](https://ncatlab.org/nlab/show/thin+category), or at least have canonical resolutions
+      - Could use normalization to check thinness
+      - Probably want extra eta principles
+    - Generate automatic upgrades based on structure of the types where possible (e.g. removing a record field, adding a sum type)
 
 ### Programming Linguistics
 

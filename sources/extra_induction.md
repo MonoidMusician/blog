@@ -1,5 +1,5 @@
 ---
-title: Extra Induction
+title: Trying extra reduction rules for induction
 subtitle: (Notes)
 date: 2021/04/03 – 2021/04/10
 ---
