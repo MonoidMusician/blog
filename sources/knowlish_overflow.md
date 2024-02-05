@@ -57,7 +57,7 @@ mDNS (`.local` addresses)
 
 bind mounts
 
-:   `/etc/fstab`{.file} and `sudo mount -a`{.bash}
+:   `/etc/fstab`{.filepath} and `sudo mount -a`{.sh}
 
 :   https://apple.stackexchange.com/questions/197029/how-do-you-mount-bind-a-local-directory
 
@@ -68,7 +68,13 @@ Samba
 
 :   https://docs.fedoraproject.org/en-US/quick-docs/samba/
 
-    Note: `[share]` in `/etc/samba/smb.conf`{.path} is the name of the share, visible over the network.
+    Note: `[share]` in `/etc/samba/smb.conf`{.filepath} is the name of the share, visible over the network.
+
+SSH
+
+:   [Keepalive](https://superuser.com/questions/699676/how-to-prevent-ssh-from-disconnecting-if-its-been-idle-for-a-while):
+    - `ssh -o "ServerAliveInterval 60" -o "ServerAliveCountMax 120" yourserver`{.sh} to override for a single session
+    - Or add to `~/.ssh/config`{.filepath}
 
 ## Misc. links
 

@@ -27,6 +27,8 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   > You shouldnʼt just throw up your hands once you have cyclic references!
   > Itʼs possible and worthwhile to design tools to work with the raw graph of runtime data, no matter its shape.
   >
+  > With the proper metaprogramming hooks, you could save and restore a whole runtime environment *from the inside*, which is pretty amazing to think about.
+  >
   > The main thing we will work up to (and go beyond) is Pythonʼs [`pickle`{.python} module](https://docs.python.org/3/library/pickle.html), including my own implementation of it for the [Nasal scripting language](https://wiki.flightgear.org/Nasal_scripting_language) (which I believe is cleaner in some respects, although obviously less industrial).
 
 - [A Semiring From Any Semilattice: A mathematical pun?](semilattice_semiring.html) [2023/10/28]{.dated}
@@ -163,6 +165,9 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
     I suppose I need to pretend to recite the history of monads and do notation in Haskell (“programmable semicolon”)
 
     and explaining why lists model “nondeterminism” could be a whole post of its own …
+
+    > side-{effect, condition} really just mean “not explicitly tracked in the surface syntax” <!-- [2022/06/23]{.dated} -->
+
   - I should also do a blog post on “what people get wrong about the lens/prism/optics laws”, thatʼll be simpler (if more tricky)
 
     the main problem is that we donʼt have a good way to talk about them without invoking a metatheory of Haskell, with unification and possibly parametricity (Iʼll need to see if that comes up)

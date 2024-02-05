@@ -5,12 +5,13 @@ import Prelude
 import Conversions.Index (conversions)
 import Data.Array as Array
 import Data.Bifunctor (lmap)
-import Data.Either (Either(..), either)
+import Data.Either (Either(..))
 import Data.Foldable (intercalate)
 import Data.Functor (mapFlipped)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
+import Data.Profunctor.Choice ((+++), (|||))
 import Data.Tuple (Tuple(..))
 import Dodo as Dodo
 import Effect (Effect)
@@ -18,7 +19,7 @@ import Effect.Aff (Aff, launchAff_, makeAff)
 import Effect.Class (liftEffect)
 import Effect.Console (log, logShow)
 import Effect.Ref as Ref
-import Idiolect ((==<), (>==))
+import Idiolect ((>==))
 import Node.Encoding (Encoding(..))
 import Node.Process (argv, exit, stderr, stdin, stdout)
 import Node.Stream (onDataString, onEnd, onError, writeString)
@@ -28,25 +29,41 @@ import Parser.Languages.Show (mkReShow)
 import Parser.Main.Comb (assemble, bundle, compile, printErrors)
 import PureScript.Highlight (highlight, highlightPandoc)
 
+noArgs :: (String -> Aff (Either String String)) -> (Array String -> Either String (String -> Aff (Either String String)))
+noArgs = const <<< Right
+
+succeeds :: forall i e r. (i -> Aff r) -> i -> Aff (Either e r)
+succeeds = compose (map Right)
+
+noAff :: forall i r. (i -> r) -> i -> Aff r
+noAff = compose pure
+
+simplest :: (String -> String) -> (Array String -> Either String (String -> Aff (Either String String)))
+simplest = noArgs <<< succeeds <<< noAff
+
+simpler :: (String -> Either String String) -> (Array String -> Either String (String -> Aff (Either String String)))
+simpler = noArgs <<< noAff
+
+failing :: forall i e r. (i -> e) -> i -> Aff (Either e r)
+failing = noAff <<< map Left
+
 scripts :: Map String (Array String -> Either String (String -> Aff (Either String String)))
 scripts = Map.fromFoldable
-  [ Tuple "reShow" \_ -> Right (pure <<< Right <<< mkReShow Nothing)
-  , Tuple "echo" (const (Right (pure <<< Right)))
-  , Tuple "highlight" (const (Right (pure <<< Right <<< highlight)))
-  , Tuple "highlightPandoc" (const (Right (pure <<< Right <<< highlightPandoc)))
-  , Tuple "assembleParser" (const (Right (pure <<< lmap printErrors <<< assemble)))
-  , Tuple "compileParser" $ const $ Right $ assemble >>> case _ of
-      Left errs -> pure $ Left $ printErrors errs
-      Right assembled -> compile assembled <#> case _ of
-        Left errs -> Left $ intercalate "\n" errs
-        Right result -> Right result
-  , Tuple "bundleParser" $ const $ Right $ assemble >>> case _ of
-      Left errs -> pure $ Left $ printErrors errs
-      Right assembled -> compile assembled <#> case _ of
-        Left errs -> Left $ intercalate "\n" errs
-        Right result -> Right $ bundle result
-  ] <|> mapFlipped conversions \parserPrinter -> const $ Right $ \input -> pure $
-      Comber.parse parserPrinter input <#> Dodo.print Dodo.plainText Dodo.twoSpaces
+  [ Tuple "reShow" $ simplest $ mkReShow Nothing
+  , Tuple "echo" $ simplest identity
+  , Tuple "highlight" $ simplest highlight
+  , Tuple "highlightPandoc" $ simplest highlightPandoc
+  , Tuple "assembleParser" $ simpler $ lmap printErrors <<< assemble
+  , Tuple "compileParser" $ noArgs $
+      assemble >>> do
+        failing printErrors |||
+          compile >== (intercalate "\n" +++ identity)
+  , Tuple "bundleParser" $ noArgs $
+      assemble >>> do
+        failing printErrors |||
+          compile >== (intercalate "\n" +++ bundle)
+  ] <|> mapFlipped conversions \parserPrinter -> noArgs $ noAff $
+      Comber.parse parserPrinter >== Dodo.print Dodo.plainText Dodo.twoSpaces
 
 main :: Effect Unit
 main = do

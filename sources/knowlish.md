@@ -56,6 +56,12 @@ _[Overflow](knowlish_overflow.html)_
 
   </details>
 
+### tmux
+
+- Detach: `ctrl+b` then `d`.
+- Reattach: `tmux a`{.sh}.
+- Switch: `ctrl+b` then `s`.
+
 ## Runtimes & Debugging
 
 ### Browser JS
@@ -107,6 +113,12 @@ _[Overflow](knowlish_overflow.html)_
   ```fish
   git diff --no-index (cd $ROOT1; find . -not -path '*/\.*' -type f | sort | psub) (cd $ROOT2; find . -not -path '*/\.*' -type f | sort | psub)
   ```
+
+### Nix
+
+- Nix test installation:
+
+  `nix-shell -p nix-info --run "nix-info -m"`{.sh}
 
 ## GUI
 
