@@ -73,6 +73,7 @@ Samba
 SSH
 
 :   [Keepalive](https://superuser.com/questions/699676/how-to-prevent-ssh-from-disconnecting-if-its-been-idle-for-a-while):
+
     - `ssh -o "ServerAliveInterval 60" -o "ServerAliveCountMax 120" yourserver`{.sh} to override for a single session
     - Or add to `~/.ssh/config`{.filepath}
 
