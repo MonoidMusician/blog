@@ -85,6 +85,7 @@ to generate this file without the comments in this block.
   , "type-equality"
   , "typelevel"
   , "typelevel-prelude"
+  , "uncurried-transformers"
   , "unfoldable"
   , "unicode"
   , "unsafe-coerce"

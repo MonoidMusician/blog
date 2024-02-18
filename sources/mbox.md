@@ -159,7 +159,7 @@ Weʼll be using an add-on called “ImportExportTools NG” to make this a littl
 
 :::{.Bonus box-name="Aside"}
 The funny note is that this tool is not necessary.
-If you are comfortable with files, you can install it yourself by moving the `.mbox` file to the right location.
+If you are comfortable with files, you can install it yourself by moving the `.mbox` file to [the right location](https://www.reddit.com/r/Thunderbird/comments/17k76cx/importexporttools_ng_wont_import_mbox_over_4gb/).
 But itʼs nice to not worry about getting that right.
 :::
 

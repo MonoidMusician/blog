@@ -98,6 +98,25 @@ You can bug or help me write more ^^
 - Generate example inputs for each state, especially to diagnose conflicts^[currently it only generates example inputs for nonterminals/productions]
 - Explain [Earley parsing](https://en.wikipedia.org/wiki/Earley_parser) using a similar approach
 - Better errors!
+- Hm maybe I can uhh suggest fixes to grammars, has that been done before …
+  - at least precedence
+  - other ambiguity fixes are harder, but maybe factoring
+- Whitespace
+
+<!--
+### Other resources
+
+- https://www.cs.princeton.edu/courses/archive/spring20/cos320/LL1/
+- https://jsmachines.sourceforge.net/machines/ll1.html
+- https://jsmachines.sourceforge.net/machines/lr1.html
+- http://hackingoff.com/compilers/ll-1-parser-generator
+- https://jamey.thesharps.us/2023/07/04/breaking-ciphers-with-regular-expressions/
+- http://andrewduncan.net/parsing/index.html
+- https://github.com/phzs/lr0parsing/tree/master
+- https://gerhobbelt.github.io/jison/try/usf/
+
+- https://js.cytoscape.org/
+-->
 
 ## Widgets
 

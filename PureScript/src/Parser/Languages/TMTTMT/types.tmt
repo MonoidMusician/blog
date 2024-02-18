@@ -1,0 +1,59 @@
+(# primitive #)
+#type Void = (|)
+
+#type Unit = []
+
+#type Wrap a = [a]
+
+(# sugar for `$$ | ""` #)
+#type String = $
+(# primitive #)
+#type NEString = $$
+
+(# `Maybe a` can be coerced to `List a` #)
+#type Maybe a = [] | [a]
+
+Maybe2List : forall a. Maybe a -> List a
+Maybe2List a => a
+
+(# sugar for `+a | []` #)
+#type List a = *a
+(# primitive #)
+#type NEList a = +a
+
+#type Cons a = [] | [a (Cons a)]
+#type Snoc a = [] | [(Snoc a) a]
+
+#type Endo a = a -> a
+
+#type Tuple a b = [a b]
+
+#type Either a b =
+  | ["L" a]
+  | ["R" b]
+
+(# newtype #)
+#type Validation a b = Either a b
+
+#type These a b =
+  | Either a b
+  | ["B" a b]
+
+(# strings and lists, recursively #)
+#type AnyData =
+  | $
+  | *AnyData
+
+(# strings, lists, and functions, recursively #)
+(# for an untyped language #)
+#type UniType =
+  | AnyData
+  | (UniType -> UniType)
+
+(# sorry not sorry #)
+(# (you will appreciate me later) #)
+#type Nat = [] | [Nat]
+
+#type dBIndex = Nat
+#type dBLevel = Nat
+#type Ctx idx a = Snoc a
