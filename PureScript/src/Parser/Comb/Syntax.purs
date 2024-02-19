@@ -22,13 +22,15 @@ printSyntax'' t (Conj l r) =
   let
     printFactor = case _ of
       Null -> []
-      -- Disj (Part p) Null -> [ Right p ] <> [ Left $ t "?" ]
-      -- Disj Null (Part p) -> [ Right p ] <> [ Left $ t "?" ]
+      Disj (Part p) Null -> [ Right p ] <> [ Left $ t "?" ]
+      Disj Null (Part p) -> [ Right p ] <> [ Left $ t "?" ]
+      Disj x Null -> [ Left $ t "(" ] <> printSyntax'' t x <> [ Left $ t ")?" ]
+      Disj Null x -> [ Left $ t "(" ] <> printSyntax'' t x <> [ Left $ t ")?" ]
       x@(Disj _ _) -> [ Left $ t "(" ] <> printSyntax'' t x <> [ Left $ t ")" ]
       x -> printSyntax'' t x
   in join [ printFactor l, printFactor r ]
--- printSyntax'' t (Disj (Part p) Null) = [ Right p ] <> [ Left $ t "?" ]
--- printSyntax'' t (Disj Null (Part p)) = [ Right p ] <> [ Left $ t "?" ]
+printSyntax'' t (Disj (Part p) Null) = [ Right p ] <> [ Left $ t "?" ]
+printSyntax'' t (Disj Null (Part p)) = [ Right p ] <> [ Left $ t "?" ]
 printSyntax'' t (Disj l r) = printSyntax'' t l <> [ Left $ t "|" ] <> printSyntax'' t r
 printSyntax'' _ (Part p) = [ Right p ]
 printSyntax'' _ Null = []

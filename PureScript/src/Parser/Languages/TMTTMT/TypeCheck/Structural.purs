@@ -2,27 +2,23 @@ module Parser.Languages.TMTTMT.TypeCheck.Structural where
 
 import Prelude
 
-import Control.Alt ((<|>))
 import Control.Apply (lift2)
-import Control.Extend (duplicate)
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Reader (class MonadAsk, class MonadReader, ReaderT, ask, local, runReaderT)
-import Control.Monad.Writer (WriterT, execWriterT, runWriter, runWriterT, tell)
+import Control.Monad.Writer (WriterT, runWriter, tell)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Filterable (filterMap, partitionMap)
+import Data.Filterable (partitionMap)
 import Data.FoldableWithIndex (foldMapWithIndex)
-import Data.FunctorWithIndex (mapWithIndex)
-import Data.Identity (Identity(..))
+import Data.Identity (Identity)
 import Data.Lens.Iso.Newtype (_Newtype)
 import Data.Lens.Record (prop)
-import Data.List (List(..), all, any, foldMap, foldl, foldr, (:))
+import Data.List (List(..), all, any, foldMap, foldr, (:))
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
-import Data.Monoid.Disj (Disj(..))
 import Data.Monoid.Endo (Endo(..))
-import Data.Newtype (class Newtype, unwrap)
+import Data.Newtype (class Newtype)
 import Data.Traversable (for_, sequence, traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst)
@@ -188,14 +184,11 @@ type BindIt = TmVar -> Functional -> Local
 binding :: Local -> forall a. Typing a -> Typing a
 binding (Endo (NatTrans f)) x = f x
 
-bash :: forall a.
+bashing :: forall a.
   Pattern -> Functional -> BindIt ->
   (Functional -> Typing a) ->
   Typing { matched :: a, unmatched :: Functional }
-bash (Var name) expectedType varWithType r =
-  { matched: _, unmatched: Union [] } <$>
-    binding (varWithType name expectedType) (r expectedType)
-bash value subsets varWithType r = case seen (bashf value subsets) of
+bashing value subsets varWithType r = case seen (bash value subsets) of
   Tuple _ (Unown vars) -> throwError (ECannotMatchAgainstVariablesAt dfLoc vars)
   Tuple varsSeen (Known matched unmatched) -> do
     let bound = foldMapWithIndex (foldMap <<< varWithType) varsSeen
@@ -217,11 +210,6 @@ instance semigroupRefine :: Semigroup (Refine a) where
 
 instance monoidRefine :: Monoid (Refine a) where
   mempty = Known mempty mempty
-
-bashing ::
-  Pattern -> Options Functional ->
-  SeeVars (Refine Functional)
-bashing pat = foldMap (bashf pat)
 
 keep :: forall a. a -> (a -> a) -> a
 keep a f = f a
@@ -330,7 +318,7 @@ basher (Scalar _) ty@(ListOf _) = pure $ known false ty
 basher (Scalar _) ty@(Tupled _) = pure $ known false ty
 basher (Vector []) ty@(ListOf _) = pure $ known false ty
 basher (Vector s) (ListOf itemty) =
-  refinedList <$> (traverseWithIndex into (bashf <$> s <@> itemty))
+  refinedList <$> (traverseWithIndex into (bash <$> s <@> itemty))
     <#> case _ of
       Left unk -> Unown unk
       -- We take the refined types and tuple them up
@@ -341,23 +329,23 @@ basher (Vector s) (ListOf itemty) =
 basher (Vector s) ty@(Tupled items) =
   case Array.length s == Array.length items of
     true -> map (Tupled <<< map Union) <<< refineTupled <$>
-      traverseWithIndex into (Array.zipWith bashf s items)
+      traverseWithIndex into (Array.zipWith bash s items)
     false -> pure $ known false ty
 basher (Vector _) ty@(Singleton _) = pure $ known false ty
 basher (Vector _) ty@AnyScalar = pure $ known false ty
 basher (Macro _ _) _ = unsafeCrashWith "Unexpected Macro in basher"
 
 -- | Apply patterns to more general types.
-bashf :: Pattern -> Functional -> SeeVars (Refine Functional)
-bashf (Var v) ty = see v ty $> known true ty
+bash :: Pattern -> Functional -> SeeVars (Refine Functional)
+bash (Var v) ty = see v ty $> known true ty
 -- Handle each type in the union separately
-bashf pat (Union tys) = bashing pat tys
+bash pat (Union tys) = foldMap (bash pat) tys
 -- `basher` is the handler for concrete types
-bashf pat (Concrete ty) = map Concrete <$> basher pat ty
+bash pat (Concrete ty) = map Concrete <$> basher pat ty
 -- Scalars and Vectors are disjoint from functions
-bashf _ ty@(Function _ _) = pure $ known false ty
+bash _ ty@(Function _ _) = pure $ known false ty
 -- We cannot match a concrete pattern against a tyvar
-bashf _ (TyVar tv) = unknown tv
+bash _ (TyVar tv) = unknown tv
 
 -- instance TypeSystem Functional (Typing Unit) where
 --   unFunAbs (Function dom cod) cb = cb dom cod

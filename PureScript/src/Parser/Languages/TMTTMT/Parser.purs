@@ -13,9 +13,52 @@ import Data.Monoid (power)
 import Data.String as String
 import Data.String.CodeUnits as CU
 import Idiolect ((<#?>), (>==))
-import Parser.Comb.Comber (Comber, delim, many, many1, mutual, rawr, token, ws, (#->), (#:))
+import Parser.Comb.Comber (Comber, delim, many, many1, many1SepBy, mutual, rawr, token, ws, wsws, (#->), (#:))
 import Parser.Languages.CSS (newline)
+import Parser.Languages.TMTTMT.TypeCheck.Structural (BasicSubsetF(..), Functional(..))
 import Parser.Languages.TMTTMT.Types (Calling(..), Case(..), Condition(..), Declaration(..), Expr(..), Matching(..), Pattern(..))
+
+tyList :: Functional -> Functional
+tyList t = Union [ Concrete (Tupled []), tyNEList t ]
+tyNEList :: Functional -> Functional
+tyNEList = Concrete <<< ListOf
+tyString :: Functional
+tyString = Union [ Concrete (Singleton ""), Concrete AnyScalar ]
+
+typePG ::
+  { typeFunctionP :: Comber Functional
+  , typeAtomP :: Comber Functional
+  , typePrefixP :: Comber Functional
+  , typeUnionP :: Comber Functional
+  }
+typePG = mutual \{ typeAtomP, typePrefixP, typeUnionP, typeFunctionP } ->
+  { typeAtomP: oneOf
+      [ TyVar <$> nameP
+      , tyString <$ token "$"
+      , Concrete AnyScalar <$ token "$$"
+      , Union [] <$ delim "(" ")" (wsws $ token "|")
+      , delim "(" ")" typeFunctionP
+      , Concrete <<< Tupled <$> delim "[" "]" (many "typeAtoms" typeAtomP)
+      , Concrete <<< Singleton <$> stringP
+      ] <* ws
+  , typePrefixP: oneOf
+      [ (tyList <$ token "*" <* ws) <*> typePrefixP
+      , (tyNEList <$ token "+" <* ws) <*> typePrefixP
+      , typeAtomP
+      ]
+  , typeUnionP:
+      Union <<< NEA.toArray <$>
+        many1SepBy "typeUnion" (token "|" *> ws) do
+          {- many1 "typeApps" -} typePrefixP
+  , typeFunctionP: oneOf
+      [ typeUnionP
+      , Function <$> typeUnionP <* token "->" <* ws <*> typeFunctionP
+      ]
+  }
+
+typeP :: Comber Functional
+typeP = typePG.typeFunctionP
+-- typeP = typePG.typeAtomP *> typePG.typePrefixP *> delim "{" "}" typePG.typeUnionP *> typePG.typeFunctionP
 
 stringP :: Comber String
 stringP = "string"#: oneOf

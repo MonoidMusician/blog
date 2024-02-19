@@ -32,7 +32,7 @@ Maybe2List a => a
   | ["L" a]
   | ["R" b]
 
-(# newtype #)
+(# newtype (once I have nominal types) #)
 #type Validation a b = Either a b
 
 #type These a b =

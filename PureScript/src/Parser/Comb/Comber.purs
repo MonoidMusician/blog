@@ -8,10 +8,12 @@ import Ansi.Codes as Ansi
 import Ansi.Output as Ansi.Output
 import Control.Alt (class Alt, (<|>))
 import Control.Alt (class Alt, (<|>)) as ReExports
-import Control.Alternative (class Alternative, class Plus)
 import Control.Alternative (class Alternative, class Plus) as ReExports
+import Control.Alternative (class Alternative, class Plus, empty)
 import Control.Apply (lift2)
 import Control.Apply (lift2) as ReExports
+import Control.Comonad (extract)
+import Control.Comonad.Store (Store, StoreT(..), store)
 import Data.Argonaut (Json)
 import Data.Argonaut as Json
 import Data.Array (intercalate, (!!))
@@ -23,7 +25,7 @@ import Data.Codec as C
 import Data.Codec.Argonaut as CA
 import Data.Compactable (class Compactable)
 import Data.Compactable (class Compactable, compact) as ReExports
-import Data.Either (Either(..), either)
+import Data.Either (Either(..))
 import Data.Foldable (fold, foldMap, oneOf, traverse_)
 import Data.List (List(..))
 import Data.List.NonEmpty as NEL
@@ -403,6 +405,27 @@ printGrammarWsn p comber =
 
 printState :: forall m. Monoid m => Printer m -> State -> Array m
 printState p (P.State items) =
+  {-
+    printState : Printer m -> State -> *m
+    printState p items => result:
+      let
+        | ["Terminal" ["Continue" a]] => ["Terminal" a]
+        | ["NonTerminal" ["R" a]] => ["NonTerminal" a]
+        ! => normal
+      (# will catch pattern failure and substitute `mempty` #)
+      foldMatching items (: * :) (# coerces to list, specifically `*(?)` #)
+      | { pName: ["R" pName], rName: [rName], rule: [l' r'] } => [itemResult]:
+        map normal l' => l
+        map normal r' => r
+        (# TODO: use effects #)
+        p.nonTerminal pName => o1
+        p.meta "." => o2
+        p.rule rName => o3
+        p.meta " = " => o4
+        printZipper p [l r] => o5
+        fold [ o1 o2 o3 o4 o5 ] => itemResult
+      ! => result
+  -}
   items # foldMap case _ of
     { pName: Right pName, rName: Just rName, rule: P.Zipper l' r' }
       | Just l <- normal l', Just r <- normal r' ->
@@ -470,21 +493,29 @@ mutual ::
     MutualCombers rl r =>
   (Record r -> Record r) -> Record r
 mutual defineParsers =
-  fst $ mutual' (Tuple <$> defineParsers <@> unit)
+  extract $ fst $ mutual'
+    (Tuple <$> defineParsers <@> unit)
 
 mutual' ::
   forall r rl o.
     RL.RowToList r rl =>
     MutualCombers rl r =>
-  (Record r -> Record r /\ o) -> Record r /\ o
-mutual' = mutualRL (Proxy :: Proxy rl)
+  (Record r -> Record r /\ o) ->
+  Store (Comber Void) (Record r) /\ o
+mutual' =  mutualRL (Proxy :: Proxy rl)
 
 class MutualCombers :: RL.RowList Type -> Row Type -> Constraint
 class MutualCombers rl r | rl -> r where
-  mutualRL :: forall o. Proxy rl -> (Record r -> Record r /\ o) -> Record r /\ o
+  mutualRL :: forall o. Proxy rl ->
+    (Record r -> Record r /\ o) ->
+    -- We store added rules in `Comber Void`, which we can `<|>` onto it safely
+    -- to accumulate grammar and other info, without adding extra rules to match
+    (Store (Comber Void) (Record r) /\ o)
 
 instance mutualNil :: MutualCombers RL.Nil () where
-  mutualRL _ f = f {}
+  mutualRL _ f =
+    let r /\ o = f {} in
+    store (const r) empty /\ o
 
 instance mutualCons ::
   ( MutualCombers rl' r'
@@ -514,5 +545,25 @@ instance mutualCons ::
         do \(r'Def /\ Tuple o prsDef) -> prsDef /\ Tuple r'Def o
       -- Dispatch through `namedRec'`
       prsOut /\ Tuple r'Out o = namedRec' (reflectSymbol sym) defineParser
-      -- Accumulate the external invocation of the parser to return
-      rOut = Record.insert sym (to (Comber prsOut)) r'Out
+      -- Insert the external invocation of the parser into the record to return
+      -- Accumulate the added grammar rules, through `Comber Void`, and wait
+      -- until they are all accumulated to add it to the parser and insert
+      -- it into the record
+      rOut = r'Out #
+        storeMore (Comber prsOut) \allRules ->
+          Record.insert sym
+            (to (Comber prsOut <|> map absurd allRules))
+
+storeMore ::
+  forall w f a b c r.
+    Functor w =>
+    Apply f =>
+  f c ->
+  (f b -> a -> r) ->
+  StoreT (f b) w a ->
+  StoreT (f b) w r
+storeMore moreRules finalResult =
+  over StoreT case _ of
+    Tuple contW rulesSoFar -> Tuple
+      (apply finalResult <$> contW)
+      (moreRules *> rulesSoFar)

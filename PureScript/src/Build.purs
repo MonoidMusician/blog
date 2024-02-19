@@ -46,4 +46,5 @@ main = launchAff_ do
   process Show.lazyTop "show-parser-states"
   process CSS.selector_list "css-parser-states"
   process TMTTMT.declarationsP "tmttmt-parser-states"
+  process TMTTMT.typeP "tmttmt-types-parser-states"
   process Languages.json "json-parser-states"
