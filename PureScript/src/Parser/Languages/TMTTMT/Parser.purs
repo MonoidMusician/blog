@@ -209,6 +209,9 @@ printExpr' depth (Lambda cases) = A.fold
   ]
 printExpr' depth (Pattern p) = printPattern' depth p
 
+printPattern :: Pattern -> String
+printPattern = printPattern' 0
+
 printPattern' :: Int -> Pattern -> String
 printPattern' _ (Var v) = v
 printPattern' _ (Scalar s) = show s

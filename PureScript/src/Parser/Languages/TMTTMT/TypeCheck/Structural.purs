@@ -6,10 +6,10 @@ import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Reader (class MonadAsk, class MonadReader, ReaderT, ask, local, runReaderT)
 import Control.Monad.Writer (WriterT, runWriter, tell)
-import Data.Array (fold, intercalate)
+import Data.Array (fold)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Filterable (filterMap, partitionMap)
+import Data.Filterable (partitionMap)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Identity (Identity)
 import Data.Lens.Iso.Newtype (_Newtype)
@@ -135,7 +135,6 @@ dfLoc = mempty :: Loc
 
 data Error
   = EExpectedFunctionAtGot Loc Functional
-  | EPatternMismatchAt Loc Pattern Functional
   | ECannotMatchAgainstVariablesAt Loc (Array (Tuple PatLoc TyVar))
   | EShadowTypeMismatchAt Loc TmVar Functional Functional
 
@@ -186,21 +185,47 @@ type BindIt = TmVar -> Functional -> Local
 binding :: Local -> forall a. Typing a -> Typing a
 binding (Endo (NatTrans f)) x = f x
 
-testPatternResult ::
+printPattern :: Pattern -> String
+printPattern (Var v) = v
+printPattern (Scalar s) = show s
+printPattern (Vector vs) = "[" <> intercalateMap " " printPattern vs <> "]"
+printPattern (Macro _fn _args) = "($)"
+
+testPatternsResult ::
   Either Error
-    { matched :: Tuple Functional (Array (Tuple String Functional))
+    { matched :: Array (Tuple Functional (Array (Tuple String Functional)))
     , unmatched :: Functional
     } ->
   String
-testPatternResult (Left err) = "Error"
-testPatternResult (Right x) = fold
-  [ printFunctional (fst x.matched)
-  , snd x.matched # foldMap \(Tuple v y) ->
-      "\n  " <> v <> " : " <> printFunctional y
-  , "\n------\n"
+testPatternsResult (Left err) = case err of
+  EExpectedFunctionAtGot _loc ty ->
+    "Expected function, got " <> printFunctional ty
+  ECannotMatchAgainstVariablesAt _loc patLocTyVars ->
+    "Cannot match against type variable(s) " <>
+      intercalateMap ", " (\(Tuple patLoc tyVar) -> tyVar <> " (at " <> show patLoc <> ")") patLocTyVars
+  EShadowTypeMismatchAt _loc var ty1 ty2 -> fold
+    [ "Cannot match "
+    , var
+    , " against type "
+    , printFunctional ty2
+    , " since it is already bound with type "
+    , printFunctional ty1
+    ]
+testPatternsResult (Right x) = fold
+  [ x.matched # foldMap \m -> fold
+    [ printFunctional (fst m)
+    , snd m # foldMap \(Tuple v y) ->
+        "\n  " <> v <> " : " <> printFunctional y
+    , "\n------\n"
+    ]
   , printFunctional x.unmatched
   ]
 
+unUnion :: Functional -> Array Functional
+unUnion (Union options) = options >>= unUnion
+unUnion t = [t]
+
+normalizeFunctional :: Functional -> Functional
 normalizeFunctional t = fromMaybe (Union []) $ normalizeFunctional' t
 
 normalizeFunctional' :: Functional -> Maybe Functional
@@ -211,7 +236,7 @@ normalizeFunctional' = case _ of
   Concrete c -> Just $ Concrete c
   TyVar v -> Just $ TyVar v
   Union options ->
-    case Array.nubEq $ filterMap normalizeFunctional' options of
+    case Array.nubEq $ unUnion <<< normalizeFunctional =<< options of
       [] -> Nothing
       [ t ] -> Just t
       ts -> Just $ Union ts
@@ -242,17 +267,39 @@ testPattern pat ty = fst $ evalRWSE (Locals { boundVariables: Map.empty }) unit 
     Locals { boundVariables: l } <- ask
     pure $ Tuple ty' $ Map.toUnfoldable l
 
+testPatterns ::
+  Array Pattern -> Functional ->
+  Either Error
+    { matched :: Array (Tuple Functional (Array (Tuple String Functional)))
+    , unmatched :: Functional
+    }
+testPatterns pats ty =
+  Array.foldl testMore (Right { matched: [], unmatched: ty }) pats
+  where
+  testMore (Left e) _ = Left e
+  testMore (Right { matched, unmatched }) pat =
+    case testPattern pat unmatched of
+      Left e -> Left e
+      Right m -> Right
+        { matched: Array.snoc matched m.matched
+        , unmatched: m.unmatched
+        }
+
 bashing :: forall a.
   Pattern -> Functional -> BindIt ->
   (Functional -> Typing a) ->
   Typing { matched :: a, unmatched :: Functional }
-bashing value subsets varWithType r = case seen (bash value subsets) of
+bashing value ascription varWithType r = case seen (bash value ascription) of
   Tuple _ (Unown vars) -> throwError (ECannotMatchAgainstVariablesAt dfLoc vars)
-  Tuple varsSeen (Known matched unmatched) -> do
-    let bound = foldMapWithIndex (foldMap <<< varWithType) varsSeen
-    { matched: _
-    , unmatched: Union (unmatched)
-    } <$> binding bound (r (Union (matched)))
+  Tuple _varsSeen (Known matched unmatched) -> do
+    let filtered = normalizeFunctional (Union matched)
+    case seen (bash value filtered) of
+      Tuple _ (Unown _) -> unsafeCrashWith "bashing did not succeed again"
+      Tuple varsSeen _ -> do
+        let bound = foldMapWithIndex (foldMap <<< varWithType) varsSeen
+        { matched: _
+        , unmatched: Union (unmatched)
+        } <$> binding bound (r (Union (matched)))
 
 data Refine a
   = Unown (Options (Tuple PatLoc TyVar))

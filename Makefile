@@ -55,7 +55,8 @@ prebuild : PureScript/src/PreBuild.purs PureScript/src/Parser/Parserlude.purs
 	spago run -m PreBuild
 
 ps : $(BUILDIR) PureScript/src prebuild packages.dhall spago.dhall
-	spago build
+	rm -f $(BUILDIR)/widgets.js.gz
+	spago bundle-app --main Main --to $(BUILDIR)/widgets.js
 
 watch-prebuild :
 	ls PureScript/src/PreBuild.purs PureScript/src/Parser/Parserlude.purs | entr make prebuild

@@ -439,8 +439,9 @@ The evaluator needs local variables.
 Implementing the basic structural type system for tmTTmt.
 Basically composed of unions of structural types in the language of JSON, including singletons, tuples, (non-empty) lists, and (non-empty) strings.
 (No objects, yet – those require constraints.)
+Oh, and functions, though you cannot interact with those via pattern matching (no view patterns!).
 
-Enter a type in the top box and a pattern in the bottom box, and it will show you the type that it matches (and the types of the variables it binds), and it will show you the refined type of the *non*-match.
+Enter a type in the top box and some patterns in the bottom box, and it will show you the type that each pattern matches (and the types of the variables it binds), and it will show you the refined type of the leftover *non*-match at the end.
 (Currently does not handle the fact that non-linear pattern matches should not refine the type ... or something. Idk how exhaustivity checking is going to work tbh.)
 
 ::: {.widget widget="Parser.Main.TMTTMT.TypeSplit" widget-loading="true" style="display: contents"}

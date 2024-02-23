@@ -96,7 +96,8 @@ pre > code
 
   & > textarea
     margin: -0.75em
-    margin-bottom: calc(-1.45em + 4px)
+    /* looks bad on Firefox and causes additional scroll bar, uhhh Chrome bug? */
+    /* margin-bottom: calc(-1.45em + 4px) */
     padding: 0.75em
     resize: vertical
     font: inherit

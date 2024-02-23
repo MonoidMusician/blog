@@ -5,13 +5,12 @@ import Prelude
 import Control.Plus ((<|>))
 import Data.Array (fold, intercalate)
 import Data.Codec.Argonaut as CA
-import Data.Either (Either(..), either, hush)
+import Data.Either (Either(..), hush)
 import Data.Filterable (filterMap)
-import Data.Foldable (oneOf, oneOfMap, traverse_)
+import Data.Foldable (oneOf, oneOfMap)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Tuple (Tuple(..), snd)
 import Data.Tuple.Nested ((/\))
-import Debug (spy)
 import Deku.Attribute (cb, xdata, (!:=), (<:=>))
 import Deku.Control (text_)
 import Deku.Control as DC
@@ -25,12 +24,12 @@ import FRP.Memoize (memoBeh, memoBehFold, memoLast)
 import Fetch (fetch)
 import Foreign.Object (Object)
 import Foreign.Object as Object
-import Idiolect (intercalateMap, (>==>))
-import Parser.Comb.Comber (lift2, parse)
+import Idiolect ((>==>))
+import Parser.Comb.Comber (lift2, many, parse, ws)
 import Parser.Languages.TMTTMT (mkTMTTMTParser, mkTMTTMTTypeParser)
 import Parser.Languages.TMTTMT.Eval (evalExpr, fromDeclarations)
 import Parser.Languages.TMTTMT.Parser (patternP, printExpr)
-import Parser.Languages.TMTTMT.TypeCheck.Structural (BasicSubsetF(..), Functional(..), testPattern, testPatternResult)
+import Parser.Languages.TMTTMT.TypeCheck.Structural (testPatterns, testPatternsResult)
 import Parser.Languages.TMTTMT.Types (Declaration(..))
 import Web.Event.Event as Event
 import Web.HTML.HTMLTextAreaElement as HTMLTextArea
@@ -125,7 +124,7 @@ widgetTypeSplit _ = do
           envy $ memoBeh pushedRaw dfTy \currentRaw -> do
             envy $ memoBeh pushedPat dfPat \currentPat -> do
               fold
-                [ D.div (D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "TMTTMT")) $
+                [ D.div (D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "tmTTmt")) $
                   pure $ D.pre_ $ pure $ D.code_ $ pure $
                     flip D.textarea [] $ oneOf
                       [ D.OnInput !:= do
@@ -135,7 +134,7 @@ widgetTypeSplit _ = do
                       , D.Value !:= dfTy
                       , D.Style !:= "height: 100px"
                       ]
-                , D.div (D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "TMTTMT")) $
+                , D.div (D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "tmTTmt")) $
                   pure $ D.pre_ $ pure $ D.code_ $ pure $
                     flip D.textarea [] $ oneOf
                       [ D.OnInput !:= do
@@ -149,10 +148,18 @@ widgetTypeSplit _ = do
                     [ DC.text $ result <$> getParser <*> currentRaw <*> currentPat ]
                 ]
   where
-  dfTy = "\"A\" | [\"\" $ $$] | \"B\""
-  dfPat = "[\"\" \"\" c]"
-  parsePat = parse patternP
-  result parser tyS patS = case parser tyS `lift2 Tuple` parsePat patS of
+  dfTy = """"A" | ["" $ $$] | "B" | *[]"""
+  dfPat = """[]
+[h i j k l]
+[[] b c]
+"B"
+[a "" c]
+[x [] x]
+"A"
+[a b c]
+[[] [] [] []]"""
+  parsePats = parse $ ws *> many "patterns" patternP
+  result parser tyS patsS = case parser tyS `lift2 Tuple` parsePats patsS of
     Left r -> r
-    Right (Tuple ty pat) -> do
-      testPatternResult $ testPattern pat ty
+    Right (Tuple ty pats) -> do
+      testPatternsResult $ testPatterns pats ty

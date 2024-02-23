@@ -1,6 +1,6 @@
 ---
 title: Knowlish
-subtitle: "Little bits of tips ʼnʼ tricks I want to keep around.\n\nYou may find it useful too sometimes \\^.\\^"
+subtitle: "Little bits of tips ʼnʼ tricks I want to keep around.<br/>You may find it useful too sometimes \\^.\\^"
 author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
 ---
