@@ -422,3 +422,108 @@ typecheck (App fn arg) =
           apply binder arg codomain
     )
 ```
+
+## Development
+
+For ease of development I am just embedding it as part of the [the code for my blog](https://github.com/MonoidMusician/blog/tree/main/PureScript/src/Parser/Languages/TMTTMT).
+
+I have a rough parser (needs to be updated) using my parser combinator library, yay.
+
+Working on the type system currently: starting with structural types.
+Then need nominal types, constraints, effects, polymorphism, ...
+
+The evaluator needs local variables.
+
+### Types
+
+Implementing the basic structural type system for tmTTmt.
+Basically composed of unions of structural types in the language of JSON, including singletons, tuples, (non-empty) lists, and (non-empty) strings.
+(No objects, yet – those require constraints.)
+
+Enter a type in the top box and a pattern in the bottom box, and it will show you the type that it matches (and the types of the variables it binds), and it will show you the refined type of the *non*-match.
+(Currently does not handle the fact that non-linear pattern matches should not refine the type ... or something. Idk how exhaustivity checking is going to work tbh.)
+
+::: {.widget widget="Parser.Main.TMTTMT.TypeSplit" widget-loading="true" style="display: contents"}
+:::
+
+The rough grammar for types:
+
+```bnf
+ty =
+  | '[' ty+ ']' -- fixed-size tuple
+  | '+' ty -- non-empty list
+  | '*' ty -- sugar for `'+' ty '|' '[' ']'`
+  | ty '|' ty -- union
+  | '$$' -- non-empty strings
+  | '$' -- strings, sugar for `'$$' '|' '"' '"'`
+  | '"' strchar* '"' -- string literal
+  | ty '->' ty -- function type
+  | name -- type variable
+  | '(' ty+ ')' -- type application
+  | '(' '?' ty+ ')' -- type hole
+  | '(' '|' ')' -- empty type (Void/never)
+```
+
+<details class="Example">
+
+<summary>Example types</summary>
+
+```tmttmt
+(# primitive #)
+#type Void = (|)
+
+#type Unit = []
+
+#type Wrap a = [a]
+
+(# sugar for `$$ | ""` #)
+#type String = $
+(# primitive #)
+#type NEString = $$
+
+(# `Maybe a` can be coerced to `List a` #)
+#type Maybe a = [] | [a]
+
+Maybe2List : forall a. Maybe a -> List a
+Maybe2List a => a
+
+(# sugar for `+a | []` #)
+#type List a = *a
+(# primitive #)
+#type NEList a = +a
+
+#type Cons a = [] | [a (Cons a)]
+#type Snoc a = [] | [(Snoc a) a]
+
+#type Endo a = a -> a
+
+#type Tuple a b = [a b]
+
+#type Either a b =
+  | ["L" a]
+  | ["R" b]
+
+(# newtype (once I have nominal types) #)
+#type Validation a b = Either a b
+
+#type These a b =
+  | Either a b
+  | ["B" a b]
+
+(# strings and lists, recursively #)
+#type AnyData =
+  | $
+  | *AnyData
+
+(# strings, lists, and functions, recursively #)
+(# for an untyped language #)
+#type UniType =
+  | AnyData
+  | (UniType -> UniType)
+
+(# sorry not sorry #)
+(# (you will appreciate me later) #)
+#type Nat = [] | [Nat]
+```
+
+</details>

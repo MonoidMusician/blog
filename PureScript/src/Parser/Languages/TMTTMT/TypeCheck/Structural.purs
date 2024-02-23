@@ -6,9 +6,10 @@ import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Reader (class MonadAsk, class MonadReader, ReaderT, ask, local, runReaderT)
 import Control.Monad.Writer (WriterT, runWriter, tell)
+import Data.Array (fold, intercalate)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Filterable (partitionMap)
+import Data.Filterable (filterMap, partitionMap)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Identity (Identity)
 import Data.Lens.Iso.Newtype (_Newtype)
@@ -16,17 +17,18 @@ import Data.Lens.Record (prop)
 import Data.List (List(..), all, any, foldMap, foldr, (:))
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Monoid.Endo (Endo(..))
-import Data.Newtype (class Newtype)
+import Data.Newtype (class Newtype, unwrap)
 import Data.Traversable (for_, sequence, traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
-import Data.Tuple (Tuple(..), fst)
+import Data.Tuple (Tuple(..), fst, snd)
+import Idiolect (intercalateMap)
 import Parser.Languages.TMTTMT.Types (Pattern(..))
 import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
 import Type.Proxy (Proxy(..))
-import Uncurried.RWSE (RWSE)
+import Uncurried.RWSE (RWSE, evalRWSE)
 
 type TmVar = String
 type TyVar = String
@@ -184,6 +186,62 @@ type BindIt = TmVar -> Functional -> Local
 binding :: Local -> forall a. Typing a -> Typing a
 binding (Endo (NatTrans f)) x = f x
 
+testPatternResult ::
+  Either Error
+    { matched :: Tuple Functional (Array (Tuple String Functional))
+    , unmatched :: Functional
+    } ->
+  String
+testPatternResult (Left err) = "Error"
+testPatternResult (Right x) = fold
+  [ printFunctional (fst x.matched)
+  , snd x.matched # foldMap \(Tuple v y) ->
+      "\n  " <> v <> " : " <> printFunctional y
+  , "\n------\n"
+  , printFunctional x.unmatched
+  ]
+
+normalizeFunctional t = fromMaybe (Union []) $ normalizeFunctional' t
+
+normalizeFunctional' :: Functional -> Maybe Functional
+normalizeFunctional' = case _ of
+  Function i o -> Just $ Function (normalizeFunctional i) (normalizeFunctional o)
+  Concrete (ListOf t) | Nothing <- normalizeFunctional' t -> Nothing
+  Concrete (Tupled ts) -> Concrete <<< Tupled <$> traverse normalizeFunctional' ts
+  Concrete c -> Just $ Concrete c
+  TyVar v -> Just $ TyVar v
+  Union options ->
+    case Array.nubEq $ filterMap normalizeFunctional' options of
+      [] -> Nothing
+      [ t ] -> Just t
+      ts -> Just $ Union ts
+
+printFunctional :: Functional -> String
+printFunctional = normalizeFunctional >>> case _ of
+  Function i o -> fold [ "(", printFunctional i, "->", printFunctional o, ")" ]
+  Concrete c -> case c of
+    Singleton s -> show s
+    AnyScalar -> "$$"
+    ListOf t -> "+" <> printFunctional t
+    Tupled ts -> "[" <> intercalateMap " " printFunctional ts <> "]"
+  TyVar v -> v
+  Union [] -> "(|)"
+  Union [ t ] -> printFunctional t
+  Union [ Concrete (Singleton ""), Concrete AnyScalar ] -> "$"
+  Union [ Concrete (Tupled []), Concrete (ListOf t) ] -> "*" <> printFunctional t
+  Union options -> "(" <> intercalateMap " | " printFunctional options <> ")"
+
+testPattern ::
+  Pattern -> Functional ->
+  Either Error
+    { matched :: Tuple Functional (Array (Tuple String Functional))
+    , unmatched :: Functional
+    }
+testPattern pat ty = fst $ evalRWSE (Locals { boundVariables: Map.empty }) unit $ unwrap $
+  bashing pat ty bindValue \ty' -> do
+    Locals { boundVariables: l } <- ask
+    pure $ Tuple ty' $ Map.toUnfoldable l
+
 bashing :: forall a.
   Pattern -> Functional -> BindIt ->
   (Functional -> Typing a) ->
@@ -267,8 +325,8 @@ refineTupled =
       Tuple
         do
           Array.cons
-            do Array.cons ifMatch afterMatchTail
-            do Array.cons ifNotMatch <$> genericTail
+            do Array.cons ifNotMatch afterMatchTail
+            do Array.cons ifMatch <$> genericTail
         do
           Array.cons (ifMatch <> ifNotMatch) afterMatchTail
     {-
@@ -280,8 +338,9 @@ refineTupled =
     -}
     f = case _ of
       { left: [], right } ->
-        Known (pure <<< fst <$> right) $
-          fst (foldr slideCase (Tuple [] []) right)
+        Known [map fst right] $
+          Array.dropEnd 1 $
+            fst (foldr slideCase (Tuple [[]] []) right)
       { left } -> Unown (join left)
   in partitionMap p >>> f
 
