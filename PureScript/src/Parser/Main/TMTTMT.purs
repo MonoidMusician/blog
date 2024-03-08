@@ -27,7 +27,7 @@ import Foreign.Object as Object
 import Idiolect ((>==>))
 import Parser.Comb.Comber (lift2, many, parse, ws)
 import Parser.Languages.TMTTMT (mkTMTTMTParser, mkTMTTMTTypeParser)
-import Parser.Languages.TMTTMT.Eval (evalExpr, fromDeclarations)
+import Parser.Languages.TMTTMT.Eval (Eval(..), evalExpr, fromDeclarations, printEvalError)
 import Parser.Languages.TMTTMT.Parser (patternP, printExpr)
 import Parser.Languages.TMTTMT.TypeCheck.Structural (testPatterns, testPatternsResult)
 import Parser.Languages.TMTTMT.Types (Declaration(..))
@@ -75,7 +75,9 @@ result = (<<<) case _ of
       queries = decls # filterMap case _ of
         Query e -> Just e
         _ -> Nothing
-      results = queries <#> evalExpr ctx >>> maybe "Failed." printExpr
+      results = queries <#> evalExpr ctx >>> case _ of
+        Result e -> printExpr e
+        Error e -> printEvalError e
     in intercalate "\n" results
   Left failure -> failure
 

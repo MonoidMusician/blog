@@ -8,6 +8,7 @@ import Control.Monad.Reader (class MonadAsk, class MonadReader, ReaderT, ask, lo
 import Control.Monad.Writer (WriterT, runWriter, tell)
 import Data.Array (fold)
 import Data.Array as Array
+import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Filterable (partitionMap)
 import Data.FoldableWithIndex (foldMapWithIndex)
@@ -193,7 +194,7 @@ printPattern (Macro _fn _args) = "($)"
 
 testPatternsResult ::
   Either Error
-    { matched :: Array (Tuple Functional (Array (Tuple String Functional)))
+    { matched :: Array (Tuple (Tuple Pattern Functional) (Array (Tuple String Functional)))
     , unmatched :: Functional
     } ->
   String
@@ -212,9 +213,11 @@ testPatternsResult (Left err) = case err of
     , printFunctional ty1
     ]
 testPatternsResult (Right x) = fold
-  [ x.matched # foldMap \m -> fold
-    [ printFunctional (fst m)
-    , snd m # foldMap \(Tuple v y) ->
+  [ x.matched # foldMap \(Tuple (Tuple pat ty) vars) -> fold
+    [ printPattern pat
+    , " : "
+    , printFunctional ty
+    , vars # foldMap \(Tuple v y) ->
         "\n  " <> v <> " : " <> printFunctional y
     , "\n------\n"
     ]
@@ -270,7 +273,7 @@ testPattern pat ty = fst $ evalRWSE (Locals { boundVariables: Map.empty }) unit 
 testPatterns ::
   Array Pattern -> Functional ->
   Either Error
-    { matched :: Array (Tuple Functional (Array (Tuple String Functional)))
+    { matched :: Array (Tuple (Tuple Pattern Functional) (Array (Tuple String Functional)))
     , unmatched :: Functional
     }
 testPatterns pats ty =
@@ -281,7 +284,7 @@ testPatterns pats ty =
     case testPattern pat unmatched of
       Left e -> Left e
       Right m -> Right
-        { matched: Array.snoc matched m.matched
+        { matched: Array.snoc matched (lmap (Tuple pat) m.matched)
         , unmatched: m.unmatched
         }
 
