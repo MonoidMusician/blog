@@ -3,8 +3,10 @@ module Parser.Languages.TMTTMT.Parser where
 import Prelude
 
 import Control.Alt ((<|>))
+import Control.Plus (empty)
 import Data.Array as A
 import Data.Array.NonEmpty as NEA
+import Data.Either (Either(..))
 import Data.Enum (toEnum)
 import Data.Foldable (fold, oneOf)
 import Data.Int (hexadecimal)
@@ -12,8 +14,9 @@ import Data.Int as Int
 import Data.Monoid (power)
 import Data.String as String
 import Data.String.CodeUnits as CU
+import Data.Tuple (Tuple(..))
 import Idiolect ((<#?>), (>==))
-import Parser.Comb.Comber (Comber, delim, many, many1, many1SepBy, mutual, rawr, token, ws, wsws, (#->), (#:))
+import Parser.Comb.Comber (Comber, delim, many, many1, many1SepBy, mutual, opt, rawr, token, ws, wsws, (#->), (#:))
 import Parser.Languages.CSS (newline)
 import Parser.Languages.TMTTMT.TypeCheck.Structural (BasicSubsetF(..), Functional(..))
 import Parser.Languages.TMTTMT.Types (Calling(..), Case(..), Condition(..), Declaration(..), Expr(..), Matching(..), Pattern(..))
@@ -47,8 +50,8 @@ typePG = mutual \{ typeAtomP, typePrefixP, typeUnionP, typeFunctionP } ->
       , typeAtomP
       ]
   , typeUnionP:
-      Union <<< NEA.toArray <$>
-        many1SepBy "typeUnion" (token "|" *> ws) do
+      Union <<< NEA.toArray <$> do
+        opt (token "|" *> ws) *> many1SepBy "typeUnion" (token "|" *> ws) do
           {- many1 "typeApps" -} typePrefixP
   , typeFunctionP: oneOf
       [ typeUnionP
@@ -73,6 +76,11 @@ nameP = "name"#: rawr "[-a-zA-Z0-9_]+"
 
 pathP :: Comber String
 pathP = "path"#: rawr "[-a-zA-Z0-9_]+/" <#> CU.dropRight 1
+
+-- FIXME
+nameWithTypeP :: Comber String
+nameWithTypeP = "nameWithType"#: rawr "[-a-zA-Z0-9_]+\\s*:" <#>
+  CU.dropRight 1 >>> String.trim
 
 data Token
   = TName String
@@ -167,19 +175,26 @@ callingP = exprPG.callingP
 topCaseP :: Comber Case
 topCaseP = "topCase"#: Case <$> matchingP <*> thenConditionsP
 
-declarationsP :: Comber (Array Declaration)
+declarationsP :: Comber (Array (Either (Tuple String Functional) Declaration))
 declarationsP = many "declarations" $ "declaration"#: oneOf
-  [ ado
-    fnName <- pathP
-    caseName <- many "paths" pathP
-    ws
-    desc <- topCaseP
-    in DefineCase fnName caseName desc
-  , Comment <$> do (token "--" <|> token "//") *> rawr "[^\\r\\n]*"
-  , Query <$> ado
-      token ">" *> ws
-      { head, tail } <- NEA.uncons <$> many1 "exprs1" exprP
-      in Pattern (Macro head tail)
+  [ Left <$> ado
+      fnName <- nameWithTypeP
+      ws
+      ty <- typeP
+      in Tuple fnName ty
+  , Right <$> oneOf
+    [ ado
+      fnName <- pathP
+      caseName <- many "paths" pathP
+      ws
+      desc <- topCaseP
+      in DefineCase fnName caseName desc
+    , Comment <$> do (token "--" <|> token "//") *> rawr "[^\\r\\n]*" <* ws
+    , Query <$> ado
+        token ">" *> ws
+        { head, tail } <- NEA.uncons <$> many1 "exprs1" exprP
+        in Pattern (Macro head tail)
+    ]
   ]
 
 printExpr :: Expr -> String

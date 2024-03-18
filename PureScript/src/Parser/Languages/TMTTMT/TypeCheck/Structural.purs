@@ -6,26 +6,32 @@ import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Reader (class MonadAsk, class MonadReader, ReaderT, ask, local, runReaderT)
 import Control.Monad.Writer (WriterT, runWriter, tell)
-import Data.Array (fold)
+import Data.Array (all, any, fold)
+import Data.Array as A
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.Filterable (partitionMap)
+import Data.Filterable (filterMap, partitionMap)
+import Data.Foldable (foldM, for_)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Identity (Identity)
 import Data.Lens.Iso.Newtype (_Newtype)
 import Data.Lens.Record (prop)
-import Data.List (List(..), all, any, foldMap, foldr, (:))
+import Data.List (List(..), foldMap, foldr, (:))
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Monoid (power)
 import Data.Monoid.Endo (Endo(..))
 import Data.Newtype (class Newtype, unwrap)
+import Data.Profunctor.Strong ((&&&))
 import Data.Traversable (for_, sequence, traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
-import Data.Tuple (Tuple(..), fst, snd)
+import Data.Tuple (Tuple(..), fst, uncurry)
+import Foreign.Object as FO
 import Idiolect (intercalateMap)
-import Parser.Languages.TMTTMT.Types (Pattern(..))
+import Parser.Languages.TMTTMT.TypeCheck (class TypeSystem, constructExpr)
+import Parser.Languages.TMTTMT.Types (Calling(..), Case(..), Condition(..), Declaration(..), Expr(..), Matching(..), Pattern(..))
 import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
 import Type.Proxy (Proxy(..))
@@ -138,6 +144,11 @@ data Error
   = EExpectedFunctionAtGot Loc Functional
   | ECannotMatchAgainstVariablesAt Loc (Array (Tuple PatLoc TyVar))
   | EShadowTypeMismatchAt Loc TmVar Functional Functional
+  | EVariableTypeMismatchAt Loc TmVar Functional Functional
+  | EPatternNotSubtypeAt Loc Pattern Functional
+  | EUnknownVariableAt Loc TmVar
+  | EFunctionMustBeVariableAt Loc
+  | ECannotSynthesizeLambdaAt Loc
 
 newtype Locals = Locals
   { boundVariables :: Map TmVar Functional
@@ -180,17 +191,25 @@ bindValue name ty = Endo $ NatTrans do
         prop (Proxy :: Proxy "boundVariables") $
           Map.insert name ty
 
+assertVarSubtype :: TmVar -> Functional -> Local
+assertVarSubtype name ty = Endo $ NatTrans do
+  lift2 (*>)
+    do
+      const do
+        Locals { boundVariables } <- ask
+        case Map.lookup name boundVariables of
+          Just ty0 ->
+            when (not isSubtype ty0 ty) do
+              throwError (EVariableTypeMismatchAt dfLoc name ty0 ty)
+          Nothing ->
+            throwError $ EUnknownVariableAt dfLoc name
+    do identity
+
 type Local = Endo NatTrans Typing
 type BindIt = TmVar -> Functional -> Local
 
 binding :: Local -> forall a. Typing a -> Typing a
 binding (Endo (NatTrans f)) x = f x
-
-printPattern :: Pattern -> String
-printPattern (Var v) = v
-printPattern (Scalar s) = show s
-printPattern (Vector vs) = "[" <> intercalateMap " " printPattern vs <> "]"
-printPattern (Macro _fn _args) = "($)"
 
 testPatternsResult ::
   Either Error
@@ -198,7 +217,7 @@ testPatternsResult ::
     , unmatched :: Functional
     } ->
   String
-testPatternsResult (Left err) = case err of
+testPatternsResult (Left err) = "Typechecking error: " <> case err of
   EExpectedFunctionAtGot _loc ty ->
     "Expected function, got " <> printFunctional ty
   ECannotMatchAgainstVariablesAt _loc patLocTyVars ->
@@ -212,6 +231,23 @@ testPatternsResult (Left err) = case err of
     , " since it is already bound with type "
     , printFunctional ty1
     ]
+  EVariableTypeMismatchAt _loc var ty1 ty2 -> fold
+    [ "Variable "
+    , var
+    , " has type "
+    , printFunctional ty1
+    , " but was used with expected type "
+    , printFunctional ty2
+    ]
+  EPatternNotSubtypeAt _loc pat ty -> fold
+    [ "Pattern "
+    , printPattern pat
+    , " does not belong to type "
+    , printFunctional ty
+    ]
+  EUnknownVariableAt _loc var -> fold [ "Unknown variable ", printPattern (Var var) ]
+  EFunctionMustBeVariableAt _loc -> fold [ "Functions must be variables, sorry." ]
+  ECannotSynthesizeLambdaAt _loc -> fold [ "Cannot synthesize the type of lambdas." ]
 testPatternsResult (Right x) = fold
   [ x.matched # foldMap \(Tuple (Tuple pat ty) vars) -> fold
     [ printPattern pat
@@ -246,7 +282,7 @@ normalizeFunctional' = case _ of
 
 printFunctional :: Functional -> String
 printFunctional = normalizeFunctional >>> case _ of
-  Function i o -> fold [ "(", printFunctional i, "->", printFunctional o, ")" ]
+  Function i o -> fold [ "(", printFunctional i, " -> ", printFunctional o, ")" ]
   Concrete c -> case c of
     Singleton s -> show s
     AnyScalar -> "$$"
@@ -277,16 +313,34 @@ testPatterns ::
     , unmatched :: Functional
     }
 testPatterns pats ty =
-  Array.foldl testMore (Right { matched: [], unmatched: ty }) pats
+  Array.foldM testMore { matched: [], unmatched: ty } pats
   where
-  testMore (Left e) _ = Left e
-  testMore (Right { matched, unmatched }) pat =
-    case testPattern pat unmatched of
-      Left e -> Left e
-      Right m -> Right
-        { matched: Array.snoc matched (lmap (Tuple pat) m.matched)
-        , unmatched: m.unmatched
-        }
+  testMore { matched, unmatched } pat =
+    testPattern pat unmatched <#> \m ->
+      { matched: Array.snoc matched (lmap (Tuple pat) m.matched)
+      , unmatched: m.unmatched
+      }
+
+run :: forall a. Map String Functional -> Typing a -> Either Error a
+run boundVariables = fst <<< evalRWSE (Locals { boundVariables }) unit <<< unwrap
+
+testExprs ::
+  Array (Either (Tuple String Functional) Declaration) ->
+  Either Error (Map String { ty :: Functional, def :: Expr })
+testExprs decls =
+  fst $ evalRWSE (Locals { boundVariables }) unit $ unwrap $
+    defs <$ for_ defs \{ ty, def } -> do
+      constructExpr def ty
+  where
+  byName = Map.fromFoldableWith (<>) $ decls # filterMap case _ of
+    Left (Tuple name ty) -> Just $ Tuple name { tys: [ty], cases: [] }
+    Right (DefineCase name _path value) -> Just $ Tuple name { tys: [], cases: [value] }
+    Right _ -> Nothing
+  defs = byName # filterMap case _ of
+    { tys: [ty], cases } ->
+      Just { ty, def: Lambda cases }
+    _ -> Nothing
+  boundVariables = defs <#> _.ty
 
 bashing :: forall a.
   Pattern -> Functional -> BindIt ->
@@ -456,16 +510,153 @@ bash _ ty@(Function _ _) = pure $ known false ty
 -- We cannot match a concrete pattern against a tyvar
 bash _ (TyVar tv) = unknown tv
 
--- instance TypeSystem Functional (Typing Unit) where
---   unFunAbs (Function dom cod) cb = cb dom cod
---   unFunAbs (NotFunction subset) _ = throwError (EExpectedFunctionAtGot dfLoc subset)
+isSubtype :: Functional -> Functional -> Boolean
+isSubtype (Union xs) y = all (isSubtype <@> y) xs
+isSubtype x@(TyVar v) y = case y of
+  Union ys -> any (isSubtype x) ys
+  TyVar v' -> v' == v
+  Function _ _ -> false
+  Concrete _ -> false
+isSubtype x@(Function i o) y = case y of
+  Union ys -> any (isSubtype x) ys
+  Function i' o' -> isSubtype o o' && isSubtype i' i
+  Concrete _ -> false
+  TyVar _ -> false
+isSubtype x@(Concrete u) y = case y of
+  Union ys -> any (isSubtype x) ys
+  Concrete v -> isConcreteSubtype u v
+  Function _ _ -> false
+  TyVar _ -> false
 
---   -- unFunApp fnExpr args resultant =
---   pattern pat expectedType didMatch didNotMatch =
---     case pat, expectedType of
---       Var name, _ -> bindValue name expectedType didMatch <> didNotMatch
---       -- asdf
---       _, _ -> throwError (EPatternMismatchAt dfLoc pat expectedType)
---   construct pat expectedType =
+isConcreteSubtype :: BasicSubsetF Functional -> BasicSubsetF Functional -> Boolean
+isConcreteSubtype AnyScalar AnyScalar = true
+isConcreteSubtype (Singleton s) AnyScalar = s /= ""
+isConcreteSubtype (Singleton s) (Singleton s') = s == s'
+isConcreteSubtype AnyScalar (Singleton _) = false
+isConcreteSubtype AnyScalar _ = false
+isConcreteSubtype _ AnyScalar = false
+isConcreteSubtype (Singleton _) _ = false
+isConcreteSubtype _ (Singleton _) = false
+isConcreteSubtype (ListOf x) (ListOf y) = isSubtype x y
+isConcreteSubtype (Tupled xs) (ListOf y)
+  | not Array.null xs = all (isSubtype <@> y) xs
+isConcreteSubtype (Tupled xs) (Tupled ys)
+  | Array.length xs == Array.length ys =
+    all (uncurry isSubtype) (Array.zip xs ys)
+isConcreteSubtype (ListOf _) _ = false
+isConcreteSubtype (Tupled _) _ = false
 
---   failureCase _ = pure unit
+instance TypeSystem Functional (Typing Unit) where
+  unFunAbs :: Functional -> (Functional -> Functional -> Typing Unit) -> Typing Unit
+  unFunAbs (Function dom cod) cb = cb dom cod
+  unFunAbs ty _ = throwError (EExpectedFunctionAtGot dfLoc ty)
+
+  unFunApp :: Expr -> Array (Functional -> Typing Unit) -> (Functional -> Typing Unit) -> Typing Unit
+  unFunApp fn args result = synFunApp fn args >>= result
+
+  pattern :: Pattern -> Functional -> Typing Unit -> (Functional -> Typing Unit) -> Typing Unit
+  pattern pat ty ifMatch ifNoMatch =
+    bashing pat ty bindValue (checkNotVoid pat ty ifMatch) >>= _.unmatched >>> ifNoMatch
+
+  construct :: Pattern -> Functional -> Typing Unit
+  construct (Macro fn args) tyC = do
+    tyS <- synFunApp fn (constructExpr <$> args)
+    when (not isSubtype tyS tyC) do
+      throwError $ EPatternNotSubtypeAt dfLoc (Macro fn args) tyC
+  construct pat ty =
+    void $ bashing pat ty assertVarSubtype (checkNotVoid pat ty (pure unit))
+
+  failureCase :: Functional -> Typing Unit
+  failureCase _ = pure unit
+
+checkNotVoid :: Pattern -> Functional -> Typing Unit -> Functional -> Typing Unit
+checkNotVoid pat ty ret v =
+  case isUninhabited v of
+    true -> throwError $ EPatternNotSubtypeAt dfLoc pat ty
+    false -> ret
+
+
+synFunApp :: Expr -> Array (Functional -> Typing Unit) -> Typing Functional
+synFunApp (Pattern (Var name)) args = do
+  Locals { boundVariables } <- ask
+  case Map.lookup name boundVariables of
+    Nothing -> throwError $ EUnknownVariableAt dfLoc name
+    Just funTy0 -> foldM peelArg funTy0 args
+  where
+  peelArg funTy arg = case funTy of
+    Function dom cod -> cod <$ arg dom
+    _ -> throwError (EExpectedFunctionAtGot dfLoc funTy)
+synFunApp (Pattern pat) [] = synPattern pat
+synFunApp _ _ = throwError $ EFunctionMustBeVariableAt dfLoc
+
+
+synPattern :: Pattern -> Typing Functional
+synPattern (Var name) = do
+  Locals { boundVariables } <- ask
+  case Map.lookup name boundVariables of
+    Nothing -> throwError $ EUnknownVariableAt dfLoc name
+    Just ty -> pure ty
+synPattern (Scalar v) = pure $ Concrete $ Singleton v
+synPattern (Vector pats) = Concrete <<< Tupled <$> traverse synPattern pats
+-- TODO: effects
+synPattern (Macro fn args) = synFunApp fn (constructExpr <$> args)
+
+synExpr (Pattern pat) = synPattern pat
+synExpr (Lambda _) = throwError $ ECannotSynthesizeLambdaAt dfLoc
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+printExpr :: Expr -> String
+printExpr = printExpr' 0
+
+printPattern :: Pattern -> String
+printPattern = printPattern' 0
+
+printExpr' :: Int -> Expr -> String
+printExpr' _ (Lambda []) = "?!"
+printExpr' depth (Lambda cases) = A.fold
+  [ cases # A.foldMap \(Case (Matching pats result) conds) -> do
+      A.fold
+        [ "| "
+        , pats # A.foldMap \p -> printPattern' (depth+1) p <> " "
+        , "=> "
+        , printExpr' (depth+1) result
+        , conds # A.foldMap \(Condition fn (Calling args pat)) ->
+            A.fold
+              [ "\n" <> power "  " (depth+1)
+              , printExpr' (depth+1) fn
+              , " "
+              , args # A.foldMap \arg -> printExpr' (depth+1) arg <> " "
+              , "=> "
+              , printPattern' (depth+1) pat
+              ]
+        , "\n" <> power "  " depth
+        ]
+  , "!"
+  ]
+printExpr' depth (Pattern p) = printPattern' depth p
+
+printPattern' :: Int -> Pattern -> String
+printPattern' _ (Var v) = v
+printPattern' _ (Scalar s) = show s
+printPattern' depth (Vector vs) = "[" <> A.intercalate " " (map (printPattern' (depth+1)) vs) <> "]"
+printPattern' depth (Macro fn args) = A.fold
+  [ "($"
+  , printExpr' (depth+1) fn
+  , args # A.foldMap \arg -> " " <> printExpr' (depth+1) arg
+  , ")"
+  ]

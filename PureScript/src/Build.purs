@@ -30,8 +30,8 @@ main = launchAff_ do
     process :: forall a. Comber a -> String -> Aff Unit
     process parser filename = do
       log filename
-      log $ power "=" (String.length filename)
-      log $ printGrammarWsn toAnsi parser
+      -- log $ power "=" (String.length filename)
+      -- log $ printGrammarWsn toAnsi parser
       let Comber (Comb info) = parser
       log $ show $ info.entrypoints
       t0 <- liftEffect now

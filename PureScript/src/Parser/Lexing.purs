@@ -20,7 +20,7 @@ import Data.List (List)
 import Data.List as List
 import Data.Map (SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe, isJust)
+import Data.Maybe (Maybe(..), fromMaybe, isJust, isNothing)
 import Data.Newtype (class Newtype, over2, unwrap)
 import Data.Semigroup.Foldable (maximum)
 import Data.String (CodePoint)
@@ -537,9 +537,9 @@ acceptMore = over2 Options $
       a.pName == b.pName && a.rName == b.rName &&
         a.logicParts == b.logicParts
   in \as bs -> Array.nubByEq comp (as <> bs)
-  -- \as bs -> as <> do
+  -- in \as bs -> as <> do
   --   bs # Array.filter \b ->
-  --     isNothing $ as # Array.find \a ->
+  --     isNothing $ as # Array.find \a -> comp a b
 
 type ContextStack s rec nt r cat o =
   Stack (Options rec nt r cat o /\ s) (CST (nt /\ r) o)

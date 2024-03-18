@@ -2,17 +2,16 @@ module Parser.Main.CSS where
 
 import Prelude
 
-import Control.Plus (empty, (<|>))
+import Control.Plus ((<|>))
 import Data.Array ((!!))
 import Data.Array as Array
-import Data.BooleanAlgebra.CSS (Vert, combineFold, printVerts, subsumptite)
+import Data.BooleanAlgebra.CSS (Vert, combineFold, printVerts)
 import Data.Codec.Argonaut as CA
 import Data.Either (Either, blush, hush)
 import Data.Filterable (filter, filterMap)
 import Data.Foldable (fold, foldMap, oneOf, oneOfMap)
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.HeytingAlgebra (tt)
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (fromMaybe)
 import Data.Traversable (sequence)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested ((/\))
@@ -22,17 +21,14 @@ import Deku.Control as DC
 import Deku.Core (Domable, bussed, envy)
 import Deku.DOM as D
 import Effect.Aff (Aff)
-import Effect.Aff as Aff
-import Effect.Console (log)
 import FRP.Aff (affToEvent)
-import FRP.Event (Event, makeEvent, memoize)
+import FRP.Event (Event)
 import FRP.Memoize (memoBehFold, memoLast)
 import Fetch (fetch)
 import Foreign.Object (Object)
 import Foreign.Object as Object
 import Parser.Languages.CSS (mkCSSParser)
 import Parser.Main (inputValidated)
-import Unsafe.Coerce (unsafeCoerce)
 import Widget (Widget, adaptInterface)
 import Widget.Types (SafeNut(..))
 
@@ -118,6 +114,6 @@ component resetting =
                   ]
               )
               [ text_ "Add selector to conjunction" ]
-          , D.pre (D.Class !:= "css" <|> D.Style !:= "text-wrap: wrap")
+          , D.pre (D.Class !:= "css" <|> D.Style !:= "white-space: break-spaces;")
               [ DC.text $ result <$> getParser <*> map snd currentRaw ]
           ]

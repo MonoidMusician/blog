@@ -2,22 +2,24 @@ module Parser.Languages.TMTTMT.Eval where
 
 import Prelude
 
-import Control.Monad.Error.Class (class MonadError, class MonadThrow, catchError, throwError)
+import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Plus (empty)
 import Data.Array (fromFoldable)
 import Data.Array as A
+import Data.Array as Array
+import Data.Either (Either(..))
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.List (List(..), foldMap)
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe, maybe')
+import Data.Maybe (Maybe(..))
 import Data.Monoid (power)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.String as String
-import Data.Traversable (class Foldable, class Traversable, traverse, fold)
+import Data.Traversable (fold, traverse)
 import Data.Tuple (Tuple(..), uncurry)
-import Debug (spy, spyWith)
+import Debug (spy)
 import Parser.Languages.TMTTMT.Parser (printExpr, printPattern)
 import Parser.Languages.TMTTMT.Types (Calling(..), Case(..), Condition(..), Declaration(..), Expr(..), Matching(..), Pattern(..))
 
@@ -35,10 +37,11 @@ extend :: Ctx -> String -> Expr -> Ctx
 extend past v e = past { values = Map.insert v e past.values }
 
 narrow :: Ctx -> String -> Ctx
-narrow ctx@{ values, topLevel } v =
-  if Set.member v topLevel then
-    ctx { values = Map.intersection values (Set.toMap ctx.topLevel) }
-  else ctx
+narrow ctx v =
+  if Set.member v ctx.topLevel then revert ctx else ctx
+
+revert :: Ctx -> Ctx
+revert ctx = ctx { values = Map.intersection ctx.values (Set.toMap ctx.topLevel) }
 
 fromDeclarations :: Array Declaration -> Ctx
 fromDeclarations = \decls ->
@@ -51,7 +54,19 @@ fromDeclarations = \decls ->
 
 data Eval a
   = Result a
+  | Defer (Unit -> Eval a)
   | Error EvalError
+
+force :: forall a. Eval a -> Either EvalError a
+force (Result a) = Right a
+force (Error e) = Left e
+force (Defer u) = force (u unit)
+
+limit :: forall a. Int -> Eval a -> Either EvalError a
+limit n _ | n <= 0 = Left Loop
+limit n (Defer u) = limit (n - 1) (u unit)
+limit _ (Result a) = Right a
+limit _ (Error e) = Left e
 
 derive instance functorEval :: Functor Eval
 instance applyEval :: Apply Eval where
@@ -60,6 +75,7 @@ instance applicativeEval :: Applicative Eval where
   pure = Result
 instance bindEval :: Bind Eval where
   bind (Result a) f = f a
+  bind (Defer a) f = Defer (a >>> (_ >>= f))
   bind (Error e) _ = Error e
 instance mondEval :: Monad Eval
 instance monadThrowEval :: MonadThrow EvalError Eval where
@@ -67,18 +83,20 @@ instance monadThrowEval :: MonadThrow EvalError Eval where
 -- instance monadErrorEval :: MonadError EvalError Eval where
 --   catchError (Result a) _ = Result a
 --   catchError ()
-instance foldableEval :: Foldable Eval where
-  foldMap f (Result a) = f a
-  foldMap _ (Error _) = mempty
-  foldl f b (Result a) = f b a
-  foldl _ b (Error _) = b
-  foldr f b (Result a) = f a b
-  foldr _ b (Error _) = b
-instance traversableEval :: Traversable Eval where
-  traverse f (Result a) = Result <$> f a
-  traverse _ (Error e) = pure (Error e)
-  sequence (Result a) = Result <$> a
-  sequence (Error e) = pure (Error e)
+-- instance foldableEval :: Foldable Eval where
+--   foldMap f (Result a) = f a
+--   foldMap _ (Error _) = mempty
+--   foldl f b (Result a) = f b a
+--   foldl _ b (Error _) = b
+--   foldr f b (Result a) = f a b
+--   foldr _ b (Error _) = b
+-- instance traversableEval :: Traversable Eval where
+--   traverse f (Result a) = Result <$> f a
+--   traverse f (Defer a) = Defer <<< const <$> traverse f (a unit)
+--   traverse _ (Error e) = pure (Error e)
+--   sequence (Result a) = Result <$> a
+--   sequence (Defer a) = Defer <<< const <$> a unit
+--   sequence (Error e) = pure (Error e)
 
 patFail :: forall a. Expr -> Expr -> Eval a
 patFail pattern expr = throwError (PatternFailure (pure { pattern, expr }))
@@ -94,6 +112,7 @@ data EvalError
   | NotAFunction Pattern
   | NotAPattern Expr
   | Stuck String
+  | Loop
 
 indentN :: Int -> String -> String
 indentN _ s | not String.contains (String.Pattern "\n") s = s
@@ -102,7 +121,7 @@ indentN n s = "\n" <> s # String.replaceAll
   (String.Replacement $ "\n" <> power " " n)
 
 printEvalError :: EvalError -> String
-printEvalError = case _ of
+printEvalError = append "Evaluation error: " <<< case _ of
   PatternFailure Nil -> "No cases"
   PatternFailure failures -> fold
     [ "No cases matched:"
@@ -113,7 +132,7 @@ printEvalError = case _ of
     [ "Variable missing from context:"
     , "\n  " <> var' <> " not in"
     , ctx.values # foldMapWithIndex \var val ->
-        "\n    " <> var <> " := " <> indentN 6 (printExpr val)
+        "\n    " <> var -- <> " := " <> indentN 6 (printExpr val)
     ]
   NotAFunction val -> fold
     [ "Tried to apply to non-function:"
@@ -127,23 +146,46 @@ printEvalError = case _ of
     [ "Stuck on variable:"
     , "\n  " <> var
     ]
+  Loop -> "Potential infinite loop"
+
+sigil :: Condition
+sigil = Condition (Pattern (Var "")) (Calling [] (Var ""))
+
+isSigil :: Condition -> Boolean
+isSigil (Condition (Pattern (Var "")) (Calling [] (Var ""))) = true
+isSigil _ = false
+
+unSigil :: Tuple Ctx (Array Condition) -> Tuple Ctx (Array Condition)
+unSigil (Tuple ctx conds) = case Array.uncons conds of
+  Just { head: c, tail: cs } | isSigil c -> Tuple (revert ctx) cs
+  _ -> Tuple ctx conds
 
 -- TODO: stuck
 fallback :: forall a. (Unit -> Eval a) -> Eval a -> Eval a
 fallback deferred = case _ of
   Result r -> Result r
+  Defer x -> fallback deferred (x unit)
   Error (PatternFailure reasons) ->
-    case deferred unit of
-      Result r -> Result r
-      Error (PatternFailure moreReasons) ->
-        Error (PatternFailure (reasons <> moreReasons))
-      Error e -> Error e
+    addFailures reasons (deferred unit)
+  Error e -> Error e
+
+addFailures :: forall a216.
+  List
+    { expr :: Expr
+    , pattern :: Expr
+    }
+  -> Eval a216 -> Eval a216
+addFailures reasons = case _ of
+  Result r -> Result r
+  Defer x -> addFailures reasons (x unit)
+  Error (PatternFailure moreReasons) ->
+    Error (PatternFailure (reasons <> moreReasons))
   Error e -> Error e
 
 evalMacro :: Ctx -> Expr -> Array Expr -> Eval Expr
 evalMacro ctx0 e allArgs = case A.uncons allArgs of
   Nothing -> evalExpr ctx0 e
-  Just { head: arg0, tail: args } -> do
+  Just { head: arg0, tail: args } -> Defer \_ -> do
     arg <- evalExpr ctx0 arg0
     e' <- evalFun ctx0 e
     cases <- case e' of
@@ -161,17 +203,17 @@ evalMacro ctx0 e allArgs = case A.uncons allArgs of
             -- end to deal with `moreCases`
             -- TODO stuck
             Nothing -> fallback (\_ -> tryCases ctx moreCases) do
-              ctx' <- evals ctx conds
+              ctx' <- evals ctx conds -- closurize
               evalFun ctx' result >>= case _ of
-                Lambda theseCases ->
+                Lambda theseCases -> Defer \_ ->
                   tryCases ctx' theseCases <#>
                     case _ of
                       Pattern final -> Pattern final
                       Lambda cases' -> Lambda $ cases' <>
-                        case tryCases ctx moreCases of
-                          Result (Lambda cases'') -> cases''
-                          Result (Pattern fallbackFn) -> [Case (Matching [] (Pattern fallbackFn)) []]
-                          Error _ -> []
+                        case force (tryCases ctx moreCases) of
+                          Right (Lambda cases'') -> cases''
+                          Right (Pattern fallbackFn) -> [Case (Matching [] (Pattern fallbackFn)) []]
+                          Left _ -> []
                 Pattern p -> spy "did not force to a lambda" $
                   throwError (NotAFunction p)
             -- We have a pattern `pat` to match against `arg`:
@@ -187,7 +229,7 @@ evalMacro ctx0 e allArgs = case A.uncons allArgs of
                     ctx'' <- evals ctx' conds
                     evalExpr ctx'' result
                   -- Awaiting more arguments, already evaluated then
-                  _ -> Result $ Lambda $ A.cons
+                  _ -> Defer \_ -> Result $ Lambda $ A.cons
                     (Case (Matching pats result)
                       -- Add this match to the local context
                       -- (TODO: destruct it??)
@@ -200,13 +242,13 @@ evalMacro ctx0 e allArgs = case A.uncons allArgs of
         \(Case (Matching patterns result) conds) ->
           -- TODO stuck
           case A.uncons patterns of
-            Nothing -> fold do
+            Nothing -> fold $ force do
               ctx' <- evals ctx conds
               evalExpr ctx' result <#> case _ of
                 Lambda theseCases ->
                   gatherCases ctx' theseCases
                 Pattern p -> [] -- throwError (NotAFunction p)
-            Just { head: pat, tail: pats } -> fromFoldable do
+            Just { head: pat, tail: pats } -> fromFoldable $ force do
               pat' <- evalPattern ctx pat
               _ctx' <- match ctx pat' arg
               -- Add this match to the local context
@@ -219,10 +261,10 @@ evalMacro ctx0 e allArgs = case A.uncons allArgs of
 -- Evaluate macros within a pattern
 evalPattern :: Ctx -> Pattern -> Eval Pattern
 evalPattern ctx = case _ of
-  p@(Var v) -> case lookupIn ctx v of
-    Error _ -> pure p
-    Result (Pattern p') -> pure p'
-    Result e@(Lambda _) -> spy "evalPattern Var Lambda" (throwError (NotAPattern e))
+  p@(Var v) -> case force (lookupIn ctx v) of
+    Left _ -> pure p
+    Right (Pattern p') -> pure p'
+    Right e@(Lambda _) -> spy "evalPattern Var Lambda" (throwError (NotAPattern e))
   p@(Scalar _) -> pure p
   Macro fn args ->
     evalMacro ctx fn args >>= case _ of
@@ -274,9 +316,9 @@ evals = A.foldM \ctx (Condition fn (Calling args pat)) -> do
 match :: Ctx -> Pattern -> Expr -> Eval Ctx
 match ctx = case _, _ of
   Var v, e ->
-    case lookupIn ctx v of
-      Error _ -> pure (extend ctx v e)
-      Result e' -> ctx <$ unify e e'
+    case force (lookupIn ctx v) of
+      Left _ -> pure (extend ctx v e)
+      Right e' -> ctx <$ unify e e'
   Scalar s1, Pattern (Scalar s2) | s1 == s2 -> pure ctx
   Vector pats, Pattern (Vector exprs)
     | Just patexprs <- zip pats exprs ->

@@ -64,11 +64,17 @@ bind mounts
     > Disadvantage of fuse is that it do not support inotify events
 :   https://jcol.me/2019/12/20/bind-mounting-on-macos/
 
+disk image mounts
+
+:   `sudo losetup --partscan --find --show YOURIMAGE.img /dev/loop0`{.sh}
+
+    https://superuser.com/questions/117136/how-can-i-mount-a-partition-from-dd-created-image-of-a-block-device-e-g-hdd-u#answer-684707
+
 Samba
 
 :   https://docs.fedoraproject.org/en-US/quick-docs/samba/
 
-    Note: `[share]` in `/etc/samba/smb.conf`{.filepath} is the name of the share, visible over the network.
+    Note: `[share]`{.conf} in `/etc/samba/smb.conf`{.filepath} is the name of the share, visible over the network.
 
 SSH
 

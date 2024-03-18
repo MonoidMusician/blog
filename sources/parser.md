@@ -106,6 +106,7 @@ You can bug or help me write more ^^
 <!--
 ### Other resources
 
+- https://web.stanford.edu/class/archive/cs/cs143/cs143.1128/handouts/100%20Bottom-Up%20Parsing.pdf
 - https://www.cs.princeton.edu/courses/archive/spring20/cos320/LL1/
 - https://jsmachines.sourceforge.net/machines/ll1.html
 - https://jsmachines.sourceforge.net/machines/lr1.html

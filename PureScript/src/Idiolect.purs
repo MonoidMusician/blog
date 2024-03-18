@@ -55,3 +55,6 @@ theseing :: forall f a b. Alternative f => f a -> f b -> f (a /\/ b)
 theseing a b = This <$> a <|> That <$> b <|> Both <$> a <*> b
 infixr 6 theseing as /\\/
 infixr 6 type These as /\/
+
+-- tripleQuoted
+

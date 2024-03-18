@@ -21,7 +21,7 @@ class TypeSystem ty x <= FullTypeSystem ty x
   unions :: Array ty -> ty
   mkFun :: Array ty -> ty -> ty
   lookup :: String -> (ty -> x) -> x
-  coercion :: ty -> ty -> x
+  coercion :: x -> ty -> ty -> x
   synExpr :: Expr -> (ty -> x -> x) -> x
 
 typecheckCases :: forall ty x. TypeSystem ty x => Array Case -> ty -> x

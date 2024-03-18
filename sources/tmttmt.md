@@ -68,14 +68,25 @@ But I donʼt want this process to be magic!
 I just want it to look convenient for writing powerful systems of type theory.
 
 
-## Implementation
+## Demos
 
 AAaaahhhh
+
+Implementation in progress!
+
+See also [Development].
 
 ::: {.widget widget="Widget.Query" widget-empty="true" widget-datakey="default" widget-data-keys="tmttmt-example"}
 :::
 
-::: {.widget widget="Parser.Main.TMTTMT" widget-datakey="default" widget-loading="true" style="display: contents" widget-data-example="uncurry/ f [a b] =&gt; r1:&#10;  f a b =&gt; r1&#10;curry/ f c d =&gt; r2:&#10;  f [c d] =&gt; r2&#10;identity/ x =&gt; x;&#10;tuple/ y z =&gt; [y z];&#10;test/ [g] [h] =&gt; [g h];&#10;tset/ [[i] [j]] =&gt; [i j];&#10;&gt; uncurry tuple [&quot;1&quot; &quot;2&quot;]&#10;&gt; uncurry test [[&quot;3&quot;] [&quot;4&quot;]]&#10;&gt; curry identity &quot;5&quot; &quot;6&quot;&#10;&gt; curry tset [&quot;7&quot;] [&quot;8&quot;]&#10;"}
+### Type system
+
+::: {.widget widget="Parser.Main.TMTTMT" widget-loading="true" style="display: contents" widget-data-example="typecheck-examples"}
+:::
+
+### Evaluation
+
+::: {.widget widget="Parser.Main.TMTTMT" widget-loading="true" style="display: contents" widget-data-example="eval-examples"}
 :::
 
 
@@ -528,3 +539,8 @@ Maybe2List a => a
 ```
 
 </details>
+
+Check whether one type is a subtype of another:
+
+::: {.widget widget="Parser.Main.TMTTMT.SubType" widget-loading="true" style="display: contents"}
+:::
