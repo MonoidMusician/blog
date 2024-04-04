@@ -8,7 +8,9 @@ date: 2022/09/18 – 2023/04/23
 
 The story of how I implemented calligraphy for [cubic Bézier curves](https://www.jasondavies.com/animated-bezier/) (the kind widely used in graphics programs, especially the common [Scalable Vector Graphics (SVG) format](https://en.wikipedia.org/wiki/Scalable_Vector_Graphics)).
 
-<canvas data-draw width="1000" height="500" style="width: 100%;"></canvas>
+
+<!-- <svg data-draw width="1000" height="500" style="width: 100%;"></svg> -->
+
 
 The problem statement:
 

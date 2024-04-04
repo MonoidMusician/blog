@@ -3,77 +3,71 @@ function nearer(color) {
   if ((r+g+b)/255 > 3/2) return '#fffff';
   return '#000000';
 }
-function sizeCanvas(canvas) {
-  // Guard against exponential size blow-up if setting the canvas size affects the display size
-  var original_width = canvas.width;
-  var display_width = canvas.getBoundingClientRect().width;
-  var desired_width = Math.round(display_width / 2)*4;
-  canvas.width = desired_width;
-  if (canvas.getBoundingClientRect().width != display_width) {
-    console.log("Resetting from ", canvas.width, " to ", original_width, " since ", canvas.getBoundingClientRect().width," != ",display_width);
-    canvas.width = original_width;
-  }
-  canvas.height = Math.round(canvas.width / 4)*2;
-}
 function drawPixelGraph(canvas, ...fns) {
-  sizeCanvas(canvas);
   justDrawPixelGraph(canvas, detectColor(canvas), fns);
 }
 function detectColor(canvas) {
   return getComputedStyle(canvas).color;
 }
 function justDrawPixelGraph(canvas, color) {
-  const ctx = canvas.getContext('2d');
-
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = 2;
-
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(0, canvas.height);
-  ctx.lineTo(canvas.width, canvas.height);
-  ctx.lineTo(canvas.width, 0);
-  ctx.lineTo(0, 0);
-  ctx.stroke();
-
-  ctx.fillStyle = nearer(ctx.fillStyle);
+  const ctx = canvas.children[0] || document.createElementNS("http://www.w3.org/2000/svg", "path");
+  ctx.style.fill = 'transparent';
+  ctx.style.stroke = color;
+  canvas.appendChild(ctx);
+  canvas.style.border = '1px solid ' + color;
 }
 var last;
+var components = [];
+var pending = [];
+var diffT = 0;
+var diffC = 0;
 function asdf(canvas, color, event) {
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.children[0];
   var bb = canvas.getBoundingClientRect();
-  var ratio = canvas.width / bb.width;
+  // var ratio = canvas.width / bb.width;
+  var ratio = 1;
   var x = event.pageX - (bb.x + window.scrollX);
   var y = event.pageY - (bb.y + window.scrollY);
   var active = event.buttons === 1;
   x *= ratio; y *= ratio;
-  if (last) {
-    if (active && last.active) {
-      ctx.beginPath();
-      ctx.moveTo(last.x, last.y);
-      ctx.lineTo(x, y);
-      ctx.stroke();
+  var next = {x, y, active, time: +new Date()};
+  if (active) {
+    if (last && last.active) {
+      if (last.x !== next.x || last.y !== next.y) {
+        if (!pending.length) requestAnimationFrame(() => {
+          ctx.setPathData(ctx.getPathData().concat(pending));
+          pending = [];
+        });
+        if (!components[components.length-1].length) {
+          pending.push({type: "M", values: [last.x, last.y]});
+        }
+        pending.push({type: "L", values: [x, y]});
+        components[components.length-1].push([last, next, next.time - last.time]);
+        var diff = next.time - last.time;
+        if (diff < 0.22*1000) {
+          diffT += diff;
+          diffC += 1;
+          console.log(1000 / (diffT / diffC));
+        }
+      }
+    } else {
+      if (!components.length || components[components.length-1].length) {
+        components.push([]);
+      }
     }
-  } else {
-    console.log(event);
   }
-  last = {x, y, active};
+  last = next;
 }
 function autoDrawPixelGraph(canvas, ...fns) {
   var color = detectColor(canvas);
   var listen = event => asdf(canvas, color, event);
   drawPixelGraph(canvas, ...fns);
-  const resizeObserver = new ResizeObserver(entries => {
-    drawPixelGraph(canvas, ...fns)
-  });
-  resizeObserver.observe(canvas);
   canvas.addEventListener("mousedown", listen);
   canvas.addEventListener("mouseup", listen);
   canvas.addEventListener("mousemove", listen);
 }
 function loadPixelGraphs() {
-  Array.prototype.forEach.call(document.querySelectorAll('canvas[data-draw]'), (canvas) => {
+  Array.prototype.forEach.call(document.querySelectorAll('svg[data-draw]'), (canvas) => {
     autoDrawPixelGraph(canvas);
   });
 }

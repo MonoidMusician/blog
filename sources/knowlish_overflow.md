@@ -83,6 +83,21 @@ SSH
     - `ssh -o "ServerAliveInterval 60" -o "ServerAliveCountMax 120" yourserver`{.sh} to override for a single session
     - Or add to `~/.ssh/config`{.filepath}
 
+## Nice things
+
+Why canʼt Firefox have nice codecs?
+
+- https://docs.fedoraproject.org/en-US/quick-docs/installing-plugins-for-playing-movies-and-music/
+
+  ```bash
+  sudo dnf install gstreamer1-plugins-{bad-\*,good-\*,base} gstreamer1-plugin-openh264 gstreamer1-plugin-libav --exclude=gstreamer1-plugins-bad-free-devel
+  sudo dnf install lame\* --exclude=lame-devel
+  sudo dnf group upgrade --with-optional Multimedia
+  ```
+
+- https://docs.fedoraproject.org/en-US/quick-docs/rpmfusion-setup/#_enabling_the_rpm_fusion_repositories_using_command_line_utilities
+
+
 ## Misc. links
 
 - https://github.com/paopre/Spontini (LilyPond, CodeMirror)

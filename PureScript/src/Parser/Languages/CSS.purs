@@ -34,7 +34,6 @@ import Idiolect ((/\\/), (/|\), (<#?>), (>==))
 import Parser.Comb.Comber (Comber, Parsing, delim, many, many1, many1SepBy, parse', printConflicts, printGrammarWsn, rawr, sourceOf, thaw, toAnsi, token, withReparserFor, ws, wss, wsws, wsws', (#->), (#:))
 import Parser.Debug (thingy)
 import Parser.Languages (colorful, result)
-import Parser.Lexing (asdf, (?>))
 import Parser.Types (States(..))
 
 mkCSSParser :: Maybe String -> String -> String \/ Array Vert
@@ -192,7 +191,7 @@ atomToNFSelect (Atom a) = and
     items # allWithIndex \value inverted -> single f (Single (Just { inverted, value }))
 
 parseNegated :: ParseCompoundSelectors -> String -> Maybe (NormalForm Select)
-parseNegated parser value = (":" <> value) # parser >>> (\r -> r ?> (asdf r *> asdf (":" <> value))) >>> hush >== any (convSelects parser)
+parseNegated parser value = (":" <> value) # parser >>> hush >== any (convSelects parser)
 
 convRel :: ParseCompoundSelectors -> InterTsil Relation (Array Select) -> Array Vert
 convRel parser = map distribute <<< sequence <<< map (fromNF <<< convSelects parser)

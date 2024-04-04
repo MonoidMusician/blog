@@ -9,6 +9,7 @@ import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (class Bifunctor)
 import Data.Either (Either(..), hush)
+import Data.Filterable (partitionMap)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.Map (Map, SemigroupMap)
@@ -158,10 +159,10 @@ instance showState :: (Show nt, Show r, Show tok) => Show (State nt r tok) where
   show = genericShow
 
 instance semigroupState :: (Eq nt, Eq r, Eq tok) => Semigroup (State nt r tok) where
-  append s1 (State s2) = minimizeStateCat s1 s2
+  append (State s1) (State s2) = minimizeState (s1 <> s2)
 
 nubEqCat :: forall a. Eq a => Array a -> Array a -> Array a
-nubEqCat as bs = as <> Array.filter (not Array.elem <@> as) bs
+nubEqCat as bs = Array.nubEq $ as <> Array.filter (not Array.elem <@> as) (Array.nubEq bs)
 
 sameRule :: forall nt r tok. Eq nt => Eq r => Eq tok => StateItem nt r tok -> StateItem nt r tok -> Boolean
 sameRule item newItem = item.pName == newItem.pName && item.rName == newItem.rName && item.rule == newItem.rule
@@ -262,7 +263,22 @@ filterSR f g (ShiftReduces s rs) = case f s, NEA.fromArray (NEA.filter g rs) of
   false, Just rs' -> Just (Reduces rs')
   true, Just rs' -> Just (ShiftReduces s rs')
 
+someSuccess :: forall e a b. Monoid e => (a -> Either e b) -> NonEmptyArray a -> Either e (NonEmptyArray b)
+someSuccess f = NEA.toArray >>> partitionMap f >>> case _ of
+  { right } | Just r <- NEA.fromArray right -> Right r
+  { left } -> Left (Array.fold left)
+
+filterSR' :: forall e s s' r r'. Monoid e => (s -> Either e s') -> (r -> Either e r') -> ShiftReduce s r -> Either e (ShiftReduce s' r')
+filterSR' f _ (Shift s) = Shift <$> f s
+filterSR' _ g (Reduces rs) = Reduces <$> someSuccess g rs
+filterSR' f g (ShiftReduces s rs) = case f s, someSuccess g rs of
+  Left e1, Left e2 -> Left (e1 <> e2)
+  Right s', Left _ -> Right (Shift s')
+  Left _, Right rs' -> Right (Reduces rs')
+  Right s', Right rs' -> Right (ShiftReduces s' rs')
+
 derive instance functorShiftReduce :: Functor (ShiftReduce s)
+derive instance bifunctorShiftReduce :: Bifunctor ShiftReduce
 instance semigroupShiftReduce :: Semigroup (ShiftReduce s r) where
   -- We do not expect to see two shifts, so arbitrarily prefer the first one
   append (Shift s) (Shift _) = Shift s

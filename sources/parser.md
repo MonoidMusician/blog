@@ -117,6 +117,16 @@ You can bug or help me write more ^^
 - https://gerhobbelt.github.io/jison/try/usf/
 
 - https://js.cytoscape.org/
+
+softwareengineering.stackexchange.com/questions/338665/when-to-use-a-parser-combinator-when-to-use-a-parser-generator#answer-338888 [softwareengineering.stackexchange.com]
+
+https://blog.reverberate.org/2013/09/ll-and-lr-in-context-why-parsing-tools.html
+
+https://langdev.stackexchange.com/questions/2253/what-are-the-advantages-of-parser-combinators
+
+> "parser combinators" are what you get if you try to write a recursive descent parser in Haskell without going mad
+
+https://hackage.haskell.org/package/Earley
 -->
 
 ## Widgets

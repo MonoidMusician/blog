@@ -1,3 +1,4 @@
+"use strict";
 // https://observablehq.com/@monoidmusician/svg-calligraphy@1926
 
 var guideS = ["M60.745553,110.30621C63.233853,109.12941,64.635756,107.36009,65.218193,105.40807C66.092387,102.47824999999999,65.236723,99.03791,63.205139,96.76966399999999C58.747629,91.79289399999999,49.573695,91.10018399999998,44.47936,95.21885699999999C37.480662,100.87716999999998,34.314857,111.56303999999999,39.176101,119.17626999999999C43.918945,126.60405999999999,48.529125,129.69159,57.683391,130.10899999999998C58.394831,130.14139999999998,58.971176,129.90328999999997,60.22455,128.95573", "M 45.1864 110.3062 C 45.8085 109.1294 46.1589 107.3601 46.3045 105.4081 C 46.5231 102.4782 46.3092 99.0379 45.8013 96.7697 C 44.6869 91.7929 42.3934 91.1002 41.1198 95.2189 C 39.3702 100.8772 38.5787 111.563 39.794 119.1763 C 40.9797 126.6041 42.1323 129.6916 44.4208 130.109 C 44.5987 130.1414 44.7428 129.9033 45.0561 128.9557"][0];
@@ -125,7 +126,7 @@ function mkSVG(n) {
   return node;
 }
 function mkPath(d) {
-  path = document.createElementNS(xmlns, "path");
+  var path = document.createElementNS(xmlns, "path");
   path.setAttribute("d", renderPathData(d));
   return path;
 }
@@ -190,7 +191,7 @@ function doTheThing(p1, p2, mode) {
   var start = performance.now();
   registry = {};
   composites = [];
-  ps = getPathData(p2);
+  var ps = getPathData(p2);
   p2 = (splitPathAtInflections(p2));
   let c2s = pathToCurves(p2);
   p1 = getPathData(p1);
@@ -344,8 +345,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("main-calligraphy-demo").appendChild(visualize(guideS, toPath(segmentsCModes[""])));
-  document.getElementById("simplest-calligraphy-demo").appendChild(visualize(guideS, toPath(segmentsCModes["simplest"]), 0, "simplest"));
-  document.getElementById("simple-calligraphy-demo").appendChild(visualize(guideS, toPath(segmentsCModes["simple"]), 0, "simple"));
+  document.getElementById("simplest-calligraphy-demo").appendChild(visualize(guideS, toPath(segmentsCModes["simplest"]), 100, "simplest"));
+  document.getElementById("simple-calligraphy-demo").appendChild(visualize(guideS, toPath(segmentsCModes["simple"]), 100, "simple"));
   document.getElementById("anatomy").checked = anatomy;
   document.getElementById("anatomy").addEventListener("input", e => {
     anatomy = !!e.target.checked;
@@ -354,12 +355,12 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("anatomy-simplest").checked = anatomy;
   document.getElementById("anatomy-simplest").addEventListener("input", e => {
     anatomy = !!e.target.checked;
-    visualize(guideS, toPath(segmentsCModes["simplest"]), 0, "simplest");
+    visualize(guideS, toPath(segmentsCModes["simplest"]), 100, "simplest");
   });
   document.getElementById("anatomy-simple").checked = anatomy;
   document.getElementById("anatomy-simple").addEventListener("input", e => {
     anatomy = !!e.target.checked;
-    visualize(guideS, toPath(segmentsCModes["simple"]), 0, "simple");
+    visualize(guideS, toPath(segmentsCModes["simple"]), 100, "simple");
   });
 });
 
@@ -484,6 +485,7 @@ function roundAngle(angle) {
   return toRadians((Math.round(toDegrees(angle) + 45 + 360) % 90) - 45);
 }
 function interactive(mode) {
+  var picks, gui;
   var segmentsC = segmentsCModes[mode||""];
   var suffix = mode ? "-"+mode : "";
   var path = mkPath(toPath(segmentsC));
@@ -827,7 +829,7 @@ function visualize(p1, p2, prec=100, mode) {
     },
     "ondblclick": () => {
       if (!prec || prec < 500) {
-        visualize(p1, p2, (prec || 00) + 100, mode);
+        visualize(p1, p2, (prec || 0) + 100, mode);
       }
     },
     children: [
@@ -835,7 +837,7 @@ function visualize(p1, p2, prec=100, mode) {
         type: "g",
         "fill": "red",
         "stroke": "red",
-        children: placesI(prec || 00).map(i => mkPath(startingAt(calcP(p1, i), p2, true).toString())),
+        children: placesI(prec || 0).map(i => mkPath(startingAt(calcP(p1, i), p2, true).toString())),
       },
       {
         type: "g",

@@ -32,15 +32,17 @@ import Data.List.NonEmpty as NEL
 import Data.Map (Map)
 import Data.Maybe (Maybe(..))
 import Data.Maybe (optional) as ReExports
-import Data.Newtype (class Newtype, over, un)
+import Data.Newtype (class Newtype, over, un, unwrap)
+import Data.String as String
 import Data.Symbol (class IsSymbol, reflectSymbol)
 import Data.Traversable (for)
-import Data.Tuple (Tuple(..), fst)
+import Data.Tuple (Tuple(..), fst, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect.Aff (Aff)
 import Effect.Class (class MonadEffect)
 import Effect.Class.Console (log)
 import Fetch (fetch)
+import Idiolect (intercalateMap)
 import Parser.Comb (Comb(..), execute)
 import Parser.Comb as Comb
 import Parser.Comb.Codec (stateTableCodec)
@@ -48,13 +50,11 @@ import Parser.Comb.Combinators (buildTree, namedRec')
 import Parser.Comb.Run (resultantsOf)
 import Parser.Comb.Run as CombR
 import Parser.Comb.Syntax (printSyntax')
-import Parser.Comb.Types (ParseError)
-import Parser.Comb.Types (ParseError) as ReExports
 import Parser.Comb.Types as CombT
+import Parser.Lexing (class ToString, type (~), FailReason(..), FailedStack(..), Rawr, Similar(..), bestRegexOrString, errorName, len, userErrors)
 import Parser.Lexing (class ToString, type (~), Rawr) as ReExports
-import Parser.Lexing (class ToString, type (~), Rawr, Similar(..), bestRegexOrString)
-import Parser.Types (OrEOF)
 import Parser.Types (OrEOF) as ReExports
+import Parser.Types (ShiftReduce(..), unShift)
 import Parser.Types as P
 import Prim.Row as Row
 import Prim.RowList as RL
@@ -63,8 +63,11 @@ import Safe.Coerce (coerce)
 import Type.Equality (class TypeEquals, to, from)
 import Type.Proxy (Proxy(..))
 
+type ParseError = String
+type UserError = String
+
 newtype Comber a = Comber
-  (Comb Rec String (String ~ Rawr) String a)
+  (Comb Rec UserError String (String ~ Rawr) String a)
 derive instance Newtype (Comber a) _
 derive newtype instance functorComber :: Functor Comber
 derive newtype instance applyComber :: Apply Comber
@@ -77,7 +80,7 @@ derive newtype instance semigroupComber :: Semigroup a => Semigroup (Comber a)
 derive newtype instance monoidComber :: Monoid a => Monoid (Comber a)
 derive newtype instance heytingAlgebraComber :: HeytingAlgebra a => HeytingAlgebra (Comber a)
 
-type Parsing a = CombR.Parsing String a
+type Parsing a = String -> Either String a
 
 type Part = P.Part String (String ~ Rawr)
 type Fragment = P.Fragment String (String ~ Rawr)
@@ -119,19 +122,92 @@ topName = "TOP"
 -- | Run the parser on the given string input. Please partially apply this since
 -- | it has to build up an LR(1) table first, and this can be shared between
 -- | inputs if it is partially applied.
-parse :: forall a. Comber a -> (String -> Either String a)
-parse = Comb.parseRegex topName <<< un Comber
+parse :: forall a. Comber a -> (String -> Either ParseError a)
+parse = convertParseError <<< Comb.parseRegex topName <<< un Comber
 
-parse' :: forall a. Comber a -> StateTable /\ (String -> Either String a)
-parse' = Comb.parseRegex' topName <<< un Comber
+parse' :: forall a. Comber a -> StateTable /\ (String -> Either ParseError a)
+parse' = map convertParseError <<< Comb.parseRegex' topName <<< un Comber
 
-type Conf = CombR.CConf String (String ~ Rawr) String String
+type Conf = CombR.CConf UserError String (String ~ Rawr) String String
 
-parseWith :: forall a. Conf -> Comber a -> (String -> Either String a)
-parseWith conf = Comb.parseWith conf topName <<< un Comber
+parseWith :: forall a. Conf -> Comber a -> (String -> Either ParseError a)
+parseWith conf = convertParseError <<< Comb.parseWith conf topName <<< un Comber
 
-parseWith' :: forall a. Conf -> Comber a -> StateTable /\ (String -> Either String a)
-parseWith' conf = Comb.parseWith' conf topName <<< un Comber
+parseWith' :: forall a. Conf -> Comber a -> StateTable /\ (String -> Either ParseError a)
+parseWith' conf = map convertParseError <<< Comb.parseWith' conf topName <<< un Comber
+
+convertParseError :: forall a.
+  (String -> Either FullParseError a) ->
+  String -> Either ParseError a
+convertParseError = map $ lmap case _ of
+  CrashedStack s -> "Internal parser error: " <> s
+  FailedStack info@{ lookupState, initialInput, currentInput, failedStack } ->
+    fold
+      [ case info.failReason of
+          StackInvariantFailed -> "Internal parser error: Stack invariant failed"
+          UnknownState { state } -> "Internal parser error: Unknown state " <> show state
+          Uhhhh { token: cat } -> "Internal parser error: Uhhhh " <> show cat
+          UnknownReduction { reduction: nt /\ r } -> "Internal parser error: UnknownReduction " <> show nt <> "#" <> show r
+
+          UserRejection _ -> "Parse error: User rejection"
+          NoTokenMatches _ -> "Parse error: No token matches"
+          AllActionsRejected { possibilities } -> fold
+            [ "Parse error: All actions rejected"
+            , possibilities # foldMap \(poss /\ errs) -> fold
+                [ "\n  - " <> show poss
+                , errs # foldMap \err -> fold
+                    [ "\n    - " <> errorName err
+                    , userErrors err # foldMap \x ->
+                        "\n      - " <> x
+                    ]
+                ]
+            ]
+          Ambiguity { filtered, userErr } -> fold
+            [ "Parse error: LR(1) ambiguity"
+            , filtered # foldMap \(Tuple sr _) -> fold
+                [ "\n  - "
+                , case sr of
+                    Shift s -> "Shift to " <> show s
+                    ShiftReduces s rs -> "Shift to " <> show s <> ", or reduce " <>
+                      intercalateMap " or " (uncurry showNTR) rs
+                    Reduces rs -> "Reduce " <>
+                      intercalateMap " or " (uncurry showNTR) rs
+                , (unShift sr >>= lookupState) # foldMap \state ->
+                    unwrap state.items # foldMap \item -> fold
+                      [ "\n    - "
+                      , showNTR item.pName item.rName
+                      , " = "
+                      , case item.rule of
+                          P.Zipper parsed toParse -> fold
+                            [ intercalateMap " " part parsed
+                            , " • "
+                            , intercalateMap " " part toParse
+                            ]
+                      ]
+                ]
+            , userErr # foldMap \err ->
+                "\n    - " <> err
+            ]
+      , "\nat character " <> show (1 + len initialInput - len currentInput)
+      , case initialInput of
+          P.Continue s -> "\n  " <> show (String.drop (len initialInput - len currentInput) s)
+          P.EOF -> ""
+      -- , "\n"
+      -- , show info.failedState
+      -- , "\n"
+      -- , "Stack: " <> show (stackSize failedStack)
+      ]
+  where
+  showNTR (Left x) Nothing = x <> "#"
+  showNTR (Right x) (Just r) = x <> "#" <> show r
+  showNTR _ _ = "???"
+
+  part = case _ of
+    P.NonTerminal (Right v) -> v
+    P.NonTerminal (Left v) -> v <> "#"
+    P.Terminal P.EOF -> "$"
+    P.Terminal (P.Continue (Similar (Left s))) -> show s
+    P.Terminal (P.Continue (Similar (Right r))) -> show r
 
 --------------------------------------------------------------------------------
 
@@ -141,35 +217,35 @@ freeze = parse' >>> fst >>> C.encode stateTableCodec
 freezeTable :: StateTable -> Json
 freezeTable = C.encode stateTableCodec
 
-thaw :: forall e a. Comber a -> Either e Json -> (String -> Either String a)
+thaw :: forall e a. Comber a -> Either e Json -> (String -> Either ParseError a)
 thaw comber json = case thaw' comber <$> json of
   Right (Right (_ /\ run)) -> run
   _ -> parse comber
 
-fetchAndThaw :: forall a. Comber a -> String -> Aff (String -> Either String a)
+fetchAndThaw :: forall a. Comber a -> String -> Aff (String -> Either ParseError a)
 fetchAndThaw comber url =
   fetch url {} >>= _.text >>> map (Json.parseJson >>> thaw comber)
 
-thaw' :: forall a. Comber a -> Json -> Either CA.JsonDecodeError (StateTable /\ (String -> Either String a))
+thaw' :: forall a. Comber a -> Json -> Either CA.JsonDecodeError (StateTable /\ (String -> Either ParseError a))
 thaw' (Comber comber) = C.decode stateTableCodec >>> map \states ->
-  states /\ execute { best: bestRegexOrString }
+  Tuple states $ convertParseError $ execute { best: bestRegexOrString }
     { states
     , resultants: topName /\ resultantsOf comber
     , options: buildTree topName comber
     }
 
-thawWith :: forall e a. Conf -> Comber a -> Either e Json -> (String -> Either String a)
+thawWith :: forall e a. Conf -> Comber a -> Either e Json -> (String -> Either ParseError a)
 thawWith conf comber json = case thawWith' conf comber <$> json of
   Right (Right (_ /\ run)) -> run
   _ -> parseWith conf comber
 
-fetchAndThawWith :: forall a. Conf -> Comber a -> String -> Aff (String -> Either String a)
+fetchAndThawWith :: forall a. Conf -> Comber a -> String -> Aff (String -> Either ParseError a)
 fetchAndThawWith conf comber url =
   fetch url {} >>= _.text >>> map (Json.parseJson >>> thawWith conf comber)
 
-thawWith' :: forall a. Conf -> Comber a -> Json -> Either CA.JsonDecodeError (StateTable /\ (String -> Either String a))
+thawWith' :: forall a. Conf -> Comber a -> Json -> Either CA.JsonDecodeError (StateTable /\ (String -> Either ParseError a))
 thawWith' conf (Comber comber) = C.decode stateTableCodec >>> map \states ->
-  states /\ execute conf
+  Tuple states $ convertParseError $ execute conf
     { states
     , resultants: topName /\ resultantsOf comber
     , options: buildTree topName comber
@@ -192,12 +268,13 @@ fetchAndThaw' comber url =
     Json.Named s e -> CA.Named s $ conv e
     Json.MissingValue -> CA.MissingValue
 
-type Rec = CombT.Rec String (OrEOF String) String
+type FullParseError = CombR.ParseError UserError String (String ~ Rawr) String String
+type Rec = CombR.Rec UserError String (String ~ Rawr) String String
 type States = CombR.CStates String (String ~ Rawr)
 type StateInfo = CombR.CStateInfo String (String ~ Rawr)
 type State = CombR.CState String (String ~ Rawr)
-type Resultant = CombT.CResultant Rec String String
-type Options = CombT.COptions Rec String (String ~ Rawr) String
+type Resultant = CombT.CResultant Rec UserError String String
+type Options = CombT.COptions Rec UserError String (String ~ Rawr) String
 type StateTable =
   { stateMap :: Map String Int
   , start :: Int
@@ -226,10 +303,10 @@ withReparserFor ::
   String ->
   Comber a ->
   Comber b ->
-  ((String -> Either ParseError a) -> b -> c) ->
+  ((String -> Either UserError a) -> b -> c) ->
   Comber c
 withReparserFor name (Comber aux) (Comber body) f =
-  Comber (CombR.withReparserFor name aux body f)
+  Comber $ CombR.withReparserFor name aux body $ f <<< convertParseError
 
 
 --------------------------------------------------------------------------------

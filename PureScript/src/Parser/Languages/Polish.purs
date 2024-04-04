@@ -64,8 +64,9 @@ num :: Comber Number
 num = rawr ("\\d+(\\.\\d+)?" <> wsrawr) <#?> Number.fromString
 
 data Strat = Explicit | ManyR | ManyL
--- 16 10 13
-strats = ([Explicit,ManyR,ManyL] :: Array Strat)
+-- 16 13 10 / 19
+-- 14 13 13 / 19
+strats = ([Explicit,ManyL,ManyR] :: Array Strat)
 
 polish :: Strat -> Comber (CST String Number)
 polish strat =
@@ -91,17 +92,23 @@ polish strat =
     --   oneOf
     --     [ Leaf <$> num
     --     , ado
-    --         b <- op <?> arityEq 0
+    --         b <- op <#?> arityEq 0
     --         in Branch b []
     --     , ado
-    --         b <- op <?> arityEq 1
+    --         b <- op <#?> arityEq 1
     --         c1 <- wss *> rec
     --         in Branch b [c1]
     --     , ado
-    --         b <- op <?> arityEq 2
+    --         b <- op <#?> arityEq 2
     --         c1 <- wss *> rec
     --         c2 <- wss *> rec
     --         in Branch b [c1,c2]
+    --     , ado
+    --         b <- op <#?> arityEq 3
+    --         c1 <- wss *> rec
+    --         c2 <- wss *> rec
+    --         c3 <- wss *> rec
+    --         in Branch b [c1,c2,c3]
     --     ]
 
 main :: Effect Unit
@@ -116,6 +123,7 @@ main = do
     , Right "NOT 123"
     , Right "ADD 123 123"
     , Right "ADD NOT 123 123"
+    , Right "ADD 123 NOT 123"
     , Right "ADD 123 ADD 123 123"
     , Right "NOT E"
     , Right "ADD 1 E"

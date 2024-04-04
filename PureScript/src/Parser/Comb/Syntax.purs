@@ -2,7 +2,6 @@ module Parser.Comb.Syntax where
 
 import Prelude
 
-import Control.Plus (empty)
 import Data.Array (fromFoldable, intercalate, toUnfoldable)
 import Data.Either (Either(..), either)
 import Data.List (List(..), (:))

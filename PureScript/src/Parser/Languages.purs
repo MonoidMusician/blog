@@ -45,8 +45,8 @@ colorful :: Ansi.Color -> String -> String
 colorful c = withGraphics (pure (Ansi.PForeground c))
 
 result :: Either String String -> String
-result (Left e) = colorful Ansi.Red "✗ " <> e
-result (Right r) = colorful Ansi.Green "✓ " <> r
+result (Left e) = colorful Ansi.Red "✗ " <> String.replaceAll (String.Pattern "\n") (String.Replacement "\n    ") e
+result (Right r) = colorful Ansi.Green "✓ " <> String.replaceAll (String.Pattern "\n") (String.Replacement "\n    ") r
 
 main :: Effect Unit
 main = do

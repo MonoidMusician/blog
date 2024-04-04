@@ -192,6 +192,14 @@ _[Overflow](knowlish_overflow.html)_
 - https://regex101.com/
 - https://ijmacd.github.io/rfc3339-iso8601/ (DateTime formats)
 
+### Scripts
+
+- Sum durations of A/V media (`.mp3`s in this case):
+
+  ```fish
+  for f in *.mp3; ffprobe -show_entries format=duration -v quiet -i $f | grep -oE '[[:digit:].]+'; end | awk '{s+=$1} END {print s}'
+  ```
+
 ## Misc
 
 - https://www.keycaps.info/

@@ -25,6 +25,12 @@ topOf :: forall state tok. Stack state tok -> state
 topOf (Zero state) = state
 topOf (Snoc _ _ state) = state
 
+stackSize :: forall state tok. Stack state tok -> Int
+stackSize = go 1
+  where
+  go acc (Zero _) = acc
+  go acc (Snoc stack _ _) = go (acc+1) stack
+
 statesOn :: forall state tok. Stack state tok -> NEL.NonEmptyList state
 statesOn = go Nil
   where
