@@ -20,13 +20,14 @@ import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\))
 import Parser.Comb.Syntax (Syntax(..))
-import Parser.Types (CST(..), Fragment, Grammar)
+import Parser.Types (CST(..), Fragment, Grammar, GrammarRule)
 import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Reference (unsafeRefEq)
 import Util (memoizeEq)
 
 type CSyntax = Syntax
-type CGrammar nt cat = Grammar nt Int cat
+type CGrammar prec nt cat = Grammar nt (Maybe prec /\ Int) cat
+type CGrammarRule prec nt cat = GrammarRule nt (Maybe prec /\ Int) cat
 type CFragment nt cat = Fragment nt cat
 type CCST nt o = CST (nt /\ Int) o
 
@@ -69,8 +70,8 @@ type CCST nt o = CST (nt /\ Int) o
 -- |   Commonly `Similar String Rawr` to match with literal keywords and regexes.
 -- | - `o`: Tokenize values output by the lexer. These appear in the CST.
 -- | - `a`: Parser result, can be any type.
-newtype Comb rec err nt cat o a = Comb
-  { grammar :: CGrammar nt cat
+newtype Comb rec err prec nt cat o a = Comb
+  { grammar :: CGrammar prec nt cat
   , entrypoints :: Array nt
   , pretty :: Maybe (CSyntax nt cat)
   , prettyGrammar :: Array (Tuple nt (Maybe (CSyntax nt cat)))
@@ -83,9 +84,9 @@ newtype Comb rec err nt cat o a = Comb
     , resultant :: CResultant rec err nt o a
     }
   }
-type Combs = Comb Unit String CodePoint CodePoint
+type Combs = Comb Unit String Int CodePoint CodePoint
 
-rerec :: forall rec1 rec2 err nt cat o a. (rec2 -> rec1) -> Comb rec1 err nt cat o a -> Comb rec2 err nt cat o a
+rerec :: forall rec1 rec2 err prec nt cat o a. (rec2 -> rec1) -> Comb rec1 err prec nt cat o a -> Comb rec2 err prec nt cat o a
 rerec f (Comb c) = Comb c
   { rules = c.rules <#> \rule ->
     rule
@@ -208,8 +209,8 @@ instance eqLogicful :: Eq (Logicful err i r) where
 instance contravariantLogicful :: Contravariant (Logicful err i) where
   cmap f = overLogic (lcmap f)
 
-derive instance functorComb :: Functor (Comb rec err nt cat o)
-instance applyComb :: Apply (Comb rec err nt cat o) where
+derive instance functorComb :: Functor (Comb rec err prec nt cat o)
+instance applyComb :: Apply (Comb rec err prec nt cat o) where
   apply (Comb l) (Comb r) = Comb
     { grammar: l.grammar <> r.grammar
     , entrypoints: l.entrypoints <|> r.entrypoints
@@ -223,7 +224,7 @@ instance applyComb :: Apply (Comb rec err nt cat o) where
           , resultant: x.resultant <*> y.resultant
           }
     }
-instance applicativeComb :: Applicative (Comb rec err nt cat o) where
+instance applicativeComb :: Applicative (Comb rec err prec nt cat o) where
   pure a = Comb
     { grammar: mempty
     , entrypoints: empty
@@ -234,7 +235,7 @@ instance applicativeComb :: Applicative (Comb rec err nt cat o) where
       , resultant: pure a
       }
     }
-instance altComb :: Alt (Comb rec err nt cat o) where
+instance altComb :: Alt (Comb rec err prec nt cat o) where
   alt (Comb l) (Comb r) = Comb
     { grammar: l.grammar <> r.grammar
     , entrypoints: l.entrypoints <|> r.entrypoints
@@ -246,18 +247,18 @@ instance altComb :: Alt (Comb rec err nt cat o) where
     , prettyGrammar: l.prettyGrammar <|> r.prettyGrammar
     , rules: l.rules <|> r.rules
     }
-instance plusComb :: Plus (Comb rec err nt cat o) where
+instance plusComb :: Plus (Comb rec err prec nt cat o) where
   empty = Comb { grammar: mempty, entrypoints: empty, pretty: Nothing, prettyGrammar: empty, rules: empty }
 -- | Distributivity follows from distributivity of `Array`
-instance alternativeComb :: Alternative (Comb rec err nt cat o)
-instance compactableComb :: Compactable (Comb rec err nt cat o) where
+instance alternativeComb :: Alternative (Comb rec err prec nt cat o)
+instance compactableComb :: Compactable (Comb rec err prec nt cat o) where
   compact (Comb c) = Comb c { rules = c.rules <#> \r -> r { resultant = compact r.resultant } }
   separate eta = separateDefault eta
-instance semigroupComb :: Semigroup a => Semigroup (Comb rec err nt cat o a) where
+instance semigroupComb :: Semigroup a => Semigroup (Comb rec err prec nt cat o a) where
   append = lift2 append
-instance monoidComb :: Monoid a => Monoid (Comb rec err nt cat o a) where
+instance monoidComb :: Monoid a => Monoid (Comb rec err prec nt cat o a) where
   mempty = pure mempty
-instance heytingAlgebraComb :: HeytingAlgebra a => HeytingAlgebra (Comb rec err nt cat o a) where
+instance heytingAlgebraComb :: HeytingAlgebra a => HeytingAlgebra (Comb rec err prec nt cat o a) where
   tt = pure tt
   ff = pure ff
   not = map not
@@ -273,7 +274,7 @@ matchRule rec name resultants (Branch (Tuple _name i) children) | name == _name 
 matchRule _ _ _ _ = Left [] -- this is bad
 
 -- | Modify the result of the parser based on the CST fragment it receives.
-withCST :: forall rec err nt cat o a b. (Array (CCST nt o) -> PartialResult err (a -> b)) -> Comb rec err nt cat o a -> Comb rec err nt cat o b
+withCST :: forall rec err prec nt cat o a b. (Array (CCST nt o) -> PartialResult err (a -> b)) -> Comb rec err prec nt cat o a -> Comb rec err prec nt cat o b
 withCST f = withCST' \_ csts prev -> f csts <*> prev unit
 
 acceptResult :: forall err r tok rec a. Int -> (rec -> Array (CST r tok) -> PartialResult err a) -> LogicParts err r tok rec
@@ -293,7 +294,7 @@ shiftAccepting length (LogicParts l) = LogicParts $
   l { necessary = l.necessary <#> \n -> n { start = n.start + length } }
 
 -- | Modify the result of the parser based on the CST fragment it receives.
-withCST' :: forall rec err nt cat o a b. (rec -> Array (CCST nt o) -> (Unit -> PartialResult err a) -> PartialResult err b) -> Comb rec err nt cat o a -> Comb rec err nt cat o b
+withCST' :: forall rec err prec nt cat o a b. (rec -> Array (CCST nt o) -> (Unit -> PartialResult err a) -> PartialResult err b) -> Comb rec err prec nt cat o a -> Comb rec err prec nt cat o b
 withCST' f (Comb c) = Comb c
   { rules = c.rules <#> \r@{ resultant: Resultant { length, result } } -> r
     { resultant = Resultant
@@ -304,7 +305,7 @@ withCST' f (Comb c) = Comb c
     }
   }
 
-withCST_ :: forall rec err nt cat o a b. (rec -> Array (CCST nt o) -> (Unit -> PartialResult err a) -> b) -> Comb rec err nt cat o a -> Comb rec err nt cat o b
+withCST_ :: forall rec err prec nt cat o a b. (rec -> Array (CCST nt o) -> (Unit -> PartialResult err a) -> b) -> Comb rec err prec nt cat o a -> Comb rec err prec nt cat o b
 withCST_ f (Comb c) = Comb c
   { rules = c.rules <#> \r@{ resultant: Resultant { length, result } } -> r
     { resultant = Resultant
@@ -315,7 +316,7 @@ withCST_ f (Comb c) = Comb c
     }
   }
 
-mapMaybe :: forall rec err nt cat o a b. (a -> Maybe b) -> Comb rec err nt cat o a -> Comb rec err nt cat o b
+mapMaybe :: forall rec err prec nt cat o a b. (a -> Maybe b) -> Comb rec err prec nt cat o a -> Comb rec err prec nt cat o b
 mapMaybe f = withCST' \_ _ da -> case da unit of
   Result a ->
     case f a of
@@ -325,7 +326,7 @@ mapMaybe f = withCST' \_ _ da -> case da unit of
   Partial -> Partial
 
 -- | Get access to the recursive parser machinery. (Advanced.)
-withRec :: forall rec err nt cat o a b. (rec -> a -> b) -> Comb rec err nt cat o a -> Comb rec err nt cat o b
+withRec :: forall rec err prec nt cat o a b. (rec -> a -> b) -> Comb rec err prec nt cat o a -> Comb rec err prec nt cat o b
 withRec f = withCST' \rec _ prev -> f rec <$> prev unit
 
 derive instance functorResultant :: Functor (Resultant err r tok rec)

@@ -7,6 +7,7 @@ import Data.Array (foldl, mapWithIndex)
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
+import Data.Bifoldable (class Bifoldable)
 import Data.Bifunctor (class Bifunctor)
 import Data.Either (Either(..), hush)
 import Data.Filterable (partitionMap)
@@ -19,7 +20,7 @@ import Data.Show.Generic (genericShow)
 import Data.String (CodePoint)
 import Data.String.NonEmpty as NES
 import Data.String.NonEmpty.Internal (NonEmptyString)
-import Data.Traversable (foldMap, mapAccumL, traverse)
+import Data.Traversable (class Foldable, foldMap, mapAccumL, traverse)
 import Data.Tuple (fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Proto as Proto
@@ -279,6 +280,8 @@ filterSR' f g (ShiftReduces s rs) = case f s, someSuccess g rs of
 
 derive instance functorShiftReduce :: Functor (ShiftReduce s)
 derive instance bifunctorShiftReduce :: Bifunctor ShiftReduce
+derive instance foldableShiftReduce :: Foldable (ShiftReduce s)
+derive instance bifoldableShiftReduce :: Bifoldable ShiftReduce
 instance semigroupShiftReduce :: Semigroup (ShiftReduce s r) where
   -- We do not expect to see two shifts, so arbitrarily prefer the first one
   append (Shift s) (Shift _) = Shift s
@@ -294,7 +297,7 @@ instance semigroupShiftReduce :: Semigroup (ShiftReduce s r) where
 type StateInfo s nt r tok =
   { sName :: s
   , items :: State nt r tok
-  , advance :: SemigroupMap tok (ShiftReduce s (nt /\ r))
+  , advance :: SemigroupMap tok (ShiftReduce s (Fragment nt tok /\ nt /\ r))
   , receive :: Map nt s
   }
 
@@ -314,7 +317,7 @@ conflicts ::
     { sName :: s
     , items :: State nt r tok
     , advance :: tok
-    , conflict :: ShiftReduce s (nt /\ r)
+    , conflict :: ShiftReduce s (Fragment nt tok /\ nt /\ r)
     }
 conflicts (States states) =
   states # foldMap \{ sName, items, advance } ->

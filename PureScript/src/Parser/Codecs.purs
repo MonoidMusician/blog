@@ -150,7 +150,7 @@ stateInfoCodec =
   CAR.object "State"
     { sName: CA.int
     , items: stateCodec
-    , advance: _n $ mappy CA.codePoint $ shiftReduceCodec CA.int (tuple nonEmptyStringCodec CA.string)
+    , advance: _n $ mappy CA.codePoint $ shiftReduceCodec CA.int (tuple fragmentCodec $ tuple nonEmptyStringCodec CA.string)
     , receive: mappy nonEmptyStringCodec CA.int
     }
 

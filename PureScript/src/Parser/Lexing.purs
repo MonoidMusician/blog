@@ -2,7 +2,7 @@ module Parser.Lexing where
 
 import Prelude
 
-import Control.Alternative (guard)
+import Control.Alternative (guard, (<|>))
 import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Control.Plus (empty)
 import Data.Array ((!!))
@@ -10,12 +10,15 @@ import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
-import Data.Bitraversable (ltraverse)
+import Data.Bitraversable (bifoldMap, ltraverse)
 import Data.Either (Either(..), either, isLeft, isRight, note)
 import Data.Either.Nested (type (\/))
 import Data.Filterable (partitionMap)
 import Data.Foldable (class Foldable, foldMap, foldr, oneOfMap, sum)
 import Data.Lazy (force)
+import Data.Lens (traverseOf)
+import Data.Lens.Iso.Newtype (_Newtype)
+import Data.Lens.Record (prop)
 import Data.List (List)
 import Data.List as List
 import Data.Map (Map, SemigroupMap(..))
@@ -31,14 +34,16 @@ import Data.String.Regex as Re
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags (dotAll, unicode)
 import Data.String.Regex.Unsafe (unsafeRegex)
-import Data.Traversable (class Traversable, sequence)
+import Data.Traversable (class Traversable, sequence, traverse)
+import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Algorithms (indexStates)
 import Parser.Comb.Types (LogicParts(..), Option, Options(..), PartialResult(..), applyLogic)
 import Parser.Proto (Stack(..), topOf)
-import Parser.Types (CST(..), OrEOF(..), Part(..), ShiftReduce(..), State(..), StateInfo, States(..), Zipper(..), decide, decisionUnique, filterSR')
+import Parser.Types (CST(..), Fragment, OrEOF(..), Part(..), ShiftReduce(..), State(..), StateInfo, States(..), Zipper(..), decide, decisionUnique, filterSR, filterSR')
 import Partial.Unsafe (unsafeCrashWith)
+import Type.Proxy (Proxy(..))
 
 data Scanning i = Scanning Int i
 derive instance functorScanning :: Functor Scanning
@@ -291,6 +296,80 @@ lazyBest = note [] <<< ltraverse decide <<< NEA.head <<< prioritize case _ of
   (_ /\ (Continue (Similar cat)) /\ _ /\ Continue i) -> Just $ Tuple (isLeft cat) (negate (len i))
   _ -> Nothing
 
+
+-- | Precedence, like Happy in Haskell
+newtype ResolvePrec m tok r = ResolvePrec
+  ( forall s' r'.
+    tok ->
+    -- You are only allowed to project information out of the contents, in order
+    -- to filter them out. You may not change their values in the result.
+    (r' -> r) ->
+    ShiftReduce s' r' ->
+    m (ShiftReduce s' r')
+  )
+
+applyPrecedence ::
+  forall m s nt r tok.
+    Applicative m =>
+  ResolvePrec m tok (Fragment nt tok /\ nt /\ r) ->
+  States s nt r tok ->
+  m (States s nt r tok)
+applyPrecedence (ResolvePrec prec) =
+  traverseOf _Newtype $ traverse $
+    traverseOf (prop (Proxy :: Proxy "advance")) $
+      traverseWithIndex \tok ->
+        prec tok identity
+
+-- -- | Resolve precedence like Happy does
+happyPrecedence' ::
+  forall m measure s nt r tok.
+    Monad m =>
+  -- Disqualifies the right option when returns `Just GT`
+  (measure -> measure -> Maybe Ordering) ->
+  (tok -> Maybe measure) ->
+  (nt /\ r -> Maybe measure) ->
+  ResolvePrec m (tok /\ s) (Fragment nt tok /\ nt /\ r)
+happyPrecedence' cmp measureTok measureRule =
+  ResolvePrec \(tok /\ _) getR sr' -> pure
+    let
+      cmpMaybe (Just l) (Just r) = cmp l r
+      cmpMaybe _ _ = Nothing
+
+      lastToken = Array.reverse >>> Array.findMap case _ of
+        Terminal t -> Just t
+        NonTerminal _ -> Nothing
+
+      measureS = measureTok tok
+      measureR = getR >>> \(fragment /\ ruleName) ->
+        measureRule ruleName <|>
+          (lastToken fragment >>= measureTok)
+
+      measuredSR =
+        bimap
+          (\s' -> measureS /\ s')
+          (\r' -> measureR r' /\ r')
+          sr'
+
+      measured = measuredSR # bifoldMap
+        (fst >>> Array.singleton)
+        (fst >>> Array.singleton)
+
+      disqualify m = Array.any (\m' -> cmpMaybe m' m == Just GT) measured
+
+      filtered = measuredSR # filterSR
+        (fst >>> disqualify)
+        (fst >>> disqualify)
+    in bimap snd snd (fromMaybe measuredSR filtered)
+
+happyPrecedenceOrd ::
+  forall m measure s nt r tok.
+    Monad m =>
+    Ord measure =>
+  (tok -> Maybe measure) ->
+  (nt /\ r -> Maybe measure) ->
+  ResolvePrec m (tok /\ s) (Fragment nt tok /\ nt /\ r)
+happyPrecedenceOrd = happyPrecedence' \a b -> Just (compare a b)
+
 addSpine :: forall r tok. Array (Tuple (Array (CST r tok)) r) -> Array (CST r tok) -> Array (CST r tok)
 addSpine = flip $ foldr (\(Tuple prev r) children -> prev <> [Branch r children])
 
@@ -407,7 +486,7 @@ type ContextStack s rec err nt r cat o =
 --   , token :: cat /\ o
 --   , nextInput :: i
 --   }
-type Poss s nt r cat i o = ShiftReduce s (nt /\ r) /\ cat /\ o /\ i
+type Poss s nt r cat i o = ShiftReduce s (Fragment nt cat /\ nt /\ r) /\ cat /\ o /\ i
 
 nPossibilities :: forall s nt r cat i o. NonEmptyArray (Poss s nt r cat i o) -> Int
 nPossibilities = sum <<< map case _ of
@@ -441,7 +520,7 @@ data FailReason err s nt r cat i o
     { userErr :: Array err
     }
   | NoTokenMatches
-    { advance :: Map cat (ShiftReduce s (nt /\ r))
+    { advance :: Map cat (ShiftReduce s (Fragment nt cat /\ nt /\ r))
     }
   | AllActionsRejected
     { possibilities :: NonEmptyArray (Poss s nt r cat i o /\ Array (FailReason err s nt r cat i o))
@@ -500,7 +579,7 @@ contextLexingParse ::
     Ord cat =>
     Tokenize cat i o =>
     Eq o =>
-  { best :: Best err s (nt /\ r) cat i o
+  { best :: Best err s (Fragment nt cat /\ nt /\ r) cat i o
   } ->
   s /\ States s nt r cat ->
   Options rec err nt r cat o ->
@@ -528,18 +607,18 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
     recognize cat input <#> \d -> act /\ cat /\ d
   test ::
     _ ->
-    ShiftReduce (s /\ cat /\ o) ((nt /\ r) /\ cat /\ o) ->
-    Either (Array (FailReason err s nt r cat i o)) (ShiftReduce (s /\ cat /\ o) ((nt /\ r) /\ cat /\ o))
+    ShiftReduce (s /\ cat /\ o) ((Fragment nt cat /\ nt /\ r) /\ cat /\ o) ->
+    Either (Array (FailReason err s nt r cat i o)) (ShiftReduce (s /\ cat /\ o) ((Fragment nt cat /\ nt /\ r) /\ cat /\ o))
   test stack = filterSR' (testShift stack) (testReduce stack)
   testShift stack (s /\ cat /\ o) = lmap Array.singleton do
     (s /\ cat /\ o) <$ advanceMeta (fst (topOf stack)) (Terminal (cat /\ o))
-  testReduce stack (r /\ cat /\ o) = lmap Array.singleton do
+  testReduce stack ((_rule /\ r) /\ cat /\ o) = lmap Array.singleton do
     let si = topOf stack # snd
     s <- lookupState si?? UnknownState { state: si }
     reduction <- lookupReduction r s?? UnknownReduction { reduction: r }
     reduced <- takeStack r stack reduction
     -- traceM "testReduce"
-    (r /\ cat /\ o) <$ drain reduced (cat /\ o)
+    ((_rule /\ r) /\ cat /\ o) <$ drain reduced (cat /\ o)
   drain :: ContextStack s rec err nt r cat o -> cat /\ o -> Either _ (ContextStack s rec err nt r cat o)
   -- drain stack _ = pure stack
   drain stack (cat /\ o) = do
@@ -550,7 +629,7 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
     case sr of
       Shift s -> do
         Snoc stack (Leaf o) <$> (advanceMeta (fst (topOf stack)) (Terminal (cat /\ o)) <#> (_ /\ s))
-      Reduces rs | [r] <- NEA.toArray rs -> do
+      Reduces rs | [r] <- snd <$> NEA.toArray rs -> do
         reduction <- lookupReduction r state?? UnknownReduction { reduction: r }
         stacked <- takeStack r stack reduction
         -- traceM "drain"
@@ -608,7 +687,7 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
           Right x ->
             pure $ Loop $ (Snoc stack (Leaf o) (x /\ s)) /\ (Left i)
           Left e -> Left (contextualize (Just state) e)
-      Right r /\ cat /\ o /\ i -> do
+      Right (_rule /\ r) /\ cat /\ o /\ i -> do
         reduction <- lookupReduction r state?? contextualize (Just state) (UnknownReduction { reduction: r })
         stacked <- takeStack r stack reduction? contextualize (Just state)
         pure $ Loop (stacked /\ Right (cat /\ o /\ i))

@@ -2,6 +2,8 @@ module Whitespace where
 
 import Prelude
 
+import Data.Tuple.Nested (type (/\))
+
 data WS
   = WSRequired
   | WSDisallowed
@@ -11,7 +13,7 @@ data WS
 
 class FromWS :: (Type -> Type) -> Constraint
 class FromWS f where
-  infixWS :: forall a. f a -> WS -> f a -> f a
+  infixWS :: forall a b. f a -> WS -> f b -> f (a /\ b)
   circumfixWS :: forall a. WS -> f a -> WS -> f a
 
 newtype Boundary = Bdry

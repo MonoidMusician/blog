@@ -67,7 +67,8 @@ stateTableCodec = CAR.object "StateTable"
           }
         , advance: _n $ indexedCodec tokenCodec $
             shiftReduceCodec CA.int $
-              CAC.tuple (CAC.either CA.string CA.string) (CAC.maybe CA.int)
+              CAC.tuple fragmentCodec $
+                CAC.tuple (CAC.either CA.string CA.string) (CAC.maybe CA.int)
         , receive: indexedCodec (CAC.either CA.string CA.string) CA.int
         }
   }

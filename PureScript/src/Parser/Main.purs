@@ -203,7 +203,7 @@ renderParseTable info (MkGrammar grammar) (States states) =
       renderGoto (Just s) = [ renderCmd mempty "g", renderStHere s ]
       cols state =
         let
-          forTerminal tok = map snd <$> Map.lookup tok (unwrap state.advance)
+          forTerminal tok = map (snd <<< snd) <$> Map.lookup tok (unwrap state.advance)
           forNonTerminal nt = Map.lookup nt state.receive
         in
           map (pure <<< renderShiftReduce <<< forTerminal) terminals <> map (renderGoto <<< forNonTerminal) nonTerminals

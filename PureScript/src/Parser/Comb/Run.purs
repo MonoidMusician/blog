@@ -5,8 +5,8 @@ import Prelude
 import Control.Plus ((<|>))
 import Data.Array ((!!))
 import Data.Array as Array
-import Data.Bifunctor (lmap)
 import Data.Either (Either(..), note)
+import Data.Filterable (filterMap)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
@@ -15,16 +15,18 @@ import Data.Tuple (Tuple, fst, snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Algorithms (getResultCM', revertCST', statesNumberedByMany)
 import Parser.Comb.Combinators (buildTree, named)
-import Parser.Comb.Types (CGrammar, COptions, CResultant, CSyntax, Comb(..), Options(..), Resultant(..), CCST, fullMapOptions, matchRule)
+import Parser.Comb.Types (CCST, CGrammar, COptions, CResultant, CSyntax, Comb(..), Options(..), Resultant(..), CGrammarRule, fullMapOptions, matchRule)
 import Parser.Lexing (class Tokenize, Best, FailReason(..), FailedStack(..), Rawr, Similar, bestRegexOrString, contextLexingParse, longest, (?), (??))
 import Parser.Proto (topOf)
-import Parser.Types (Grammar(..), OrEOF(..), Part(..), State, StateInfo, States)
+import Parser.Types (Grammar(..), OrEOF(..), Part(..), State, StateInfo, States, Fragment)
 import Unsafe.Coerce (unsafeCoerce)
 
-type CBest err nt cat i o =
-  Best err Int (Either nt nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
-type CConf err nt cat i o =
-  { best :: CBest err nt cat i o
+type CBest :: forall k. Type -> k -> Type -> Type -> Type -> Type -> Type
+type CBest err prec nt cat i o =
+  Best err Int (Fragment (Either nt nt) (OrEOF cat) /\ Either nt nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
+type CConf :: forall k. Type -> k -> Type -> Type -> Type -> Type -> Type
+type CConf err prec nt cat i o =
+  { best :: CBest err prec nt cat i o
   }
 type CStates nt cat =
   States Int (Either nt nt) (Maybe Int) (OrEOF cat)
@@ -51,13 +53,13 @@ type StateTable nt cat =
 -- | Parse an input. You should partially apply it, and reuse that same
 -- | partially applied function for multiple inputs.
 parse ::
-  forall err nt cat i o a.
+  forall err prec nt cat i o a.
     Ord nt =>
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
     Eq o =>
-  nt -> Comb (Rec err nt cat i o) err nt cat o a ->
+  nt -> Comb (Rec err nt cat i o) err prec nt cat o a ->
   (i -> Either (ParseError err nt cat i o) a)
 parse = parseWith { best: longest }
 
@@ -65,31 +67,31 @@ parse = parseWith { best: longest }
 -- | literals take precedence over the regexes always (and not just when they
 -- | match a longer string).
 parseRegex ::
-  forall err nt a.
+  forall err prec nt a.
     Ord nt =>
-  nt -> Comb (Rec err nt (Similar String Rawr) String String) err nt (Similar String Rawr) String a ->
+  nt -> Comb (Rec err nt (Similar String Rawr) String String) err prec nt (Similar String Rawr) String a ->
   (String -> Either (ParseError err nt (Similar String Rawr) String String) a)
 parseRegex = parseWith { best: bestRegexOrString }
 
 parseWith ::
-  forall err nt cat i o a.
+  forall err prec nt cat i o a.
     Ord nt =>
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
     Eq o =>
-  CConf err nt cat i o -> nt -> Comb (Rec err nt cat i o) err nt cat o a ->
+  CConf err prec nt cat i o -> nt -> Comb (Rec err nt cat i o) err prec nt cat o a ->
   (i -> Either (ParseError err nt cat i o) a)
 parseWith conf name parser = snd (parseWith' conf name parser)
 
 parseWith' ::
-  forall err nt cat i o a.
+  forall err prec nt cat i o a.
     Ord nt =>
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
     Eq o =>
-  CConf err nt cat i o -> nt -> Comb (Rec err nt cat i o) err nt cat o a ->
+  CConf err prec nt cat i o -> nt -> Comb (Rec err nt cat i o) err prec nt cat o a ->
   StateTable nt cat /\ (i -> Either (ParseError err nt cat i o) a)
 parseWith' conf name parser = do
   -- First we build the LR(1) parsing table
@@ -98,24 +100,26 @@ parseWith' conf name parser = do
   compiled.states /\ execute conf compiled
 
 parseRegex' ::
-  forall err nt a.
+  forall err prec nt a.
     Ord nt =>
-  nt -> Comb (Rec err nt (Similar String Rawr) String String) err nt (Similar String Rawr) String a ->
+  nt -> Comb (Rec err nt (Similar String Rawr) String String) err prec nt (Similar String Rawr) String a ->
   StateTable nt (Similar String Rawr) /\ (String -> Either (ParseError err nt (Similar String Rawr) String String) a)
 parseRegex' = parseWith' { best: bestRegexOrString }
 
 -- | Compile the LR(1) state table for the grammar
 compile ::
-  forall rec err nt cat o a.
+  forall rec err prec nt cat o a.
     Ord nt =>
     Ord cat =>
-  nt -> Comb rec err nt cat o a ->
+  nt -> Comb rec err prec nt cat o a ->
   { states :: StateTable nt cat
   , resultants :: nt /\ Array (CResultant rec err nt o a)
   , options :: COptions rec err nt cat o
+  , precedences :: Map (nt /\ Int) prec
   }
 compile name parser = do
-  let Comb { grammar: MkGrammar initial, entrypoints } = named name parser
+  let Comb { grammar: MkGrammar initialWithPrec, entrypoints } = named name parser
+  let initial = initialWithPrec <#> \r -> r { rName = snd r.rName }
   let grammar = MkGrammar (Array.nub initial)
   let stateAssoc /\ generated = statesNumberedByMany identity grammar $ Array.nub $ [ name ] <> entrypoints
   let stateMap = Map.fromFoldable stateAssoc
@@ -123,28 +127,49 @@ compile name parser = do
   { states: { stateMap, start, states: generated }
   , options: buildTree name parser
   , resultants: name /\ resultantsOf parser
+  , precedences: gatherPrecedences parser
   }
+
+gatherPrecedences ::
+  forall rec err prec nt cat o a.
+    Ord nt =>
+  Comb rec err prec nt cat o a ->
+  Map (nt /\ Int) prec
+gatherPrecedences (Comb { grammar: MkGrammar initialWithPrec }) =
+  gatherPrecedences' initialWithPrec
+
+gatherPrecedences' ::
+  forall prec nt cat.
+    Ord nt =>
+  Array (CGrammarRule prec nt cat) ->
+  Map (nt /\ Int) prec
+gatherPrecedences' initialWithPrec =
+  Map.fromFoldable $ initialWithPrec # filterMap
+    case _ of
+      { pName, rName: Just prec /\ rName } ->
+        Just ((pName /\ rName) /\ prec)
+      _ -> Nothing
 
 lookupTuple :: forall a b. Eq a => a -> a /\ b -> Maybe b
 lookupTuple a1 (a2 /\ b) | a1 == a2 = Just b
 lookupTuple _ _ = Nothing
 
-resultantsOf :: forall rec err nt cat o a. Comb rec err nt cat o a -> Array (CResultant rec err nt o a)
+resultantsOf :: forall rec err prec nt cat o a. Comb rec err prec nt cat o a -> Array (CResultant rec err nt o a)
 resultantsOf (Comb { rules: cases }) = cases <#> _.resultant
 
 -- | Execute the parse.
 execute ::
-  forall err nt cat i o a.
+  forall err prec nt cat i o a.
     Ord nt =>
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
     Eq o =>
-  { best :: Best err Int (Either nt nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
-  } ->
+  CConf err prec nt cat i o ->
   { states :: StateTable nt cat
   , resultants :: nt /\ Array (CResultant (Rec err nt cat i o) err nt o a)
   , options :: COptions (Rec err nt cat i o) err nt cat o
+  , precedences :: Map (nt /\ Int) prec
   } ->
   (i -> Either (ParseError err nt cat i o) a)
 execute conf { states: { stateMap, start, states }, resultants, options } = do
@@ -200,47 +225,48 @@ execute conf { states: { stateMap, start, states }, resultants, options } = do
 
 -- Compile multiple parsers together into one LR(1) table with multiple
 -- entrypoints.
-type Compiled nt cat =
+type Compiled prec nt cat =
   -- Could almost be an existential type? But literally no reason to do that
   { entrypoints :: Map nt Int
   , states :: States Int (Either nt nt) (Maybe Int) (OrEOF cat)
+  , precedences :: Map (nt /\ Int) prec
   }
 type Parsing err nt cat i o a = i -> Either (ParseError err nt cat i o) a
 
-newtype Coll err nt cat i o parsers = Coll
-  { grammar :: CGrammar nt cat
+newtype Coll err prec nt cat i o parsers = Coll
+  { grammar :: CGrammar prec nt cat
   , prettyGrammar :: Array (Tuple nt (Maybe (CSyntax nt cat)))
   , entrypoints :: Array nt
-  , compilation :: Compiled nt cat -> CConf err nt cat i o -> parsers
+  , compilation :: Compiled prec nt cat -> CConf err prec nt cat i o -> parsers
   }
 
-derive instance functorColl :: Functor (Coll err nt cat i o)
-instance applyColl :: Apply (Coll err nt cat i o) where
+derive instance functorColl :: Functor (Coll err prec nt cat i o)
+instance applyColl :: Apply (Coll err prec nt cat i o) where
   apply (Coll c1) (Coll c2) = Coll
     { grammar: c1.grammar <> c2.grammar
     , prettyGrammar: c1.prettyGrammar <> c2.prettyGrammar
     , entrypoints: c1.entrypoints <> c2.entrypoints
     , compilation: \x y -> c1.compilation x y (c2.compilation x y)
     }
-instance applicativeColl :: Applicative (Coll err nt cat i o) where
+instance applicativeColl :: Applicative (Coll err prec nt cat i o) where
   pure r = Coll { grammar: mempty, prettyGrammar: mempty, entrypoints: mempty, compilation: \_ _ -> r }
 -- a Monad instance is soooo tempting, but does not make sense:
 -- the grammar needs to be fully built before compilation can be received
 -- maybe there is a way to encode this in the types
 
 coll ::
-  forall err nt cat i o a.
+  forall err prec nt cat i o a.
     Ord nt =>
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
     Eq o =>
-  nt -> Comb (Rec err nt cat i o) err nt cat o a -> Coll err nt cat i o (Parsing err nt cat i o a)
+  nt -> Comb (Rec err nt cat i o) err prec nt cat o a -> Coll err prec nt cat i o (Parsing err nt cat i o a)
 coll name parser@(Comb c) = Coll
   { grammar: c.grammar
   , prettyGrammar: c.prettyGrammar
   , entrypoints: pure name <> c.entrypoints
-  , compilation: \{ entrypoints, states } ->
+  , compilation: \{ entrypoints, states, precedences } ->
       case Map.lookup name entrypoints of
         Nothing -> \_ _ ->
           Left (CrashedStack "Internal error: Failed to find entrypoint for parser")
@@ -249,23 +275,26 @@ coll name parser@(Comb c) = Coll
             { states: { stateMap: entrypoints, start: state, states }
             , resultants: name /\ resultantsOf parser
             , options: buildTree name parser
+            , precedences
             }
   }
 
 collect ::
-  forall err nt cat i o parsers.
+  forall err prec nt cat i o parsers.
     Ord nt =>
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
-  CConf err nt cat i o -> Coll err nt cat i o parsers -> parsers
-collect conf (Coll { grammar: MkGrammar initial, entrypoints, compilation }) = do
+  CConf err prec nt cat i o -> Coll err prec nt cat i o parsers -> parsers
+collect conf (Coll { grammar: MkGrammar initialWithPrec, entrypoints, compilation }) = do
+  let initial = initialWithPrec <#> \r -> r { rName = snd r.rName }
   let grammar = MkGrammar (Array.nub initial)
   let names = Array.nub entrypoints
   let states = statesNumberedByMany identity grammar names
   compilation
     { entrypoints: Map.fromFoldable (fst states)
     , states: snd states
+    , precedences: gatherPrecedences' initialWithPrec
     } conf
 
 
@@ -282,13 +311,13 @@ collect conf (Coll { grammar: MkGrammar initial, entrypoints, compilation }) = d
 -- | (rather than simply invalidating the construct, as grammar mismatches
 -- | tend to do).
 withReparserFor ::
-  forall err nt cat i o a b c.
+  forall err prec nt cat i o a b c.
     Ord nt =>
   nt ->
-  Comb (Rec err nt cat i o) err nt cat o a ->
-  Comb (Rec err nt cat i o) err nt cat o b ->
+  Comb (Rec err nt cat i o) err prec nt cat o a ->
+  Comb (Rec err nt cat i o) err prec nt cat o b ->
   ((i -> Either (ParseError err nt cat i o) a) -> b -> c) ->
-  Comb (Rec err nt cat i o) err nt cat o c
+  Comb (Rec err nt cat i o) err prec nt cat o c
 withReparserFor name aux (Comb cb) f = do
   let Comb ca = named name aux
   Comb

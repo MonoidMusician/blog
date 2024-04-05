@@ -36,7 +36,7 @@ import Data.Newtype (class Newtype, over, un, unwrap)
 import Data.String as String
 import Data.Symbol (class IsSymbol, reflectSymbol)
 import Data.Traversable (for)
-import Data.Tuple (Tuple(..), fst, uncurry)
+import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect.Aff (Aff)
 import Effect.Class (class MonadEffect)
@@ -47,14 +47,14 @@ import Parser.Comb (Comb(..), execute)
 import Parser.Comb as Comb
 import Parser.Comb.Codec (stateTableCodec)
 import Parser.Comb.Combinators (buildTree, namedRec')
-import Parser.Comb.Run (resultantsOf)
+import Parser.Comb.Run (gatherPrecedences, resultantsOf)
 import Parser.Comb.Run as CombR
 import Parser.Comb.Syntax (printSyntax')
 import Parser.Comb.Types as CombT
 import Parser.Lexing (class ToString, type (~), FailReason(..), FailedStack(..), Rawr, Similar(..), bestRegexOrString, errorName, len, userErrors)
 import Parser.Lexing (class ToString, type (~), Rawr) as ReExports
-import Parser.Types (OrEOF) as ReExports
 import Parser.Types (ShiftReduce(..), unShift)
+import Parser.Types (OrEOF) as ReExports
 import Parser.Types as P
 import Prim.Row as Row
 import Prim.RowList as RL
@@ -67,7 +67,7 @@ type ParseError = String
 type UserError = String
 
 newtype Comber a = Comber
-  (Comb Rec UserError String (String ~ Rawr) String a)
+  (Comb Rec UserError Int String (String ~ Rawr) String a)
 derive instance Newtype (Comber a) _
 derive newtype instance functorComber :: Functor Comber
 derive newtype instance applyComber :: Apply Comber
@@ -128,7 +128,7 @@ parse = convertParseError <<< Comb.parseRegex topName <<< un Comber
 parse' :: forall a. Comber a -> StateTable /\ (String -> Either ParseError a)
 parse' = map convertParseError <<< Comb.parseRegex' topName <<< un Comber
 
-type Conf = CombR.CConf UserError String (String ~ Rawr) String String
+type Conf = CombR.CConf UserError Int String (String ~ Rawr) String String
 
 parseWith :: forall a. Conf -> Comber a -> (String -> Either ParseError a)
 parseWith conf = convertParseError <<< Comb.parseWith conf topName <<< un Comber
@@ -169,9 +169,9 @@ convertParseError = map $ lmap case _ of
                 , case sr of
                     Shift s -> "Shift to " <> show s
                     ShiftReduces s rs -> "Shift to " <> show s <> ", or reduce " <>
-                      intercalateMap " or " (uncurry showNTR) rs
+                      intercalateMap " or " (uncurry showNTR <<< snd) rs
                     Reduces rs -> "Reduce " <>
-                      intercalateMap " or " (uncurry showNTR) rs
+                      intercalateMap " or " (uncurry showNTR <<< snd) rs
                 , (unShift sr >>= lookupState) # foldMap \state ->
                     unwrap state.items # foldMap \item -> fold
                       [ "\n    - "
@@ -232,6 +232,7 @@ thaw' (Comber comber) = C.decode stateTableCodec >>> map \states ->
     { states
     , resultants: topName /\ resultantsOf comber
     , options: buildTree topName comber
+    , precedences: gatherPrecedences comber
     }
 
 thawWith :: forall e a. Conf -> Comber a -> Either e Json -> (String -> Either ParseError a)
@@ -249,6 +250,7 @@ thawWith' conf (Comber comber) = C.decode stateTableCodec >>> map \states ->
     { states
     , resultants: topName /\ resultantsOf comber
     , options: buildTree topName comber
+    , precedences: gatherPrecedences comber
     }
 
 fetchAndThaw' ::
@@ -553,7 +555,7 @@ printConflicts p { states: states@(P.States index) } =
                 pure $ p.lines $ Array.cons (p.meta "  Shift to") $
                   (p.meta "  -> " <> _) <$> printState p st.items
             , p.meta "  Or reduce"
-            , p.lines $ P.reductions conflict <#> \r ->
+            , p.lines $ P.reductions conflict <#> \(_ /\ r) ->
                 p.meta "  <- " <> printReduction p r
             , p.meta "  With items"
             , p.lines $ (p.meta "  - " <> _) <$> printState p items

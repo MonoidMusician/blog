@@ -29,6 +29,7 @@ import Data.Traversable (traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested ((/\), type (/\))
+import Idiolect ((>==))
 import Parser.Proto (Stack(..), topOf)
 import Parser.Proto as Proto
 import Parser.Types (AST(..), Augmented, Augmenteds, CST(..), Fragment, Grammar(..), Lookahead, OrEOF(..), Part(..), Produced, Producible, SAugmented, SFragment, ShiftReduce(..), State(..), StateIndex, StateInfo, StateItem, States(..), Zipper(..), decide, isNonTerminal, isTerminal, minimizeState, minimizeStateCat, notEOF, nubEqCat, unNonTerminal, unShift, unTerminal)
@@ -400,12 +401,12 @@ toAdvanceTo { advance, receive } = toAdvance >=> case _ of
   NonTerminal nt -> Map.lookup nt receive
   Terminal tok -> Map.lookup tok (unwrap advance) >>= unShift
 
-getReduction :: forall nt r tok. Ord tok => StateItem nt r tok -> SemigroupMap tok (nt /\ r)
-getReduction { pName, rName, rule: Zipper _ [], lookahead } =
-  SemigroupMap $ Map.fromFoldable $ (/\) <$> lookahead <@> (pName /\ rName)
+getReduction :: forall nt r tok. Ord tok => StateItem nt r tok -> SemigroupMap tok (Fragment nt tok /\ nt /\ r)
+getReduction { pName, rName, rule: Zipper rule [], lookahead } =
+  SemigroupMap $ Map.fromFoldable $ (/\) <$> lookahead <@> (rule /\ pName /\ rName)
 getReduction _ = SemigroupMap $ Map.empty
 
-getReductions :: forall nt r tok. Ord tok => State nt r tok -> SemigroupMap tok (NonEmptyArray (nt /\ r))
+getReductions :: forall nt r tok. Ord tok => State nt r tok -> SemigroupMap tok (NonEmptyArray (Fragment nt tok /\ nt /\ r))
 getReductions (State items) = items # foldMap \item ->
   NEA.singleton <$> getReduction item
 
@@ -624,7 +625,7 @@ toTable (States states) tabulated =
   in
     Proto.Table
       { promote: Leaf
-      , step: \s tok -> lookupState s >>= lookupAction tok >>= decide
+      , step: \s tok -> lookupState s >>= lookupAction tok >>= decide >== map snd
       , goto: \r stack ->
           lookupState (topOf stack) >>= \state -> do
             lookupReduction r state >>= takeStack r stack
@@ -665,7 +666,7 @@ toTable' (States states) tabulated =
   in
     Proto.Table
       { promote: Left
-      , step: \s tok -> lookupState s >>= lookupAction tok >>= decide
+      , step: \s tok -> lookupState s >>= lookupAction tok >>= decide >== map snd
       , goto: \r stack ->
           lookupState (topOf stack) >>= \state -> do
             lookupReduction r state >>= takeStack r stack

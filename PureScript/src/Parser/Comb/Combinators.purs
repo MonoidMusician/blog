@@ -6,6 +6,7 @@ import Control.Plus (empty)
 import Data.Array (fold)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
+import Data.Foldable (oneOfMap)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Lazy (defer)
 import Data.Maybe (Maybe(..))
@@ -18,7 +19,7 @@ import Parser.Comb.Types (Comb(..), Options(..), Resultant(..), component, compo
 import Parser.Lexing (class ToString, class Token, type (~), Rawr, Similar(..), rawr, rerecognize, toString)
 import Parser.Types (CST(..), Grammar(..), Part(..), sourceCST)
 
-token :: forall rec err nt cat o. Token cat o => cat -> Comb rec err nt cat o o
+token :: forall rec err prec nt cat o. Token cat o => cat -> Comb rec err prec nt cat o o
 token cat = Comb
   { grammar: mempty
   , entrypoints: empty
@@ -32,13 +33,13 @@ token cat = Comb
     }
   }
 
-tokenRawr :: forall rec err nt. String -> Comb rec err nt (String ~ Rawr) String String
+tokenRawr :: forall rec err prec nt. String -> Comb rec err prec nt (String ~ Rawr) String String
 tokenRawr = rawr >>> Right >>> Similar >>> token
 
-tokenStr :: forall s rec err nt. ToString s => s -> Comb rec err nt (String ~ Rawr) String String
+tokenStr :: forall s rec err prec nt. ToString s => s -> Comb rec err prec nt (String ~ Rawr) String String
 tokenStr = toString >>> Left >>> Similar >>> token
 
-tokens :: forall rec err nt cat o. Token cat o => Array cat -> Comb rec err nt cat o (Array o)
+tokens :: forall rec err prec nt cat o. Token cat o => Array cat -> Comb rec err prec nt cat o (Array o)
 tokens cats = Comb
   { grammar: mempty
   , entrypoints: empty
@@ -53,8 +54,8 @@ tokens cats = Comb
   }
 
 buildTree ::
-  forall rec err nt cat o a.
-  nt -> Comb rec err nt cat o a -> Options rec err nt Int cat o
+  forall rec err prec nt cat o a.
+  nt -> Comb rec err prec nt cat o a -> Options rec err nt Int cat o
 buildTree name (Comb c) = Options $
   c.rules # mapWithIndex \i { resultant: Resultant { accepting }, rule } ->
     { pName: name
@@ -64,23 +65,47 @@ buildTree name (Comb c) = Options $
     , advanced: []
     }
 
+type WithPrec prec a = Array (Maybe prec /\ a)
+
+withPrec :: forall prec a. prec -> a -> Maybe prec /\ a
+withPrec prec a = Just prec /\ a
+
+noPrec :: forall prec a. a -> WithPrec prec a
+noPrec a = [Nothing /\ a]
+
 -- | Name a nonterminal production, this allows recursion.
 namedRec ::
-  forall rec err nt cat o a.
+  forall rec err prec nt cat o a.
     Ord nt =>
   nt ->
-  (Comb rec err nt cat o a -> Comb rec err nt cat o a) ->
-  Comb rec err nt cat o a
-namedRec name defineParser = fst $
-  namedRec' name (Tuple <$> defineParser <@> unit)
+  (Comb rec err prec nt cat o a -> Comb rec err prec nt cat o a) ->
+  Comb rec err prec nt cat o a
+namedRec name defineParser = namedPrecRec name (noPrec <<< defineParser)
+
+namedPrecRec ::
+  forall rec err prec nt cat o a.
+    Ord nt =>
+  nt ->
+  (Comb rec err prec nt cat o a -> WithPrec prec (Comb rec err prec nt cat o a)) ->
+  Comb rec err prec nt cat o a
+namedPrecRec name defineParser = fst $
+  namedPrecRec' name (Tuple <$> defineParser <@> unit)
 
 namedRec' ::
-  forall rec err nt cat o a r.
+  forall rec err prec nt cat o a r.
     Ord nt =>
   nt ->
-  (Comb rec err nt cat o a -> Comb rec err nt cat o a /\ r) ->
-  Comb rec err nt cat o a /\ r
-namedRec' name defineParser =
+  (Comb rec err prec nt cat o a -> Comb rec err prec nt cat o a /\ r) ->
+  Comb rec err prec nt cat o a /\ r
+namedRec' name defineParser = namedPrecRec' name (lmap noPrec <<< defineParser)
+
+namedPrecRec' ::
+  forall rec err prec nt cat o a r.
+    Ord nt =>
+  nt ->
+  (Comb rec err prec nt cat o a -> WithPrec prec (Comb rec err prec nt cat o a) /\ r) ->
+  Comb rec err prec nt cat o a /\ r
+namedPrecRec' name defineParser =
   let
     recursive = defineParser $ Comb
       { grammar: mempty
@@ -88,40 +113,44 @@ namedRec' name defineParser =
       , pretty: Just $ Part $ NonTerminal name
       , prettyGrammar: empty
       , rules: pure
-        { rule: pure $ NonTerminal $ Tuple (defer \_ -> buildTree name (fst recursive)) name
+        { rule: pure $ NonTerminal $ Tuple (defer \_ -> buildTree name (oneOfMap snd (fst recursive))) name
         , resultant: component \rec cst ->
-            let Comb borrowed = fst recursive in
+            let Comb borrowed = oneOfMap snd (fst recursive) in
             matchRule rec name (borrowed.rules <#> _.resultant) cst
         }
       }
-    Comb produced = fst recursive
-    newRules = MkGrammar $ produced.rules # mapWithIndex \i { rule } ->
-      { pName: name
-      , rName: i
-      , rule: lmap snd <$> rule
-      }
+    Comb produced = oneOfMap snd (fst recursive)
+    newRules = MkGrammar $ fst recursive >>= \(prec /\ Comb { rules }) ->
+      rules # mapWithIndex \i { rule } ->
+        { pName: name
+        , rName: prec /\ i
+        , rule: lmap snd <$> rule
+        }
   in Comb
     { grammar: newRules <> produced.grammar
     , entrypoints: produced.entrypoints
     , prettyGrammar: pure (Tuple name produced.pretty) <> produced.prettyGrammar
     , pretty: Just $ Part $ NonTerminal name
     , rules: pure
-        -- not quite sure why defer is needed here?
-        { rule: pure $ NonTerminal $ Tuple (defer \_ -> buildTree name (fst recursive)) name
+        { rule: pure $ NonTerminal $ Tuple (defer \_ -> buildTree name (oneOfMap snd (fst recursive))) name
         , resultant: component \rec -> matchRule rec name (produced.rules <#> _.resultant)
         }
     } /\ snd recursive
 
--- | Name a parser. This may introduce ambiguity into the grammar.
-named :: forall rec err nt cat o a. Ord nt => nt -> Comb rec err nt cat o a -> Comb rec err nt cat o a
-named name = namedRec name <<< const
+-- | Name a parser. This may introduce ambiguity into the grammar where it
+-- | otherwise did not exist.
+named :: forall rec err prec nt cat o a. Ord nt => nt -> Comb rec err prec nt cat o a -> Comb rec err prec nt cat o a
+named name = namedPrec name <<< noPrec
+
+namedPrec :: forall rec err prec nt cat o a. Ord nt => nt -> WithPrec prec (Comb rec err prec nt cat o a) -> Comb rec err prec nt cat o a
+namedPrec name = namedPrecRec name <<< const
 
 -- | Return the source parsed by the given parser, instead of whatever its
 -- | applicative result was.
-sourceOf :: forall rec err nt cat o a. Monoid o => Comb rec err nt cat o a -> Comb rec err nt cat o o
+sourceOf :: forall rec err prec nt cat o a. Monoid o => Comb rec err prec nt cat o a -> Comb rec err prec nt cat o o
 sourceOf = tokensSourceOf >== fold
 
 -- | Return the source tokens parsed by the given parser, instead of whatever
 -- | its applicative result was.
-tokensSourceOf :: forall rec err nt cat o a. Comb rec err nt cat o a -> Comb rec err nt cat o (Array o)
+tokensSourceOf :: forall rec err prec nt cat o a. Comb rec err prec nt cat o a -> Comb rec err prec nt cat o (Array o)
 tokensSourceOf = withCST_ \_ csts _ -> csts >>= sourceCST
