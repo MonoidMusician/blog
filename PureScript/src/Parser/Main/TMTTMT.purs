@@ -178,7 +178,7 @@ result = (<<<) case _ of
               Left r ->
                 [ " // ", testPatternsResult (Left r) ]
               Right r ->
-                [ " (: ", printFunctional r, ")"]
+                [ " (: ", printFunctional r, " :)"]
           ]
     in fold
       [ case tcExprs of

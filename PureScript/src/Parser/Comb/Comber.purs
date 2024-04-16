@@ -9,7 +9,7 @@ import Ansi.Output as Ansi.Output
 import Control.Alt (class Alt, (<|>))
 import Control.Alt (class Alt, (<|>)) as ReExports
 import Control.Alternative (class Alternative, class Plus) as ReExports
-import Control.Alternative (class Alternative, class Plus, empty)
+import Control.Alternative (class Alternative, class Plus, empty, guard)
 import Control.Apply (lift2)
 import Control.Apply (lift2) as ReExports
 import Control.Comonad (extract)
@@ -25,17 +25,19 @@ import Data.Codec as C
 import Data.Codec.Argonaut as CA
 import Data.Compactable (class Compactable)
 import Data.Compactable (class Compactable, compact) as ReExports
-import Data.Either (Either(..))
+import Data.Either (Either(..), either)
 import Data.Foldable (fold, foldMap, oneOf, traverse_)
+import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.List (List(..))
 import Data.List.NonEmpty as NEL
 import Data.Map (Map)
+import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Maybe (optional) as ReExports
 import Data.Newtype (class Newtype, over, un, unwrap)
+import Data.Rational (Rational)
 import Data.String as String
 import Data.Symbol (class IsSymbol, reflectSymbol)
-import Data.Traversable (for)
 import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect.Aff (Aff)
@@ -46,15 +48,16 @@ import Idiolect (intercalateMap)
 import Parser.Comb (Comb(..), execute)
 import Parser.Comb as Comb
 import Parser.Comb.Codec (stateTableCodec)
-import Parser.Comb.Combinators (buildTree, namedRec')
+import Parser.Comb.Combinators (WithPrec, buildTree, namedRec')
 import Parser.Comb.Run (gatherPrecedences, resultantsOf)
 import Parser.Comb.Run as CombR
 import Parser.Comb.Syntax (printSyntax')
+import Parser.Comb.Types (Associativity(..))
 import Parser.Comb.Types as CombT
-import Parser.Lexing (class ToString, type (~), FailReason(..), FailedStack(..), Rawr, Similar(..), bestRegexOrString, errorName, len, userErrors)
+import Parser.Lexing (class ToString, type (~), FailReason(..), FailedStack(..), Rawr, Similar(..), toString, bestRegexOrString, errorName, len, userErrors)
 import Parser.Lexing (class ToString, type (~), Rawr) as ReExports
-import Parser.Types (ShiftReduce(..), unShift)
 import Parser.Types (OrEOF) as ReExports
+import Parser.Types (ShiftReduce(..), unShift)
 import Parser.Types as P
 import Prim.Row as Row
 import Prim.RowList as RL
@@ -67,7 +70,7 @@ type ParseError = String
 type UserError = String
 
 newtype Comber a = Comber
-  (Comb Rec UserError Int String (String ~ Rawr) String a)
+  (Comb Rec UserError Rational String (String ~ Rawr) String a)
 derive instance Newtype (Comber a) _
 derive newtype instance functorComber :: Functor Comber
 derive newtype instance applyComber :: Apply Comber
@@ -95,6 +98,16 @@ rawr = Comber <<< Comb.tokenRawr
 token :: forall s. ToString s => s -> Comber String
 token = Comber <<< Comb.tokenStr
 
+tokenPrecA :: forall s. ToString s => s -> Associativity -> Rational -> Comber String
+tokenPrecA cat assoc prec = Comber (Comb.tokenPrecA (Similar (Left (toString cat))) assoc prec)
+
+tokenPrecL :: forall s. ToString s => s -> Rational -> Comber String
+tokenPrecL = tokenPrecA <@> AssocL
+tokenPrecR :: forall s. ToString s => s -> Rational -> Comber String
+tokenPrecR = tokenPrecA <@> AssocR
+tokenPrec :: forall s. ToString s => s -> Rational -> Comber String
+tokenPrec = tokenPrecA <@> NoAssoc
+
 -- | Name a nonterminal production, this allows recursion.
 namedRec :: forall a. String -> (Comber a -> Comber a) -> Comber a
 namedRec name = Comber <<< Comb.namedRec name <<< coerce
@@ -105,6 +118,20 @@ named name = Comber <<< Comb.named name <<< coerce
 
 infixr 2 named as #:
 infixr 5 namedRec as #->
+
+-- | Give each rule a precedence, for determining shift-reduce and reduce-reduce
+-- | conflicts.
+namedPrecRec :: forall a. String -> (Comber a -> WithPrec Rational (Comber a)) -> Comber a
+namedPrecRec name = Comber <<< Comb.namedPrecRec name <<< coerce
+
+-- | Give each rule a precedence, for determining shift-reduce and reduce-reduce
+-- | conflicts.
+namedPrec :: forall a. String -> WithPrec Rational (Comber a) -> Comber a
+namedPrec name = Comber <<< Comb.namedPrec name <<< coerce
+
+infixr 2 namedPrec as @:
+infixr 5 namedPrecRec as @->
+
 
 -- | Return the source parsed by the given parser, instead of whatever its
 -- | applicative result was.
@@ -149,8 +176,47 @@ convertParseError = map $ lmap case _ of
           Uhhhh { token: cat } -> "Internal parser error: Uhhhh " <> show cat
           UnknownReduction { reduction: nt /\ r } -> "Internal parser error: UnknownReduction " <> show nt <> "#" <> show r
 
-          UserRejection _ -> "Parse error: User rejection"
-          NoTokenMatches _ -> "Parse error: No token matches"
+          UserRejection { userErr } -> fold
+            [ "Parse error: User rejection"
+            , userErr # foldMap \err ->
+                "\n  - " <> indenting "    " err
+            ]
+          NoTokenMatches { advance } -> fold
+            [ "Parse error: No token matches"
+            , ", expected"
+            , case Map.size advance of
+                0 -> " nothing??"
+                1 -> ""
+                _ -> " one of"
+            , advance # foldMapWithIndex \cat _ -> do
+                "\n  - " <> showCat cat
+            ]
+          UnexpectedToken { advance, matched }
+            | [ cat0 /\ o /\ _i ] <- NEA.toArray matched -> fold
+            [ "Parse error: Unexpected token "
+            , showCatTok cat0 o
+            , ", expected"
+            , case Map.size advance of
+                0 -> " nothing??"
+                1 -> ""
+                _ -> " one of"
+            , advance # foldMapWithIndex \cat _ -> do
+                "\n  - " <> showCat cat
+            ]
+          UnexpectedToken { advance, matched: matched } -> fold
+            [ "Parse error: Unexpected+ambiguous token "
+            , matched # foldMap \(cat0 /\ o /\ _i) -> fold
+              [ "\n  - "
+              , showCatTok cat0 o
+              ]
+            , "\nExpected"
+            , case Map.size advance of
+                0 -> " nothing??"
+                1 -> ""
+                _ -> " one of"
+            , advance # foldMapWithIndex \cat _ -> do
+                "\n  - " <> showCat cat
+            ]
           AllActionsRejected { possibilities } -> fold
             [ "Parse error: All actions rejected"
             , possibilities # foldMap \(poss /\ errs) -> fold
@@ -158,7 +224,7 @@ convertParseError = map $ lmap case _ of
                 , errs # foldMap \err -> fold
                     [ "\n    - " <> errorName err
                     , userErrors err # foldMap \x ->
-                        "\n      - " <> x
+                        "\n      - " <> indenting "        " x
                     ]
                 ]
             ]
@@ -186,7 +252,7 @@ convertParseError = map $ lmap case _ of
                       ]
                 ]
             , userErr # foldMap \err ->
-                "\n    - " <> err
+                "\n    - " <> indenting "      " err
             ]
       , "\nat character " <> show (1 + len initialInput - len currentInput)
       , case initialInput of
@@ -198,9 +264,18 @@ convertParseError = map $ lmap case _ of
       -- , "Stack: " <> show (stackSize failedStack)
       ]
   where
+  indenting x = String.replaceAll (String.Pattern "\n") (String.Replacement ("\n" <> x))
+
   showNTR (Left x) Nothing = x <> "#"
   showNTR (Right x) (Just r) = x <> "#" <> show r
   showNTR _ _ = "???"
+
+  showCat = part <<< P.Terminal
+  showCatTok = case _, _ of
+    P.EOF, P.EOF -> "$ (EOF)"
+    P.Continue (Similar (Left s)), P.Continue s' | s == s' -> show s
+    P.Continue (Similar (Right r)), P.Continue s -> show s <> " (" <> show r <> ")"
+    _, _ -> "??"
 
   part = case _ of
     P.NonTerminal (Right v) -> v
@@ -311,6 +386,9 @@ withReparserFor name (Comber aux) (Comber body) f =
   Comber $ CombR.withReparserFor name aux body $ f <<< convertParseError
 
 
+mapEither :: forall a b. (a -> Either (Array UserError) b) -> Comber a -> Comber b
+mapEither f = over Comber $ Comb.mapEither f
+
 --------------------------------------------------------------------------------
 
 -- | Surround the parse with literal tokens.
@@ -406,8 +484,8 @@ type Printer m =
 
 type PrintFn t = forall m. Monoid m => Printer m -> t -> m
 
-toString :: Printer String
-toString =
+printToString :: Printer String
+printToString =
   { nonTerminal: identity
   , rule: show
   , literal: show
@@ -418,12 +496,12 @@ toString =
 
 toAnsi :: Printer String
 toAnsi =
-  { nonTerminal: colorful Ansi.Blue <<< toString.nonTerminal
-  , rule: colorful Ansi.Cyan <<< toString.rule
-  , literal: colorful Ansi.Yellow <<< toString.literal
-  , regex: colorful Ansi.Green <<< toString.regex
-  , meta: identity <<< toString.meta
-  , lines: toString.lines
+  { nonTerminal: colorful Ansi.Blue <<< printToString.nonTerminal
+  , rule: colorful Ansi.Cyan <<< printToString.rule
+  , literal: colorful Ansi.Yellow <<< printToString.literal
+  , regex: colorful Ansi.Green <<< printToString.regex
+  , meta: identity <<< printToString.meta
+  , lines: printToString.lines
   }
   where
   colorful c = Ansi.Output.withGraphics (pure (Ansi.PForeground c))
@@ -472,6 +550,20 @@ printZipper :: PrintFn Zipper
 printZipper p (P.Zipper l r) =
   intercalate (p.meta " • ") [ printFragment' p l, printFragment' p r ]
 
+printZipper' :: PrintFn (P.Zipper (Either String String) (P.OrEOF (String ~ Rawr)))
+printZipper' p (P.Zipper l r) =
+  intercalate (p.meta " • ") [ printFragment'' p l, printFragment'' p r ]
+
+printPart' :: PrintFn (P.Part (Either String String) (P.OrEOF (String ~ Rawr)))
+printPart' p (P.NonTerminal (Left nt)) = p.nonTerminal nt <> p.meta "$"
+printPart' p (P.NonTerminal (Right nt)) = p.nonTerminal nt
+printPart' p (P.Terminal P.EOF) = p.meta "$"
+printPart' p (P.Terminal (P.Continue (Similar (Left tok)))) = p.literal tok
+printPart' p (P.Terminal (P.Continue (Similar (Right r)))) = p.regex $ show r
+
+printFragment'' :: PrintFn (P.Fragment (Either String String) (P.OrEOF (String ~ Rawr)))
+printFragment'' p = intercalate (p.meta " ") <<< map (printPart' p)
+
 
 printGrammarWsn :: forall a. PrintFn (Comber a)
 printGrammarWsn p comber =
@@ -485,8 +577,8 @@ printGrammarWsn p comber =
 printState :: forall m. Monoid m => Printer m -> State -> Array m
 printState p (P.State items) =
   {-
-    printState : Printer m -> State -> *m
-    printState p items => result:
+    printState: Printer m -> State -> *m
+    printState/ p items => result:
       let
         | ["Terminal" ["Continue" a]] => ["Terminal" a]
         | ["NonTerminal" ["R" a]] => ["NonTerminal" a]
@@ -505,24 +597,17 @@ printState p (P.State items) =
         fold [ o1 o2 o3 o4 o5 ] => itemResult
       ! => result
   -}
-  items # foldMap case _ of
-    { pName: Right pName, rName: Just rName, rule: P.Zipper l' r' }
-      | Just l <- normal l', Just r <- normal r' ->
-        [ fold
-          [ p.nonTerminal pName
-          , p.meta "."
-          , p.rule rName
-          , p.meta " = "
-          , printZipper p (P.Zipper l r)
-          ]
-        ]
-    _ -> mempty
-  where
-  normal :: P.Fragment (Either _ _) _ -> Maybe (P.Fragment _ _)
-  normal frag = for frag case _ of
-    P.Terminal (P.Continue a) -> Just (P.Terminal a)
-    P.NonTerminal (Right a) -> Just (P.NonTerminal a)
-    _ -> Nothing
+  items # foldMap \{ pName, rName, rule } ->
+    [ fold
+      [ printPart' p (P.NonTerminal pName)
+      , p.meta "."
+      , case rName of
+          Just a -> p.rule a
+          Nothing -> p.meta "$"
+      , p.meta " = "
+      , printZipper' p rule
+      ]
+    ]
 
 printReduction :: PrintFn (Either String String /\ Maybe Int)
 printReduction p (Right name /\ Just num) =
@@ -530,8 +615,8 @@ printReduction p (Right name /\ Just num) =
 printReduction _ _ = mempty
 
 
-printConflicts :: PrintFn StateTable
-printConflicts p { states: states@(P.States index) } =
+printConflicts :: PrintFn States
+printConflicts p states@(P.States index) =
   case P.conflicts states of
     [] -> mempty
     conflicts -> p.lines
@@ -546,7 +631,7 @@ printConflicts p { states: states@(P.States index) } =
               , p.meta " @ "
               , case advance of
                   P.Continue a -> printPart p (P.Terminal a)
-                  _ -> mempty
+                  P.EOF -> p.meta "EOF"
               , p.meta ")"
               ]
             , fold do
@@ -561,6 +646,29 @@ printConflicts p { states: states@(P.States index) } =
             , p.lines $ (p.meta "  - " <> _) <$> printState p items
             ]
       ]
+
+printStateTable :: PrintFn StateTable
+printStateTable p { states: P.States states } =
+  p.lines $ states <#> \{ sName, items, advance: Map.SemigroupMap advance, receive } -> p.lines $ Array.catMaybes
+    [ Just $ p.meta $ "- " <> show sName <> ":"
+    , Just $ p.lines $ (p.meta "  - " <> _) <$> printState p items
+    , guard (not Map.isEmpty advance) $> do
+        p.lines $ advance # foldMapWithIndex \cat sr -> fold
+          [ pure $ p.meta "  ? " <> case cat of
+              P.Continue a -> printPart p (P.Terminal a)
+              P.EOF -> p.meta "EOF"
+          , P.unShift sr # foldMap \s -> [ p.meta $ "    -> " <> show s ]
+          , P.reductions sr # foldMap \r -> pure $ fold
+              [ p.meta "    <- "
+              , p.nonTerminal (either identity identity (fst (snd r)))
+              , p.meta "."
+              , foldMap (p.meta <<< show) (snd (snd r))
+              ]
+          ]
+    , guard (not Map.isEmpty receive) $> do
+        p.lines $ receive # foldMapWithIndex \nt s ->
+          [ p.meta "  <- " <> p.nonTerminal (either identity identity nt) <> p.meta (" -> " <> show s) ]
+    ]
 
 --------------------------------------------------------------------------------
 

@@ -160,10 +160,10 @@ instance showState :: (Show nt, Show r, Show tok) => Show (State nt r tok) where
   show = genericShow
 
 instance semigroupState :: (Eq nt, Eq r, Eq tok) => Semigroup (State nt r tok) where
-  append (State s1) (State s2) = minimizeState (s1 <> s2)
+  append s1 (State s2) = minimizeStateCat s1 s2
 
 nubEqCat :: forall a. Eq a => Array a -> Array a -> Array a
-nubEqCat as bs = Array.nubEq $ as <> Array.filter (not Array.elem <@> as) (Array.nubEq bs)
+nubEqCat as bs = as <> Array.filter (not Array.elem <@> as) bs
 
 sameRule :: forall nt r tok. Eq nt => Eq r => Eq tok => StateItem nt r tok -> StateItem nt r tok -> Boolean
 sameRule item newItem = item.pName == newItem.pName && item.rName == newItem.rName && item.rule == newItem.rule

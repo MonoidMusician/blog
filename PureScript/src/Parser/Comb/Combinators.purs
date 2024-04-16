@@ -15,9 +15,20 @@ import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Idiolect ((>==))
 import Parser.Comb.Syntax (Syntax(..))
-import Parser.Comb.Types (Comb(..), Options(..), Resultant(..), component, components, matchRule, withCST_)
+import Parser.Comb.Types (Associativity(..), Comb(..), Options(..), Resultant(..), component, components, matchRule, withCST_)
 import Parser.Lexing (class ToString, class Token, type (~), Rawr, Similar(..), rawr, rerecognize, toString)
 import Parser.Types (CST(..), Grammar(..), Part(..), sourceCST)
+
+setPrecA :: forall rec err prec nt cat o. cat -> Associativity -> prec -> Comb rec err prec nt cat o Unit
+setPrecA cat assoc prec = case pure unit of
+  Comb c -> Comb c { tokenPrecedence = [cat /\ (prec /\ assoc)] }
+
+setPrecL :: forall rec err prec nt cat o. cat -> prec -> Comb rec err prec nt cat o Unit
+setPrecL = setPrecA <@> AssocL
+setPrecR :: forall rec err prec nt cat o. cat -> prec -> Comb rec err prec nt cat o Unit
+setPrecR = setPrecA <@> AssocR
+setPrec :: forall rec err prec nt cat o. cat -> prec -> Comb rec err prec nt cat o Unit
+setPrec = setPrecA <@> NoAssoc
 
 token :: forall rec err prec nt cat o. Token cat o => cat -> Comb rec err prec nt cat o o
 token cat = Comb
@@ -25,6 +36,7 @@ token cat = Comb
   , entrypoints: empty
   , pretty: Just $ Part $ Terminal cat
   , prettyGrammar: empty
+  , tokenPrecedence: empty
   , rules: pure
     { rule: pure (Terminal cat)
     , resultant: component case _, _ of
@@ -32,6 +44,16 @@ token cat = Comb
         _, _ -> Left []
     }
   }
+
+tokenPrecA :: forall rec err prec nt cat o. Token cat o => cat -> Associativity -> prec -> Comb rec err prec nt cat o o
+tokenPrecA cat assoc prec = setPrecA cat assoc prec *> token cat
+
+tokenPrecL :: forall rec err prec nt cat o. Token cat o => cat -> prec -> Comb rec err prec nt cat o o
+tokenPrecL = tokenPrecA <@> AssocL
+tokenPrecR :: forall rec err prec nt cat o. Token cat o => cat -> prec -> Comb rec err prec nt cat o o
+tokenPrecR = tokenPrecA <@> AssocR
+tokenPrec :: forall rec err prec nt cat o. Token cat o => cat -> prec -> Comb rec err prec nt cat o o
+tokenPrec = tokenPrecA <@> NoAssoc
 
 tokenRawr :: forall rec err prec nt. String -> Comb rec err prec nt (String ~ Rawr) String String
 tokenRawr = rawr >>> Right >>> Similar >>> token
@@ -45,6 +67,7 @@ tokens cats = Comb
   , entrypoints: empty
   , pretty: Just $ foldl Conj Null (Part <<< Terminal <$> cats)
   , prettyGrammar: empty
+  , tokenPrecedence: empty
   , rules: pure
     { rule: Terminal <$> cats
     , resultant: components $ cats <#> \cat _ -> case _ of
@@ -70,8 +93,11 @@ type WithPrec prec a = Array (Maybe prec /\ a)
 withPrec :: forall prec a. prec -> a -> Maybe prec /\ a
 withPrec prec a = Just prec /\ a
 
-noPrec :: forall prec a. a -> WithPrec prec a
-noPrec a = [Nothing /\ a]
+noPrec :: forall prec a. a -> Maybe prec /\ a
+noPrec a = Nothing /\ a
+
+noPrecs :: forall prec a. a -> WithPrec prec a
+noPrecs a = [Nothing /\ a]
 
 -- | Name a nonterminal production, this allows recursion.
 namedRec ::
@@ -80,7 +106,7 @@ namedRec ::
   nt ->
   (Comb rec err prec nt cat o a -> Comb rec err prec nt cat o a) ->
   Comb rec err prec nt cat o a
-namedRec name defineParser = namedPrecRec name (noPrec <<< defineParser)
+namedRec name defineParser = namedPrecRec name (noPrecs <<< defineParser)
 
 namedPrecRec ::
   forall rec err prec nt cat o a.
@@ -97,7 +123,7 @@ namedRec' ::
   nt ->
   (Comb rec err prec nt cat o a -> Comb rec err prec nt cat o a /\ r) ->
   Comb rec err prec nt cat o a /\ r
-namedRec' name defineParser = namedPrecRec' name (lmap noPrec <<< defineParser)
+namedRec' name defineParser = namedPrecRec' name (lmap noPrecs <<< defineParser)
 
 namedPrecRec' ::
   forall rec err prec nt cat o a r.
@@ -112,6 +138,7 @@ namedPrecRec' name defineParser =
       , entrypoints: empty
       , pretty: Just $ Part $ NonTerminal name
       , prettyGrammar: empty
+      , tokenPrecedence: empty
       , rules: pure
         { rule: pure $ NonTerminal $ Tuple (defer \_ -> buildTree name (oneOfMap snd (fst recursive))) name
         , resultant: component \rec cst ->
@@ -131,6 +158,7 @@ namedPrecRec' name defineParser =
     , entrypoints: produced.entrypoints
     , prettyGrammar: pure (Tuple name produced.pretty) <> produced.prettyGrammar
     , pretty: Just $ Part $ NonTerminal name
+    , tokenPrecedence: produced.tokenPrecedence
     , rules: pure
         { rule: pure $ NonTerminal $ Tuple (defer \_ -> buildTree name (oneOfMap snd (fst recursive))) name
         , resultant: component \rec -> matchRule rec name (produced.rules <#> _.resultant)
@@ -140,7 +168,7 @@ namedPrecRec' name defineParser =
 -- | Name a parser. This may introduce ambiguity into the grammar where it
 -- | otherwise did not exist.
 named :: forall rec err prec nt cat o a. Ord nt => nt -> Comb rec err prec nt cat o a -> Comb rec err prec nt cat o a
-named name = namedPrec name <<< noPrec
+named name = namedPrec name <<< noPrecs
 
 namedPrec :: forall rec err prec nt cat o a. Ord nt => nt -> WithPrec prec (Comb rec err prec nt cat o a) -> Comb rec err prec nt cat o a
 namedPrec name = namedPrecRec name <<< const

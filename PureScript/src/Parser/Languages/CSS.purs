@@ -50,7 +50,7 @@ test parsers testData = do
     log ""
     log $ show (Array.length states) <> " states"
     log ""
-    log $ printConflicts toAnsi dat
+    -- log $ printConflicts toAnsi dat
     pure doParse
   log ""
   log "Examples:"

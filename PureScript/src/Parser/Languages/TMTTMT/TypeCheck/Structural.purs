@@ -12,7 +12,7 @@ import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Filterable (filterMap, partitionMap)
-import Data.Foldable (foldM, for_)
+import Data.Foldable (foldM)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Identity (Identity)
 import Data.Lens.Iso.Newtype (_Newtype)
@@ -24,11 +24,9 @@ import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Monoid (power)
 import Data.Monoid.Endo (Endo(..))
 import Data.Newtype (class Newtype, unwrap)
-import Data.Profunctor.Strong ((&&&))
 import Data.Traversable (for_, sequence, traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst, uncurry)
-import Foreign.Object as FO
 import Idiolect (intercalateMap)
 import Parser.Languages.TMTTMT.TypeCheck (class TypeSystem, constructExpr)
 import Parser.Languages.TMTTMT.Types (Calling(..), Case(..), Condition(..), Declaration(..), Expr(..), Matching(..), Pattern(..))
@@ -451,7 +449,7 @@ refineTupled =
 -- | We keep the location inside of patterns where we match variables.
 -- | This lets us distinguish non-linear variables in the same pattern
 -- | (like `["B" a a]`) from variables that got typed several times
--- | (like `[a] (: [[]] | +$)`, whence `a (: [] | $)`).
+-- | (like `[a] (: [[]] | +$ :)`, whence `a (: [] | $ :)`).
 type PatLoc = List Int
 type SeeVar = Tuple TmVar (Tuple PatLoc Functional)
 type SeeVars = ReaderT PatLoc (WriterT (Array SeeVar) Identity)
@@ -601,6 +599,7 @@ synPattern (Vector pats) = Concrete <<< Tupled <$> traverse synPattern pats
 -- TODO: effects
 synPattern (Macro fn args) = synFunApp fn (constructExpr <$> args)
 
+synExpr :: Expr -> Typing Functional
 synExpr (Pattern pat) = synPattern pat
 synExpr (Lambda _) = throwError $ ECannotSynthesizeLambdaAt dfLoc
 

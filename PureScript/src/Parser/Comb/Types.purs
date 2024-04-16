@@ -25,6 +25,8 @@ import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Reference (unsafeRefEq)
 import Util (memoizeEq)
 
+data Associativity = AssocL | AssocR | NoAssoc
+
 type CSyntax = Syntax
 type CGrammar prec nt cat = Grammar nt (Maybe prec /\ Int) cat
 type CGrammarRule prec nt cat = GrammarRule nt (Maybe prec /\ Int) cat
@@ -75,6 +77,7 @@ newtype Comb rec err prec nt cat o a = Comb
   , entrypoints :: Array nt
   , pretty :: Maybe (CSyntax nt cat)
   , prettyGrammar :: Array (Tuple nt (Maybe (CSyntax nt cat)))
+  , tokenPrecedence :: Array (Tuple cat (Tuple prec Associativity))
   , rules :: Array
     -- Each nonterminal embedded in the rule comes with a way to determine
     -- how it is allowed to fail
@@ -216,6 +219,7 @@ instance applyComb :: Apply (Comb rec err prec nt cat o) where
     , entrypoints: l.entrypoints <|> r.entrypoints
     , pretty: Conj <$> l.pretty <*> r.pretty
     , prettyGrammar: l.prettyGrammar <|> r.prettyGrammar
+    , tokenPrecedence: l.tokenPrecedence <|> r.tokenPrecedence
     , rules: ado
         x <- l.rules
         y <- r.rules
@@ -230,6 +234,7 @@ instance applicativeComb :: Applicative (Comb rec err prec nt cat o) where
     , entrypoints: empty
     , pretty: Just Null
     , prettyGrammar: empty
+    , tokenPrecedence: empty
     , rules: pure
       { rule: empty
       , resultant: pure a
@@ -245,10 +250,18 @@ instance altComb :: Alt (Comb rec err prec nt cat o) where
         Nothing, Just rp -> Just rp
         Just lp, Just rp -> Just (Disj lp rp)
     , prettyGrammar: l.prettyGrammar <|> r.prettyGrammar
+    , tokenPrecedence: l.tokenPrecedence <|> r.tokenPrecedence
     , rules: l.rules <|> r.rules
     }
 instance plusComb :: Plus (Comb rec err prec nt cat o) where
-  empty = Comb { grammar: mempty, entrypoints: empty, pretty: Nothing, prettyGrammar: empty, rules: empty }
+  empty = Comb
+    { grammar: mempty
+    , entrypoints: empty
+    , pretty: Nothing
+    , prettyGrammar: empty
+    , tokenPrecedence: empty
+    , rules: empty
+    }
 -- | Distributivity follows from distributivity of `Array`
 instance alternativeComb :: Alternative (Comb rec err prec nt cat o)
 instance compactableComb :: Compactable (Comb rec err prec nt cat o) where
@@ -317,11 +330,14 @@ withCST_ f (Comb c) = Comb c
   }
 
 mapMaybe :: forall rec err prec nt cat o a b. (a -> Maybe b) -> Comb rec err prec nt cat o a -> Comb rec err prec nt cat o b
-mapMaybe f = withCST' \_ _ da -> case da unit of
+mapMaybe f = mapEither $ note [unsafeCoerce "mapMaybe"] <<< f
+
+mapEither :: forall rec err prec nt cat o a b. (a -> Either (Array err) b) -> Comb rec err prec nt cat o a -> Comb rec err prec nt cat o b
+mapEither f = withCST' \_ _ da -> case da unit of
   Result a ->
     case f a of
-      Nothing -> Failed []
-      Just r -> Result r
+      Left e -> Failed e
+      Right r -> Result r
   Failed e -> Failed e
   Partial -> Partial
 

@@ -447,14 +447,14 @@ startRules (MkGrammar rules) p =
   in
     \lookahead -> filtered <#> \{ pName, rName, rule } -> { pName, rName, rule: Zipper [] rule, lookahead }
 
-closeItem :: forall nt r tok. Eq nt => Grammar nt r tok -> StateItem nt r tok -> Array (StateItem nt r tok)
+closeItem :: forall nt r tok. Eq nt => Eq tok => Grammar nt r tok -> StateItem nt r tok -> Array (StateItem nt r tok)
 closeItem grammar item = case findNT item.rule of
   Nothing -> []
   Just { nonterminal: p, following, continue } ->
     startRules grammar p $
-      firsts grammar following (continueOn continue item.lookahead)
+      Array.nubEq $ firsts grammar following (continueOn continue item.lookahead)
 
-close1 :: forall nt r tok. Eq nt => Grammar nt r tok -> State nt r tok -> Array (StateItem nt r tok)
+close1 :: forall nt r tok. Eq nt => Eq tok => Grammar nt r tok -> State nt r tok -> Array (StateItem nt r tok)
 close1 grammar (State items) = closeItem grammar =<< items
 
 close

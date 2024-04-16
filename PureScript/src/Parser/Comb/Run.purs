@@ -2,7 +2,7 @@ module Parser.Comb.Run where
 
 import Prelude
 
-import Control.Plus ((<|>))
+import Control.Plus (empty, (<|>))
 import Data.Array ((!!))
 import Data.Array as Array
 import Data.Either (Either(..), note)
@@ -11,15 +11,14 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (unwrap)
-import Data.Tuple (Tuple, fst, snd, uncurry)
+import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Algorithms (getResultCM', revertCST', statesNumberedByMany)
 import Parser.Comb.Combinators (buildTree, named)
-import Parser.Comb.Types (CCST, CGrammar, COptions, CResultant, CSyntax, Comb(..), Options(..), Resultant(..), CGrammarRule, fullMapOptions, matchRule)
-import Parser.Lexing (class Tokenize, Best, FailReason(..), FailedStack(..), Rawr, Similar, bestRegexOrString, contextLexingParse, longest, (?), (??))
+import Parser.Comb.Types (Associativity, CCST, CGrammar, CGrammarRule, COptions, CResultant, CSyntax, Comb(..), Options(..), Resultant(..), fullMapOptions, matchRule)
+import Parser.Lexing (class Tokenize, Best, FailReason(..), FailedStack(..), Rawr, ResolvePrec, Similar, bestRegexOrString, contextLexingParse, happyPrecedenceOrd, longest, screenPrecedence, (?), (??))
 import Parser.Proto (topOf)
-import Parser.Types (Grammar(..), OrEOF(..), Part(..), State, StateInfo, States, Fragment)
-import Unsafe.Coerce (unsafeCoerce)
+import Parser.Types (Fragment, Grammar(..), OrEOF(..), Part(..), State, StateInfo, States, notEOF)
 
 type CBest :: forall k. Type -> k -> Type -> Type -> Type -> Type -> Type
 type CBest err prec nt cat i o =
@@ -40,6 +39,7 @@ type ParseError err nt cat i o =
 newtype Rec err nt cat i o = Rec
   ( forall a.
       nt -> i ->
+      COptions (Rec err nt cat i o) err nt cat o ->
       (CCST nt o -> Either (Array err) a) ->
       Either (ParseError err nt cat i o) a
   )
@@ -54,6 +54,7 @@ type StateTable nt cat =
 -- | partially applied function for multiple inputs.
 parse ::
   forall err prec nt cat i o a.
+    Ord prec =>
     Ord nt =>
     Ord cat =>
     Monoid i =>
@@ -68,6 +69,7 @@ parse = parseWith { best: longest }
 -- | match a longer string).
 parseRegex ::
   forall err prec nt a.
+    Ord prec =>
     Ord nt =>
   nt -> Comb (Rec err nt (Similar String Rawr) String String) err prec nt (Similar String Rawr) String a ->
   (String -> Either (ParseError err nt (Similar String Rawr) String String) a)
@@ -75,6 +77,7 @@ parseRegex = parseWith { best: bestRegexOrString }
 
 parseWith ::
   forall err prec nt cat i o a.
+    Ord prec =>
     Ord nt =>
     Ord cat =>
     Monoid i =>
@@ -86,6 +89,7 @@ parseWith conf name parser = snd (parseWith' conf name parser)
 
 parseWith' ::
   forall err prec nt cat i o a.
+    Ord prec =>
     Ord nt =>
     Ord cat =>
     Monoid i =>
@@ -101,6 +105,7 @@ parseWith' conf name parser = do
 
 parseRegex' ::
   forall err prec nt a.
+    Ord prec =>
     Ord nt =>
   nt -> Comb (Rec err nt (Similar String Rawr) String String) err prec nt (Similar String Rawr) String a ->
   StateTable nt (Similar String Rawr) /\ (String -> Either (ParseError err nt (Similar String Rawr) String String) a)
@@ -109,13 +114,14 @@ parseRegex' = parseWith' { best: bestRegexOrString }
 -- | Compile the LR(1) state table for the grammar
 compile ::
   forall rec err prec nt cat o a.
+    Ord prec =>
     Ord nt =>
     Ord cat =>
   nt -> Comb rec err prec nt cat o a ->
   { states :: StateTable nt cat
   , resultants :: nt /\ Array (CResultant rec err nt o a)
   , options :: COptions rec err nt cat o
-  , precedences :: Map (nt /\ Int) prec
+  , precedences :: Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
   }
 compile name parser = do
   let Comb { grammar: MkGrammar initialWithPrec, entrypoints } = named name parser
@@ -133,22 +139,27 @@ compile name parser = do
 gatherPrecedences ::
   forall rec err prec nt cat o a.
     Ord nt =>
+    Ord cat =>
   Comb rec err prec nt cat o a ->
-  Map (nt /\ Int) prec
-gatherPrecedences (Comb { grammar: MkGrammar initialWithPrec }) =
-  gatherPrecedences' initialWithPrec
+  Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
+gatherPrecedences (Comb { grammar: MkGrammar initialWithPrec, tokenPrecedence }) =
+  gatherPrecedences' initialWithPrec tokenPrecedence
 
 gatherPrecedences' ::
   forall prec nt cat.
     Ord nt =>
+    Ord cat =>
   Array (CGrammarRule prec nt cat) ->
-  Map (nt /\ Int) prec
-gatherPrecedences' initialWithPrec =
-  Map.fromFoldable $ initialWithPrec # filterMap
-    case _ of
-      { pName, rName: Just prec /\ rName } ->
-        Just ((pName /\ rName) /\ prec)
-      _ -> Nothing
+  Array (cat /\ (prec /\ Associativity)) ->
+  Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
+gatherPrecedences' initialWithPrec tokenPrecedence = Tuple
+  do Map.fromFoldable tokenPrecedence
+  do
+    Map.fromFoldable $ initialWithPrec # filterMap
+      case _ of
+        { pName, rName: Just prec /\ rName } ->
+          Just ((pName /\ rName) /\ prec)
+        _ -> Nothing
 
 lookupTuple :: forall a b. Eq a => a -> a /\ b -> Maybe b
 lookupTuple a1 (a2 /\ b) | a1 == a2 = Just b
@@ -160,6 +171,7 @@ resultantsOf (Comb { rules: cases }) = cases <#> _.resultant
 -- | Execute the parse.
 execute ::
   forall err prec nt cat i o a.
+    Ord prec =>
     Ord nt =>
     Ord cat =>
     Monoid i =>
@@ -169,35 +181,38 @@ execute ::
   { states :: StateTable nt cat
   , resultants :: nt /\ Array (CResultant (Rec err nt cat i o) err nt o a)
   , options :: COptions (Rec err nt cat i o) err nt cat o
-  , precedences :: Map (nt /\ Int) prec
+  , precedences :: Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
   } ->
   (i -> Either (ParseError err nt cat i o) a)
-execute conf { states: { stateMap, start, states }, resultants, options } = do
+execute conf0 { states: { stateMap, start, states }, resultants, options, precedences } = do
   let
+    xx = fullMapOptions
+      { rec: identity
+      , nt: pure
+      , r: pure
+      , cat: Continue
+      , o: Continue
+      , cst: note [] <<< revertCST'
+      }
     options' ::
-      nt -> Options (Rec err nt cat i o) err (Either nt nt) (Maybe Int) (OrEOF cat) (OrEOF o)
-    options' =
+      nt ->
+      Options (Rec err nt cat i o) err nt Int cat o ->
+      Options (Rec err nt cat i o) err (Either nt nt) (Maybe Int) (OrEOF cat) (OrEOF o)
+    options' name opts =
       let
-        x = fullMapOptions
-          { rec: identity
-          , nt: pure
-          , r: pure
-          , cat: Continue
-          , o: Continue
-          , cst: note [unsafeCoerce "revertCST'"] <<< revertCST'
-          } options
-      in \name -> Options
+        x = xx opts
+      in Options
           [ { pName: Left name
             , rName: Nothing
-            -- FIXME: pure x is wrong here
             , rule: [NonTerminal (pure x /\ Right name), Terminal EOF]
             , logicParts: mempty
             , advanced: []
             }
           ]
-    rec = Rec \name input result -> do
+    conf = conf0 { best = _ } $ (<=<) conf0.best $ screenPrecedence $ combPrecedence precedences
+    rec = Rec \name input optionsHere result -> do
       state <- Map.lookup name stateMap?? CrashedStack "Could not find parser in table"
-      stack <- contextLexingParse conf (state /\ states) (options' name) rec (Continue input)
+      stack <- contextLexingParse conf (state /\ states) (options' name optionsHere) rec (Continue input)
       cst <- getResultCM' stack?? CrashedStack "Failed to extract result"
       result cst? \userErr -> FailedStack
         { states
@@ -209,7 +224,7 @@ execute conf { states: { stateMap, start, states }, resultants, options } = do
         , failReason: UserRejection { userErr }
         }
   \(input :: i) -> do
-    stack <- contextLexingParse conf (start /\ states) (options' (fst resultants)) rec (Continue input)
+    stack <- contextLexingParse conf (start /\ states) (options' (fst resultants) options) rec (Continue input)
     cst <- getResultCM' stack?? CrashedStack "Failed to extract result"
     -- Apply the function that parses from the CST to the desired result type
     uncurry (matchRule rec) resultants cst? \userErr -> FailedStack
@@ -223,13 +238,28 @@ execute conf { states: { stateMap, start, states }, resultants, options } = do
       }
 
 
+combPrecedence ::
+  forall m prec cat nt.
+    Monad m =>
+    Ord prec =>
+    Ord cat =>
+    Ord nt =>
+  Tuple (Map cat (Tuple prec Associativity)) (Map (nt /\ Int) prec) ->
+  ResolvePrec m (OrEOF cat) (Fragment (Either nt nt) (OrEOF cat) /\ Either nt nt /\ Maybe Int)
+combPrecedence precedences =
+  happyPrecedenceOrd
+    (notEOF >=> flip Map.lookup (fst precedences))
+    case _ of
+      Right nt /\ Just r -> Map.lookup (nt /\ r) (snd precedences)
+      _ -> Nothing
+
 -- Compile multiple parsers together into one LR(1) table with multiple
 -- entrypoints.
 type Compiled prec nt cat =
   -- Could almost be an existential type? But literally no reason to do that
   { entrypoints :: Map nt Int
   , states :: States Int (Either nt nt) (Maybe Int) (OrEOF cat)
-  , precedences :: Map (nt /\ Int) prec
+  , precedences :: Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
   }
 type Parsing err nt cat i o a = i -> Either (ParseError err nt cat i o) a
 
@@ -237,6 +267,7 @@ newtype Coll err prec nt cat i o parsers = Coll
   { grammar :: CGrammar prec nt cat
   , prettyGrammar :: Array (Tuple nt (Maybe (CSyntax nt cat)))
   , entrypoints :: Array nt
+  , tokenPrecedence :: Array (Tuple cat (Tuple prec Associativity))
   , compilation :: Compiled prec nt cat -> CConf err prec nt cat i o -> parsers
   }
 
@@ -244,18 +275,26 @@ derive instance functorColl :: Functor (Coll err prec nt cat i o)
 instance applyColl :: Apply (Coll err prec nt cat i o) where
   apply (Coll c1) (Coll c2) = Coll
     { grammar: c1.grammar <> c2.grammar
-    , prettyGrammar: c1.prettyGrammar <> c2.prettyGrammar
-    , entrypoints: c1.entrypoints <> c2.entrypoints
+    , prettyGrammar: c1.prettyGrammar <|> c2.prettyGrammar
+    , entrypoints: c1.entrypoints <|> c2.entrypoints
+    , tokenPrecedence: c1.tokenPrecedence <|> c2.tokenPrecedence
     , compilation: \x y -> c1.compilation x y (c2.compilation x y)
     }
 instance applicativeColl :: Applicative (Coll err prec nt cat i o) where
-  pure r = Coll { grammar: mempty, prettyGrammar: mempty, entrypoints: mempty, compilation: \_ _ -> r }
+  pure r = Coll
+    { grammar: mempty
+    , prettyGrammar: empty
+    , entrypoints: mempty
+    , tokenPrecedence: empty
+    , compilation: \_ _ -> r
+    }
 -- a Monad instance is soooo tempting, but does not make sense:
 -- the grammar needs to be fully built before compilation can be received
 -- maybe there is a way to encode this in the types
 
 coll ::
   forall err prec nt cat i o a.
+    Ord prec =>
     Ord nt =>
     Ord cat =>
     Monoid i =>
@@ -266,6 +305,7 @@ coll name parser@(Comb c) = Coll
   { grammar: c.grammar
   , prettyGrammar: c.prettyGrammar
   , entrypoints: pure name <> c.entrypoints
+  , tokenPrecedence: c.tokenPrecedence
   , compilation: \{ entrypoints, states, precedences } ->
       case Map.lookup name entrypoints of
         Nothing -> \_ _ ->
@@ -286,7 +326,7 @@ collect ::
     Monoid i =>
     Tokenize cat i o =>
   CConf err prec nt cat i o -> Coll err prec nt cat i o parsers -> parsers
-collect conf (Coll { grammar: MkGrammar initialWithPrec, entrypoints, compilation }) = do
+collect conf (Coll { grammar: MkGrammar initialWithPrec, entrypoints, compilation, tokenPrecedence }) = do
   let initial = initialWithPrec <#> \r -> r { rName = snd r.rName }
   let grammar = MkGrammar (Array.nub initial)
   let names = Array.nub entrypoints
@@ -294,7 +334,7 @@ collect conf (Coll { grammar: MkGrammar initialWithPrec, entrypoints, compilatio
   compilation
     { entrypoints: Map.fromFoldable (fst states)
     , states: snd states
-    , precedences: gatherPrecedences' initialWithPrec
+    , precedences: gatherPrecedences' initialWithPrec tokenPrecedence
     } conf
 
 
@@ -325,11 +365,13 @@ withReparserFor name aux (Comb cb) f = do
     , entrypoints: pure name <|> ca.entrypoints <|> cb.entrypoints
     , pretty: cb.pretty
     , prettyGrammar: cb.prettyGrammar <|> ca.prettyGrammar
+    -- TODO
+    , tokenPrecedence: cb.tokenPrecedence <|> ca.tokenPrecedence
     , rules: cb.rules <#> \r@{ resultant: Resultant rr } -> r
       { resultant = Resultant rr
         { result = \(Rec rec) csts ->
             let
-              parser input = rec name input $
+              parser input = rec name input (buildTree name aux) $
                 matchRule (Rec rec) name (resultantsOf aux)
             in (\x -> f parser x) <$> rr.result (Rec rec) csts
         }

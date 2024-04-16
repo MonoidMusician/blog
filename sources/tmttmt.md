@@ -275,6 +275,34 @@ https://cohost.org/monoidmusician/post/3252802-first-class-patterns
     (It is apparently possible to algorithmically decided whether one regular expression is contained in another uwu :3.)
   - STM. Eventual consistency. Other lattice-y stuff.
   - Parallel evaluation, à la `unamb`{.haskell} or so.
+- Idiolects?
+  - Providing N×M variations of APIs is annoying:
+    ```purescript
+    setPrecA :: forall rec err prec nt cat o. cat -> Associativity -> prec -> Comb rec err prec nt cat o Unit
+    setPrecA cat assoc prec = case pure unit of
+      Comb c -> Comb c { tokenPrecedence = [cat /\ (prec /\ assoc)] }
+
+    setPrecL :: forall rec err prec nt cat o. cat -> prec -> Comb rec err prec nt cat o Unit
+    setPrecL = setPrecA <@> AssocL
+    setPrecR :: forall rec err prec nt cat o. cat -> prec -> Comb rec err prec nt cat o Unit
+    setPrecR = setPrecA <@> AssocR
+    setPrec :: forall rec err prec nt cat o. cat -> prec -> Comb rec err prec nt cat o Unit
+    setPrec = setPrecA <@> NoAssoc
+
+    tokenPrecA :: forall rec err prec nt cat o. Token cat o => cat -> Associativity -> prec -> Comb rec err prec nt cat o o
+    tokenPrecA cat assoc prec = setPrecA cat assoc prec *> token cat
+
+    tokenPrecL :: forall rec err prec nt cat o. Token cat o => cat -> prec -> Comb rec err prec nt cat o o
+    tokenPrecL = tokenPrecA <@> AssocL
+    tokenPrecR :: forall rec err prec nt cat o. Token cat o => cat -> prec -> Comb rec err prec nt cat o o
+    tokenPrecR = tokenPrecA <@> AssocR
+    tokenPrec :: forall rec err prec nt cat o. Token cat o => cat -> prec -> Comb rec err prec nt cat o o
+    tokenPrec = tokenPrecA <@> NoAssoc
+    ```
+
+    Does reifying the arugments as a datatype with super lightweight syntax do what we need? maybe …
+  - Would be nice to have ways to say “add a precedence to *this* (whatever it is)” or “add a name to *that*”.
+    Idk.
 
 ## Non-goals
 

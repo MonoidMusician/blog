@@ -5,8 +5,9 @@ import Prelude
 import Data.Argonaut as J
 import Data.Array as Array
 import Data.DateTime.Instant (unInstant)
+import Data.Identity (Identity(..))
 import Data.Monoid (power)
-import Data.Newtype (unwrap)
+import Data.Newtype (un, unwrap)
 import Data.String as String
 import Data.Tuple (fst)
 import Effect (Effect)
@@ -18,10 +19,12 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Aff as FS
 import Parser.Comb (Comb(..))
 import Parser.Comb.Comber (Comber(..), freezeTable, parse', printConflicts, printGrammarWsn, toAnsi)
+import Parser.Comb.Run (combPrecedence, gatherPrecedences)
 import Parser.Languages as Languages
 import Parser.Languages.CSS as CSS
 import Parser.Languages.Show as Show
 import Parser.Languages.TMTTMT.Parser as TMTTMT
+import Parser.Lexing (applyPrecedence)
 import Parser.Types (States(..))
 
 main :: Effect Unit
@@ -39,7 +42,7 @@ main = launchAff_ do
       t1 <- liftEffect now
       log $ show (Array.length states) <> " states"
       log $ show (unwrap (unInstant t1) - unwrap (unInstant t0)) <> " milliseconds"
-      log $ printConflicts toAnsi dat
+      log $ printConflicts toAnsi $ un Identity $ applyPrecedence (combPrecedence $ gatherPrecedences (Comb info)) $ States states
       void $ try do FS.rm' ("./assets/json/" <> filename <> ".json.gz") { force: false, maxRetries: 0, recursive: false, retryDelay: 0 }
       FS.writeTextFile UTF8 ("./assets/json/" <> filename <> ".json") $ J.stringify $ freezeTable dat
 
@@ -48,3 +51,4 @@ main = launchAff_ do
   process TMTTMT.declarationsP "tmttmt-parser-states"
   process TMTTMT.typeP "tmttmt-types-parser-states"
   process Languages.json "json-parser-states"
+  process Languages.arithmetic "arithmetic-parser-states"

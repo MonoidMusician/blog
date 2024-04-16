@@ -6,19 +6,23 @@ import Ansi.Codes as Ansi
 import Ansi.Output (withGraphics)
 import Data.Argonaut (Json)
 import Data.Argonaut as J
+import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Enum (toEnum)
 import Data.Foldable (fold, oneOf, traverse_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int (hexadecimal)
 import Data.Int as Int
+import Data.Number as Num
 import Data.Number as Number
 import Data.String as String
+import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Console (log)
 import Foreign.Object as Object
 import Idiolect ((<#?>), (<$?>), (>==))
-import Parser.Comb.Comber (Comber, delim, many, named, namedRec, parse, printGrammarWsn, rawr, toAnsi, token, wsws, arrayOf, objectOf)
+import Parser.Comb.Comber (Comber, arrayOf, delim, many, mapEither, named, namedRec, objectOf, parse', printGrammarWsn, printStateTable, rawr, toAnsi, token, tokenPrecL, tokenPrecR, withReparserFor, ws, wsws)
+import Parser.Debug (thingy)
 
 digit :: Comber Int
 digit = named "digit" $ oneOf $ mapWithIndex (<$) $
@@ -31,12 +35,15 @@ number :: Comber Number
 number = named "number" do
   Number.fromString <$?> rawr "[-]?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][-+]?\\d+)?"
 
-test :: Comber String -> Array String -> Effect Unit
-test parser testData = do
+test :: Boolean -> Comber String -> Array String -> Effect Unit
+test false _ _ = pure unit
+test _enabled parser testData = do
   log ""
   log "Grammar:"
   log $ printGrammarWsn toAnsi parser
-  let doParse = parse parser
+  let (stateTable /\ doParse) = parse' parser
+  when false do
+    log $ printStateTable toAnsi stateTable
   log ""
   log "Examples:"
   traverse_ (\s -> pure unit >>= \_ -> log (colorful Ansi.BrightYellow (show s) <> "\n  " <> result (doParse s))) testData
@@ -50,27 +57,30 @@ result (Right r) = colorful Ansi.Green "✓ " <> String.replaceAll (String.Patte
 
 main :: Effect Unit
 main = do
-  test (show <$> number)
+  _ <- pure thingy
+  test true (show <$> number)
     [ "0"
     , "00"
     , "0.1"
     , "12340.234"
     , "12e5"
     ]
-  test (J.stringify <$> json)
+  test true (J.stringify <$> json)
     [ "true"
     , "false"
     , "null"
     , """ 123 """
-    -- , """ "" """
-    -- , """ "é✗" """
-    -- , """
-    --   "1234é"
-    --   """
-    -- , """
-    --   "1234é✗"
-    --   """
+    , """ "" """
+    , """ "é✗" """
+    , """
+      "1234é"
+      """
+    , """
+      "1234é✗"
+      """
     , """ "\t\\\n" """
+    , """ "\z" """
+    , """ "\u" """
     , """ "\" """
     , "\"\"\""
     , "[ ]"
@@ -79,9 +89,15 @@ main = do
     , """{"a":1, "b":[1,23,4,5]}"""
     , "[,]"
     ]
+  test true (show <$> arithmetic)
+    [ "1 + 2"
+    , "4 - 2 + 3"
+    , "5 +3* 2"
+    , "3^4 \\/ 5"
+    ]
 
-string :: Comber String
-string = named "string" $ join delim "\"" $
+stringParser :: Comber String
+stringParser = join delim "\"" $
   map fold $ many "string_contents" $ oneOf
     -- `rawr "[\\u0020-\\u10FFFF]"` also works
     -- the only reason we need to exclude \ U+005C and " U+0022 is because of
@@ -101,6 +117,11 @@ string = named "string" $ join delim "\"" $
       ]
     ]
 
+string :: Comber String
+string = mapEither (lmap (\e -> ["Invalid string literal", e])) $
+  withReparserFor "string_parser" stringParser (rawr "\"([^\\\\\"]|\\\\.)*\"")
+    \parseString stringLiteral -> parseString stringLiteral
+
 infixr 2 named as #:
 infixr 5 namedRec as #->
 
@@ -113,4 +134,23 @@ json = namedRec "value" \value -> wsws $ oneOf
   , token "null" $> J.jsonNull
   , "array"#: arrayOf "array_contents" value <#> J.fromArray
   , "object"#: objectOf "object_contents" "object_entry" string value <#> Object.fromFoldable >>> J.fromObject
+  ]
+
+arithmetic :: Comber Number
+arithmetic = ws *> namedRec "arithmetic" \expr -> oneOf
+  [ number <* ws
+  , token '(' *> ws *> expr <* token ')' <* ws
+  , ado
+      x <- expr
+      op <- oneOf
+        [ (+) <$ tokenPrecL '+' zero
+        , (-) <$ tokenPrecL '-' zero
+        , (*) <$ tokenPrecL '*' one
+        , (/) <$ tokenPrecL '/' one
+        , Num.pow <$ tokenPrecR '^' (one + one)
+        , Num.min <$ tokenPrecL "/\\" (negate one)
+        , Num.max <$ tokenPrecL "\\/" (negate one + negate one)
+        ] <* ws
+      y <- expr
+      in op x y
   ]
