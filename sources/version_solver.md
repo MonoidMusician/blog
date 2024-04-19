@@ -215,7 +215,7 @@ I briefly glanced at them, but they donʼt seem to address the heart of the issu
 
 In a solver algorithm, we write programs in terms of some error monad.
 The backtracking algorithm essentially corresponds to a complicated Boolean expression, a tree of various constraints joined with conjunction and disjunction.
-Thinking of it as `Applicative`purescript+`Alternative`purescript, we see that `<*>`purescript corresponds to conjunction `&&`purescript and `<|>`purescript corresponds to disjunction `||`purescript.
+Thinking of it as `Applicative`{.purescript}+`Alternative`{.purescript}, we see that `<*>`{.purescript} corresponds to conjunction `&&`{.purescript} and `<|>`{.purescript} corresponds to disjunction `||`{.purescript}.
 
 ```boo
 console >=5.0.0 <6.0.0
@@ -318,7 +318,7 @@ foldMap1
 instance Coercible Manifest (App (Map PackageName) Loose)
 ```
 
-Note that this is in fact not a monoid: [`Map`purescript](https://pursuit.purescript.org/packages/purescript-ordered-collections/docs/Data.Map#t:Map) only has an [`Apply`purescript](https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Apply#t:Apply) instance (which gives the `<*>`purescript operator to merge common keys), not [`Applicative`purescript](https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Applicative#t:Applicative) (which would give `pure`purescript but does not make sense for `Map`purescript since it would have to contain _all_ possible keys!).
+Note that this is in fact not a monoid: [`Map`{.purescript}](https://pursuit.purescript.org/packages/purescript-ordered-collections/docs/Data.Map#t:Map) only has an [`Apply`{.purescript}](https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Apply#t:Apply) instance (which gives the `<*>`{.purescript} operator to merge common keys), not [`Applicative`{.purescript}](https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Applicative#t:Applicative) (which would give `pure`{.purescript} but does not make sense for `Map`{.purescript} since it would have to contain _all_ possible keys!).
 
 As a further optimization, while we are checking package versions, we may discard those that do not solve due to an obvious conflict.
 This may seem strange: In the PureScript registry, each package will solve individually, we check that on upload.
@@ -411,11 +411,11 @@ Thereʼs no such thing as double-counting in a semilattice computation!
 When youʼre dealing with a well-behaved logical scenario, if have written your logic correctly ([i.e.]{t=} each derivation is valid) and you cover all the cases (you eventually produce every fact you are allowed to derive), thereʼs no chance that you accidentally make things break.^[
 If the logical scenario does not have a finite upper bound of information to derive, this naïve process may not terminate, but in our case it is certainly finite: the registry itself is finite, so any logical derivations from it will eventually be saturated.]
 
-We already saw our first semilattice `Semigroup (App (Map PackageName) Loose)`purescript above.
-However, I left out the definition of `Loose`purescript and its `Semigroup`purescript instance.
+We already saw our first semilattice `Semigroup (App (Map PackageName) Loose)`{.purescript} above.
+However, I left out the definition of `Loose`{.purescript} and its `Semigroup`{.purescript} instance.
 
-The _data_ contained in `Loose`purescript is just a lower bound and an upper bound, and we want the lower bound to be less than the upper bound for it to be valid.
-We also pack in _metadata_ that describes where each bound came from, the `SolverPosition`purescript datatype which we will discuss below in [Provenance].
+The _data_ contained in `Loose`{.purescript} is just a lower bound and an upper bound, and we want the lower bound to be less than the upper bound for it to be valid.
+We also pack in _metadata_ that describes where each bound came from, the `SolverPosition`{.purescript} datatype which we will discuss below in [Provenance].
 
 To achieve this, we first define a type that describes a bound with metadata packed in.
 Then we add to this operations that take the maximum and minimum of the bounds, and _aggregate_ the metadata if they were the same bound.
@@ -442,7 +442,7 @@ instance Semigroup MaxSourced where
       EQ -> MaxSourced (Sourced av (as <> bs))
 ```
 
-Now we get both `Loose`purescript and `Intersection`purescript for free by the right arrangement of these types.
+Now we get both `Loose`{.purescript} and `Intersection`{.purescript} for free by the right arrangement of these types.
 Heck, we even get their coercion for free:
 ```purescript
 newtype Loose = Loose
@@ -481,11 +481,11 @@ fromLoose :: Loose -> Intersection
 fromLoose = coerce
 ```
 
-Why donʼt we require `Intersection`purescript to be a valid interval?
-As we will talk about in the next section, `Intersection`purescript is the primary way we keep track of the knowledge we have learned already.
+Why donʼt we require `Intersection`{.purescript} to be a valid interval?
+As we will talk about in the next section, `Intersection`{.purescript} is the primary way we keep track of the knowledge we have learned already.
 Being in the business of aggregating information, we want to know all we can about the situation our solver is confronted with, and we just can accumulate knowledge by throwing it into this semilattice.
 
-We could make taking the intersection of intervals a partially-defined operation (`Intersection -> Intersection -> Either Error Intersection`purescript), but that means we have to bail out once a single intersection becomes invalid.
+We could make taking the intersection of intervals a partially-defined operation (`Intersection -> Intersection -> Either Error Intersection`{.purescript}), but that means we have to bail out once a single intersection becomes invalid.
 Instead, we integrate them directly into the semilattice structure by keeping invalid intervals around and turning them into [errors] later (this is why we give them the metadata about [provenance]!).
 This gives us multiple errors emerging from one step for free, it is incredibly convenient.
 
@@ -494,7 +494,7 @@ This gives us multiple errors emerging from one step for free, it is incredibly 
 Figuring out the correct way to propagate known requirements kept me occupied for days.
 It turns out I had done it wrong the first time, so it is good I thought it over again!
 
-Our goal is to implement `solveStep`purescript here using `commonDependencies`purescript (see [above](#intuitive-foundations-quasi-transitive-dependencies)) and `exploreTransitiveDependencies`purescript:
+Our goal is to implement `solveStep`{.purescript} here using `commonDependencies`{.purescript} (see [above](#intuitive-foundations-quasi-transitive-dependencies)) and `exploreTransitiveDependencies`{.purescript}:
 ```purescript
 -- Semilattice version of `Registry`
 type TransitivizedRegistry =
@@ -517,15 +517,15 @@ solveStep :: RRU -> RRU
 exploreTransitiveDependencies :: RRU -> RRU
 ```
 
-The `registry :: TransitivizedRegistry`purescript and `required :: SemigroupMap PackageName Intersection`purescript represent the local dependencies for each package version and the global requirements of the initial manifest given to the solver, respectively.
+The `registry :: TransitivizedRegistry`{.purescript} and `required :: SemigroupMap PackageName Intersection`{.purescript} represent the local dependencies for each package version and the global requirements of the initial manifest given to the solver, respectively.
 They both are purely accumulative: what goes in comes out with some more information.
 The additional information will simply be added dependencies and tightened bounds on existing dependencies.
 Provenance metadata may accumulate too (we donʼt really need to care about that, it is just along for the ride).
 
-The other field, `updated :: TransitivizedRegistry`purescript, is a bit different: it does not carry over from step to step, it only talks about what changed at the last step.
-This is because as weʼre keeping `registry :: TransitivizedRegistry`purescript updated, we want to only calculate updates to the things that might need it.
+The other field, `updated :: TransitivizedRegistry`{.purescript}, is a bit different: it does not carry over from step to step, it only talks about what changed at the last step.
+This is because as weʼre keeping `registry :: TransitivizedRegistry`{.purescript} updated, we want to only calculate updates to the things that might need it.
 
-When we first call `solveStep`purescript, we treat everything as updated:
+When we first call `solveStep`{.purescript}, we treat everything as updated:
 ```purescript
 solveSeed :: RR () -> RRU
 solveSeed { registry, required } = { registry, required, updated: registry }
@@ -672,10 +672,10 @@ I also needed a histogram viewer.
 
 Lots of micro optimizations.
 
-- Using a specific order of `<>`purescript, since `Map`purescript appends are implemented as a fold over the second argument so it should be the smaller argument.
+- Using a specific order of `<>`{.purescript}, since `Map`{.purescript} appends are implemented as a fold over the second argument so it should be the smaller argument.
 - Using a difflist (Cayley) representation when I know Iʼm only appending one key at a time but with mixed associativity.
-- Implementing `wouldUpdate`purescript directly instead of using the semigroup operation.
-- Optimizing the `Ord Version`purescript instance since it is the most common operation in this whole thing.
+- Implementing `wouldUpdate`{.purescript} directly instead of using the semigroup operation.
+- Optimizing the `Ord Version`{.purescript} instance since it is the most common operation in this whole thing.
 
 Did they make a difference?
 I donʼt know!
@@ -722,7 +722,7 @@ Especially because once separate terms are unified, you donʼt want to arbitrari
 ]
 However, it is really slick in this domain: we only need to keep track of the endpoints, users donʼt exactly care about what came in between (just that it is reasonable to assume, because it is in fact correct).
 
-So in this case I keep track of which particular package version manifest(s) gave us the constraint we are talking about (`LocalSolverPosition`purescript), and which constraints in the current manifest caused it to be required.
+So in this case I keep track of which particular package version manifest(s) gave us the constraint we are talking about (`LocalSolverPosition`{.purescript}), and which constraints in the current manifest caused it to be required.
 Thereʼs some logic to combine these positions which I will not reproduce here.
 
 ```purescript

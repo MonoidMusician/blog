@@ -36,7 +36,7 @@ main = launchAff_ do
       -- log $ power "=" (String.length filename)
       -- log $ printGrammarWsn toAnsi parser
       let Comber (Comb info) = parser
-      log $ show $ info.entrypoints
+      log $ show $ Array.nub $ info.entrypoints
       t0 <- liftEffect now
       let dat@{ states: States states } = fst $ parse' parser
       t1 <- liftEffect now

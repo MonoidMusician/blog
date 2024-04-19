@@ -621,18 +621,18 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
   where
   tabulated = indexStates (States states)
 
-  reachable :: Set.Set s -> Set.Set s
-  reachable s =
+  reachable :: Set.Set s -> Set.Set s -> Set.Set s
+  reachable s delta =
     let
       more = foldMap $ lookupState >>> foldMap \{ advance, receive } ->
         foldMap (bifoldMap Set.singleton mempty) advance
           <> foldMap Set.singleton receive
-      s' = s <> more s
-    in if s' == s then s else reachable s'
+      s' = s <> more delta
+    in if s' == s then s else reachable s' (Set.difference s' s)
   allCatsFrom :: s -> Array cat
   allCatsFrom i = Array.nub do
     { advance: SemigroupMap advance } <-
-      Array.filter (_.sName >>> Set.member <@> reachable (Set.singleton i)) states
+      Array.filter (_.sName >>> Set.member <@> join reachable (Set.singleton i)) states
     Set.toUnfoldable $ Map.keys advance
 
   lookupState :: s -> Maybe (StateInfo s nt r cat)

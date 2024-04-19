@@ -46,11 +46,11 @@ test parsers testData = do
     log ""
     log $ "Grammar " <> show (i+1) <> ":"
     log $ printGrammarWsn toAnsi parser
-    let dat@{ states: States states } /\ doParse = parse' parser
+    let { states: States states } /\ doParse = parse' parser
     log ""
     log $ show (Array.length states) <> " states"
     log ""
-    -- log $ printConflicts toAnsi dat
+    log $ printConflicts toAnsi (States states)
     pure doParse
   log ""
   log "Examples:"
