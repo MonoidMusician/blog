@@ -26,10 +26,17 @@ newtype Boundary = Bdry
   , right :: WS
   }
 
-newtype WithBoundary :: (Type -> Type) -> Type -> Type
-newtype WithBoundary f a = Bdd
+newtype WithBoundaryF :: (Type -> Type) -> Type -> Type
+newtype WithBoundaryF f a = BddF
   { left :: WS
   , wrapped :: f a
+  , right :: WS
+  }
+
+newtype WithBoundaryP :: (Type -> Type -> Type) -> Type -> Type -> Type
+newtype WithBoundaryP p u x = BddP
+  { left :: WS
+  , wrapped :: p u x
   , right :: WS
   }
 
