@@ -11,10 +11,15 @@ data WS
   | WSPossible
   | WSFailed
 
-class FromWS :: (Type -> Type) -> Constraint
-class FromWS f where
-  infixWS :: forall a b. f a -> WS -> f b -> f (a /\ b)
-  circumfixWS :: forall a. WS -> f a -> WS -> f a
+class FromWSF :: (Type -> Type) -> Constraint
+class FromWSF f where
+  infixWSF :: forall a b. f a -> WS -> f b -> f (a /\ b)
+  circumfixWSF :: forall a. WS -> f a -> WS -> f a
+
+class FromWSP :: (Type -> Type -> Type) -> Constraint
+class FromWSP p where
+  infixWSP :: forall u v x y. p u x -> WS -> p v y -> p (u /\ v) (x /\ y)
+  circumfixWSP :: forall u x. WS -> p u x -> WS -> p u x
 
 newtype Boundary = Bdry
   { left :: WS

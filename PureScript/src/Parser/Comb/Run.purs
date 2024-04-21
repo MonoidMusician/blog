@@ -13,10 +13,12 @@ import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
-import Parser.Algorithms (getResultCM', revertCST', statesNumberedByMany)
+import Parser.Algorithms (getResultCM', revertCST')
 import Parser.Comb.Combinators (buildTree, named)
 import Parser.Comb.Types (Associativity, CCST, CGrammar, CGrammarRule, COptions, CResultant, CSyntax, Comb(..), Options(..), Resultant(..), fullMapOptions, matchRule)
 import Parser.Lexing (class Tokenize, Best, FailReason(..), FailedStack(..), Rawr, ResolvePrec, Similar, bestRegexOrString, contextLexingParse, happyPrecedenceOrd, longest, screenPrecedence, (?), (??))
+import Parser.Optimized.Algorithms (statesNumberedMany)
+import Parser.Optimized.Types (unsafeFromJust)
 import Parser.Proto (topOf)
 import Parser.Types (Fragment, Grammar(..), OrEOF(..), Part(..), State, StateInfo, States, notEOF)
 
@@ -127,9 +129,8 @@ compile name parser = do
   let Comb { grammar: MkGrammar initialWithPrec, entrypoints } = named name parser
   let initial = initialWithPrec <#> \r -> r { rName = snd r.rName }
   let grammar = MkGrammar (Array.nub initial)
-  let stateAssoc /\ generated = statesNumberedByMany identity grammar $ Array.nub $ [ name ] <> entrypoints
-  let stateMap = Map.fromFoldable stateAssoc
-  let start = Map.lookup name stateMap # fromMaybe 0
+  let stateMap /\ generated = statesNumberedMany grammar $ Array.nub $ [ name ] <> entrypoints
+  let start = Map.lookup name stateMap # unsafeFromJust "Map.lookup name stateMap"
   { states: { stateMap, start, states: generated }
   , options: buildTree name parser
   , resultants: name /\ resultantsOf parser
@@ -258,7 +259,7 @@ combPrecedence precedences =
 type Compiled prec nt cat =
   -- Could almost be an existential type? But literally no reason to do that
   { entrypoints :: Map nt Int
-  , states :: States Int (Either nt nt) (Maybe Int) (OrEOF cat)
+  , states :: CStates nt cat
   , precedences :: Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
   }
 type Parsing err nt cat i o a = i -> Either (ParseError err nt cat i o) a
@@ -330,10 +331,10 @@ collect conf (Coll { grammar: MkGrammar initialWithPrec, entrypoints, compilatio
   let initial = initialWithPrec <#> \r -> r { rName = snd r.rName }
   let grammar = MkGrammar (Array.nub initial)
   let names = Array.nub entrypoints
-  let states = statesNumberedByMany identity grammar names
+  let entrypoints /\ states = statesNumberedMany grammar names
   compilation
-    { entrypoints: Map.fromFoldable (fst states)
-    , states: snd states
+    { entrypoints
+    , states
     , precedences: gatherPrecedences' initialWithPrec tokenPrecedence
     } conf
 

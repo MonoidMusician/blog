@@ -20,8 +20,10 @@ import Node.FS.Aff as FS
 import Parser.Comb (Comb(..))
 import Parser.Comb.Comber (Comber(..), freezeTable, parse', printConflicts, printGrammarWsn, toAnsi)
 import Parser.Comb.Run (combPrecedence, gatherPrecedences)
+import Parser.Debug (thingy)
 import Parser.Languages as Languages
 import Parser.Languages.CSS as CSS
+import Parser.Languages.Dhall as Dhall
 import Parser.Languages.Show as Show
 import Parser.Languages.TMTTMT.Parser as TMTTMT
 import Parser.Lexing (applyPrecedence)
@@ -46,9 +48,12 @@ main = launchAff_ do
       void $ try do FS.rm' ("./assets/json/" <> filename <> ".json.gz") { force: false, maxRetries: 0, recursive: false, retryDelay: 0 }
       FS.writeTextFile UTF8 ("./assets/json/" <> filename <> ".json") $ J.stringify $ freezeTable dat
 
+  log $ show $ thingy
+
   process Show.lazyTop "show-parser-states"
   process CSS.selector_list "css-parser-states"
   process TMTTMT.declarationsP "tmttmt-parser-states"
   process TMTTMT.typeP "tmttmt-types-parser-states"
   process Languages.json "json-parser-states"
   process Languages.arithmetic "arithmetic-parser-states"
+  process Dhall.complete_dhall_file "dhall-parser-states"

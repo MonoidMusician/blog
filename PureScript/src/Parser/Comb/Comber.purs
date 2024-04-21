@@ -399,6 +399,10 @@ many :: forall a. String -> Comber a -> Comber (Array a)
 many n p = Array.fromFoldable <$> n #-> \more ->
   pure Nil <|> lift2 Cons p more
 
+foldMany :: forall m. Monoid m => String -> Comber m -> Comber m
+foldMany n p = fold <$> n #-> \more ->
+  pure Nil <|> lift2 Cons p more
+
 manyL :: forall a. String -> Comber a -> Comber (Array a)
 manyL n p = Array.reverse <<< Array.fromFoldable <$> n #-> \more ->
   pure Nil <|> lift2 (flip Cons) more p
@@ -417,6 +421,10 @@ manyBaseSepBy n b s p = map Array.fromFoldable $
 
 many1 :: forall a. String -> Comber a -> Comber (NonEmptyArray a)
 many1 n p = NEA.fromFoldable1 <$> n #-> \more ->
+  lift2 NEL.cons' p (pure Nil <|> NEL.toList <$> more)
+
+foldMany1 :: forall m. Semigroup m => String -> Comber m -> Comber m
+foldMany1 n p = NEL.fold1 <$> n #-> \more ->
   lift2 NEL.cons' p (pure Nil <|> NEL.toList <$> more)
 
 many1SepBy :: forall x a. String -> Comber x -> Comber a -> Comber (NonEmptyArray a)

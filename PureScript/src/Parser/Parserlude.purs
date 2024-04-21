@@ -43,8 +43,8 @@ import Data.Enum (class Enum, toEnum, fromEnum)
 import Data.Enum (class Enum, toEnum, fromEnum) as ReExports
 import Data.Filterable (class Filterable, filter, filterMap)
 import Data.Filterable (class Filterable, filter, filterMap) as ReExports
-import Data.Foldable (class Foldable, fold, foldMap, or, and, any, all, maximum, minimum, sum, product, oneOf, intercalate)
-import Data.Foldable (class Foldable, fold, foldMap, or, and, any, all, maximum, minimum, sum, product, oneOf, intercalate) as ReExports
+import Data.Foldable (class Foldable, fold, foldMap, or, and, any, all, maximum, minimum, sum, product, oneOf, oneOfMap, intercalate)
+import Data.Foldable (class Foldable, fold, foldMap, or, and, any, all, maximum, minimum, sum, product, oneOf, oneOfMap, intercalate) as ReExports
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.FunctorWithIndex (mapWithIndex) as ReExports
 import Data.HeytingAlgebra (tt, ff, implies)
