@@ -25,7 +25,20 @@ function loadStyle(new_choice, nowait) {
   }
   var src = "styles/bundled" + slug + ".css";
 
+  var loaded = false;
   function acknowledge() {
+    function finish_load() {
+      onLoadStyle(loadStyle)(new_choice);
+    }
+    // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/link#stylesheet_load_events
+    // Note: The load event fires once the stylesheet and all of its imported content has been loaded and parsed, and immediately before the styles start being applied to the content.
+    el.addEventListener("load", () => {
+      console.debug("Stylesheet loaded");
+      requestAnimationFrame(() => finish_load());
+    }, { once: true });
+    // load is not firing on chrome after initial load???
+    requestAnimationFrame(() => finish_load());
+
     if (!el.href.endsWith(src))
       el.href = src;
 
@@ -36,10 +49,6 @@ function loadStyle(new_choice, nowait) {
       document.head.appendChild(user_style);
     }
     if (user_style) user_style.textContent = style_choice['user'];
-
-    // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/link#stylesheet_load_events
-    // Note: The load event fires once the stylesheet and all of its imported content has been loaded and parsed, and immediately before the styles start being applied to the content.
-    el.addEventListener("load", () => requestAnimationFrame(() => onLoadStyle(loadStyle)(new_choice)), { once: true });
   }
   if (nowait) {
     acknowledge();
