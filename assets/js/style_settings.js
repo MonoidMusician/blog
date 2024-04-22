@@ -30,10 +30,10 @@ async function addStyleSettings() {
   title.appendChild(document.createTextNode(" "));
   title.appendChild(settings);
 }
-if (document.readyState === 'complete') {
+if (document.readyState === 'completed') {
   addStyleSettings();
 } else {
-  window.addEventListener('load', () => {
+  window.addEventListener('DOMContentLoaded', () => {
     addStyleSettings();
   });
 }

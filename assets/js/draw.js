@@ -1,3 +1,4 @@
+(function() {
 function nearer(color) {
   var [r,g,b] = [[1,3],[3,5],[5,7]].map(([i,j]) => parseInt(color.slice(i,j), 16));
   if ((r+g+b)/255 > 3/2) return '#fffff';
@@ -83,4 +84,5 @@ function loadPixelGraphs() {
       setTimeout(loadPixelGraphs, 15);
     });
   }
+})();
 })();

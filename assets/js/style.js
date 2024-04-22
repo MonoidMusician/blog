@@ -1,7 +1,19 @@
 function getStyle() {
   return JSON.parse(localStorage['style-choice'] || "{}");
 }
-function loadStyle(new_choice) {
+function onLoadStyle(fn) {
+  var fns = onLoadStyle.fns || (onLoadStyle.fns = []);
+  if (fn === loadStyle) {
+    return function(...args) {
+      for (let exec of fns) {
+        exec(...args);
+      }
+    }
+  } else {
+    fns.push(fn);
+  }
+}
+function loadStyle(new_choice, nowait) {
   var el =
     document.head.querySelector("link[href^='styles/bundled']")
     || document.head.appendChild(Object.assign(document.createElement("link"), {rel:"stylesheet"}));
@@ -12,15 +24,26 @@ function loadStyle(new_choice) {
     if (style_choice[option]) slug += "_" + option;
   }
   var src = "styles/bundled" + slug + ".css";
-  if (!el.href.endsWith(src))
-    el.href = src;
 
-  var user_style = document.head.querySelector('style.user-style');
-  if (style_choice['user'] && !user_style) {
-    user_style = document.createElement('style');
-    user_style.className = 'user-style';
-    document.head.appendChild(user_style);
+  function acknowledge() {
+    if (!el.href.endsWith(src))
+      el.href = src;
+
+    var user_style = document.head.querySelector('style.user-style');
+    if (style_choice['user'] && !user_style) {
+      user_style = document.createElement('style');
+      user_style.className = 'user-style';
+      document.head.appendChild(user_style);
+    }
+    if (user_style) user_style.textContent = style_choice['user'];
+
+    onLoadStyle(loadStyle)(new_choice);
   }
-  if (user_style) user_style.textContent = style_choice['user'];
+  if (nowait) {
+    acknowledge();
+  } else {
+    // Load it into the browser cache first, to avoid flashing?
+    fetch(src).then(r => r.text()).finally(acknowledge);
+  }
 }
-loadStyle();
+loadStyle(undefined, true);
