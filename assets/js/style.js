@@ -37,7 +37,9 @@ function loadStyle(new_choice, nowait) {
     }
     if (user_style) user_style.textContent = style_choice['user'];
 
-    onLoadStyle(loadStyle)(new_choice);
+    // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/link#stylesheet_load_events
+    // Note: The load event fires once the stylesheet and all of its imported content has been loaded and parsed, and immediately before the styles start being applied to the content.
+    el.addEventListener("load", () => requestAnimationFrame(() => onLoadStyle(loadStyle)(new_choice)), { once: true });
   }
   if (nowait) {
     acknowledge();
