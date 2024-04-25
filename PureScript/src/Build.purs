@@ -5,7 +5,9 @@ import Prelude
 import Data.Argonaut as J
 import Data.Array as Array
 import Data.DateTime.Instant (unInstant)
+import Data.Foldable (maximum, sum)
 import Data.Identity (Identity(..))
+import Data.Maybe (fromMaybe)
 import Data.Monoid (power)
 import Data.Newtype (un, unwrap)
 import Data.String as String
@@ -38,6 +40,9 @@ main = launchAff_ do
       -- log $ power "=" (String.length filename)
       -- log $ printGrammarWsn toAnsi parser
       let Comber (Comb info) = parser
+      let rules = Array.nub $ unwrap info.grammar
+      log $ append "Grammar breadth: " $ show $ Array.length rules
+      log $ append "Grammar depth: " $ show $ fromMaybe 0 $ maximum $ rules <#> _.rule >>> Array.length
       log $ show $ Array.nub $ info.entrypoints
       t0 <- liftEffect now
       let dat@{ states: States states } = fst $ parse' parser

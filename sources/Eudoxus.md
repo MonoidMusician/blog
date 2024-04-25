@@ -333,7 +333,7 @@ So the wiggle is clearly bounded.
 
 Having satisfied our curiosity that we have identified the necessary ingredients, letʼs finally define the actual mathematical object and the operations on it.
 
-The **Eudoxus real numbers** are **almost linear functions** but where two functions are considered the same when they have a **bounded difference**.
+The **Eudoxus real numbers** are **almost linear functions** but where two functions are considered the same when they have a **bounded difference**.^[In technical terms, this form of definition is known as a [*subquotient*](https://en.wikipedia.org/wiki/Subquotient) in type theory/category theory: it is a quotient (= set of equivalence classes) of a subobject (= subset).]
 
 - **Almost linear functions** have bounded wiggle, which is our name for the quantity $d_f(x_1, x_2) = f(x_1) + f(x_2) - f(x_1 + x_2)$.
   This property should make it possible to say this function has a slope!
@@ -504,7 +504,7 @@ However, once we prove that [multiplication is commutative], it doesnʼt matter 
 
 ### Multiplication is well-defined
 
-Thereʼs two aspects to show that the multiplication is well-defined: since weʼre dealing with subquotients, we need to show that the result satisfies the necessary property, and also that it respects the quotienting relation.
+Thereʼs two aspects to show that the multiplication is well-defined: since weʼre dealing with [subquotients](https://en.wikipedia.org/wiki/Subquotient), we need to show that the result satisfies the necessary property, and also that it respects the quotienting relation.
 
 #### Multiplication is almost-linear
 

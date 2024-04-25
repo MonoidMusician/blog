@@ -8,7 +8,7 @@ import Control.Plus (class Alt, class Plus, empty, (<|>))
 import Data.Array (head, length, splitAt, zipWith, (!!))
 import Data.Bifunctor (class Bifunctor, bimap, lmap)
 import Data.Compactable (class Compactable, compact, separateDefault)
-import Data.Either (Either(..), note)
+import Data.Either (Either(..), blush, hush, note)
 import Data.Functor.Contravariant (class Contravariant, cmap)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Lazy (Lazy)
@@ -20,6 +20,7 @@ import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\))
 import Parser.Comb.Syntax (Syntax(..))
+import Parser.Selective (class Casing, class Select, casingOn)
 import Parser.Types (CST(..), Fragment, Grammar, GrammarRule)
 import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Reference (unsafeRefEq)
@@ -278,6 +279,13 @@ instance heytingAlgebraComb :: HeytingAlgebra a => HeytingAlgebra (Comb rec err 
   disj = lift2 disj
   conj = lift2 conj
   implies = lift2 implies
+
+instance selectComb :: Select (Comb rec err prec nt cat o) where
+  select l r =
+    ((#) <$> compact (blush <$> l) <*> r) <|> compact (hush <$> l)
+
+instance casingComb :: Casing (Comb rec err prec nt cat o) where
+  caseTreeOn = casingOn
 
 -- | Matched a named rule against a CST, with codecs for each production.
 matchRule :: forall rec err nt o a. Ord nt => rec -> nt -> Array (CResultant rec err nt o a) -> CCST nt o -> Either (Array err) a

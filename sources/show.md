@@ -1,4 +1,4 @@
 tiny tool to reformat output produced by `show`{.haskell}.
 
-::: {.widget widget="Widget.Show" widget-loading="true"}
+::: {.widget widget="Widget.Show" widget-loading="true" style="display: contents"}
 :::

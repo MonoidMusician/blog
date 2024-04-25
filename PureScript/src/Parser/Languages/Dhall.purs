@@ -2,6 +2,7 @@ module Parser.Languages.Dhall where
 
 import Parser.Parserlude
 
+import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Int as Int
 import Data.Number as Math
@@ -217,7 +218,7 @@ http_raw = empty
   --   [ token "http://" <|> token "https://" -- TODO
   --   , opt (foldMany "userinfo" <> token "@")
   --   , oneOf
-  --     [ 
+  --     [
   --     ]
   --   ]
 
@@ -375,7 +376,7 @@ grammar = mutual \grammar@{ expression, import_expression } ->
           if w then whsp1 else whsp
           grammar.operator_expression
           in unit
-      in oneOf
+      in oneOf $ Array.takeEnd 1
         [ op 0 ["===", "\x2261"] false
         , op 1 ["?"] true
         , op 2 ["||"] false
@@ -436,7 +437,7 @@ grammar = mutual \grammar@{ expression, import_expression } ->
           ]
         in unit
       in unit
-  , primitive_expression: oneOf
+  , primitive_expression: oneOf $ Array.takeEnd 2
       [ void temporal_literal
       , void double_literal
       , void natural_literal

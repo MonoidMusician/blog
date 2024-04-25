@@ -3,25 +3,24 @@ module Parser.Printer.Types where
 import Prelude
 
 import Ansi.Codes (GraphicsParam)
-import Control.Alternative (guard)
+import Control.Alternative (class Alt, guard)
 import Control.Apply (lift3)
 import Control.Plus (empty, (<|>))
-import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Either (Either(..), either)
-import Data.Either.Nested (type (\/))
 import Data.Functor.App (App(..))
-import Data.Lens as O
-import Data.Maybe (Maybe, fromMaybe, isJust, maybe)
+import Data.Maybe (Maybe, isJust, maybe)
 import Data.Newtype (class Newtype, unwrap)
-import Data.Profunctor (class Profunctor, dimap, lcmap)
+import Data.Profunctor (class Profunctor, lcmap)
 import Data.These (These(..), these)
-import Data.Tuple (Tuple(..), fst, snd, uncurry)
-import Data.Tuple.Nested (type (/\), (/\))
+import Data.Tuple (Tuple(..), fst, snd)
+import Data.Tuple.Nested ((/\))
 import Dodo as Dodo
 import Parser.Comb as Comb
 import Parser.Comb.Comber (Comber, lift2)
 import Parser.Comb.Comber as Comber
-import Parser.Printer.Juxt (class Awajuxt, class Conjuxt, class Disjuxt, conjuxt0, conjuxt2, conjuxtR, disjuxt2)
+import Parser.Printer.Juxt (class Awajuxt, class Conjuxt, class Disjuxt, class GuideFlow, CaseTree(..), _Array, _NEA, casesSplit, cleaveCases, (!!!), (!>), (/!\), (<!), (\!/))
+import Parser.Selective (casingOn, hoistCaseTree)
 
 -- TODO: standard syntactic categories
 newtype Ann = Ann
@@ -46,6 +45,12 @@ derive instance profunctorPrinterParser :: Profunctor (PrinterParser ann)
 derive instance functorPrinterParser :: Functor (PrinterParser ann i)
 derive newtype instance semigroupPrinterParser :: Semigroup o => Semigroup (PrinterParser ann i o)
 derive newtype instance monoidPrinterParser :: Monoid o => Monoid (PrinterParser ann i o)
+
+printerParser :: forall ann i o. (i -> Dodo.Doc ann) -> Comber o -> PrinterParser ann i o
+printerParser printer parser = PrinterParser { printer, parser, parserPrinter: pure $ repro parser }
+
+printerParser' :: forall ann t. (t -> Dodo.Doc ann) -> Comber t -> PrinterParser ann t t
+printerParser' printer parser = PrinterParser { printer, parser, parserPrinter: pure $ parser <#> printer }
 
 instance conjuxtPrinterParser :: Conjuxt (PrinterParser ann) where
   conjuxt0 = mempty
@@ -75,11 +80,42 @@ instance awajuxtPrinterParser :: Awajuxt (PrinterParser ann) where
     , parser: Both <$> ux.parser <* sep.parser <*> vy.parser <|> This <$> ux.parser <|> That <$> vy.parser
     }
 
-printerParser :: forall ann i o. (i -> Dodo.Doc ann) -> Comber o -> PrinterParser ann i o
-printerParser printer parser = PrinterParser { printer, parser, parserPrinter: pure $ repro parser }
+instance guideFlowPrinterParser :: GuideFlow (PrinterParser ann) where
+  -- seljuxt (PrinterParser ux) (SelP vu (PrinterParser pv) cases) = PrinterParser
+  --   { printer: lcmap vu ux.printer <> pv.printer
+  --   , parserPrinter: empty
+  --   , parser: casingOn ux.parser (hoistCaseTree (unwrap >>> _.parser) cases)
+  --   }
+  -- branchCases (PrinterParser pij) (CasesSplit wuv jxy pixuz piyvz) = PrinterParser
+  --   { printer: wuv >>> ?help
+  --   , parserPrinter: empty
+  --   , parser: ?help (map jxy pij.parser)
+  --   }
+  branchCases (PrinterParser pij) cases = PrinterParser
+    { printer: wi >>> pij.printer
+    , parserPrinter: empty
+    , parser: casingOn pij.parser caseTree
+    }
+    where
+    Tuple wi caseTree = cleaveCases (TwoCases (casesSplit cases))
+      <#> hoistCaseTree (\(PrinterParser pp) -> pp.parser)
 
-printerParser' :: forall ann t. (t -> Dodo.Doc ann) -> Comber t -> PrinterParser ann t t
-printerParser' printer parser = PrinterParser { printer, parser, parserPrinter: pure $ parser <#> printer }
+instance applyPrinterParser :: Apply (PrinterParser ann i) where
+  apply (PrinterParser ux) (PrinterParser vy) = PrinterParser
+    { printer: ux.printer <> vy.printer
+    , parserPrinter: ux.parserPrinter <> vy.parserPrinter
+    , parser: ux.parser <*> vy.parser
+    }
+instance applicativePrinterParser :: Applicative (PrinterParser ann i) where
+  pure a = PrinterParser { printer: mempty, parserPrinter: mempty, parser: pure a }
+-- | Left-biased!
+instance altPrinterParser :: Alt (PrinterParser ann i) where
+  alt (PrinterParser ux) (PrinterParser vy) = PrinterParser
+    { printer: ux.printer
+    , parserPrinter: lift2 (<|>) ux.parserPrinter vy.parserPrinter
+    , parser: ux.parser <|> vy.parser
+    }
+
 
 -- | Reproduce the exact source string in the output
 -- TODO: parse newlines for Dodo printer ... what about indentation, idk
@@ -113,7 +149,7 @@ named name (PrinterParser pp) = PrinterParser pp
   }
 
 infixr 2 named as #:
-infixr 5 namedRec as #->
+infixr 8 namedRec as #->
 
 -- namedPrecRec :: forall ann i o. String -> (PrinterParser ann i o -> WithPrec Rational (PrinterParser ann i o)) -> PrinterParser ann i o
 -- namedPrecRec name mk = Comber <<< Comb.namedPrecRec name <<< coerce
@@ -122,22 +158,89 @@ infixr 5 namedRec as #->
 -- namedPrec name = Comber <<< Comb.namedPrec name <<< coerce
 
 manySepBy :: forall ann i o. String -> PrinterParser ann Unit Unit -> PrinterParser ann i o -> PrinterParser ann (Array i) (Array o)
-manySepBy n s p =
-  _arr $
-    -- idk, i just find it so annoying that the bad UX
-    -- is also harder to write, it is just so pointless,
-    -- have to do the `disjuxt2 conjuxt0 $ conjuxt2` dance
-    -- twice, ugh, it is not even bad cuz it is easy
-    disjuxt2 conjuxt0 $ conjuxt2 p $
-      n #-> \more -> _arr $
-        disjuxt2 conjuxt0 $ conjuxt2 (conjuxtR s p) more
-  where
-  _arr :: O.Iso (Array i) (Array o) (Unit \/ (i /\ Array i)) (Unit \/ (o /\ Array o))
-  _arr = dimap
-    do Array.uncons >>> maybe (Left unit) (Right <<< (Tuple <$> _.head <*> _.tail))
-    do either (const []) (uncurry Array.cons)
-  -- map Array.fromFoldable $
-  --   pure Nil <|> lift2 Cons p do
-  --     n #-> \more -> pure Nil <|> lift2 Cons (s *> p) more
+manySepBy name s p =
+  _Array
+  !!! pure unit
+  \!/ p /!\ many name (s !> p)
 
+many :: forall ann i o. String -> PrinterParser ann i o -> PrinterParser ann (Array i) (Array o)
+many name p = name #-> \more ->
+  _Array
+  !!! pure unit
+  \!/ p /!\ more
 
+many1 :: forall ann i o. String -> PrinterParser ann i o -> PrinterParser ann (NonEmptyArray i) (NonEmptyArray o)
+many1 name p =
+  _NEA
+  !!! p
+  /!\ many name p
+
+many_ :: forall ann i o. SepBy (PrinterParser ann Unit Unit) -> String -> PrinterParser ann i o -> PrinterParser ann (Array i) (Array o)
+many_ seps name p =
+  let { sep, base, before, after } = applySepBy seps in
+  _Array
+  !!! base
+  \!/ before !> p /!\ many name (sep !> p) <! after
+
+many1_ :: forall ann i o. SepBy1 (PrinterParser ann Unit Unit) -> String -> PrinterParser ann i o -> PrinterParser ann (NonEmptyArray i) (NonEmptyArray o)
+many1_ NoSep1 name p = many1 name p
+many1_ (SepBy1 h before after) name p =
+  _NEA
+  !!! applySepPref h before
+   !> p
+  /!\ many name (h !> p)
+  <!  applySepPref h after
+
+data SepBy h
+  = NoSep
+  | SepBy h SepPref SepPref SepPref
+  | BaseSepBy h h SepPref SepPref
+
+derive instance functorSepBy :: Functor SepBy
+
+data SepBy1 h
+  = NoSep1
+  | SepBy1 h SepPref SepPref
+
+derive instance functorSepBy1 :: Functor SepBy1
+
+data SepPref
+  = Require
+  | Prefer
+  | Allow
+  | None
+
+applySepPref :: forall f. Alt f => Applicative f => f Unit -> SepPref -> f Unit
+applySepPref s Require = s
+applySepPref s Prefer = s <|> pure unit
+applySepPref s Allow = pure unit <|> s
+applySepPref _ None = pure unit
+
+applySepBy ::
+  forall f.
+    Applicative f =>
+    Alt f =>
+  SepBy (f Unit) ->
+  { after :: f Unit
+  , base :: f Unit
+  , before :: f Unit
+  , sep :: f Unit
+  }
+applySepBy NoSep =
+  { sep: pure unit
+  , base: pure unit
+  , before: pure unit
+  , after: pure unit
+  }
+applySepBy (SepBy h base before after) =
+  { sep: h
+  , base: applySepPref h base
+  , before: applySepPref h before
+  , after: applySepPref h after
+  }
+applySepBy (BaseSepBy h base before after) =
+  { sep: h
+  , base: base
+  , before: applySepPref h before
+  , after: applySepPref h after
+  }

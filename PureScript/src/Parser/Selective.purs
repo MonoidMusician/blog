@@ -30,41 +30,41 @@ import Unsafe.Coerce (unsafeCoerce)
 --------------------------------------------------------------------------------
 
 
--- The basic `select` operation. It enables some static analysis and dynamic
--- runtime, but it does not capture exclusive choice.
+-- | The basic `select` operation. It enables some static analysis and dynamic
+-- | runtime, but it does not capture exclusive choice.
 --
--- You can recover `apply` as `select <<< map Left`.
+-- | You can recover `apply` as `select <<< map Left`.
 class (Functor f, Apply f) <= Select f where
   select :: forall a r. f (Either a r) -> f (a -> r) -> f r
 
--- Another way to express selective applicatives, with binary branching.
--- The left and right branches are clearly exclusive, only one needs to be taken
--- (though implementations are free to execute everything, as per `Select`).
--- The problem is that it loses exclusivity when stacked beyond the 2 cases
--- represented here. In fact, it is no better than `select` in general.
+-- | Another way to express selective applicatives, with binary branching.
+-- | The left and right branches are clearly exclusive, only one needs to be taken
+-- | (though implementations are free to execute everything, as per `Select`).
+-- | The problem is that it loses exclusivity when stacked beyond the 2 cases
+-- | represented here. In fact, it is no better than `select` in general.
 --
--- You can recover `select` with `branch`+`pure` (in two equivalent ways).
--- That is why I put `Applicative` as a superclass here: `Branching` is not
--- incredibly useful without `pure`.
+-- | You can recover `select` with `branch`+`pure` (in two equivalent ways).
+-- | That is why I put `Applicative` as a superclass here: `Branching` is not
+-- | incredibly useful without `pure`.
 class (Select f, Applicative f) <= Branching f where
   branch :: forall a b r. f (Either a b) -> f (a -> r) -> f (b -> r) -> f r
 
 
--- A type that represents combinators for case-matching like `branch` but for
--- arbitrary shapes.
+-- | A type that represents combinators for case-matching like `branch` but for
+-- | arbitrary shapes.
 --
--- Type parameters:
--- - `x f r`: shape of branches that will handle the data of type `i` on a
---   functor `f`, returning a result of type `r`.
--- - `i` for input: type of input data to these branches.
--- - `f` for functor: the selective functor we are looking at.
--- - `r` for return: the type of output from the branching computation
--- - `q` (universally quantified): arbitrary data, corresponding to other cases,
---   that are not handled here, that must be preserved.
+-- | Type parameters:
+-- | - `x f r`: shape of branches that will handle the data of type `i` on a
+-- |   functor `f`, returning a result of type `r`.
+-- | - `i` for input: type of input data to these branches.
+-- | - `f` for functor: the selective functor we are looking at.
+-- | - `r` for return: the type of output from the branching computation
+-- | - `q` (universally quantified): arbitrary data, corresponding to other cases,
+-- |   that are not handled here, that must be preserved.
 newtype Interpret x i f r = Interpret
   (forall q. f (Either i q) -> x f r -> f (Either q r))
 
--- `Interpret` is contravariant over `x` and `i`.
+-- | `Interpret` is contravariant over `x` and `i`.
 adapt ::
   forall x y i j f r.
     Functor f =>
@@ -73,17 +73,17 @@ adapt ::
   Interpret x i f r -> Interpret y j f r
 adapt yx ji (Interpret f) = Interpret \jq x -> f (lmap ji <$> jq) (yx x)
 
--- Magic up the right `Interpret` for `x` shape of cases on input `i`.
+-- | Magic up the right `Interpret` for `x` shape of cases on input `i`.
 class Interpreters x i | x -> i where
   interpreters :: forall f r. Select f => Interpret x i f r
   caseTree :: forall f r. Functor f => x f r -> CaseTree i f r
 
--- Static analysis via a monoid. Really it should be a semigroup, but we allowed
--- `Zero` into the picture.
+-- | Static analysis via a monoid. Really it should be a semigroup, but we allowed
+-- | `Zero` into the picture.
 class Analyze (x :: (Type -> Type) -> Type -> Type) where
   analyze :: forall f r m. Monoid m => (forall a. f a -> m) -> x f r -> m
 
--- Choose `q = Void`, since we have no more cases to handle
+-- | Choose `q = Void`, since we have no more cases to handle
 ap ::
   forall x i f r.
     Functor f =>
@@ -91,7 +91,7 @@ ap ::
   f i -> x f r -> f r
 ap (Interpret f) i x = f (Left <$> i) x <#> either absurd identity
 
--- Automatically build and apply the interpreters for the shape of `x`.
+-- | Automatically build and apply the interpreters for the shape of `x`.
 casingOn ::
   forall x i f r.
     Select f =>
@@ -100,7 +100,7 @@ casingOn ::
 casingOn = ap interpreters
 
 
--- We have a canonical choice for `x` -- a case tree in the following sense:
+-- | We have a canonical choice for `x` -- a case tree in the following sense:
 data CaseTree i f r
   = ZeroCases (i -> Void)
   | OneCase (f (i -> r))
@@ -111,17 +111,18 @@ instance functorCaseTree :: Functor f => Functor (CaseTree i f) where
   map f (OneCase fir) = OneCase (compose f <$> fir)
   map f (TwoCases cases) = TwoCases (map f cases)
 
--- `SplitCases i f r` is an existential of `CasesSplit a b i f r` over `a` and `b`
+-- | `SplitCases i f r` is an existential of `CasesSplit a b i f r` over
+-- | `a` and `b`, where `i` is to be thought of as `Either a b`.
 foreign import data SplitCases :: Type -> (Type -> Type) -> Type -> Type
 
 instance functorSplitCases :: Functor f => Functor (SplitCases i f) where
   map f xy = splitCases xy \cases -> casesSplit (map f cases)
 
--- Note that even though we are inserting an `fmap` here, we still know that
--- the left and right cases are exclusive, because of how the types line up!
--- The key is that we do not have to (and are not able to) map the output `r`
--- of each computation and feed it into another. It all is branched from the
--- input type and is up to the consumer to handle \~somehow\~.
+-- | Note that even though we are inserting an `fmap` here, we still know that
+-- | the left and right cases are exclusive, because of how the types line up!
+-- | The key is that we do not have to (and are not able to) map the output `r`
+-- | of each computation and feed it into another. It all is branched from the
+-- | input type and is up to the consumer to handle \~somehow\~.
 data CasesSplit a b i f r
   = CasesSplit (i -> Either a b) (CaseTree a f r) (CaseTree b f r)
 
@@ -141,8 +142,34 @@ twoCases ::
     CaseTree i f r
 twoCases f a b = TwoCases $ casesSplit $ CasesSplit f a b
 
--- One thing you can do is apply a `CaseTree` to a specific value of `i` to see
--- what branch it chooses. This lets you apply it via `>>=`.
+justTwoCases ::
+  forall a b i f r.
+    (i -> Either a b) ->
+    f (a -> r) ->
+    f (b -> r) ->
+    CaseTree i f r
+justTwoCases f a b = twoCases f (OneCase a) (OneCase b)
+
+twoLanes ::
+  forall a b i f l r.
+    Functor f =>
+    (i -> Either a b) ->
+    CaseTree a f l ->
+    CaseTree b f r ->
+    CaseTree i f (Either l r)
+twoLanes f a b = TwoCases $ casesSplit $ CasesSplit f (Left <$> a) (Right <$> b)
+
+justTwoLanes ::
+  forall a b i f l r.
+    Functor f =>
+    (i -> Either a b) ->
+    f (a -> l) ->
+    f (b -> r) ->
+    CaseTree i f (Either l r)
+justTwoLanes f a b = twoCases f (Left <$> OneCase a) (Right <$> OneCase b)
+
+-- | One thing you can do is apply a `CaseTree` to a specific value of `i` to see
+-- | what branch it chooses. This lets you apply it via `>>=`.
 applyCaseTree :: forall i f r. Functor f => CaseTree i f r -> i -> f r
 applyCaseTree (ZeroCases toVoid) i = absurd (toVoid i)
 applyCaseTree (OneCase fir) i = fir <@> i
@@ -152,8 +179,8 @@ applyCaseTree (TwoCases xy) ij =
       Left i -> applyCaseTree x i
       Right j -> applyCaseTree y j
 
--- The other way to apply it is via `<*>`, which means we do not get to skip
--- executing any branches.
+-- | The other way to apply it is via `<*>`, which means we do not get to skip
+-- | executing any branches.
 mergeCaseTree :: forall i f r. Applicative f => CaseTree i f r -> f (i -> r)
 mergeCaseTree (ZeroCases toVoid) = pure (absurd <<< toVoid)
 mergeCaseTree (OneCase fir) = fir
@@ -172,10 +199,10 @@ cmapCaseTree h (OneCase fir) = OneCase (lcmap h <$> fir)
 cmapCaseTree h (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
   twoCases (fg <<< h) x y
 
--- Remove `ZeroCases` (unless that is the whole tree). This does not left- or
--- right- associate the tree, which would be required for actually normalizing
--- the case tree per the monoid laws, but whatever. (I think that would sort of
--- tank performance? maybe?)
+-- | Remove `ZeroCases` (unless that is the whole tree). This does not left- or
+-- | right- associate the tree, which would be required for actually normalizing
+-- | the case tree per the monoid laws, but whatever. (I think that would sort of
+-- | tank performance? maybe?)
 normalizeCaseTree :: forall i f r. Functor f => CaseTree i f r -> CaseTree i f r
 normalizeCaseTree (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
   case normalizeCaseTree x, normalizeCaseTree y of

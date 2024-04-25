@@ -56,6 +56,7 @@ import Parser.Comb.Types (Associativity(..))
 import Parser.Comb.Types as CombT
 import Parser.Lexing (class ToString, type (~), FailReason(..), FailedStack(..), Rawr, Similar(..), toString, bestRegexOrString, errorName, len, userErrors)
 import Parser.Lexing (class ToString, type (~), Rawr) as ReExports
+import Parser.Selective (class Casing, class Select)
 import Parser.Types (OrEOF) as ReExports
 import Parser.Types (ShiftReduce(..), unShift)
 import Parser.Types as P
@@ -79,6 +80,8 @@ derive newtype instance altComber :: Alt Comber
 derive newtype instance plusComber :: Plus Comber
 derive newtype instance alternativeComber :: Alternative Comber
 derive newtype instance compactableComber :: Compactable Comber
+derive newtype instance selectComber :: Select Comber
+derive newtype instance casingComber :: Casing Comber
 derive newtype instance semigroupComber :: Semigroup a => Semigroup (Comber a)
 derive newtype instance monoidComber :: Monoid a => Monoid (Comber a)
 derive newtype instance heytingAlgebraComber :: HeytingAlgebra a => HeytingAlgebra (Comber a)

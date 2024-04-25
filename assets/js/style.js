@@ -25,7 +25,6 @@ function loadStyle(new_choice, nowait) {
   }
   var src = "styles/bundled" + slug + ".css";
 
-  var loaded = false;
   function acknowledge() {
     function finish_load() {
       onLoadStyle(loadStyle)(new_choice);
