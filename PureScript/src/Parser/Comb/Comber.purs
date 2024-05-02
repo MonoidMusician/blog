@@ -141,10 +141,28 @@ infixr 5 namedPrecRec as @->
 sourceOf :: forall a. Comber a -> Comber String
 sourceOf = over Comber Comb.sourceOf
 
+withSourceOf :: forall a. Comber a -> Comber (String /\ a)
+withSourceOf = over Comber Comb.withSourceOf
+
 -- | Return the source tokens parsed by the given parser, instead of whatever
 -- | its applicative result was.
 tokensSourceOf :: forall a. Comber a -> Comber (Array String)
 tokensSourceOf = over Comber Comb.tokensSourceOf
+
+withTokensSourceOf :: forall a. Comber a -> Comber (Array String /\ a)
+withTokensSourceOf = over Comber Comb.withTokensSourceOf
+
+
+piggyback ::
+  forall a b.
+  { pattern :: Comber a
+  , errors :: Array UserError
+  , name :: String
+  } ->
+  Comber b -> Comber b
+piggyback { errors, name, pattern } dataParser =
+  mapEither_ (lmap (\e -> errors <> [e])) $
+    withReparserFor name dataParser (sourceOf pattern) ($)
 
 topName :: String
 topName = "TOP"
@@ -391,6 +409,9 @@ withReparserFor name (Comber aux) (Comber body) f =
 
 mapEither :: forall a b. (a -> Either (Array UserError) b) -> Comber a -> Comber b
 mapEither f = over Comber $ Comb.mapEither f
+
+mapEither_ :: forall a b. (a -> Either (Array UserError) b) -> Comber a -> Comber b
+mapEither_ f = over Comber $ Comb.mapEither_ f
 
 --------------------------------------------------------------------------------
 

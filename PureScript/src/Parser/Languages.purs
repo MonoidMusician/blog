@@ -6,7 +6,6 @@ import Ansi.Codes as Ansi
 import Ansi.Output (withGraphics)
 import Data.Argonaut (Json)
 import Data.Argonaut as J
-import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Enum (toEnum)
 import Data.Foldable (fold, oneOf, traverse_)
@@ -21,7 +20,7 @@ import Effect (Effect)
 import Effect.Console (log)
 import Foreign.Object as Object
 import Idiolect ((<#?>), (<$?>), (>==))
-import Parser.Comb.Comber (Comber, arrayOf, delim, many, mapEither, named, namedRec, objectOf, parse', printGrammarWsn, printStateTable, rawr, toAnsi, token, tokenPrecL, tokenPrecR, withReparserFor, ws, wsws)
+import Parser.Comb.Comber (Comber, arrayOf, delim, many, named, namedRec, objectOf, parse', piggyback, printGrammarWsn, printStateTable, rawr, toAnsi, token, tokenPrecL, tokenPrecR, ws, wsws)
 import Parser.Debug (thingy)
 
 digit :: Comber Int
@@ -118,9 +117,11 @@ stringParser = join delim "\"" $
     ]
 
 string :: Comber String
-string = mapEither (lmap (\e -> ["Invalid string literal", e])) $
-  withReparserFor "string_parser" stringParser (rawr "\"([^\\\\\"]|\\\\.)*\"")
-    \parseString stringLiteral -> parseString stringLiteral
+string = piggyback
+  { pattern: rawr "\"([^\\\\\"]|\\\\.)*\""
+  , errors: ["Invalid string literal"]
+  , name: "string_parser"
+  } stringParser
 
 infixr 2 named as #:
 infixr 5 namedRec as #->

@@ -326,6 +326,17 @@ withCST' f (Comb c) = Comb c
     }
   }
 
+withCST'_ :: forall rec err prec nt cat o a b. (rec -> Array (CCST nt o) -> (Unit -> PartialResult err a) -> PartialResult err b) -> Comb rec err prec nt cat o a -> Comb rec err prec nt cat o b
+withCST'_ f (Comb c) = Comb c
+  { rules = c.rules <#> \r@{ resultant: Resultant { length, accepting, result } } -> r
+    { resultant = Resultant
+      { length
+      , accepting
+      , result: \rec csts -> f rec csts (\_  -> result rec csts)
+      }
+    }
+  }
+
 withCST_ :: forall rec err prec nt cat o a b. (rec -> Array (CCST nt o) -> (Unit -> PartialResult err a) -> b) -> Comb rec err prec nt cat o a -> Comb rec err prec nt cat o b
 withCST_ f (Comb c) = Comb c
   { rules = c.rules <#> \r@{ resultant: Resultant { length, result } } -> r
@@ -338,10 +349,21 @@ withCST_ f (Comb c) = Comb c
   }
 
 mapMaybe :: forall rec err prec nt cat o a b. (a -> Maybe b) -> Comb rec err prec nt cat o a -> Comb rec err prec nt cat o b
-mapMaybe f = mapEither $ note [unsafeCoerce "mapMaybe"] <<< f
+mapMaybe f = mapEither $ note [] <<< f
 
+-- | Soft rejection (prunes branches)
 mapEither :: forall rec err prec nt cat o a b. (a -> Either (Array err) b) -> Comb rec err prec nt cat o a -> Comb rec err prec nt cat o b
 mapEither f = withCST' \_ _ da -> case da unit of
+  Result a ->
+    case f a of
+      Left e -> Failed e
+      Right r -> Result r
+  Failed e -> Failed e
+  Partial -> Partial
+
+-- | Hard rejection (does not prune branches)
+mapEither_ :: forall rec err prec nt cat o a b. (a -> Either (Array err) b) -> Comb rec err prec nt cat o a -> Comb rec err prec nt cat o b
+mapEither_ f = withCST'_ \_ _ da -> case da unit of
   Result a ->
     case f a of
       Left e -> Failed e

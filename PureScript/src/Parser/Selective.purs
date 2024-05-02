@@ -7,6 +7,7 @@ import Control.Plus (class Plus, empty)
 import Data.Array (foldr)
 import Data.Array as Array
 import Data.Bifunctor (bimap, lmap)
+import Data.Distributive (class Distributive, distribute)
 import Data.Either (Either(..), either)
 import Data.Enum (class BoundedEnum, enumFromTo)
 import Data.Profunctor (class Profunctor, dimap, lcmap)
@@ -193,6 +194,12 @@ hoistCaseTree h (OneCase fir) = OneCase (h fir)
 hoistCaseTree h (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
   twoCases fg (hoistCaseTree h x) (hoistCaseTree h y)
 
+hoistCaseTree' :: forall i f g h r. Functor g => Functor h => (forall a. f a -> g (h a)) -> CaseTree i f r -> CaseTree i g (h r)
+hoistCaseTree' _ (ZeroCases toVoid) = ZeroCases toVoid
+hoistCaseTree' h (OneCase fir) = OneCase (distribute <$> (h fir))
+hoistCaseTree' h (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
+  twoCases fg (hoistCaseTree' h x) (hoistCaseTree' h y)
+
 cmapCaseTree :: forall i j f r. Functor f => (j -> i) -> CaseTree i f r -> CaseTree j f r
 cmapCaseTree h (ZeroCases toVoid) = ZeroCases (toVoid <<< h)
 cmapCaseTree h (OneCase fir) = OneCase (lcmap h <$> fir)
@@ -290,7 +297,7 @@ class Casing f where
 
 
 --------------------------------------------------------------------------------
--- Define some specific shapes of cases:                                        --
+-- Define some specific shapes of cases:                                      --
 --------------------------------------------------------------------------------
 
 data Zero :: (Type -> Type) -> Type -> Type

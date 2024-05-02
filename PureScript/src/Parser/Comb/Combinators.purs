@@ -15,7 +15,7 @@ import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Idiolect ((>==))
 import Parser.Comb.Syntax (Syntax(..))
-import Parser.Comb.Types (Associativity(..), Comb(..), Options(..), Resultant(..), component, components, matchRule, withCST_)
+import Parser.Comb.Types (Associativity(..), Comb(..), Options(..), Resultant(..), component, components, matchRule, withCST', withCST_)
 import Parser.Lexing (class ToString, class Token, type (~), Rawr, Similar(..), rawr, rerecognize, toString)
 import Parser.Types (CST(..), Grammar(..), Part(..), sourceCST)
 
@@ -182,3 +182,12 @@ sourceOf = tokensSourceOf >== fold
 -- | its applicative result was.
 tokensSourceOf :: forall rec err prec nt cat o a. Comb rec err prec nt cat o a -> Comb rec err prec nt cat o (Array o)
 tokensSourceOf = withCST_ \_ csts _ -> csts >>= sourceCST
+
+withSourceOf :: forall rec err prec nt cat o a. Monoid o => Comb rec err prec nt cat o a -> Comb rec err prec nt cat o (o /\ a)
+withSourceOf = withTokensSourceOf >== lmap fold
+
+-- | Return the source tokens parsed by the given parser, instead of whatever
+-- | its applicative result was.
+withTokensSourceOf :: forall rec err prec nt cat o a. Comb rec err prec nt cat o a -> Comb rec err prec nt cat o (Array o /\ a)
+withTokensSourceOf = withCST' \_ csts res -> res unit <#> \a ->
+  Tuple (csts >>= sourceCST) a

@@ -10,6 +10,7 @@ import Data.Either (Either(..), blush, either, hush)
 import Data.Either.Nested (type (\/))
 import Data.Function (applyFlipped)
 import Data.Generic.Rep as G
+import Data.Int as Int
 import Data.Lens (Iso, Iso', review, view)
 import Data.Lens as O
 import Data.List (List)
@@ -50,6 +51,11 @@ infixr 6 applyFlipped as /!
 infixr 6 conjuxtSep2Flipped as !\
 infixr 6 awajuxtSep2Flipped as !/
 
+-- For annotating precedence *on rules*
+-- infixr 5 disjuxt2Prec as \:
+-- infixr 6 Tuple as :/
+-- For annotating precedence *on tokens* (in rules)
+-- pre1 /!\ pre2 /: prec :- token :\ post1 /!\ post2
 
 dimapConst :: forall p u v x y. Profunctor p => u -> y -> p u x -> p v y
 dimapConst f g = dimap (const f) (const g)
@@ -510,6 +516,12 @@ _NEL :: forall i o. O.Iso (NonEmptyList i) (NonEmptyList o) (i /\ List i) (o /\ 
 _NEL = dimap
   do NEL.uncons >>> (Tuple <$> _.head <*> _.tail)
   do uncurry NEL.cons'
+
+-- Other
+
+_IntNumber :: O.Iso' Number (Either Int Number)
+_IntNumber = dimap (\n -> maybe (Right n) Left $ Int.fromNumber n) (either Int.toNumber identity)
+
 
 -- Generic
 
