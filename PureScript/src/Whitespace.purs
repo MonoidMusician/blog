@@ -3,9 +3,12 @@ module Whitespace where
 import Prelude
 
 import Data.HeytingAlgebra (ff, tt)
+import Data.Lens as O
 import Data.Monoid.Conj (Conj(..))
 import Data.Monoid.Disj (Disj(..))
+import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\))
+import Dodo as Dodo
 import Safe.Coerce (coerce)
 
 -- | whitespace can be:
@@ -77,6 +80,8 @@ wsProps = coerce <<< case _ of
 
 data RenderWS = NoWS | Space | SoftBreak | SpaceBreak | Break
 
+instance monoidRenderWS :: Monoid RenderWS where
+  mempty = NoWS
 instance semigroupRenderWS :: Semigroup RenderWS where
   -- identity
   append NoWS a = a
@@ -106,6 +111,46 @@ wsRender (BreakPreferred _) = Break
 wsRender (RequireSpace _) = Space
 wsRender RequireSpaceBreak = SpaceBreak
 wsRender (RequireNewline _) = Break
+
+toDoc :: forall ann. RenderWS -> Dodo.Doc ann
+toDoc = case _ of
+  NoWS -> mempty
+  Space -> Dodo.space
+  SoftBreak -> Dodo.softBreak
+  SpaceBreak -> Dodo.spaceBreak
+  Break -> Dodo.break
+data WSDoc ann
+  = JustWS RenderWS
+  | WSDoc
+    { before :: RenderWS
+    , doc :: Dodo.Doc ann
+    , after :: RenderWS
+    }
+derive instance functorWSDoc :: Functor WSDoc
+instance monoidWSDoc :: Monoid (WSDoc ann) where
+  mempty = JustWS mempty
+instance semigroupWSDoc :: Semigroup (WSDoc ann) where
+  append (JustWS w1) (JustWS w2) = JustWS (w1 <> w2)
+  append (JustWS w1) (WSDoc d2) = WSDoc d2 { before = w1 <> d2.before }
+  append (WSDoc d1) (JustWS w2) = WSDoc d1 { after = d1.after <> w2 }
+  append (WSDoc d1) (WSDoc d2) = WSDoc
+    { before: d1.before
+    , doc: d1.doc <> toDoc (d1.after <> d2.before) <> d2.doc
+    , after: d2.after
+    }
+
+-- Not quite a lawful lens
+_wsDoc :: forall ann ann'. O.Lens (WSDoc ann) (WSDoc ann') (Dodo.Doc ann) (Dodo.Doc ann')
+_wsDoc = O.lens' case _ of
+  JustWS ws -> Tuple mempty (const (JustWS ws))
+  WSDoc d -> Tuple d.doc \doc ->
+    if Dodo.isEmpty doc
+      then JustWS (d.before <> d.after)
+      else WSDoc d { doc = doc }
+
+docWS :: forall ann. Dodo.Doc ann -> WSDoc ann
+docWS doc | Dodo.isEmpty doc = mempty
+docWS doc = WSDoc { before: mempty, doc, after: mempty }
 
 fromStuff ::
   { allowed_newline :: Conj Boolean

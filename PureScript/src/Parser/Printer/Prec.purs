@@ -2,82 +2,7 @@ module Parser.Printer.Prec where
 
 import Prelude
 
-import Control.Apply (lift2, lift3)
-import Data.Array.NonEmpty as NEA
-import Effect (Effect)
-import Effect.Console (log)
-import Test.QuickCheck (quickCheck')
-import Test.QuickCheck.Gen (Gen)
-import Test.QuickCheck.Gen as Gen
-
-genPrec :: Gen (Prec Boolean)
-genPrec = Gen.oneOf $ NEA.cons' (pure NoPrec)
-  [ pure AnyPrec
-  , pure DiffPrec
-  , Prec <$> Gen.enum
-  , MTPrec <$> Gen.enum
-  ]
-
-main :: Effect Unit
-main = checkSemiringGen genPrec
-
-checkSemiringGen
-  ∷ ∀ a
-  . Semiring a
-  ⇒ Eq a
-  ⇒ Gen a
-  → Effect Unit
-checkSemiringGen gen = do
-  let amt = 100000
-  log "Checking 'Associativity' law for Semiring addition"
-  quickCheck' amt $ lift3 associativeAddition gen gen gen
-
-  log "Checking 'Identity' law for Semiring addition"
-  quickCheck' amt $ identityAddition <$> gen
-
-  log "Checking 'Commutative' law for Semiring addition"
-  quickCheck' amt $ lift2 commutativeAddition gen gen
-
-  log "Checking 'Associativity' law for Semiring multiplication"
-  quickCheck' amt $ lift3 associativeMultiplication gen gen gen
-
-  log "Checking 'Identity' law for Semiring multiplication"
-  quickCheck' amt $ identityMultiplication <$> gen
-
-  log "Checking 'Left distribution' law for Semiring"
-  quickCheck' amt $ lift3 leftDistribution gen gen gen
-
-  log "Checking 'Right distribution' law for Semiring"
-  quickCheck' amt $ lift3 rightDistribution gen gen gen
-
-  log "Checking 'Annihilation' law for Semiring"
-  quickCheck' amt $ annihiliation <$> gen
-
-  where
-
-  associativeAddition ∷ a → a → a → Boolean
-  associativeAddition a b c = (a + b) + c == a + (b + c)
-
-  identityAddition ∷ a → Boolean
-  identityAddition a = (zero + a == a) && (a + zero == a)
-
-  commutativeAddition ∷ a → a → Boolean
-  commutativeAddition a b = a + b == b + a
-
-  associativeMultiplication ∷ a → a → a → Boolean
-  associativeMultiplication a b c = (a * b) * c == a * (b * c)
-
-  identityMultiplication ∷ a → Boolean
-  identityMultiplication a = (one * a == a) && (a * one == a)
-
-  leftDistribution ∷ a → a → a → Boolean
-  leftDistribution a b c = a * (b + c) == (a * b) + (a * c)
-
-  rightDistribution ∷ a → a → a → Boolean
-  rightDistribution a b c = (a + b) * c == (a * c) + (b * c)
-
-  annihiliation ∷ a → Boolean
-  annihiliation a = (a * zero == zero) && (zero * a == zero)
+import Data.Maybe (Maybe(..))
 
 data Prec v
   = NoPrec
@@ -85,6 +10,10 @@ data Prec v
   | DiffPrec
   | Prec v
   | MTPrec v
+
+unPrec :: forall v. Prec v -> Maybe v
+unPrec (Prec v) = Just v
+unPrec _ = Nothing -- yes, MTPrec does not count
 
 derive instance eqPrec :: Eq v => Eq (Prec v)
 

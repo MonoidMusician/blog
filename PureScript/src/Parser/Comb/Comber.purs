@@ -48,7 +48,7 @@ import Idiolect (intercalateMap)
 import Parser.Comb (Comb(..), execute)
 import Parser.Comb as Comb
 import Parser.Comb.Codec (stateTableCodec)
-import Parser.Comb.Combinators (WithPrec, buildTree, namedRec')
+import Parser.Comb.Combinators (buildTree, namedRec')
 import Parser.Comb.Run (gatherPrecedences, resultantsOf)
 import Parser.Comb.Run as CombR
 import Parser.Comb.Syntax (printSyntax')
@@ -122,19 +122,8 @@ named name = Comber <<< Comb.named name <<< coerce
 infixr 2 named as #:
 infixr 5 namedRec as #->
 
--- | Give each rule a precedence, for determining shift-reduce and reduce-reduce
--- | conflicts.
-namedPrecRec :: forall a. String -> (Comber a -> WithPrec Rational (Comber a)) -> Comber a
-namedPrecRec name = Comber <<< Comb.namedPrecRec name <<< coerce
-
--- | Give each rule a precedence, for determining shift-reduce and reduce-reduce
--- | conflicts.
-namedPrec :: forall a. String -> WithPrec Rational (Comber a) -> Comber a
-namedPrec name = Comber <<< Comb.namedPrec name <<< coerce
-
-infixr 2 namedPrec as @:
-infixr 5 namedPrecRec as @->
-
+rulePrec :: forall a. Rational -> Comber a -> Comber a
+rulePrec = over Comber <<< Comb.rulePrec
 
 -- | Return the source parsed by the given parser, instead of whatever its
 -- | applicative result was.

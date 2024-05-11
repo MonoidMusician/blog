@@ -13,6 +13,7 @@ import Data.Functor.Contravariant (class Contravariant, cmap)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Lazy (Lazy)
 import Data.Maybe (Maybe(..))
+import Data.Maybe.Last (Last(..))
 import Data.Newtype (class Newtype, over)
 import Data.Profunctor (class Profunctor, dimap, lcmap)
 import Data.String (CodePoint)
@@ -27,6 +28,7 @@ import Unsafe.Reference (unsafeRefEq)
 import Util (memoizeEq)
 
 data Associativity = AssocL | AssocR | NoAssoc
+derive instance eqAssociativity :: Eq Associativity
 
 type CSyntax = Syntax
 type CGrammar prec nt cat = Grammar nt (Maybe prec /\ Int) cat
@@ -86,6 +88,7 @@ newtype Comb rec err prec nt cat o a = Comb
     -- The only part that deals with the parser result type `a`, essentially
     -- a codec for deserializing CSTs into application types.
     , resultant :: CResultant rec err nt o a
+    , prec :: Last prec
     }
   }
 type Combs = Comb Unit String Int CodePoint CodePoint
@@ -227,6 +230,7 @@ instance applyComb :: Apply (Comb rec err prec nt cat o) where
         in
           { rule: x.rule <|> y.rule
           , resultant: x.resultant <*> y.resultant
+          , prec: x.prec <> y.prec
           }
     }
 instance applicativeComb :: Applicative (Comb rec err prec nt cat o) where
@@ -239,6 +243,7 @@ instance applicativeComb :: Applicative (Comb rec err prec nt cat o) where
     , rules: pure
       { rule: empty
       , resultant: pure a
+      , prec: mempty
       }
     }
 instance altComb :: Alt (Comb rec err prec nt cat o) where

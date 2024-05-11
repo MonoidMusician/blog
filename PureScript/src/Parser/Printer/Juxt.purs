@@ -299,7 +299,7 @@ awajuxtSepsN = awajuxtSepsCons disjuxt0 conjuxt0
 
 -- Selective!!!
 
-infixl 2 guideFlow as ???
+infixl 2 conduct as ???
 infixr 3 twoLanes as ///
 
 twoLanes ::
@@ -314,8 +314,8 @@ twoLanes l r = twoCases identity identity (caseTreeL l) (caseTreeR r)
 class Conjuxt p <= GuideFlow p where
   branchCases :: forall i j u x v y w z. p i j -> CasesSplit p i j u x v y w z -> p w z
 
-guideFlow :: forall p u v x y. GuideFlow p => p u x -> CaseTree p u x v y -> p v y
-guideFlow pux = case _ of
+conduct :: forall p u v x y. GuideFlow p => p u x -> CaseTree p u x v y -> p v y
+conduct pux = case _ of
   ZeroCases vu x -> dimap vu (x >>> absurd) pux
   OneCase vu pvxy ->
     (vu &&& identity) >$<$> uncurry (#)
@@ -406,6 +406,14 @@ cleaveCases = case _ of
       in Tuple (wuv >>> either ui vi) $ Sel.twoCases jxy xz yz
 
 derive instance profunctorCaseTree :: Profunctor p => Profunctor (CaseTree p u x)
+
+summarizeCaseTree :: forall p u v x y m. Monoid m => (forall i j. p i j -> m) -> CaseTree p u x v y -> m
+summarizeCaseTree f = case _ of
+  ZeroCases _ _ -> mempty
+  OneCase _ pxy -> f pxy
+  TwoCases cases -> splitCases cases
+    \(CasesSplit _ _ pixuz piyvz) ->
+      summarizeCaseTree f pixuz <> summarizeCaseTree f piyvz
 
 -- | `SplitCases p i j w z` is an existential of `CasesSplit i u v w p j x y z`
 -- | over `u`, `v`, `x` and `y`.

@@ -7,9 +7,11 @@ import Control.Plus (class Plus, empty)
 import Data.Array (foldr)
 import Data.Array as Array
 import Data.Bifunctor (bimap, lmap)
+import Data.Const (Const(..))
 import Data.Distributive (class Distributive, distribute)
 import Data.Either (Either(..), either)
 import Data.Enum (class BoundedEnum, enumFromTo)
+import Data.Newtype (unwrap)
 import Data.Profunctor (class Profunctor, dimap, lcmap)
 import Data.Profunctor.Choice (class Choice, left, right)
 import Data.Profunctor.Strong (class Strong, first, second)
@@ -200,11 +202,20 @@ hoistCaseTree' h (OneCase fir) = OneCase (distribute <$> (h fir))
 hoistCaseTree' h (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
   twoCases fg (hoistCaseTree' h x) (hoistCaseTree' h y)
 
+traverseCaseTree :: forall i f g h r. Applicative g => Functor h => (forall a. f a -> g (h a)) -> CaseTree i f r -> g (CaseTree i h r)
+traverseCaseTree _ (ZeroCases toVoid) = pure (ZeroCases toVoid)
+traverseCaseTree h (OneCase fir) = OneCase <$> h fir
+traverseCaseTree h (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
+  twoCases fg <$> traverseCaseTree h x <*> traverseCaseTree h y
+
 cmapCaseTree :: forall i j f r. Functor f => (j -> i) -> CaseTree i f r -> CaseTree j f r
 cmapCaseTree h (ZeroCases toVoid) = ZeroCases (toVoid <<< h)
 cmapCaseTree h (OneCase fir) = OneCase (lcmap h <$> fir)
 cmapCaseTree h (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
   twoCases (fg <<< h) x y
+
+summarizeCaseTree :: forall i f r m. Monoid m => (forall a. f a -> m) -> CaseTree i f r -> m
+summarizeCaseTree f = hoistCaseTree (\fa -> Const (f fa)) >>> mergeCaseTree >>> unwrap
 
 -- | Remove `ZeroCases` (unless that is the whole tree). This does not left- or
 -- | right- associate the tree, which would be required for actually normalizing
