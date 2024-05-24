@@ -214,6 +214,7 @@ There are two main directions we can go from here, and they are both orthogonal 
 So we typically see that a multiset is defined as a quotient of a list, and a finite set is defined as a subtype of a multiset (one needs to prove that the property of having no duplicates respects the lack of order of the multiset, of course). And of course, `length` respects the quotient types, so with some (justified) abuse of notation we will use it for all these types.
 
 But, regardless of the particular definitions, we can see that these types mirror the kinds of questions we were asking about with combinatorics:
+
 - Lists of fixed length `n : ℕ` with elements in `t : Type` (often called vectors) are counted by `|t|^n`
 - Lists of fixed length `n : ℕ` with elements in `t : Type` without duplicates (perhaps called distinct vectors) are counted by `P |t| n`
 - Sets of fixed length `n : ℕ` with elements in `t : Type` are counted by `C |t| n`
@@ -255,6 +256,7 @@ def numerator : Type :=
 ```
 
 Instead, letʼs use our intuition, like we do for classic combinatorics: what information do we need to characterize this type of arrangement?
+
 - We need 4 different birthdays, one for the twins, two for the triplets, and another for the quadruplet: call it `(A,B1,B2,C) : fin 4 ↪︎ fin 365` (we can consider it a 4-tuple, with distinct entries), where `|fin 4 ↪︎ fin 365| = P 365 4`
 - We need to pick 2 people to be the twins: call it `a : fin 2 ↬ fin 100`, where `|fin 2 ↬ fin 100| = C 100 2`
 - We need to pick 3 different people to be the first triplets: call it `b1 : fin 3 ↬ fin 98`, where `|fin 3 ↬ fin 98| = C 98 3`
