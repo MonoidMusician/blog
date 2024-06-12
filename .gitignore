@@ -16,4 +16,4 @@ output-es/
 /static/
 /rendered/
 /assets/json/
-
+/dist-newstyle/

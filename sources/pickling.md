@@ -452,7 +452,7 @@ You would then output code that reconstructs an object incrementally, by adding 
 The cool thing is that you can do it all with `const`{.javascript}!
 You donʼt need mutability at the variable level, you can (and should) do it all at the mutable value level.
 
-The algorithm I decscribed can do this for data that is simple in structure, but complicated in terms of references, and with extensions it could handle more things (like regular expressions would be easy to add, `undefined`{.javascript} would be trivial).
+The algorithm I described can do this for data that is simple in structure, but complicated in terms of references, and with extensions it could handle more things (like regular expressions would be easy to add, `undefined`{.javascript} would be trivial).
 Actually, it is funny – it would also need to be extended to handle sparse arrays, and all of these little details tell you about how simplified JSON is from the actual data model of JavaScript.
 
 This would give you your own faithful, accurate slice of the runtime heap as viewed from the perspective of one objectʼs watershed of references.
