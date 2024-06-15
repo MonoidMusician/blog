@@ -13,6 +13,11 @@ import Data.These (These(..))
 import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\))
+import Effect.Uncurried (EffectFn1)
+
+-- | it's an arrow! that does! stuff!
+infixr 1 type EffectFn1 as -!>
+
 
 morph :: forall f g b. Foldable f => Plus g => Applicative g => f b -> g b
 morph = oneOfMap pure
