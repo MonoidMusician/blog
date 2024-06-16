@@ -50,3 +50,49 @@ that's the basic lay of the land, next i'll figure out what contributions i want
 - and I want better interfaces in general … it would be great to have a high-level interface to “what is the size of the DOM element”, as opposed to working out the APIs and the math for that from scratch every time 🫠
 - better state management, better APIs / easier patterns for abstraction\
 - hopefully SSR won't be too complicated (importantly: I know the trick for serializing fragments)
+
+-----
+
+the big problem I want to solve is this:
+
+```haskell
+let
+  source :: Event Int = ...
+
+  addSelf = (+) <$> source <*> source
+```
+
+if `source` emits `1, 2, 4`, what does `addSelf` emit?
+
+<details>
+
+<summary>Spoiler</summary>
+
+`addSelf` actually emits, uhh,
+
+`2, 3, 4, 6, 8`
+
+because it receives separate left and right events:
+
+```js
+receive 1 on left  -> nothing on right yet, so no output
+receive 1 on right -> emit 1+1 = 2
+receive 2 on left  -> emit 2+1 = 3
+receive 2 on right -> emit 2+2 = 4
+receive 4 on left  -> emit 4+2 = 6
+receive 4 on right -> emit 4+4 = 8
+```
+
+</details>
+
+so my idea is that `source` needs to have two phases: first it pushes data through the graph, so that `addSelf` knows that it will see `2` on both sides, and then it will commit that data, so it will emit `2+2 = 4` without emitting `2+1 = 3`
+
+so I guess what that means is:
+
+- `addSelf` knows that both left and right depend on `source` (this is tracked by IDs)
+- `source` sends a data event to all subscribers, `addSelf` then sees two of them
+- `addSelf` could update here, upon seeing the second data event … but it isn't always guaranteed to see that (if the right hand side has a filter or something)
+- `source` now sends a commit event to all subscribers, `addSelf` sees two of them, it can also emit on either of them … (filters will always forward commit events through)
+
+basically I want every external event that feeds into it to act as a transaction on the whole FRP graph at once, instead of propagating piecemeal through it.
+it should only result in one output event (unless more were explicitly introduced).
