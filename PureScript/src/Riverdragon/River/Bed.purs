@@ -8,6 +8,10 @@ import Control.Monad.ST.Internal as STR
 import Control.Monad.ST.Internal as STRef
 import Data.Array as Array
 import Data.Array.ST as STA
+import Data.FoldableWithIndex (traverseWithIndex_)
+import Data.List as List
+import Data.Map (Map)
+import Data.Map as Map
 import Data.Maybe (Maybe(..), isNothing)
 import Data.Newtype (class Newtype, unwrap)
 import Data.Profunctor (class Profunctor)
@@ -58,6 +62,8 @@ derive newtype instance monoidAllocateFrom :: Monoid b => Monoid (AllocateFrom a
 unsafeAllocateFrom :: forall a b. AllocateFrom a b -> a -> b
 unsafeAllocateFrom (AllocateFrom f) i = unsafePerformEffect (runEffectFn1 f i)
 
+-- | Promise that you could have allocated the resources ahead of time, though
+-- | it is more convenient/efficient to do it lazily.
 allocLazy :: forall i o. Allocar (i -&> o) -> Allocar (i -> o)
 allocLazy = map unsafeAllocateFrom
 
@@ -84,6 +90,8 @@ globalId = unsafeAllocate freshId
 whenMM :: forall m a. Monad m => Monoid a => m Boolean -> m a -> m a
 whenMM c e = c >>= if _ then e else pure mempty
 
+whenRef :: forall s m a. MonadST s m => STRef.STRef s a -> (a -> Boolean) -> m Unit -> m Unit
+whenRef ref pred = whenM (pred <$> liftST (STRef.read ref))
 
 
 -- | Cleanup means it only runs once!
@@ -94,13 +102,11 @@ cleanup' :: Allocar Unit -> Allocar
   }
 cleanup' act = do
   needsToRun <- liftST do STR.new true
-  let
-    shouldRun = liftST do STR.read needsToRun
   pure
-    { cleanup: whenM shouldRun do
+    { cleanup: whenRef needsToRun identity do
         _ <- liftST do STR.write false needsToRun
         act
-    , running: shouldRun
+    , running: liftST do STR.read needsToRun
     , runningE: liftST do STR.read needsToRun
     }
 
@@ -190,7 +196,7 @@ eventListener { eventType, eventPhase, eventTarget } = coerce do
 -- | Allocate an accumulator, that always adds in from the monoid. Useful for
 -- | accumulating cleanup procedures, for example.
 accumulator :: forall m. Monoid m => Allocar { read :: Allocar m, put :: m -&> Unit, reset :: Allocar m }
-accumulator = liftST (STRef.new mempty) <#> \acc -> do
+accumulator = liftST (STRef.new mempty) <#> \acc ->
   { read: liftST do STRef.read acc
   , reset: liftST do STRef.read acc <* STRef.write mempty acc
   , put: AllocateFrom do
@@ -199,7 +205,49 @@ accumulator = liftST (STRef.new mempty) <#> \acc -> do
         pure unit
   }
 
+ordMap :: forall k v. Ord k => Allocar
+  { read :: Allocar (Map k v)
+  , set :: k -> v -> Allocar (Maybe v)
+  , get :: k -> Allocar (Maybe v)
+  , remove :: k -> Allocar (Maybe v)
+  , traverse :: (k -> v -> Allocar Unit) -> Allocar Unit
+  , onKey :: k -> (v -> Allocar Unit) -> Allocar Unit
+  , reset :: Allocar (Map k v)
+  -- , destroy :: Allocar (Map k v)
+  }
+ordMap = liftST (STRef.new Map.empty) <#> \ref ->
+  { read: liftST do STRef.read ref
+  , set: \k v -> liftST do STRef.modify' (\m -> { value: Map.lookup k m, state: Map.insert k v m }) ref
+  , get: \k -> liftST do Map.lookup k <$> STRef.read ref
+  , remove: \k -> liftST do STRef.modify' (\m -> { value: Map.lookup k m, state: Map.delete k m }) ref
+  , traverse: \f -> (liftST do STRef.read ref) >>= traverseWithIndex_ f
+  , onKey: \k f -> do
+      mv <- liftST do Map.lookup k <$> STRef.read ref
+      case mv of
+        Just v -> f v
+        Nothing -> pure unit
+  , reset: liftST do STRef.modify' (\value -> { value, state: Map.empty }) ref
+  }
 
+
+-- | Only run it on the nth time.
+threshold :: Int -> Allocar Unit -> Allocar (Allocar Unit)
+threshold n act = liftST (STRef.new n) <#> \count -> do
+  _ <- liftST do STRef.modify (_ - 1) count
+  whenRef count (eq 0) act
+
+-- | A push array, stored using a snoc list under the hood.
+pushArray :: forall a. Allocar
+  { read :: Allocar (Array a)
+  , push :: a -> Allocar Unit
+  , reset :: Allocar (Array a)
+  -- , destroy :: Allocar (Array a)
+  }
+pushArray = liftST (STRef.new List.Nil) <#> \acc ->
+  { read: Array.reverse <<< List.toUnfoldable <$> liftST (STRef.read acc)
+  , push: \a -> void $ liftST (STRef.modify (List.Cons a) acc)
+  , reset: Array.reverse <<< List.toUnfoldable <$> liftST (STRef.read acc <* STRef.write List.Nil acc)
+  }
 
 -- prealloc :: forall a. a -> Allocar { get :: Allocar a, set :: a -&> Unit }
 -- prealloc default = do
