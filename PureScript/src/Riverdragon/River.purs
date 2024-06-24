@@ -23,21 +23,21 @@ type Id = Int
 -- | Transactions, especially for event deduplication (DAG).
 -- | Actor model? “I changed” vs “you changed”?
 -- | Errors/stream cancelation like RxJS?
-data Event (flow :: Boolean) a = Event (Conj Boolean)
+data Stream (flow :: Boolean) a = Stream (Conj Boolean)
   ( { receive :: a -!> Unit, commit :: Id -!> Unit, destroyed :: Allocar Unit } -&>
     { sources :: Array Id, unsubscribe :: Allocar Unit }
   )
 
-instance functorEvent :: Functor (Event flow) where
-  map f (Event t (AllocateFrom g)) = Event t do
+instance functorStream :: Functor (Stream flow) where
+  map f (Stream t (AllocateFrom g)) = Stream t do
     AllocateFrom do
       mkEffectFn1 \cbs ->
         runEffectFn1 g do
           cbs { receive = mkEffectFn1 \a -> runEffectFn1 cbs.receive (f a) }
 -- | The `alt` of two events forwards all data and commits, and waits until
 -- | both are destroyed to destroy downstream.
-instance altEvent :: Alt (Event flow) where
-  alt (Event t1 (AllocateFrom e1)) (Event t2 (AllocateFrom e2)) = Event (t1 <> t2) do
+instance altStream :: Alt (Stream flow) where
+  alt (Stream t1 (AllocateFrom e1)) (Stream t2 (AllocateFrom e2)) = Stream (t1 <> t2) do
     AllocateFrom do
       mkEffectFn1 \cbs -> unwrap do
         -- only run it once both have been destroyed
@@ -47,30 +47,30 @@ instance altEvent :: Alt (Event flow) where
         cbs2 <- cbs { destroyed = _ } <$> cleanup destroyed
         Allocar do runEffectFn1 e1 cbs1 <> runEffectFn1 e2 cbs2
 -- | The `empty` event destroys itself immediately upon subscription.
-instance plusEvent :: Plus (Event flow) where
-  empty = Event mempty do
+instance plusStream :: Plus (Stream flow) where
+  empty = Stream mempty do
     AllocateFrom do
       mkEffectFn1 \cbs -> do
         unwrap cbs.destroyed
         pure { sources: mempty, unsubscribe: mempty }
--- instance applyEvent :: Apply Event where
---   apply (Event r1) (Event r2) = Event
+-- instance applyStream :: Apply Stream where
+--   apply (Stream r1) (Stream r2) = Stream
 --     { sources: r1.sources <> r2.sources
 --     , subscribe: AllocateFrom do
 --         mkEffectFn1 \cb -> do
 --           ?help
 --     }
--- instance applicativeEvent :: Applicative Event where
---   pure a = Event
+-- instance applicativeStream :: Applicative Stream where
+--   pure a = Stream
 --     { sources: []
 --     , subscribe: AllocateFrom do
 --         mkEffectFn1 \cb -> do
 --           mempty <$ runEffectFn1 cb a
 --     }
 
--- inheritCommitFrom :: forall a b. Event a -> Event b -> Event b
--- inheritCommitFrom (Event (AllocateFrom e1)) (Event (AllocateFrom e2)) =
---   Event do
+-- inheritCommitFrom :: forall a b. Stream a -> Stream b -> Stream b
+-- inheritCommitFrom (Stream (AllocateFrom e1)) (Stream (AllocateFrom e2)) =
+--   Stream do
 --     AllocateFrom do
 --       mkEffectFn1 \cbs -> do
 --         e1
@@ -78,8 +78,8 @@ instance plusEvent :: Plus (Event flow) where
 
 -- | Create a (hot) event as a message channel, that sends any message to all of
 -- | its subscribers (and then commits).
-createEvent :: forall flow a. Allocar { send :: a -!> Unit, event :: Event flow a, destroy :: Allocar Unit }
-createEvent = do
+createStream :: forall flow a. Allocar { send :: a -!> Unit, event :: Stream flow a, destroy :: Allocar Unit }
+createStream = do
   id <- globalId
   { push: AllocateFrom push, notify, destroy: AllocateFrom destroy } <- subscriptions
   pure
@@ -88,15 +88,15 @@ createEvent = do
           mkEffectFn1 \{ receive } -> runEffectFn1 receive a
         runEffectFn1 notify do
           mkEffectFn1 \{ commit } -> runEffectFn1 commit id
-    , event: Event mempty $ AllocateFrom $ mkEffectFn1 \cbs -> do
+    , event: Stream mempty $ AllocateFrom $ mkEffectFn1 \cbs -> do
         runEffectFn1 push cbs <#> { sources: [id], unsubscribe: _ }
     , destroy: Allocar do
         runEffectFn1 destroy do
           mkEffectFn1 \{ destroyed: Allocar destroyed } -> destroyed
     }
 
-createEvent' :: forall flow a. Allocar { send :: a -!> Unit, commit :: Id -!> Unit, event :: Array Id -> Event flow a, destroy :: Allocar Unit }
-createEvent' = do
+createStream' :: forall flow a. Allocar { send :: a -!> Unit, commit :: Id -!> Unit, event :: Array Id -> Stream flow a, destroy :: Allocar Unit }
+createStream' = do
   { push: AllocateFrom push, notify, destroy: AllocateFrom destroy } <- subscriptions
   pure
     { send: mkEffectFn1 \a -> do
@@ -105,7 +105,7 @@ createEvent' = do
     , commit: mkEffectFn1 \id -> do
         runEffectFn1 notify do
           mkEffectFn1 \{ commit } -> runEffectFn1 commit id
-    , event: \sources -> Event mempty $ AllocateFrom $ mkEffectFn1 \cbs -> do
+    , event: \sources -> Stream mempty $ AllocateFrom $ mkEffectFn1 \cbs -> do
         runEffectFn1 push cbs <#> { sources, unsubscribe: _ }
     , destroy: Allocar do
         runEffectFn1 destroy do
@@ -114,8 +114,8 @@ createEvent' = do
 
 -- | Make a (cold) event that gets allocated per subscriber, e.g. for listeners
 -- | or timeouts or the like.
-makeEvent :: forall a. ((a -!> Unit) -> Allocar (Allocar Unit)) -> Event False a
-makeEvent eventTemplate = Event (Conj false) do
+makeStream :: forall a. ((a -!> Unit) -> Allocar (Allocar Unit)) -> Stream False a
+makeStream eventTemplate = Stream (Conj false) do
   AllocateFrom do
     mkEffectFn1 \cbs -> do
       id <- unwrap globalId
@@ -126,33 +126,33 @@ makeEvent eventTemplate = Event (Conj false) do
       pure { sources: [id], unsubscribe }
 
 -- | Unsafe.
-unsafeMarkHot :: forall flowIn flowOut a. Event flowIn a -> Event flowOut a
-unsafeMarkHot (Event _ f) = Event (Conj true) f
+unsafeMarkHot :: forall flowIn flowOut a. Stream flowIn a -> Stream flowOut a
+unsafeMarkHot (Stream _ f) = Stream (Conj true) f
 
-chill :: forall flowIn a. Event flowIn a -> Event False a
-chill (Event _ f) = Event (Conj false) f
+chill :: forall flowIn a. Stream flowIn a -> Stream False a
+chill (Stream _ f) = Stream (Conj false) f
 
 -- | Subscribe to an event with a specific callback. Returns an unsubscribe
 -- | procedure (`Allocar Unit`).
-subscribe :: forall flow a. Event flow a -> (a -!> Unit) -> Allocar (Allocar Unit)
-subscribe (Event _ (AllocateFrom event)) receive = coerce do
+subscribe :: forall flow a. Stream flow a -> (a -!> Unit) -> Allocar (Allocar Unit)
+subscribe (Stream _ (AllocateFrom event)) receive = coerce do
   _.unsubscribe <$> runEffectFn1 event { receive, commit: mempty, destroyed: mempty }
 
 -- | Create a single subscriber to an upstream event that broadcasts it to
 -- | multiple downstream subscribers at once. This creation is effectful because
 -- | it creates a subscriber, thus starting some effects.
-instantiate :: forall flowIn flowOut a. Event flowIn a -> Allocar { event :: Event flowOut a, destroy :: Allocar Unit }
-instantiate (Event _ (AllocateFrom event)) = Allocar do
-  { send, commit, event: eventDependingOn, destroy } <- unwrap createEvent'
+instantiate :: forall flowIn flowOut a. Stream flowIn a -> Allocar { event :: Stream flowOut a, destroy :: Allocar Unit }
+instantiate (Stream _ (AllocateFrom event)) = Allocar do
+  { send, commit, event: eventDependingOn, destroy } <- unwrap createStream'
   { sources, unsubscribe } <-
     runEffectFn1 event { receive: send, commit, destroyed: coerce destroy }
   pure { event: eventDependingOn sources, destroy: unsubscribe <> destroy }
 
 -- the reason i created allocar tbh
 mailbox :: forall flowIn flowOut k v. Ord k =>
-  Event flowIn { key :: k, value :: v } ->
-  Allocar { byKey :: k -> Event flowOut v, destroy :: Allocar Unit }
-mailbox (Event _ (AllocateFrom upstream)) = Allocar do
+  Stream flowIn { key :: k, value :: v } ->
+  Allocar { byKey :: k -> Stream flowOut v, destroy :: Allocar Unit }
+mailbox (Stream _ (AllocateFrom upstream)) = Allocar do
   mailboxes <- unwrap ordMap
   needsCommit <- unwrap ordMap
   destroyers <- unwrap accumulator
@@ -172,7 +172,7 @@ mailbox (Event _ (AllocateFrom upstream)) = Allocar do
     }
   byKey <- unwrap $ allocLazy $ pure $ AllocateFrom do
     mkEffectFn1 \selected -> unwrap do
-      downstream <- createEvent'
+      downstream <- createStream'
       Allocar do runEffectFn1 (unwrap destroyers.put) downstream.destroy
       _ <- mailboxes.set selected downstream
       pure $ downstream.event sources
@@ -182,9 +182,9 @@ mailbox (Event _ (AllocateFrom upstream)) = Allocar do
 -- | An interface to a mutable value, stored in one location.
 type Interface a =
   { send :: a -!> Unit
-  , receive :: Event True a
-  , loopback :: Event True a
-  , mailbox :: a -> Event True Unit
+  , receive :: Stream True a
+  , loopback :: Stream True a
+  , mailbox :: a -> Stream True Unit
   , current :: Effect (Maybe a)
   , destroy :: Allocar Unit
   }
@@ -202,13 +202,13 @@ disconnected =
 createBehavioral :: forall a. Ord a => Allocar (Interface a)
 createBehavioral = do
   ref <- liftST do STRef.new Nothing
-  upstream <- createEvent
+  upstream <- createStream
   -- destroyed by upstream.destroy
   m <- mailbox (map { key: _, value: unit } upstream.event)
   let
     write = mkEffectFn1 \a -> void $ liftST (STRef.write (Just a) ref)
     downstream = unsafeMarkHot do
-      makeEvent \k -> do
+      makeStream \k -> do
         Allocar do liftST (STRef.read ref) >>= traverse_ (runEffectFn1 k)
         subscribe upstream.event k
   pure
