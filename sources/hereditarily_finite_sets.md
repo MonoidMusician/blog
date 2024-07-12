@@ -5,6 +5,25 @@ author:
 - "[@MonoidMusician](https://cofree.coffee/~verity/)"
 ---
 
+<script src="assets/js/hfs.js"></script>
+
+<!--
+<div data-hfs="0"></div>
+<div data-hfs="1"></div>
+<div data-hfs="2"></div>
+<div data-hfs="3"></div>
+<div data-hfs="4"></div>
+-->
+
+<div data-hfs="157842"></div>
+<div data-hfs="44203"></div>
+
+<script>
+document.querySelectorAll("[data-hfs]").forEach(div => {
+  div.appendChild(HFStoSVG(parseInt(div.dataset.hfs)));
+});
+</script>
+
 > What is a set?
 
 I think this is one of the more mysterious questions in math.

@@ -1,18 +1,19 @@
 module Riverdragon.Dragon where
 
 import Prelude
-import Riverdragon.River (Event)
 
 import Data.Maybe (Maybe)
 import Effect (Effect)
+import Prim.Boolean (False)
+import Riverdragon.River (Stream)
 import Web.Event.Event (EventType)
 import Web.Event.Event as Web
 
 data Dragon
   = Fragment (Array Dragon)
-  | Replaceable (Event Dragon)
-  | Collection (Event Dragon)
-  | Element (Maybe String) String (Event AttrProp) Dragon
+  | Replaceable (Stream False Dragon)
+  | Collection (Stream False Dragon)
+  | Element (Maybe String) String (Stream False AttrProp) Dragon
 
 data AttrProp
   = Attr (Maybe String) String String

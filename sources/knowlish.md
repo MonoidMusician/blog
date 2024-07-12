@@ -93,7 +93,7 @@ _[Overflow](knowlish_overflow.html)_
 - `cd -- "$(dirname $0)"`{.bash}
 - Simple argument handling:
   ```bash
-  case $1 in
+  case "$1" in
     "--no-build")
       shift 1;;
     *)
