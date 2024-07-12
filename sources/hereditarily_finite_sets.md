@@ -15,12 +15,19 @@ author:
 <div data-hfs="4"></div>
 -->
 
-<div data-hfs="157842"></div>
-<div data-hfs="44203"></div>
-
 <script>
 document.querySelectorAll("[data-hfs]").forEach(div => {
-  div.appendChild(HFStoSVG(parseInt(div.dataset.hfs)));
+  if (!div.childElementCount) {
+    div.appendChild(HFStoSVG(parseInt(div.dataset.hfs), {simple:!!div.dataset.simple}));
+  }
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("[data-hfs]").forEach(div => {
+    if (!div.childElementCount) {
+      div.appendChild(HFStoSVG(parseInt(div.dataset.hfs), {simple:!!div.dataset.simple}));
+    }
+  });
 });
 </script>
 
@@ -33,7 +40,9 @@ But somehow itʼs hard to say what a set really means, what it captures and what
 
 Instead, I propose we start somewhere simpler: **hereditarily finite sets** (HFSes).
 
-Donʼt mind the fancy words, I promise these sets are actually simpler!
+<div data-hfs="157842" data-simple="true"></div>
+
+Donʼt mind the fancy words and fancier picture, I promise these sets are actually simpler!
 I can tell you _all_ about what hereditarily finite sets are!
 
 Theyʼre a great place to build intuition *and* rigour.
@@ -79,6 +88,14 @@ This is what I mean when I say I canʼt tell you what a set is: I donʼt know of
 
 The situation is much different for hereditarily finite sets.
 We can definitely do this!
+
+<div data-hfs="44203"></div>
+
+Hereʼs a graphic model Iʼve developed!
+Visualizing the brackets of the textual representation as slopes in the visual representation.
+
+But more importantly, you need to learn how to model HFSes in terms of familiar data types.
+Lists, sets … and even plain numbers will do the trick!
 
 ### Lists all the way down
 

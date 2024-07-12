@@ -12,7 +12,7 @@ function HFStoString(x) {
   return `{ ${items.join(", ")} }`;
 }
 function HFStoSpans(x, depth=0) {
-  var colorful = _ => ({style:{color:bracket_color(depth)}, _});
+  var colorful = _ => ({className:"opacity-hover-child", style:{color:bracket_color(depth)}, _});
   if (x === 0) {
     return colorful("∅");
   }
@@ -116,18 +116,17 @@ function bracket_color(current_depth) {
   return bracket_colors[current_depth % bracket_colors.length];
 }
 
-function HFStoSVG(hfs) {
+function HFStoSVG(hfs, options) {
   const string = HFStoString(hfs);
   const graph = HFStoGraph(string);
 
   var w = 500;
   var h = 100;
   var h2 = 10;
-  // if (hfs === 0) h = h2;
   const visual = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   visual.setAttribute("width", w);
   visual.setAttribute("height", h+h2);
-  visual.setAttribute("viewBox", `0 -1 ${w} ${h+h2}`);
+  visual.setAttribute("viewBox", `-2 -1 ${w+4} ${h+h2}`);
   visual.setAttribute("preserveAspectRatio", "none");
   visual.setAttribute("style", `
     width: 100%; height: ${h+h2}px;
@@ -149,11 +148,18 @@ function HFStoSVG(hfs) {
   const watermarks = document.createElementNS("http://www.w3.org/2000/svg", "g");
   visual.appendChild(watermarks);
   watermarks.setAttribute("style", `
-    fill: transparent;
+    fill: none;
     stroke-width: 1px;
-    opacity: 0.5;
+    opacity: 0.6;
     pointer-events: none;
   `);
+  const outlineg = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  outlineg.setAttribute("style", `
+    fill: none;
+    stroke-width: 1px;
+    pointer-events: none;
+  `);
+  visual.appendChild(outlineg);
 
   const ds = [];
   const segments = [];
@@ -166,8 +172,9 @@ function HFStoSVG(hfs) {
   for (let i=0; i<=m; i++) {
     const watermark = document.createElementNS("http://www.w3.org/2000/svg", "path");
     const mark = h*(1.0-i/m);
-    watermark.setAttribute("d", "M"+[w*(i-1)/l, mark]+"L"+[w*(1.0-(i-1)/l), mark]);
+    watermark.setAttribute("d", "M"+[w*Math.max(0,i-1)/l, mark]+"L"+[w*(1.0-Math.max(0,i-1)/l), mark]);
     watermark.setAttribute("style", `stroke: ${bracket_color(Math.max(0, i-1))}`);
+    watermark.classList.add("opacity-hover-child");
     watermarks.appendChild(watermark);
   }
 
@@ -193,11 +200,6 @@ function HFStoSVG(hfs) {
     }
   }
   x = w; y = h;
-  // if (hfs === 0) {
-  //   let o2 = [(1*o[0] + 2*x)/3, h-h2];
-  //   let o1 = [(2*o[0] + 1*x)/3, h-h2];
-  //   d += "C"+[o1,o2,[x,y]];
-  // }
   d += "L"+[x,y];
   let o1 = [(1*o[0] + 2*x)/3, h+h2];
   let o2 = [(2*o[0] + 1*x)/3, h+h2];
@@ -237,7 +239,7 @@ function HFStoSVG(hfs) {
   const bracketsvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   bracketsvg.setAttribute("width", w);
   bracketsvg.setAttribute("height", h3);
-  bracketsvg.setAttribute("viewBox", `0 0 ${w} ${h3}`);
+  bracketsvg.setAttribute("viewBox", `-2 -1 ${w+4} ${h3}`);
   bracketsvg.setAttribute("preserveAspectRatio", "none");
   bracketsvg.setAttribute("style", `
     width: 100%; height: ${h3}px;
@@ -249,7 +251,9 @@ function HFStoSVG(hfs) {
     font-size: ${h3*0.5}px;
   `);
   const bracketg = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  bracketsvg.appendChild(bracketg);
+  if (!options.simple) {
+    bracketsvg.appendChild(bracketg);
+  }
   const angleg = document.createElementNS("http://www.w3.org/2000/svg", "g");
   bracketsvg.appendChild(angleg);
 
@@ -265,9 +269,9 @@ function HFStoSVG(hfs) {
   let acc_depth = -1;
   for (let i in brackets) {
     let b = brackets[i];
+    last_depth = acc_depth;
     acc_depth += b ? 1 : -1;
     let current_depth = Math.max(last_depth, acc_depth);
-    last_depth = acc_depth;
     let x1 = (+i+0)*w/brackets.length;
     let x2 = (+i+1)*w/brackets.length;
     let p = 2;
@@ -277,6 +281,7 @@ function HFStoSVG(hfs) {
     const angle = document.createElementNS("http://www.w3.org/2000/svg", "path");
     angle.setAttribute("d", "M"+[x1,y1]+"L"+[x2,y2]);
     angle.style.stroke = bracket_color(current_depth);
+    angle.classList.add("opacity-hover-child");
     angleg.appendChild(angle);
 
     const bracket = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
@@ -289,22 +294,31 @@ function HFStoSVG(hfs) {
     `);
     bracket.textContent = "{}"[1-b];
     bracket.style.fill = bracket_color(current_depth);
-
+    bracket.classList.add("opacity-hover-child");
     bracketg.appendChild(bracket);
+
+    const outline = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    outline.setAttribute("d", "M"+[x1,h*(1.0 - (last_depth+1)/m)]+"L"+[x2,h*(1.0 - (acc_depth+1)/m)]);
+    outline.style.stroke = bracket_color(current_depth);
+    // Stack higher depth on top of lower depth, visually speaking.
+    outlineg.insertBefore(outline, b ? null : outlineg.firstChild);
   }
   angleg.style.display = "revert";
   bracketg.style.display = "none";
-  bracketsvg.addEventListener("mouseenter", () => {
-    bracketg.style.display = "revert";
-    angleg.style.display = "none";
-  });
-  bracketsvg.addEventListener("mouseleave", () => {
-    angleg.style.display = "revert";
-    bracketg.style.display = "none";
-  });
+  if (!options.simple) {
+    bracketsvg.addEventListener("mouseenter", () => {
+      bracketg.style.display = "revert";
+      angleg.style.display = "none";
+    });
+    bracketsvg.addEventListener("mouseleave", () => {
+      angleg.style.display = "revert";
+      bracketg.style.display = "none";
+    });
+  }
 
   const wrapper = document.createElement("div");
   wrapper.classList.add("code");
+  wrapper.classList.add("opacity-hover-container");
 
   const reprs = document.createElement("div");
   reprs.style = `display: flex; justify-content: space-between; white-space: pre;`;
@@ -327,10 +341,10 @@ function HFStoSVG(hfs) {
   hovers.appendChild(hoverRight);
 
   wrapper.appendChild(reprs);
-  wrapper.appendChild(codeRepr);
+  if (!options.simple) wrapper.appendChild(codeRepr);
   wrapper.appendChild(visual);
   wrapper.appendChild(bracketsvg);
-  wrapper.appendChild(hovers);
+  if (!options.simple) wrapper.appendChild(hovers);
 
   return wrapper;
 }

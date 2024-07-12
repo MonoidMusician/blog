@@ -73,6 +73,14 @@ pre > code
     box-shadow: none
 
 
+@if not $highcontrast
+  .opacity-hover-container .opacity-hover-child
+    transition: opacity 0.5s, filter 0.8s
+    /*opacity: 1*/
+    filter: grayscale(0)
+  .opacity-hover-container:not(:hover) .opacity-hover-child
+    /*opacity: 0.75*/
+    filter: grayscale(0.7)
 
 
 mjx-container[jax="CHTML"], .katex, span.katex
@@ -91,14 +99,18 @@ mjx-container[jax="CHTML"][display="true"], .katex
     background-color: rgb(140 222 202 / 46%)
 
   color: $stark
+  // Huh, not required for SVG text in Firefox
+  fill: $stark
   text-shadow: none
 
 a[href]::selection, a[href] ::selection
   text-decoration-line: underline
   //color: #3feef0;
   color: #35d62d
+  fill: #35d62d
   @if $light
     color: #31ba2a
+    fill: #31ba2a
 
 
 .stark
