@@ -12,15 +12,23 @@ watch-all :
 	./watch-all.sh
 
 .PHONY : init
-init : static
-	rm -f static/assets
-	ln -s $(realpath assets) static/assets
-	mkdir -p rendered
-	rm -f static/rendered
-	ln -s $(realpath rendered) static/rendered
-	mkdir -p cache
+init : node_modules rendered static cache
 
-static : init
+node_modules :
+	npm install
+
+static : rendered
+	mkdir -p static
+	rm -f static/assets
+	ln -s $$(realpath assets) static/assets
+	rm -f static/rendered
+	ln -s $$(realpath rendered) static/rendered
+
+rendered :
+	mkdir -p rendered
+
+cache :
+	mkdir -p cache
 
 .PHONY : clean
 clean :
