@@ -61,4 +61,4 @@ main = launchAff_ do
   process TMTTMT.typeP "tmttmt-types-parser-states"
   process Languages.json "json-parser-states"
   process Languages.arithmetic "arithmetic-parser-states"
-  process Dhall.complete_dhall_file "dhall-parser-states"
+  -- process Dhall.complete_dhall_file "dhall-parser-states"

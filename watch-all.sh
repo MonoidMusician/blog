@@ -4,7 +4,7 @@ terminate(){
     pkill -SIGINT -P $$
     exit
 }
-spago build
+spago build --purs-args "-g corefn,js"
 make watch-prebuild &
 sleep 5
 make watch-sass &

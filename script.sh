@@ -4,6 +4,6 @@ case $1 in
   "--no-build")
     shift;;
   *)
-    spago build >/tmp/spago_build 2>/tmp/spago_build || (cat /tmp/spago_build >&2 && exit 1);;
+    spago build --purs-args "-g corefn,js" >/tmp/spago_build 2>/tmp/spago_build || (cat /tmp/spago_build >&2 && exit 1);;
 esac
 node -e 'import("./output/Script/index.js").then(({main})=>main())' "$@"
