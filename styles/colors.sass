@@ -74,13 +74,14 @@ pre > code
 
 
 @if not $highcontrast
-  .opacity-hover-container .opacity-hover-child
-    transition: opacity 0.5s, filter 0.8s
-    /*opacity: 1*/
-    filter: grayscale(0)
-  .opacity-hover-container:not(:hover) .opacity-hover-child
-    /*opacity: 0.75*/
-    filter: grayscale(0.7)
+  @media (hover: hover) and (pointer: fine)
+    .opacity-hover-container .opacity-hover-child
+      transition: opacity 0.5s, filter 0.8s
+      /*opacity: 1*/
+      filter: grayscale(0)
+    .opacity-hover-container:not(:hover) .opacity-hover-child
+      /*opacity: 0.75*/
+      filter: grayscale(0.7)
 
 
 mjx-container[jax="CHTML"], .katex, span.katex

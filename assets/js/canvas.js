@@ -103,5 +103,5 @@ function loadPixelGraphs() {
   }
 })();
 
-if (window.onLoadStyle) window.onLoadStyle(loadPixelGraphs);
+if (typeof window !== 'undefined' && window.onLoadStyle) window.onLoadStyle(loadPixelGraphs);
 })();

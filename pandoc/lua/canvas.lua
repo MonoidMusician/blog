@@ -6,7 +6,7 @@ function RawBlock(h)
       local output = io.open(fname .. '.html')
       if output == nil then
         os.execute('mkdir -p ./rendered')
-        local t = pandoc.pipe('npx', {'node', pandoc.path.directory(PANDOC_SCRIPT_FILE) .. '/canvas.js', '--', './rendered'}, h.text)
+        local t = pandoc.pipe('node', {pandoc.path.directory(PANDOC_SCRIPT_FILE) .. '/canvas.js', '--', './rendered'}, h.text)
         output = io.open(fname .. '.html', 'w')
         output:write(t)
         output:close()
