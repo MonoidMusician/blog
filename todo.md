@@ -1,0 +1,7 @@
+- clean up CSS
+- use CSS variables
+- themeing
+- font demo page
+- clean up JS
+- iconoir as include?
+- screen reader accessibility
