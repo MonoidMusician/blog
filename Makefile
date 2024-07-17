@@ -12,17 +12,10 @@ watch-all :
 	./watch-all.sh
 
 .PHONY : init
-init : node_modules rendered static cache
+init : node_modules rendered $(BUILDIR) cache
 
 node_modules :
 	npm install
-
-static : rendered
-	mkdir -p static
-	rm -f static/assets
-	ln -s $$(realpath assets) static/assets
-	rm -f static/rendered
-	ln -s $$(realpath rendered) static/rendered
 
 rendered :
 	mkdir -p rendered
@@ -47,8 +40,12 @@ $(BUILDIR)/styles/bundles.css : styles/*.sass $(BUILDIR)
 	sass styles/bundled.sass:$(BUILDIR)/styles/bundled.css styles/bundled_light.sass:$(BUILDIR)/styles/bundled_light.css styles/bundled_sans.sass:$(BUILDIR)/styles/bundled_sans.css styles/bundled_light_sans.sass:$(BUILDIR)/styles/bundled_light_sans.css
 	gzip -f9k $(BUILDIR)/styles/bundled*.css
 
-$(BUILDIR) :
+$(BUILDIR) : rendered
 	mkdir -p $(BUILDIR)
+	rm -f $(BUILDIR)/assets
+	ln -s $$(realpath assets) $(BUILDIR)/assets
+	rm -f $(BUILDIR)/rendered
+	ln -s $$(realpath rendered) $(BUILDIR)/rendered
 
 pandoc : $(HTMLS) PureScript/src/PureScript/Highlight.purs
 
