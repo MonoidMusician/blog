@@ -81,3 +81,10 @@ trypurescript : PureScript/src
 watch-ps : $(BUILDIR)
 	rm -f $(BUILDIR)/widgets.js.gz
 	spago bundle-app --purs-args "-g corefn,js" -w --main Main --to $(BUILDIR)/widgets.js
+
+.PHONY : live
+live : live/node_modules
+	(cd live; npm run live)
+
+live/node_modules :
+	(cd live; npm install)

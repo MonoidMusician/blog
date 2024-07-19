@@ -211,13 +211,25 @@ Verity = Ve = {};
 
   //////////////////////////////////////////////////////////////////////////////
 
+  Element.prototype.getAttributes = function() {
+    return Object.fromEntries(this.getAttributeNames().map(name => [name, this.getAttribute(name)]));
+  };
+  Element.prototype.setAttributes = function(attrs) {
+    for (let [name, value] in Object.entries(attrs)) {
+      this.setAttribute(name, value);
+    }
+  };
+  Element.prototype.copyAttributes = function(copyFrom) {
+    this.setAttributes(copyFrom.getAttributes());
+  };
+
   // Useful for typed DOM APIs like `document.querySelectorAll`
   Ve.forEach = Array.prototype.forEach.call.bind(Array.prototype.forEach);
   Ve.forQuery = (query, cb) => {
     const results = [];
     const selected = document.querySelectorAll(query);
     Ve.forEach(selected, (...args) => {
-      results.push(cb(...args));
+      results.push(cb ? cb(...args) : args[0]);
     });
     return results;
   };

@@ -1,0 +1,66 @@
+<div id="canvas"></div>
+
+<script src="../assets/js/lib/path-data-polyfill.js"></script>
+<script src="../assets/js/verity.js"></script>
+<script src="../assets/js/calligraphy.js"></script>
+<script src="../assets/js/minkowski.js"></script>
+<script src="../assets/js/quartic.js"></script>
+
+<script>
+  var canvas = Ve.ById.canvas;
+  var e1 = new EventSource('scribe.svg?watch');
+  e1.onmessage = e => {
+    console.clear();
+    const file = JSON.parse(e.data);
+    canvas.innerHTML = file;
+    let nib = null;
+    Ve.forQuery('#canvas path', p0 => {
+      if (!nib) {
+        nib = p0;
+        return;
+      }
+      let parent = p0.parentElement;
+      doTheThing(nib, p0).forEach(path => {
+        let p;
+        p = p0.cloneNode();
+        delete p.id;
+        p.setPathData(path);
+        p.style.fill = p.style.stroke;
+        p.style.strokeWidth = nib.style.strokeWidth;
+        parent.insertBefore(p, p0);
+        // p = p0.cloneNode();
+        // delete p.id;
+        // p.setPathData(path);
+        // console.log(p.getAttribute("d"));
+        // p.classList.add('hover');
+        // p.style.stroke = 'red';
+        // p.style.strokeWidth = `calc(${nib.style.strokeWidth} / 2)`;
+        // parent.insertBefore(p, null);
+      });
+      parent.removeChild(p0);
+      // console.log(p.getAttribute("d"));
+      // console.log(JSON.stringify(p.getPathData()));
+    });
+    nib.parentElement.removeChild(nib);
+  };
+</script>
+
+<style>
+  html, body {
+    background: black;
+    color: white;
+    margin: 0; padding: 0;
+  }
+  #canvas > svg {
+    max-width: 100%;
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    margin: auto;
+    display: block;
+    outline: 1px solid rgba(200, 150, 200, 0.5);
+  }
+  .hover:not(:hover) {
+    opacity: 0.25;
+  }
+</style>

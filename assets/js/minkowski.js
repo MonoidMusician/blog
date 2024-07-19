@@ -212,7 +212,7 @@ function doTheThing(p1, p2, mode) {
       allKeys.push(c1[0], c1[3]);
     }
   }
-  console.log((performance.now() - start).toFixed(2));
+  console.info((performance.now() - start).toFixed(2));
   return rs;
 }
 function chop(points, t0, t1) {
@@ -286,10 +286,10 @@ function doTheTask(P, Q) {
           );
         }
       } catch(e3) {
-        //console.log("Failed", {P, t, Q});
+        // console.log("Failed", {P, t, Q, e, e3});
       }
     } catch(e2) {
-      //console.log(e);
+      // console.log(e, e2);
     }
   }
   function chopped([[t0, conn0, d0], [t1, conn1, d1]]) {
@@ -330,35 +330,35 @@ function center(path) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("main-calligraphy-demo").appendChild(interactive());
-  document.getElementById("simplest-calligraphy-demo").appendChild(interactive("simplest"));
-  document.getElementById("simple-calligraphy-demo").appendChild(interactive("simple"));
+  document.getElementById("main-calligraphy-demo")?.appendChild(interactive());
+  document.getElementById("simplest-calligraphy-demo")?.appendChild(interactive("simplest"));
+  document.getElementById("simple-calligraphy-demo")?.appendChild(interactive("simple"));
 });
 
 document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("delooper-demo").appendChild(delooper());
+  document.getElementById("delooper-demo")?.appendChild(delooper());
 });
 
 document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("all-fits-demo").appendChild(all_fits());
+  document.getElementById("all-fits-demo")?.appendChild(all_fits());
 });
 
 document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("main-calligraphy-demo").appendChild(visualize(guideS, toPath(segmentsCModes[""])));
-  document.getElementById("simplest-calligraphy-demo").appendChild(visualize(guideS, toPath(segmentsCModes["simplest"]), 100, "simplest"));
-  document.getElementById("simple-calligraphy-demo").appendChild(visualize(guideS, toPath(segmentsCModes["simple"]), 100, "simple"));
-  document.getElementById("anatomy").checked = anatomy;
-  document.getElementById("anatomy").addEventListener("input", e => {
+  document.getElementById("main-calligraphy-demo")?.appendChild(visualize(guideS, toPath(segmentsCModes[""])));
+  document.getElementById("simplest-calligraphy-demo")?.appendChild(visualize(guideS, toPath(segmentsCModes["simplest"]), 100, "simplest"));
+  document.getElementById("simple-calligraphy-demo")?.appendChild(visualize(guideS, toPath(segmentsCModes["simple"]), 100, "simple"));
+  (document.getElementById("anatomy") || {}).checked = anatomy;
+  document.getElementById("anatomy")?.addEventListener("input", e => {
     anatomy = !!e.target.checked;
     visualize(guideS, toPath(segmentsCModes[""]));
   });
-  document.getElementById("anatomy-simplest").checked = anatomy;
-  document.getElementById("anatomy-simplest").addEventListener("input", e => {
+  (document.getElementById("anatomy-simplest") || {}).checked = anatomy;
+  document.getElementById("anatomy-simplest")?.addEventListener("input", e => {
     anatomy = !!e.target.checked;
     visualize(guideS, toPath(segmentsCModes["simplest"]), 100, "simplest");
   });
-  document.getElementById("anatomy-simple").checked = anatomy;
-  document.getElementById("anatomy-simple").addEventListener("input", e => {
+  (document.getElementById("anatomy-simple") || {}).checked = anatomy;
+  document.getElementById("anatomy-simple")?.addEventListener("input", e => {
     anatomy = !!e.target.checked;
     visualize(guideS, toPath(segmentsCModes["simple"]), 100, "simple");
   });

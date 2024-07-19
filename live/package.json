@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "live": "cd $(git rev-parse --show-toplevel); node live/file2eventsource.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-watch": "^0.7.4"
+  }
+}

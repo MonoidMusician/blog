@@ -332,7 +332,7 @@ const solve = eq => {
   } else if (d === 1) {
     return [-eq[0]/eq[1]];
   } else if (d === 2) {
-    const disc = eq[1]*eq[1] - 4*eq[2]*eq[0];
+    let disc = eq[1]*eq[1] - 4*eq[2]*eq[0];
     const ep = 1e-20;
     if (Math.abs(disc) < ep) disc = 0;
     if (disc < 0) return [];
