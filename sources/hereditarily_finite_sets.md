@@ -18,14 +18,14 @@ author:
 <script>
 document.querySelectorAll("[data-hfs]").forEach(div => {
   if (!div.childElementCount) {
-    div.appendChild(HFStoSVG(parseInt(div.dataset.hfs), {simple:!!div.dataset.simple}));
+    div.appendChild(HFStoSVG(parseInt(...div.dataset.hfs.split("_")), {simple:!!div.dataset.simple}));
   }
 });
 
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-hfs]").forEach(div => {
     if (!div.childElementCount) {
-      div.appendChild(HFStoSVG(parseInt(div.dataset.hfs), {simple:!!div.dataset.simple}));
+      div.appendChild(HFStoSVG(parseInt(...div.dataset.hfs.split("_")), {simple:!!div.dataset.simple}));
     }
   });
 });
@@ -41,6 +41,10 @@ But somehow itʼs hard to say what a set really means, what it captures and what
 Instead, I propose we start somewhere simpler: **hereditarily finite sets** (HFSes).
 
 <div data-hfs="157842" data-simple="true"></div>
+
+<div data-hfs="124875" data-simple="true"></div>
+
+<div data-hfs="124875_9" data-simple="true"></div>
 
 Donʼt mind the fancy words and fancier picture, I promise these sets are actually simpler!
 I can tell you _all_ about what hereditarily finite sets are!

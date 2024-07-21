@@ -65,7 +65,7 @@ $endif$
 $endif$
 $if(toc)$
 <section id="$idprefix$TOC">
-<nav role="doc-toc"> 
+<nav role="doc-toc">
 $if(toc-title)$
 <h2 id="$idprefix$toc-title">$toc-title$</h2>
 $endif$

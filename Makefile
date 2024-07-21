@@ -54,7 +54,7 @@ $(BUILDIR)/%.html : $(TXTDIR)/%.md pandoc/defaults.yaml pandoc/post.html
 
 .PHONY : watch-pandoc
 watch-pandoc :
-	ls $(TXTDIR)/*.md pandoc/defaults.yaml pandoc/post.html | entr make pandoc
+	watchexec -w pandoc -f 'pandoc/**' -w $(TXTDIR) -f '$(TXTDIR)/*.md' -- make pandoc
 
 prod-ps : $(BUILDIR) PureScript/src packages.dhall spago.dhall
 	rm -f $(BUILDIR)/widgets.js.gz
@@ -71,11 +71,11 @@ ps : $(BUILDIR) PureScript/src prebuild packages.dhall spago.dhall
 	spago bundle-app --purs-args "-g corefn,js" --main Main --to $(BUILDIR)/widgets.js
 
 watch-prebuild :
-	ls PureScript/src/PreBuild.purs PureScript/src/Parser/Parserlude.purs | entr make prebuild
+	watchexec -w PureScript/src/PreBuild.purs -w PureScript/src/Parser/Parserlude.purs -r -- make prebuild
 
 .PHONY : trypurescript
 trypurescript : PureScript/src
-	ls PureScript/src/**/*.purs | (set -f; entr -r trypurescript 6565 $$(spago sources))
+	(set -f; watchexec -w PureScript/src -f 'PureScript/src/**/*.purs' -r -- trypurescript 6565 $$(spago sources))
 
 .PHONY : watch-ps
 watch-ps : $(BUILDIR)

@@ -6,6 +6,25 @@
 <script src="../assets/js/minkowski.js"></script>
 <script src="../assets/js/quartic.js"></script>
 
+<svg width="0" height="0" viewBox="0 0 1 1">
+  <defs>
+   <filter id="inset-shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feComponentTransfer in=SourceAlpha>
+        <feFuncA type="table" tableValues="1 0" />
+      </feComponentTransfer>
+      <feGaussianBlur stdDeviation="3"/>
+      <feOffset dx="3" dy="4" result="offsetblur"/>
+      <feFlood flood-color="rgb(105, 8, 130)" result="color"/>
+      <feComposite in2="offsetblur" operator="in"/>
+      <feComposite in2="SourceAlpha" operator="in" />
+      <feMerge>
+        <feMergeNode in="SourceGraphic" />
+        <feMergeNode />
+      </feMerge>
+    </filter>
+  </defs>
+</svg>
+
 <script>
   var canvas = Ve.ById.canvas;
   var e1 = new EventSource('scribe.svg?watch');
@@ -13,6 +32,7 @@
     console.clear();
     const file = JSON.parse(e.data);
     canvas.innerHTML = file;
+    Ve.ById.layer1.setAttribute("filter", "url(#inset-shadow)");
     let nib = null;
     Ve.forQuery('#canvas path', p0 => {
       if (!nib) {

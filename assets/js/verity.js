@@ -2,6 +2,12 @@ Verity = Ve = {};
 (function Verity() {
   Ve.noop = ()=>{};
 
+  function pythonic(fn) {
+    return function(...args) {
+      return fn(this, ...args);
+    };
+  };
+
   //////////////////////////////////////////////////////////////////////////////
 
   // Create a simple proxy for syntactic sugar for method names and function calls
@@ -11,6 +17,7 @@ Verity = Ve = {};
     },
     apply: applier && ((_target, _thisArg, args) => applier(...args)),
   });
+  const sugarArg = handler => sugar(handler, handler(undefined));
 
   // Create a getter for the property:
   //     _.name = v => v.name
@@ -122,10 +129,94 @@ Verity = Ve = {};
     sugar, _, mk, modifier, compose, _pipe,
   });
 
+  var SPECIALS = {
+    style: (e, style) =>
+      style && Object.assign(e.style, typeof style === 'string' ? {style} : style),
+    attrs: (e, attrs) =>
+      attrs && Object.assign(e.attrs, attrs),
+    $parent: (e, parent) =>
+      parent && parent !== e.parentNode && parent.appendChild(e),
+    $textContent: (e, textContent) =>
+      e.textContent = textContent,
+    $children: (parent, topChildren) => {
+      if (!topChildren) return;
+      if (topChildren instanceof Node) {
+        return parent.appendChild(topChildren);
+      }
+      function go(children) {
+        for (let child of children) {
+          if (child === undefined || child === null) continue;
+          if (Array.isArray(child)) {
+            go(child);
+          } else {
+            parent.appendChild(createChildOf(parent, child));
+          }
+        }
+      }
+      go(topChildren);
+    },
+    // $view: (e, view) =>
+    //   view && (e.$view = view),
+    // $preview: (e, preview) =>
+    //   preview && (e.$preview = preview),
+    // $model: (e, model) =>
+    //   e.MVC(model, e.$view),
+  };
+  function applyAttrs(e, attrs) {
+    attrs = attrs ? Object.assign({}, attrs) : {};
+    var specialAttrs = {};
+    for (let k in attrs) {
+      if (k in SPECIALS) {
+        specialAttrs[k] = attrs[k];
+        delete attrs[k];
+      } else if (k.startsWith('$')) {
+        console.warn(`Warning: unknown special attribute ${k} on element`, e);
+        delete attrs[k];
+      }
+    }
+    var hadChildren = '$children' in specialAttrs;
+    for (let k in attrs) {
+      if (/\d+/.test(k)) {
+        if (hadChildren) throw new Error("Cannot mix numeric and $children");
+        if (!('$children' in specialAttrs)) specialAttrs['$children'] = [];
+        specialAttrs['$children'][k] = attrs[k];
+        delete attrs[k];
+      }
+    }
+    Object.assign(e, attrs);
+    for (let k in specialAttrs) {
+      SPECIALS[k](e, specialAttrs[k]);
+    }
+    return e;
+  };
+  function createChildOf(parent, attrs, tag, ...children) {
+    if (typeof attrs === 'string' || typeof attrs === 'number' || attrs instanceof String || attrs instanceof Number) {
+      return document.createTextNode(String(attrs));
+    }
+    if (Array.isArray(attrs)) {
+      return SPECIALS['$children'](document.createDocumentFragment(), attrs);
+    }
+    if (attrs instanceof Node) return attrs;
+    attrs = attrs ? Object.assign({}, attrs) : {};
+    if (children?.length) {
+      attrs['$children'] = [attrs?.['$children'], children];
+    }
+    tag = tag || attrs['$tag'];
+    if (!tag) tag = 'div';
+    delete attrs['$tag'];
+    if (tag instanceof Element) tag = tag.tagName;
+    let e = parent?.namespaceURI ? document.createElementNS(parent?.namespaceURI || undefined, tag) : document.createElement(tag);
+    return applyAttrs(e, attrs);
+  };
+
+  Object.assign(Ve, {
+    applyAttrs, createChildOf,
+  });
+
   Ve.ById = sugar(id => document.getElementById(id));
-  Ve.HTML = sugar(ty => (attrs = {}) => Object.assign(document.createElement(ty), attrs));
+  Ve.HTML = sugarArg(tag => (attrs = {}, ...children) => createChildOf(undefined, attrs, tag, ...children));
   Ve.SVGNS = 'http://www.w3.org/2000/svg';
-  Ve.SVG = sugar(ty => (attrs = {}) => Object.assign(document.createElementNS(Ve.SVGNS, ty), attrs));
+  Ve.SVG = sugarArg(ty => (attrs = {}, ...children) => applyAttrs(document.createElementNS(Ve.SVGNS, ty), attrs));
 
   Ve.on = sugar(ty => (tgt, handler, options) => {
     if (typeof options === 'function' && typeof handler !== 'function') {
@@ -164,6 +255,18 @@ Verity = Ve = {};
     }
     let r = await fetch(url, decisions);
     if (decisions.headers['Accept'] === 'application/json') r = r.json();
+    return r;
+  };
+
+  Ve.DELETE = async (url, options) => {
+    const decisions = {
+      method: 'DELETE',
+    };
+    if (typeof options === 'object') {
+      Object.assign(decisions, options);
+    }
+    let r = await fetch(url, decisions);
+    r = r.text();
     return r;
   };
 
@@ -211,6 +314,16 @@ Verity = Ve = {};
 
   //////////////////////////////////////////////////////////////////////////////
 
+  Object.defineProperty(Node.prototype, "attrs", {
+    get: function () {
+      return new Proxy(this, {
+        get: (t, p) => t.getAttribute(p),
+        set: (t, p, v, x) => { t.setAttribute(p, v); return true; },
+      });
+    },
+  });
+
+  Node.prototype.applyAttrs = pythonic(applyAttrs);
   Element.prototype.getAttributes = function() {
     return Object.fromEntries(this.getAttributeNames().map(name => [name, this.getAttribute(name)]));
   };
@@ -221,6 +334,9 @@ Verity = Ve = {};
   };
   Element.prototype.copyAttributes = function(copyFrom) {
     this.setAttributes(copyFrom.getAttributes());
+  };
+  Node.prototype.removeSelf = function() {
+    this.parentNode.removeChild(this);
   };
 
   // Useful for typed DOM APIs like `document.querySelectorAll`
