@@ -49,7 +49,7 @@ $(BUILDIR) : rendered
 
 pandoc : $(HTMLS) PureScript/src/PureScript/Highlight.purs
 
-$(BUILDIR)/%.html : $(TXTDIR)/%.md pandoc/defaults.yaml pandoc/post.html
+$(BUILDIR)/%.html : $(TXTDIR)/%.md pandoc/defaults.yaml pandoc/post.html cache
 	pandoc --defaults=pandoc/defaults.yaml $< -o $@
 
 .PHONY : watch-pandoc

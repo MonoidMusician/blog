@@ -42,9 +42,19 @@ Instead, I propose we start somewhere simpler: **hereditarily finite sets** (HFS
 
 <div data-hfs="157842" data-simple="true"></div>
 
+<div data-hfs="157842_9" data-simple="true"></div>
+
+<div data-hfs="1578421" data-simple="true"></div>
+
+<div data-hfs="1578421_9" data-simple="true"></div>
+
 <div data-hfs="124875" data-simple="true"></div>
 
 <div data-hfs="124875_9" data-simple="true"></div>
+
+<div data-hfs="1248751" data-simple="true"></div>
+
+<div data-hfs="1248751_9" data-simple="true"></div>
 
 Donʼt mind the fancy words and fancier picture, I promise these sets are actually simpler!
 I can tell you _all_ about what hereditarily finite sets are!

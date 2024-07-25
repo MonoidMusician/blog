@@ -26,7 +26,7 @@ import Data.Symbol (class IsSymbol)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import Debug (spy, spyWith, traceM)
+-- import Debug (spy, spyWith, traceM)
 import Idiolect ((>==))
 import Parser.Optimized.Types (Grammar(..), Lookahead, State, StateInfo, StateItem, States(..), fromItem, fromItem', fromOld, toItems, toOld, toOldState)
 import Parser.Types (Fragment, OrEOF(..), Part(..), ShiftReduce(..), Zipper(..), isNonTerminal, unNonTerminal, unTerminal)
@@ -199,7 +199,8 @@ closeStates ::
 closeStates grammar initial = Tuple entrypoints $
   runStateT initialState act
     # extract # extract # un KnownStates
-    # spyWith "metrics" _.metrics # _.finalized
+    -- # spyWith "metrics" _.metrics
+    # _.finalized
     # tally # States
   where
   initialNumbered = mapWithIndex (flip Tuple) $ map (close grammar) <$> initial
@@ -241,10 +242,10 @@ closeStates1 ::
 closeStates1 newly = do
   _m_rounds += 1
   rounds <- use _m_rounds
-  when (mod rounds 5 == 0) do
-    metrics <- gets (unwrap >>> _.metrics)
-    spyWith "metrics" (const metrics) (pure unit)
-    spyWith "front" (const (List.length newly)) (pure unit)
+  -- when (mod rounds 5 == 0) do
+  --   metrics <- gets (unwrap >>> _.metrics)
+  --   spyWith "metrics" (const metrics) (pure unit)
+  --   spyWith "front" (const (List.length newly)) (pure unit)
   grammar <- use _grammar
   -- These states will be finalized, as the new states will already be numbered
   for_ newly \(Tuple st si) -> do

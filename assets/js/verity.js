@@ -18,6 +18,7 @@ Verity = Ve = {};
     apply: applier && ((_target, _thisArg, args) => applier(...args)),
   });
   const sugarArg = handler => sugar(handler, handler(undefined));
+  const sugarStr = handler => sugar(handler, handler)
 
   // Create a getter for the property:
   //     _.name = v => v.name
@@ -139,6 +140,7 @@ Verity = Ve = {};
     $textContent: (e, textContent) =>
       e.textContent = textContent,
     $children: (parent, topChildren) => {
+      parent.clearChildren();
       if (!topChildren) return;
       if (topChildren instanceof Node) {
         return parent.appendChild(topChildren);
@@ -155,6 +157,16 @@ Verity = Ve = {};
       }
       go(topChildren);
     },
+    classList: (e, classes) => {
+      e.classList = '';
+      if (classes) {
+        if (typeof classes === 'string' || classes instanceof String) {
+          e.classList = String(classes);
+        } else {
+          e.classList.add(...classes);
+        }
+      }
+    },
     // $view: (e, view) =>
     //   view && (e.$view = view),
     // $preview: (e, preview) =>
@@ -162,63 +174,78 @@ Verity = Ve = {};
     // $model: (e, model) =>
     //   e.MVC(model, e.$view),
   };
-  function applyAttrs(e, attrs) {
-    attrs = attrs ? Object.assign({}, attrs) : {};
-    var specialAttrs = {};
-    for (let k in attrs) {
+  function applyProps(e, props) {
+    props = props ? Object.assign({}, props) : {};
+    var specialProps = {};
+    for (let k in props) {
       if (k in SPECIALS) {
-        specialAttrs[k] = attrs[k];
-        delete attrs[k];
+        specialProps[k] = props[k];
+        delete props[k];
       } else if (k.startsWith('$')) {
         console.warn(`Warning: unknown special attribute ${k} on element`, e);
-        delete attrs[k];
+        delete props[k];
       }
     }
-    var hadChildren = '$children' in specialAttrs;
-    for (let k in attrs) {
+    var hadChildren = '$children' in specialProps;
+    for (let k in props) {
       if (/\d+/.test(k)) {
         if (hadChildren) throw new Error("Cannot mix numeric and $children");
-        if (!('$children' in specialAttrs)) specialAttrs['$children'] = [];
-        specialAttrs['$children'][k] = attrs[k];
-        delete attrs[k];
+        if (!('$children' in specialProps)) specialProps['$children'] = [];
+        specialProps['$children'][k] = props[k];
+        delete props[k];
       }
     }
-    Object.assign(e, attrs);
-    for (let k in specialAttrs) {
-      SPECIALS[k](e, specialAttrs[k]);
+    Object.assign(e, props);
+    for (let k in specialProps) {
+      SPECIALS[k](e, specialProps[k]);
     }
     return e;
   };
-  function createChildOf(parent, attrs, tag, ...children) {
-    if (typeof attrs === 'string' || typeof attrs === 'number' || attrs instanceof String || attrs instanceof Number) {
-      return document.createTextNode(String(attrs));
+  function createChildOf(parent, props, tag, ...children) {
+    if (typeof props === 'string' || typeof props === 'number' || props instanceof String || props instanceof Number) {
+      return document.createTextNode(String(props));
     }
-    if (Array.isArray(attrs)) {
-      return SPECIALS['$children'](document.createDocumentFragment(), attrs);
+    if (Array.isArray(props)) {
+      return SPECIALS['$children'](document.createDocumentFragment(), props);
     }
-    if (attrs instanceof Node) return attrs;
-    attrs = attrs ? Object.assign({}, attrs) : {};
+    if (props instanceof Node) return props;
+    props = props ? Object.assign({}, props) : {};
     if (children?.length) {
-      attrs['$children'] = [attrs?.['$children'], children];
+      props['$children'] = [props?.['$children'], children];
     }
-    tag = tag || attrs['$tag'];
+    tag = tag || props['$tag'];
     if (!tag) tag = 'div';
-    delete attrs['$tag'];
+    delete props['$tag'];
     if (tag instanceof Element) tag = tag.tagName;
     let e = parent?.namespaceURI ? document.createElementNS(parent?.namespaceURI || undefined, tag) : document.createElement(tag);
-    return applyAttrs(e, attrs);
+    return applyProps(e, props);
   };
 
   Object.assign(Ve, {
-    applyAttrs, createChildOf,
+    applyProps, createChildOf,
   });
 
   Ve.ById = sugar(id => document.getElementById(id));
-  Ve.HTML = sugarArg(tag => (attrs = {}, ...children) => createChildOf(undefined, attrs, tag, ...children));
+  Ve.HTML = sugarArg(tag => (props = {}, ...children) => createChildOf(undefined, props, tag, ...children));
   Ve.SVGNS = 'http://www.w3.org/2000/svg';
-  Ve.SVG = sugarArg(ty => (attrs = {}, ...children) => applyAttrs(document.createElementNS(Ve.SVGNS, ty), attrs));
+  Ve.SVG = sugarArg(ty => (props = {}, ...children) => applyProps(document.createElementNS(Ve.SVGNS, ty), props));
+
+  Ve.ico = sugarStr(classList => Ve.HTML.i({classList}));
+  Ve.iconoir = sugarStr(classList => {
+    const prepend = s => `iconoir-${s.replaceAll('_','-')}`;
+    if (typeof classList === 'string' || classList instanceof String) {
+      classList = [prepend(classList)];
+    } else {
+      classList = [...prepend(classList[0]), classList.slice(1)];
+    }
+    return Ve.HTML.i({classList});
+  });
+  Ve.button = onclick => ({})
 
   Ve.on = sugar(ty => (tgt, handler, options) => {
+    if (!handler && !options) {
+      return new Promise(handler => Ve.on[ty](tgt, handler, {once:true}));
+    }
     if (typeof options === 'function' && typeof handler !== 'function') {
       [handler, options] = [options, handler];
     };
@@ -228,6 +255,9 @@ Verity = Ve = {};
     };
   });
   Ve.once = sugar(ty => (tgt, handler, options) => {
+    if (!handler && !options) {
+      return new Promise(handler => Ve.on[ty](tgt, handler, {once:true}));
+    }
     if (typeof options === 'function' && typeof handler !== 'function') {
       [handler, options] = [options, handler];
     };
@@ -314,16 +344,20 @@ Verity = Ve = {};
 
   //////////////////////////////////////////////////////////////////////////////
 
-  Object.defineProperty(Node.prototype, "attrs", {
+  Object.defineProperty(Element.prototype, "attrs", {
     get: function () {
       return new Proxy(this, {
         get: (t, p) => t.getAttribute(p),
         set: (t, p, v, x) => { t.setAttribute(p, v); return true; },
       });
     },
+    set: function (newAttrs) {
+      this.clearAttributes();
+      Object.assign(this.attrs, newAttrs);
+    },
   });
 
-  Node.prototype.applyAttrs = pythonic(applyAttrs);
+  Element.prototype.applyProps = pythonic(applyProps);
   Element.prototype.getAttributes = function() {
     return Object.fromEntries(this.getAttributeNames().map(name => [name, this.getAttribute(name)]));
   };
@@ -332,8 +366,18 @@ Verity = Ve = {};
       this.setAttribute(name, value);
     }
   };
+  Element.prototype.clearAttributes = function() {
+    for (let attr of this.getAttributeNames()) {
+      this.removeAttribute(attr);
+    }
+  };
   Element.prototype.copyAttributes = function(copyFrom) {
     this.setAttributes(copyFrom.getAttributes());
+  };
+  Node.prototype.clearChildren = function() {
+    for (let c of Array.from(this.children)) {
+      c.removeSelf();
+    }
   };
   Node.prototype.removeSelf = function() {
     this.parentNode.removeChild(this);
