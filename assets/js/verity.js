@@ -442,5 +442,78 @@ Verity = Ve = {};
 
   //////////////////////////////////////////////////////////////////////////////
 
+  Ve.RAFBuffer = function() {
+    let buffer = [];
+    function flush() {
+      const buffered = buffer;
+      console.log("Buffered", buffered.length);
+      buffer = [];
+      for (let event of buffered) {
+        event[0].call(event[1], ...event[2]);
+      }
+    }
+    return function(cb) {
+      return function(...event) {
+        if (!buffer.length) requestAnimationFrame(flush);
+        buffer.push([cb, this, event]);
+      };
+    };
+  }
+  Ve.AggregateRAF = function(handle) {
+    let buffer = [];
+    function flush() {
+      const buffered = buffer;
+      buffer = [];
+      handle(buffered);
+    }
+    return function(datum) {
+      if (!buffer.length) requestAnimationFrame(flush);
+      buffer.push(datum);
+    };
+  }
+
+  // Fucked code that does not work.
+  Ve.$Buffer = Symbol("buffer");
+  Ve.BufferEv = (upstream, cb) => {
+    let buffer = [];
+    let buffered = new Proxy(upstream, {
+      get: (tgt, name, receiver) => {
+        if (name === Ve.$Buffer) return buffer;
+        if (name === "addEventListener") {
+          return Object.assign(function addEventListener(...args) {
+            if (!this[Ve.$Buffer]) {
+              return this.addEventListener(...args);
+            }
+            const outer = this;
+            const originalCb = args[1];
+            function bufferEvent(...event) {
+              console.log("Capture", event);
+              if (cb && !outer[Ve.$Buffer].length) {
+                cb(() => { console.debug("FLUSH"); buffered.flush(); });
+              }
+              outer[Ve.$Buffer].push([originalCb, this, ...event]);
+            }
+            return this.addEventListener.original.call(this.addEventListener.upstream, args[0], bufferEvent, ...args.slice(2));
+          }, { upstream, original: tgt.addEventListener });
+        }
+        if (name === "flush") {
+          return function flush() {
+            const toRun = buffer;
+            buffer = [];
+            for (let event of toRun) {
+              console.log(event);
+              event[0].call(event[1], event.slice(2));
+            }
+          };
+        }
+        return Reflect.get(tgt, name);
+      }
+    });
+    return buffered;
+  };
+  Ve.BufferEvRAF = (upstream) => Ve.BufferEv(upstream, requestAnimationFrame);
+
+  //////////////////////////////////////////////////////////////////////////////
+
   return this;
 }).call(Ve);

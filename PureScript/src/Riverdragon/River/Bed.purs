@@ -16,7 +16,7 @@ import Data.Maybe (Maybe(..), isNothing)
 import Data.Newtype (class Newtype, unwrap)
 import Data.Profunctor (class Profunctor)
 import Data.Profunctor.Strong ((&&&))
-import Data.Tuple (fst, uncurry)
+import Data.Tuple (Tuple(..), fst, uncurry)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect, foreachE)
 import Effect.Ref as Ref
@@ -93,6 +93,14 @@ whenMM c e = c >>= if _ then e else pure mempty
 whenRef :: forall s m a. MonadST s m => STRef.STRef s a -> (a -> Boolean) -> m Unit -> m Unit
 whenRef ref pred = whenM (pred <$> liftST (STRef.read ref))
 
+iteM :: forall m r. Monad m => m Boolean -> m r -> m r -> m r
+iteM pred ifTrue ifFalse =
+  pred >>= if _ then ifTrue else ifFalse
+
+iteRef :: forall s m a r. MonadST s m => STRef.STRef s a -> (a -> Boolean) -> m r -> m r -> m r
+iteRef ref pred ifTrue ifFalse =
+  (pred <$> liftST (STRef.read ref)) >>= if _ then ifTrue else ifFalse
+
 
 -- | Cleanup means it only runs once!
 cleanup' :: Allocar Unit -> Allocar
@@ -112,6 +120,14 @@ cleanup' act = do
 
 cleanup :: Allocar Unit -> Allocar (Allocar Unit)
 cleanup = cleanup' >>> map _.cleanup
+
+rolling :: Allocar (Allocar Unit -> Allocar Unit)
+rolling = do
+  past <- liftST do STR.new mempty
+  pure \next -> do
+    join do liftST do STR.read past
+    _ <- liftST do STR.write next past
+    pure unit
 
 cleanupFn' :: forall d.
   (d -&> Unit) -> Allocar
@@ -249,8 +265,46 @@ pushArray = liftST (STRef.new List.Nil) <#> \acc ->
   , reset: Array.reverse <<< List.toUnfoldable <$> liftST (STRef.read acc <* STRef.write List.Nil acc)
   }
 
--- prealloc :: forall a. a -> Allocar { get :: Allocar a, set :: a -&> Unit }
--- prealloc default = do
---   liftST do STRef.new default
+prealloc :: forall a. a -> Allocar { get :: Allocar a, set :: a -&> a }
+prealloc default =
+  liftST do
+    STRef.new default <#> \ref ->
+      { get: liftST do STRef.read ref
+      , set: coerce do
+          mkEffectFn1 \v -> liftST do
+            STRef.read ref <* STRef.write v ref
+      }
+
+prealloc2 :: forall a b. a -> b -> Allocar { get :: Allocar (Tuple a b), setL :: a -&> a, setR :: b -&> b }
+prealloc2 defaultL defaultR =
+  liftST ado
+    refL <- STRef.new defaultL
+    refR <- STRef.new defaultR
+    in
+      { get: liftST do Tuple <$> STRef.read refL <*> STRef.read refR
+      , setL: coerce do
+          mkEffectFn1 \v -> liftST do
+            STRef.read refL <* STRef.write v refL
+      , setR: coerce do
+          mkEffectFn1 \v -> liftST do
+            STRef.read refR <* STRef.write v refR
+      }
 
 -- preallocMaybe
+
+loading :: forall r. (Allocar Boolean -> Allocar r) -> Allocar r
+loading f = do
+  isLoading <- liftST (STRef.new true)
+  r <- f (liftST (STRef.read isLoading))
+  _ <- liftST (STRef.write false isLoading)
+  pure r
+
+loadingBurst ::
+  forall a r.
+  ((a -> Allocar Unit) -> Allocar Boolean -> Allocar (Array a -> r)) ->
+  Allocar r
+loadingBurst f = do
+  bursts <- pushArray
+  r <- loading (f bursts.push)
+  burst <- bursts.reset
+  pure (r burst)

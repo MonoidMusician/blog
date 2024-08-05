@@ -6,16 +6,19 @@ import Control.Alt (class Alt)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Internal as STRef
 import Control.Plus (class Plus, empty)
+import Data.Array as Array
 import Data.Foldable (for_, traverse_)
 import Data.Maybe (Maybe(..))
 import Data.Monoid.Conj (Conj(..))
 import Data.Newtype (unwrap)
+import Data.Set as Set
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Uncurried (mkEffectFn1, runEffectFn1)
 import Foreign.Object.ST as STO
 import Idiolect (type (-!>))
 import Prim.Boolean (False, True)
-import Riverdragon.River.Bed (type (-&>), Allocar(..), AllocateFrom(..), accumulator, allocLazy, cleanup, globalId, ordMap, subscriptions, threshold)
+import Riverdragon.River.Bed (type (-&>), Allocar(..), AllocateFrom(..), accumulator, allocLazy, cleanup, globalId, iteM, loading, loadingBurst, ordMap, prealloc, prealloc2, pushArray, subscriptions, threshold)
 import Safe.Coerce (coerce)
 
 type Id = Int
@@ -24,16 +27,18 @@ type Id = Int
 -- | Actor model? “I changed” vs “you changed”?
 -- | Errors/stream cancelation like RxJS?
 data Stream (flow :: Boolean) a = Stream (Conj Boolean)
+  -- FIXME: buffer destroyed after burst?
   ( { receive :: a -!> Unit, commit :: Id -!> Unit, destroyed :: Allocar Unit } -&>
-    { sources :: Array Id, unsubscribe :: Allocar Unit }
+    { burst :: Array a, sources :: Array Id, unsubscribe :: Allocar Unit }
   )
 
 instance functorStream :: Functor (Stream flow) where
   map f (Stream t (AllocateFrom g)) = Stream t do
     AllocateFrom do
-      mkEffectFn1 \cbs ->
-        runEffectFn1 g do
+      mkEffectFn1 \cbs -> do
+        r <- runEffectFn1 g do
           cbs { receive = mkEffectFn1 \a -> runEffectFn1 cbs.receive (f a) }
+        pure r { burst = map f r.burst }
 -- | The `alt` of two events forwards all data and commits, and waits until
 -- | both are destroyed to destroy downstream.
 instance altStream :: Alt (Stream flow) where
@@ -52,28 +57,55 @@ instance plusStream :: Plus (Stream flow) where
     AllocateFrom do
       mkEffectFn1 \cbs -> do
         unwrap cbs.destroyed
-        pure { sources: mempty, unsubscribe: mempty }
--- instance applyStream :: Apply Stream where
---   apply (Stream r1) (Stream r2) = Stream
---     { sources: r1.sources <> r2.sources
---     , subscribe: AllocateFrom do
---         mkEffectFn1 \cb -> do
---           ?help
---     }
--- instance applicativeStream :: Applicative Stream where
---   pure a = Stream
---     { sources: []
---     , subscribe: AllocateFrom do
---         mkEffectFn1 \cb -> do
---           mempty <$ runEffectFn1 cb a
---     }
-
--- inheritCommitFrom :: forall a b. Stream a -> Stream b -> Stream b
--- inheritCommitFrom (Stream (AllocateFrom e1)) (Stream (AllocateFrom e2)) =
---   Stream do
---     AllocateFrom do
---       mkEffectFn1 \cbs -> do
---         e1
+        pure { burst: empty, sources: mempty, unsubscribe: mempty }
+instance applyStream :: Apply (Stream flow) where
+  apply (Stream t1 (AllocateFrom e1)) (Stream t2 (AllocateFrom e2)) = Stream (t1 <> t2) do
+    AllocateFrom do
+      mkEffectFn1 \cbs -> unwrap do
+        -- only run it once both have been destroyed
+        destroyed <- threshold 2 cbs.destroyed
+        lastValues <- prealloc2 Nothing Nothing
+        sourcesR <- prealloc Set.empty
+        let
+          cbL = mkEffectFn1 \f -> do
+            _ <- runEffectFn1 (unwrap lastValues.setL) (Just f)
+            pure unit
+          commitL = mkEffectFn1 \id -> do
+            srcsR <- unwrap sourcesR.get
+            when (not Set.member id srcsR) do
+              runEffectFn1 commitR id
+          cbR = mkEffectFn1 \a -> do
+            _ <- runEffectFn1 (unwrap lastValues.setR) (Just a)
+            pure unit
+          commitR = mkEffectFn1 \id -> do
+            Tuple f a <- unwrap lastValues.get
+            case f <*> a of
+              Nothing -> pure unit
+              Just b -> runEffectFn1 cbs.receive b
+            runEffectFn1 cbs.commit id
+        -- and only count each once (just in case)
+        cbs1 <- cbs { receive = cbL, commit = commitL, destroyed = _ } <$> cleanup destroyed
+        cbs2 <- cbs { receive = cbR, commit = commitR, destroyed = _ } <$> cleanup destroyed
+        r1 <- Allocar do runEffectFn1 e1 cbs1
+        r2 <- Allocar do runEffectFn1 e2 cbs2
+        _ <- Allocar do runEffectFn1 (unwrap lastValues.setL) (Array.last r1.burst)
+        _ <- Allocar do runEffectFn1 (unwrap lastValues.setR) (Array.last r2.burst)
+        _ <- Allocar do runEffectFn1 (unwrap sourcesR.set) (Set.fromFoldable r2.sources)
+        pure
+          { burst: r1.burst <*> r2.burst
+          , sources: r1.sources <> r2.sources
+          , unsubscribe: r1.unsubscribe <> r2.unsubscribe
+          }
+instance applicativeStream :: Applicative (Stream flow) where
+  pure a = Stream mempty do
+    AllocateFrom do
+      mkEffectFn1 \{ destroyed } -> do
+        unwrap destroyed
+        pure
+          { sources: []
+          , burst: [a]
+          , unsubscribe: mempty
+          }
 
 
 -- | Create a (hot) event as a message channel, that sends any message to all of
@@ -89,7 +121,7 @@ createStream = do
         runEffectFn1 notify do
           mkEffectFn1 \{ commit } -> runEffectFn1 commit id
     , event: Stream mempty $ AllocateFrom $ mkEffectFn1 \cbs -> do
-        runEffectFn1 push cbs <#> { sources: [id], unsubscribe: _ }
+        runEffectFn1 push cbs <#> { burst: [], sources: [id], unsubscribe: _ }
     , destroy: Allocar do
         runEffectFn1 destroy do
           mkEffectFn1 \{ destroyed: Allocar destroyed } -> destroyed
@@ -106,7 +138,7 @@ createStream' = do
         runEffectFn1 notify do
           mkEffectFn1 \{ commit } -> runEffectFn1 commit id
     , event: \sources -> Stream mempty $ AllocateFrom $ mkEffectFn1 \cbs -> do
-        runEffectFn1 push cbs <#> { sources, unsubscribe: _ }
+        runEffectFn1 push cbs <#> { burst: [], sources, unsubscribe: _ }
     , destroy: Allocar do
         runEffectFn1 destroy do
           mkEffectFn1 \{ destroyed: Allocar destroyed } -> destroyed
@@ -119,11 +151,16 @@ makeStream eventTemplate = Stream (Conj false) do
   AllocateFrom do
     mkEffectFn1 \cbs -> do
       id <- unwrap globalId
-      unsubscribe <- coerce eventTemplate do
-        mkEffectFn1 \a -> do
-          runEffectFn1 cbs.receive a
-          runEffectFn1 cbs.commit id
-      pure { sources: [id], unsubscribe }
+      unwrap $ loadingBurst \pushInitial isLoading -> do
+        unsubscribe <- coerce eventTemplate do
+          mkEffectFn1 \a -> do
+            iteM (unwrap isLoading)
+              do
+                unwrap (pushInitial a)
+              do
+                runEffectFn1 cbs.receive a
+                runEffectFn1 cbs.commit id
+        pure { burst: _, sources: [id], unsubscribe }
 
 -- | Unsafe.
 unsafeMarkHot :: forall flowIn flowOut a. Stream flowIn a -> Stream flowOut a
@@ -136,7 +173,9 @@ chill (Stream _ f) = Stream (Conj false) f
 -- | procedure (`Allocar Unit`).
 subscribe :: forall flow a. Stream flow a -> (a -!> Unit) -> Allocar (Allocar Unit)
 subscribe (Stream _ (AllocateFrom event)) receive = coerce do
-  _.unsubscribe <$> runEffectFn1 event { receive, commit: mempty, destroyed: mempty }
+  r <- runEffectFn1 event { receive, commit: mempty, destroyed: mempty }
+  for_ r.burst \a -> runEffectFn1 receive a
+  pure r.unsubscribe
 
 -- | Create a single subscriber to an upstream event that broadcasts it to
 -- | multiple downstream subscribers at once. This creation is effectful because
