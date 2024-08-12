@@ -16,15 +16,26 @@ body > section
   margin-right: auto
   .full-width
     width: 100vw
-    margin-left: -21vw
-    margin-right: -21vw
-    margin-left: calc(-21vw + 8px)
-    margin-right: calc(-21vw + 8px)
+    margin-left: calc(-20vw - 8px)
+    margin-right: calc(-20vw - 8px)
+    box-sizing: border-box
   @media (max-width: $breakpoint)
     max-width: 98%
     .full-width
-      margin-left: calc(-7vw + 8px)
-      margin-right: calc(-7vw + 8px)
+      margin-left: calc(-7vw - 8px)
+      margin-right: calc(-7vw - 8px)
+body section > .Box
+    &:not(.full-width)
+      margin: 0 -9px
+      margin-top: 0.75em
+    &.full-width
+      /* idk why 12px */
+      width: calc(100vw - 12px)
+      margin-left: calc(-20vw)
+      margin-right: calc(-20vw)
+      @media (max-width: $breakpoint)
+        margin-left: calc(-5vw - 2px)
+        margin-right: calc(-5vw - 2px)
 
 table
   border-spacing: 0
@@ -282,9 +293,6 @@ blockquote
       display: inline
       display: contents
       margin: 0
-body section > .Box
-  margin: 0 -9px
-  margin-top: 0.75em
 
 @mixin Box($name)
   @extend .Box

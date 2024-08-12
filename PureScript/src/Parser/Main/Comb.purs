@@ -6,18 +6,23 @@ import Ansi.Codes as Ansi
 import Control.Monad.Except (runExcept)
 import Control.Plus ((<|>))
 import Data.Array (intercalate)
+import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
 import Data.Either (Either(..), either)
 import Data.Foldable (fold, foldMap, oneOf, traverse_)
 import Data.Lens (traversed)
 import Data.Lens.Iso.Newtype (_Newtype)
 import Data.Lens.Record (prop)
+import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Semigroup.Foldable (intercalateMap)
+import Data.Newtype (unwrap)
 import Data.String as String
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags as RegexFlags
 import Data.Traversable (traverse)
+import Data.Tuple (Tuple(..), snd, uncurry)
+import Data.Tuple.Nested ((/\))
 import Deku.Attribute (Cb, cb, prop', unsafeAttribute, xdata, (!:=), (<:=>))
 import Deku.Control (switcher, text, text_)
 import Deku.Core (Domable, Nut, bussed, envy)
@@ -35,10 +40,13 @@ import FRP.Memoize (memoLast)
 import Fetch (Method(..), fetch)
 import Foreign (readArray, readString)
 import Foreign.Index (readProp)
-import Idiolect ((<#?>), (>==))
+import Idiolect ((<#?>), (>==), intercalateMap)
 import JSURI (encodeURIComponent)
-import Parser.Comb.Comber (Comber, Printer, parse, printGrammarWsn, toAnsi)
+import Parser.Comb.Comber (Comber, Printer, FullParseError, parse, printGrammarWsn, toAnsi)
+import Parser.Lexing (FailReason(..), FailedStack(..), Similar(..), errorName, len, userErrors)
 import Parser.Template (template)
+import Parser.Types (ShiftReduce(..), unShift)
+import Parser.Types as P
 import Partial.Unsafe (unsafeCrashWith)
 import PureScript.CST as CST
 import PureScript.CST.Errors (printParseError)
@@ -299,4 +307,117 @@ updateTA upd = cb $
       value <- HTMLTextArea.value ta
       upd value
 
+
+renderParseError :: forall lock payload. FullParseError -> Domable lock payload
+renderParseError theError = case theError of
+  CrashedStack s -> D.div_ [ text_ "Internal parser error: ", text_ s ]
+  FailedStack info@{ lookupState, initialInput, currentInput, failedStack } ->
+    D.div_
+      [ case info.failReason of
+          StackInvariantFailed -> text_ $ "Internal parser error: Stack invariant failed"
+          UnknownState { state } -> text_ $ "Internal parser error: Unknown state " <> show state
+          Uhhhh { token: cat } -> text_ $ "Internal parser error: Uhhhh " <> show cat
+          UnknownReduction { reduction: nt /\ r } -> text_ $ "Internal parser error: UnknownReduction " <> show nt <> "#" <> show r
+
+          UserRejection { userErr } -> fold
+            [ text_ "Parse error: User rejection"
+            , listing userErr text_
+            ]
+          NoTokenMatches { advance } -> fold
+            [ text_ "Parse error: No token matches"
+            , text_ ", expected"
+            , text_ case Map.size advance of
+                0 -> " nothing??"
+                1 -> ""
+                _ -> " one of"
+            , listing (Map.toUnfoldable advance) \(Tuple cat _) ->
+                showCat cat
+            ]
+          UnexpectedToken { advance, matched }
+            | [ cat0 /\ o /\ _i ] <- NEA.toArray matched -> fold
+            [ text_ "Parse error: Unexpected token "
+            , showCatTok cat0 o
+            , text_ ", expected"
+            , text_ case Map.size advance of
+                0 -> " nothing??"
+                1 -> ""
+                _ -> " one of"
+            , listing (Map.toUnfoldable advance) \(Tuple cat _) ->
+                showCat cat
+            ]
+          UnexpectedToken { advance, matched: matched } -> fold
+            [ text_ "Parse error: Unexpected+ambiguous token "
+            , listing (NEA.toArray matched) \(cat0 /\ o /\ _i) ->
+                showCatTok cat0 o
+            , text_ "\nExpected"
+            , text_ case Map.size advance of
+                0 -> " nothing??"
+                1 -> ""
+                _ -> " one of"
+            , listing (Map.toUnfoldable advance) \(Tuple cat _) ->
+                showCat cat
+            ]
+          AllActionsRejected { possibilities } -> fold
+            [ text_ "Parse error: All actions rejected"
+            , listing (NEA.toArray possibilities) \(poss /\ errs) -> fold
+                [ text_ (show poss)
+                , listing errs \err -> fold
+                    [ text_ $ errorName err
+                    , listing (userErrors err) text_
+                    ]
+                ]
+            ]
+          Ambiguity { filtered, userErr } -> fold
+            [ text_ "Parse error: LR(1) ambiguity"
+            , listing (NEA.toArray filtered) \(Tuple sr _) -> fold
+                [ case sr of
+                    Shift s -> text_ $ "Shift to " <> show s
+                    ShiftReduces s rs -> text_ ("Shift to " <> show s <> ", or reduce ") <>
+                      intercalateMap (text_ " or ") (uncurry showNTR <<< snd) rs
+                    Reduces rs -> text_ "Reduce " <>
+                      intercalateMap (text_ " or ") (uncurry showNTR <<< snd) rs
+                , listing (Array.fromFoldable (unShift sr >>= lookupState)) \state ->
+                    unwrap state.items # foldMap \item -> fold
+                      [ showNTR item.pName item.rName
+                      , text_ " = "
+                      , case item.rule of
+                          P.Zipper parsed toParse -> fold
+                            [ intercalateMap (text_ " ") part parsed
+                            , text_ " • "
+                            , intercalateMap (text_ " ") part toParse
+                            ]
+                      ]
+                ]
+            , listing userErr text_
+            ]
+      , text_ $ "\nat character " <> show (1 + len initialInput - len currentInput)
+      , text_ case initialInput of
+          P.Continue s -> "\n  " <> show (String.drop (len initialInput - len currentInput) s)
+          P.EOF -> ""
+      -- , "\n"
+      -- , show info.failedState
+      -- , "\n"
+      -- , "Stack: " <> show (stackSize failedStack)
+      ]
+  where
+  listing :: forall a. Array a -> (a -> Domable lock payload) -> Domable lock payload
+  listing items f = D.ul_ $ items <#> f >>> pure >>> D.li_
+
+  showNTR (Left x) Nothing = text_ (x <> "#")
+  showNTR (Right x) (Just r) = text_ (x <> "#" <> show r)
+  showNTR _ _ = text_ "???"
+
+  showCat = part <<< P.Terminal
+  showCatTok = case _, _ of
+    P.EOF, P.EOF -> text_ "$ (EOF)"
+    P.Continue (Similar (Left s)), P.Continue s' | s == s' -> text_ (show s)
+    P.Continue (Similar (Right r)), P.Continue s -> text_ (show s <> " (" <> show r <> ")")
+    _, _ -> text_ "??"
+
+  part = case _ of
+    P.NonTerminal (Right v) -> text_ v
+    P.NonTerminal (Left v) -> text_ (v <> "#")
+    P.Terminal P.EOF -> text_ "$"
+    P.Terminal (P.Continue (Similar (Left s))) -> text_ (show s)
+    P.Terminal (P.Continue (Similar (Right r))) -> text_ (show r)
 

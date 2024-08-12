@@ -208,105 +208,108 @@ $transition: 0.4s
   @include Box(#1dca24)
 
 
+.sourceCode.invalid code
+  outline: 1px solid #ff004d99
+
 // Code colors
-// Keyword
 code span.kw, code.kw
+  /* Keyword */
   color: #cf2a8f
-// String
 code span.st, code.st
+  /* String */
   color: goldenrod
-// SpecialChar
 code span.sc, code.sc
+  /* SpecialChar */
   color: yellow
   @if $light
     color: darkorange
-// SpecialString
 code span.ss, code.ss
+  /* SpecialString */
   color: yellow
-// DataType
 code span.dt, code.dt
+  /* DataType */
   color: #db74b9
-// Other
 code span.ot, code.ot
+  /* Other */
   color: #acd4e4
   @if $light
     color: #03a0df
-// Operator
 code span.op, code.op
+  /* Operator */
   color: #f97d7d
-// Char
 code span.ch, code.ch
+  /* Char */
   color: #049b0a
-// Function
 code span.fu, code.fu
+  /* Function */
   color: #ff9358
-// Alert
 code span.al, code.al
+  /* Alert */
   color: #ffff00
-// Annotation
 code span.an, code.an
+  /* Annotation */
   color: #0066ff
   font-weight: 500
   font-style: italic
-// Attribute
 code span.at, code.at
+  /* Attribute */
   color: inherit
-// BaseN
 code span.bn, code.bn
+  /* BaseN */
   color: #44aa43
-// BuiltIn
 code span.bu, code.bu
+  /* BuiltIn */
   color: inherit
-// ControlFlow
 code span.cf, code.cf
+  /* ControlFlow */
   color: #43a8ed
   font-weight: 500
-// Constant
 code span.cn, code.cn
+  /* Constant */
   color: inherit
-// Comment
 code span.co, code.co
+  /* Comment */
   color: #27c856
   font-style: italic
-// Documentation
 code span.do, code.do
+  /* Documentation */
   color: #0066ff
   font-style: italic
-// DecVal
 code span.dv, code.dv
+  /* DecVal */
   color: #44aa43
-// Error
 code span.er, code.er
+  /* Error */
   @if not $light
     color: #ffff00
   @else
     color: #ff7517
   font-weight: 500
-// Extension
 code span.ex, code.ex
+  /* Extension */
   color: inherit
-// Float
 code span.fl, code.fl
+  /* Float */
   color: #44aa43
-// Import
 code span.im, code.im
+  /* Import */
   color: #7f2db9
-// Information
 code span.in, code.in
+  /* Information */
   color: #0066ff
   font-weight: 500
-// Preprocessor
 code span.pp, code.pp
+  /* Preprocessor */
   font-weight: 500
-// Variable
 code span.va, code.va
+  /* Variable */
   /* color: inherit */
   color: #44aa43
-// VerbatimString
 code span.vs, code.vs
+  /* VerbatimString */
   color: #049b0a
-// Warning
 code span.wa, code.wa
+  /* Warning */
   color: #ffff00
   font-weight: 500
 

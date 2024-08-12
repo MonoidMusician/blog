@@ -45,6 +45,8 @@ import Data.Filterable (class Filterable, filter, filterMap)
 import Data.Filterable (class Filterable, filter, filterMap) as ReExports
 import Data.Foldable (class Foldable, fold, foldMap, or, and, any, all, maximum, minimum, sum, product, oneOf, oneOfMap, intercalate)
 import Data.Foldable (class Foldable, fold, foldMap, or, and, any, all, maximum, minimum, sum, product, oneOf, oneOfMap, intercalate) as ReExports
+import Data.Semigroup.Foldable (class Foldable1, fold1, foldMap1)
+import Data.Semigroup.Foldable (class Foldable1, fold1, foldMap1) as ReExports
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.FunctorWithIndex (mapWithIndex) as ReExports
 import Data.HeytingAlgebra (tt, ff, implies)
@@ -102,8 +104,8 @@ import Effect.Aff (Aff)
 import Effect.Aff (Aff) as ReExports
 import Effect.Class.Console (log, logShow)
 import Effect.Class.Console (log, logShow) as ReExports
-import Idiolect (type (/\/), compactMap, compactMapFlipped, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, morph, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/))
-import Idiolect (type (/\/), compactMap, compactMapFlipped, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, morph, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/)) as ReExports
+import Idiolect (type (/\/), compactMap, compactMapFlipped, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, intercalateMap, morph, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/))
+import Idiolect (type (/\/), compactMap, compactMapFlipped, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, intercalateMap, morph, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/)) as ReExports
 import Parser.Comb (Comb(..))
 import Parser.Comb (Comb(..)) as ReExports
 import Parser.Languages (digit, int, json, string, digit, int, number)

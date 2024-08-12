@@ -10,6 +10,7 @@ import Foreign.Object as Object
 import Parser.Main as Parser
 import Parser.Main.CSS as CSS
 import Parser.Main.Comb as Parser.Main.Comb
+import Parser.Main.HFS as Parser.Main.HFS
 import Parser.Main.TMTTMT as TMTTMT
 import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
 import Web.HTML (window)
@@ -28,12 +29,14 @@ widgets = foldl Object.union Object.empty
   [ Parser.widgets
   , CSS.widgets
   , TMTTMT.widgets
+  , Parser.Main.HFS.widgets
   , Object.fromFoldable
     [ "Widget.Query" /\ Widget.Query.widget
     , "Widget.Control" /\ Widget.Widgets.controlWidget
     , "Widget.Unicode" /\ Widget.Unicode.widget
     , "Widget.Show" /\ Widget.Unicode.widgetShow
     , "Parser.Main.Comb" /\ Parser.Main.Comb.widget
+    , "Parser.Main.HFS" /\ Parser.Main.HFS.widget
     , "" /\ Widget.Datatypes.widget
     ]
   ]

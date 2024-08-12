@@ -11,23 +11,33 @@ function HFStoString(x) {
   }
   return `{ ${items.join(", ")} }`;
 }
-function HFStoSpans(x, depth=0) {
-  var colorful = _ => ({className:"opacity-hover-child", style:{color:bracket_color(depth)}, _});
-  if (x === 0) {
-    return colorful("∅");
-  }
+function HFStoTree(x) {
   var items = [];
   Array.from(x.toString(2)).forEach((d, i, digits) => {
-    if (d === "1") items.push(HFStoSpans(digits.length - 1 - i, depth+1));
+    if (d === "1") items.push(HFStoTree(digits.length - 1 - i));
   });
+  return items;
+}
+function HFListToString(tree) {
+  var items = tree.map(HFListToString);
   if (items.length < 2) {
-    return [colorful("{"), items, colorful("}")];
+    return `{${items.join(",")}}`;
+  }
+  return `{ ${items.join(", ")} }`;
+}
+function HFStoSpans(tree, depth=0) {
+  var colorful = _ => ({className:"opacity-hover-child", style:{color:bracket_color(depth)}, _});
+  if (!tree.length) {
+    return colorful("∅");
   }
   var result = [];
-  items.forEach((item, i) => {
+  tree.forEach((subtree, i) => {
     if (i) result.push(", ");
-    result.push(item);
+    result.push(HFStoSpans(subtree, depth+1));
   })
+  if (result.length < 2) {
+    return [colorful("{"), result, colorful("}")];
+  }
   return [colorful("{ "), result, colorful(" }")];
 }
 function HFStoSpan(x, depth=0) {
@@ -36,8 +46,10 @@ function HFStoSpan(x, depth=0) {
 function HFStoGraph(s) {
   var vs = [];
   var v = 0;
+  var max = 0;
   for (let c of s) {
     if (c === `{`) {
+      if (v > max) max = v;
       vs.push(v);
       v += 1;
     }
@@ -46,6 +58,7 @@ function HFStoGraph(s) {
       v -= 1;
     }
     if (c === `∅`) {
+      if (v > max) max = v;
       vs.push(v, v+1);
     }
   }
@@ -53,25 +66,25 @@ function HFStoGraph(s) {
   if (v !== 0) {
     throw new Error("Unbalanced HFS representation");
   }
-  return vs;
+  return [vs, max];
 }
 function HFSfromGraph(points) {
-  if (!points.length) return 0;
+  if (!points.length) return 0n;
   if (points[0] !== 0 || points[points.length-1] !== 0) {
     throw new Error("HFS graph should start and end with 0 " + points);
   }
-  if (points.length < 3) return 0;
+  if (points.length < 3) return 0n;
   const inner = points.slice(1, -1).map(point => point-1);
   if (inner.some(point => point < 0)) {
     throw new Error("HFS graph should be a single segment " + points);
   }
-  let result = 0;
+  let result = 0n;
   let segment = undefined;
   for (let point of inner) {
     if (point === 0) {
       if (segment !== undefined) {
         segment.push(0);
-        result |= 1 << HFSfromGraph(segment);
+        result |= 1n << HFSfromGraph(segment);
       }
       segment = [0];
     } else {
@@ -116,9 +129,18 @@ function bracket_color(current_depth) {
   return bracket_colors[current_depth % bracket_colors.length];
 }
 
-function HFStoSVG(hfs, options) {
-  const string = HFStoString(hfs);
-  const graph = HFStoGraph(string);
+function HFStoSVG(tree, options) {
+  if (typeof tree === 'number') tree = HFStoTree(tree);
+  if (!options) options = {};
+  hfs = { tree };
+  hfs.string = HFListToString(hfs.tree);
+  [hfs.graph, hfs.depth] = HFStoGraph(hfs.string);
+  hfs.large = hfs.graph.length > 300;
+  if (hfs.large) hfs.graph = [];
+  hfs.span = hfs.large ? hfs.string.length > 1000 ? toSpan("–") : toSpan(hfs.string) : HFStoSpan(hfs.tree);
+  const limitTo = (n, s) => s.length <= n ? s : undefined;
+  hfs.bin = hfs.large ? undefined : hfs.depth < 6 ? limitTo(45, HFSfromGraph(hfs.graph).toString(2)) : undefined;
+  hfs.dec = hfs.large ? undefined : hfs.depth < 6 ? limitTo(30, HFSfromGraph(hfs.graph).toString(10)) : undefined;
 
   var w = 500;
   var h = 100;
@@ -166,9 +188,8 @@ function HFStoSVG(hfs, options) {
   let segment = [];
   let o = [0,h];
   let d = "M"+[0,h];
-  const l = graph.length - 1;
-  const m = Math.max(...graph);
-  const depth = m-1;
+  const l = hfs.graph.length - 1;
+  const m = Math.max(...hfs.graph);
   for (let i=0; i<=m; i++) {
     const watermark = document.createElementNS("http://www.w3.org/2000/svg", "path");
     const mark = h*(1.0-i/m);
@@ -179,7 +200,7 @@ function HFStoSVG(hfs, options) {
   }
 
   let x = 0, y = 0;
-  const points = graph.slice(1, -1).map(
+  const points = hfs.graph.slice(1, -1).map(
     (point, i, points) => ([i === 0 || i === points.length-1, point])
   );
   for (let [isEndpoint, point] of points) {
@@ -206,12 +227,12 @@ function HFStoSVG(hfs, options) {
   d += "C"+[o1,o2,o];
   ds.push(d);
   segments.push(segment);
-  const width = ds.length - +(hfs === 0.0);
+  const count = ds.length - +(hfs === 0.0);
   let j = 0;
   for (let [isEndpoint, [d, segment]] of ds.map((d, i) => [d, segments[i]]).map(
     (point, i, points) => ([i === 0 || i === points.length-1, point])
   )) {
-    const segmentValue = HFSfromGraph(segment);
+    const segmentValue = Math.max(...segment) <= 6 ? HFSfromGraph(segment) : "";
 
     const mountain = document.createElementNS("http://www.w3.org/2000/svg", "path");
     const shadow = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -221,7 +242,7 @@ function HFStoSVG(hfs, options) {
     shadow.addEventListener("mouseenter", () => {
       mountain.style.opacity = 1;
       hoverLeft.textContent = padding + segmentValue.toString(10);
-      hoverRight.textContent = "0b" + segmentValue.toString(2) + padding;
+      hoverRight.textContent = hfs.bin ? "0b" + segmentValue.toString(2) + padding : "";
     });
     for (let [k, v] of Object.entries({x:w*j/l,y:0,width:w*(segment.length-+!isEndpoint)/l,height:h+h2})) {
       shadow.setAttribute(k, v);
@@ -229,8 +250,8 @@ function HFStoSVG(hfs, options) {
     j += segment.length-+!isEndpoint;
     shadow.addEventListener("mouseleave", () => {
       mountain.style.opacity = 0.75;
-      hoverLeft.textContent = padding + "depth: " + depth;
-      hoverRight.textContent = "width: " + width + padding;
+      hoverLeft.textContent = padding + "depth: " + hfs.depth;
+      hoverRight.textContent = "count: " + count + padding;
     });
     shadowRange.appendChild(shadow);
   }
@@ -259,7 +280,7 @@ function HFStoSVG(hfs, options) {
 
   const brackets = [];
   let last = undefined;
-  for (let point of graph) {
+  for (let point of hfs.graph) {
     if (last !== undefined) {
       brackets.push(point > last);
     }
@@ -321,23 +342,26 @@ function HFStoSVG(hfs, options) {
   wrapper.classList.add("opacity-hover-container");
 
   const reprs = document.createElement("div");
-  reprs.style = `display: flex; justify-content: space-between; white-space: pre;`;
-  reprs.appendChild(toSpan({className: "numeric", _:hfs.toString(10)}));
-  reprs.appendChild(toSpan(["0b", {className: "numeric", _:hfs.toString(2)}]));
+  reprs.style = `display: flex; justify-content: space-between; white-space: pre; overflow-x: auto;`;
+  if (!hfs.dec && !hfs.bin) {
+    reprs.appendChild(toSpan("–"));
+  } else {
+    reprs.appendChild(toSpan(hfs.dec ? {className: "numeric", _:hfs.dec} : []));
+    reprs.appendChild(toSpan(hfs.bin ? [" 0b", {className: "numeric", _:hfs.bin}] : []));
+  }
 
   const codeRepr = document.createElement("div");
   codeRepr.style = `display: flex; justify-content: space-between; white-space: pre; overflow-x: auto; font-size: 65%; font-weight: normal`;
-  const stringed = HFStoSpan(hfs);
-  codeRepr.appendChild(stringed);
+  codeRepr.appendChild(hfs.span);
 
   const hovers = document.createElement("div");
   const padding = "   ";
   hovers.style = `display: flex; justify-content: space-between; white-space: pre; margin-bottom: 1em;`;
   const hoverLeft = document.createElement("span");
-  hoverLeft.textContent = padding + "depth: " + depth;
+  hoverLeft.textContent = padding + "depth: " + hfs.depth;
   hovers.appendChild(hoverLeft);
   const hoverRight = document.createElement("span");
-  hoverRight.textContent = "width: " + width + padding;
+  hoverRight.textContent = "count: " + count + padding;
   hovers.appendChild(hoverRight);
 
   wrapper.appendChild(reprs);

@@ -172,9 +172,13 @@ abbreviations = Map.fromFoldable
       (Just "https://en.wiktionary.org/wiki/sc.#English")
       ["namely", "as follows"]
   , "tl;dr" /\ Acronym "too long; didnʼt read"
+  , "etc." /\ Foreign "la" "et ce\x0304tera"
+      (Just "https://en.wiktionary.org/wiki/etc.#English")
+      ["and so on", "and the remaining items"]
   , "NbE" /\ Acronym "Normalization by Evaluation"
   , "GC" /\ Acronym "Garbage Collector"
   , "GCable" /\ Acronym "Garbage Collectable"
+  , "N-ary" /\ Acronym "Arbitrary arity, in the sense of unary or binary operators"
   ]
 
 matching :: String -> Array String

@@ -160,23 +160,23 @@ topName = "TOP"
 -- | it has to build up an LR(1) table first, and this can be shared between
 -- | inputs if it is partially applied.
 parse :: forall a. Comber a -> (String -> Either ParseError a)
-parse = convertParseError <<< Comb.parseRegex topName <<< un Comber
+parse = convertingParseError <<< Comb.parseRegex topName <<< un Comber
 
 parse' :: forall a. Comber a -> StateTable /\ (String -> Either ParseError a)
-parse' = map convertParseError <<< Comb.parseRegex' topName <<< un Comber
+parse' = map convertingParseError <<< Comb.parseRegex' topName <<< un Comber
 
 type Conf = CombR.CConf UserError Int String (String ~ Rawr) String String
 
 parseWith :: forall a. Conf -> Comber a -> (String -> Either ParseError a)
-parseWith conf = convertParseError <<< Comb.parseWith conf topName <<< un Comber
+parseWith conf = convertingParseError <<< Comb.parseWith conf topName <<< un Comber
 
 parseWith' :: forall a. Conf -> Comber a -> StateTable /\ (String -> Either ParseError a)
-parseWith' conf = map convertParseError <<< Comb.parseWith' conf topName <<< un Comber
+parseWith' conf = map convertingParseError <<< Comb.parseWith' conf topName <<< un Comber
 
-convertParseError :: forall a.
+convertingParseError :: forall a.
   (String -> Either FullParseError a) ->
   String -> Either ParseError a
-convertParseError = map $ lmap case _ of
+convertingParseError = map $ lmap case _ of
   CrashedStack s -> "Internal parser error: " <> s
   FailedStack info@{ lookupState, initialInput, currentInput, failedStack } ->
     fold
@@ -313,7 +313,7 @@ fetchAndThaw comber url =
 
 thaw' :: forall a. Comber a -> Json -> Either CA.JsonDecodeError (StateTable /\ (String -> Either ParseError a))
 thaw' (Comber comber) = C.decode stateTableCodec >>> map \states ->
-  Tuple states $ convertParseError $ execute { best: bestRegexOrString }
+  Tuple states $ convertingParseError $ execute { best: bestRegexOrString }
     { states
     , resultants: topName /\ resultantsOf comber
     , options: buildTree topName comber
@@ -331,7 +331,7 @@ fetchAndThawWith conf comber url =
 
 thawWith' :: forall a. Conf -> Comber a -> Json -> Either CA.JsonDecodeError (StateTable /\ (String -> Either ParseError a))
 thawWith' conf (Comber comber) = C.decode stateTableCodec >>> map \states ->
-  Tuple states $ convertParseError $ execute conf
+  Tuple states $ convertingParseError $ execute conf
     { states
     , resultants: topName /\ resultantsOf comber
     , options: buildTree topName comber
@@ -393,7 +393,7 @@ withReparserFor ::
   ((String -> Either UserError a) -> b -> c) ->
   Comber c
 withReparserFor name (Comber aux) (Comber body) f =
-  Comber $ CombR.withReparserFor name aux body $ f <<< convertParseError
+  Comber $ CombR.withReparserFor name aux body $ f <<< convertingParseError
 
 
 mapEither :: forall a b. (a -> Either (Array UserError) b) -> Comber a -> Comber b

@@ -12,7 +12,7 @@ watch-all :
 	./watch-all.sh
 
 .PHONY : init
-init : node_modules rendered $(BUILDIR) cache
+init : | node_modules rendered $(BUILDIR) cache
 
 node_modules :
 	npm install
@@ -31,25 +31,25 @@ clean :
 sass : $(BUILDIR)/styles/bundles.css
 
 .PHONY : watch-sass
-watch-sass : $(BUILDIR)
+watch-sass : | $(BUILDIR)
 	rm -f $(BUILDIR)/styles/bundled*.css.gz
 	sass -w styles/bundled.sass:$(BUILDIR)/styles/bundled.css styles/bundled_light.sass:$(BUILDIR)/styles/bundled_light.css styles/bundled_sans.sass:$(BUILDIR)/styles/bundled_sans.css styles/bundled_light_sans.sass:$(BUILDIR)/styles/bundled_light_sans.css
 
-$(BUILDIR)/styles/bundles.css : styles/*.sass $(BUILDIR)
+$(BUILDIR)/styles/bundles.css : styles/*.sass | $(BUILDIR)
 	rm -f $(BUILDIR)/styles/bundled*.css.gz
 	sass styles/bundled.sass:$(BUILDIR)/styles/bundled.css styles/bundled_light.sass:$(BUILDIR)/styles/bundled_light.css styles/bundled_sans.sass:$(BUILDIR)/styles/bundled_sans.css styles/bundled_light_sans.sass:$(BUILDIR)/styles/bundled_light_sans.css
 	gzip -f9k $(BUILDIR)/styles/bundled*.css
 
-$(BUILDIR) : rendered
+$(BUILDIR) : | rendered
 	mkdir -p $(BUILDIR)
 	rm -f $(BUILDIR)/assets
 	ln -s $$(realpath assets) $(BUILDIR)/assets
 	rm -f $(BUILDIR)/rendered
 	ln -s $$(realpath rendered) $(BUILDIR)/rendered
 
-pandoc : $(HTMLS) PureScript/src/PureScript/Highlight.purs
+pandoc : $(HTMLS)
 
-$(BUILDIR)/%.html : $(TXTDIR)/%.md pandoc/defaults.yaml pandoc/post.html cache
+$(BUILDIR)/%.html : $(TXTDIR)/%.md pandoc/defaults.yaml pandoc/post.html PureScript/src/PureScript/Highlight.purs | cache
 	pandoc --defaults=pandoc/defaults.yaml $< -o $@
 
 .PHONY : watch-pandoc
