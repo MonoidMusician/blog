@@ -9,6 +9,7 @@ import Data.Bounded.Generic (genericBottom, genericTop)
 import Data.Enum (class BoundedEnum, enumFromTo)
 import Data.Enum.Generic (genericCardinality, genericFromEnum, genericPred, genericSucc, genericToEnum)
 import Data.Generic.Rep (class Generic)
+import Data.Lazy (Lazy, defer, force)
 import Data.List (List(..), (:))
 import Data.List as List
 import Data.Map as Map
@@ -327,6 +328,39 @@ hfsAsHFS = SetLike <<< Set.map (\x -> hfsAsHFS x) <<< hfs
 --------------------------------------------------------------------------------
 -- HatStack language design                                                   --
 --------------------------------------------------------------------------------
+
+stdlib :: String
+stdlib = """
+def single
+  {.}
+end
+
+def dup
+  [.0]
+end
+
+def swap
+  2#[.0 .1]
+end
+
+def rot
+  3#[.1 .0 .2]
+end
+
+0 set false
+1 set true
+"""
+
+stdenv :: Lazy Env
+stdenv = defer \_ ->
+  case String.trim stdlib # Comb.parseRegex topName (unwrap parser) of
+    Left _ -> emptyEnv
+    Right instrs -> run (emptyEnv { instrs = instrs })
+
+withStdenv :: Array Instr -> Env
+withStdenv instrs =
+  let env = force stdenv in
+  env { instrs = env.instrs <> instrs }
 
 -- | Parse a literal.
 lit :: Comber HFS
@@ -647,7 +681,7 @@ parseAndRun' :: String -> Either FullParseError
   (NonEmptyArray (Array HFS))
 parseAndRun' = String.trim >>> (Comb.parseRegex topName (unwrap parser)) >>> case _ of
   Left err -> Left err
-  Right instrs -> case run (emptyEnv { instrs = instrs }) of
+  Right instrs -> case run (withStdenv instrs) of
     { error: Just err } -> Left (CrashedStack err)
     { stacks } -> Right $ NEA.fromFoldable1 stacks <#> Array.fromFoldable
 

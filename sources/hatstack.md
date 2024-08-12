@@ -124,3 +124,8 @@ As mentioned above, there is no compile-time checking for these constructs, they
 
 `true`{.hatstack} (`1`{.hatstack}, `{{}}`{.hatstack})
 :   A nice non-empty set.
+
+#### Stdlib source
+
+:::{widget="Parser.Main.HFS.stdlib"}
+:::

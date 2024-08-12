@@ -10,6 +10,7 @@ import Data.Filterable (filterMap)
 import Data.Foldable (fold, oneOf)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
+import Data.String as String
 import Data.Time.Duration (Milliseconds(..))
 import Data.Tuple (Tuple(..), snd)
 import Data.Tuple.Nested ((/\))
@@ -24,7 +25,7 @@ import FRP.Helpers (dedup)
 import FRP.Memoize (memoBeh)
 import Foreign.Object as FO
 import Idiolect (intercalateMap, (>==>))
-import Parser.Languages.HFS (HFS, HFList, OpMeta(..), StackKind(..), hfsFromInt, hfsToTree, opMeta, showHFS)
+import Parser.Languages.HFS (HFList, HFS, OpMeta(..), StackKind(..), hfsFromInt, hfsToTree, opMeta, showHFS, stdlib)
 import Parser.Languages.HFS as HFS
 import Parser.Main.Comb (renderParseError)
 import Web.DOM (Element)
@@ -37,6 +38,7 @@ widgets :: FO.Object Widget
 widgets = FO.fromFoldable
   [ "Parser.Main.HFS.demo" /\ widget
   , "Parser.Main.HFS.ops" /\ widgetOps
+  , "Parser.Main.HFS.stdlib" /\ widgetStdlib
   ]
 
 foreign import renderHFS :: EffectFn2 HFList Element Unit
@@ -77,6 +79,15 @@ widgetOps _ = do
           , D.dd_ [ doc ]
           ]
 
+widgetStdlib :: Widget
+widgetStdlib _ = do
+  pure $ SafeNut do
+    D.div
+      ( D.Class !:= "sourceCode unicode"
+      <|> pure (xdata "lang" "HatStack")
+      ) $
+        pure $ D.pre_ $ pure $ D.code_ $ pure $ text_ $ String.trim stdlib
+
 code :: String -> String -> Nut
 code cls c = D.code (D.Class !:= cls) [ text_ c ]
 
@@ -94,7 +105,7 @@ widget _ = do
             [ D.div
                 ( D.Style !:= "flex: 0 0 50%; padding-right: 10px; box-sizing: border-box;"
                 <|> D.Class <:=> (done <#> snd >>> isLeft >>> if _ then "sourceCode unicode invalid" else "sourceCode unicode")
-                <|> pure (xdata "lang" "HFS")
+                <|> pure (xdata "lang" "HatStack")
                 ) $
                 pure $ D.pre_ $ pure $ D.code_ $ pure $
                   flip D.textarea [] $ oneOf
