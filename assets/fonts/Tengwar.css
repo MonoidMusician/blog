@@ -1,0 +1,13 @@
+@font-face {
+  font-family: 'Tengwar';
+  src: url('TengwarTelcontar.008/tengtelc.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Tengwar';
+  src: url('TengwarTelcontar.008/tengtelcb.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+}

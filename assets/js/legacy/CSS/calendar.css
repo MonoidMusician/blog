@@ -1,0 +1,119 @@
+/*
+ * Copyright (c) 2012-2013 Thibaut Courouble
+ * http://www.cssflow.com
+ *
+ * Licensed under the MIT License:
+ * http://www.opensource.org/licenses/mit-license.php
+ */
+
+/* calendar style here */
+.picker-container {
+  position: absolute;
+  z-index: 99;
+}
+
+
+.cal {
+  background-color: #EFEFEF;
+  display: block;
+  width: 218px;
+  border-collapse: collapse;
+  border-spacing: 0;
+  border: 1px solid #AAA;
+}
+
+.cal a {
+  text-decoration: none;
+}
+
+.cal tr, .cal th, .cal td {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  font-size: 100%;
+  font: inherit;
+  vertical-align: baseline;
+}
+
+.cal caption {
+  line-height: 32px;
+  color: #FFF;
+  text-align: center;
+  background: #AAA;
+}
+.cal caption a {
+  display: block;
+  line-height: 32px;
+  padding: 0 10px;
+  color: #FFF !important;
+}
+.cal caption .prev {
+  float: left;
+}
+.cal caption .next {
+  float: right;
+}
+
+.cal th, .cal td {
+  width: 30px;
+  text-align: center;
+}
+.cal th:first-child, .cal td:first-child {
+  border-left: 0;
+}
+.cal th {
+  line-height: 20px;
+  font-size: 8px;
+  color: #333;
+  text-transform: uppercase;
+  background: #EFEFEF;
+}
+
+.cal td {
+  font-size: 11px;
+  font-weight: bold;
+  border-top: 1px solid #AAA;
+  border-left: 1px solid #AAA;
+}
+.cal td a {
+  display: block;
+  width: 30px;
+  line-height: 28px;
+  color: #333 !important;
+}
+.cal td.active a, .cal td a:active {
+  color: #FFF !important;
+  background: #333 !important;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+}
+.cal td a:hover, .cal td.off a {
+  background: #FEFEFE;
+}
+.cal td.off a {
+  color: #CCC !important;
+}
+.cal td.active:first-child a, .cal td:first-child a:active {
+  border-left: 0;
+  margin-left: 0;
+}
+.cal td.active:last-child a, .cal td:last-child a:active {
+  border-right: 0;
+  margin-right: 0;
+}
+.cal tr:last-child td.active a, .cal tr:last-child td a:active {
+  border-bottom: 0;
+  margin-bottom: 0;
+}
+
+.cal td.ides:not(.off) a:not(:hover), .cal td.nones:not(.off) a:not(:hover) {
+  background: #C33;
+  color: #fff !important;
+}
+.cal td.kalends:not(.off) a:not(:hover) {
+  background: #A00;
+  color: #fff !important;
+}
