@@ -176,7 +176,10 @@ parseWith' conf = map convertingParseError <<< Comb.parseWith' conf topName <<< 
 convertingParseError :: forall a.
   (String -> Either FullParseError a) ->
   String -> Either ParseError a
-convertingParseError = map $ lmap case _ of
+convertingParseError = map $ lmap convertParseError
+
+convertParseError :: FullParseError -> ParseError
+convertParseError = case _ of
   CrashedStack s -> "Internal parser error: " <> s
   FailedStack info@{ lookupState, initialInput, currentInput, failedStack } ->
     fold

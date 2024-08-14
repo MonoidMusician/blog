@@ -8,9 +8,13 @@ body, .mord.text
 
 pre, code, .code, .meta-code
   font-family: 'Fira Code', 'Hasklig', monospace
-  font-feature-settings: 'cv20' 1
-.sourceCode[data-lang="tmTTmt"] pre, .sourceCode[data-lang="tmTTmt"] code
-  font-feature-settings: 'cv20' 1, 'cv21' 1
+  // font-feature-settings: 'cv20' 1
+.sourceCode[data-lang="PureScript"]
+  pre, code
+    font-feature-settings: 'cv20' 1
+.sourceCode[data-lang="tmTTmt"]
+  pre, code
+    font-feature-settings: 'cv20' 1, 'cv21' 1
 
 
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@200..700&family=Sofia&display=swap')

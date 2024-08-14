@@ -66,6 +66,11 @@ prod-ps : $(BUILDIR) PureScript/src packages.dhall spago.dhall
 prebuild : PureScript/src/PreBuild.purs PureScript/src/Parser/Parserlude.purs
 	spago run --purs-args "-g corefn,js" -m PreBuild
 
+.PHONY : grammars
+grammars :
+	time spago run --purs-args "-g corefn,js" -m Build
+	(for f in assets/json/*-parser-states.json; do gzip -f9k "$$f"; done)
+
 ps : $(BUILDIR) PureScript/src prebuild packages.dhall spago.dhall
 	rm -f $(BUILDIR)/widgets.js.gz
 	spago bundle-app --purs-args "-g corefn,js" --main Main --to $(BUILDIR)/widgets.js

@@ -175,6 +175,9 @@ abbreviations = Map.fromFoldable
   , "etc." /\ Foreign "la" "et ce\x0304tera"
       (Just "https://en.wiktionary.org/wiki/etc.#English")
       ["and so on", "and the remaining items"]
+  , "et al." /\ Foreign "la" "et aliae, et alii\x0304"
+      (Just "https://en.wiktionary.org/wiki/et_al.#Etymology_1")
+      ["and others"]
   , "NbE" /\ Acronym "Normalization by Evaluation"
   , "GC" /\ Acronym "Garbage Collector"
   , "GCable" /\ Acronym "Garbage Collectable"
@@ -196,7 +199,7 @@ widget interface@{ text, rawAttr } = do
     _ -> givenDatatype
   case Map.lookup datatype datatypes of
     Nothing -> do
-      log $ "Unknown datatype " <> show datatype
+      log $ "Unknown datatype " <> show datatype <> " (" <> show t <> ")"
       pure (SafeNut mempty)
     Just datatypeWidget -> do
       datatypeWidget.widget interface

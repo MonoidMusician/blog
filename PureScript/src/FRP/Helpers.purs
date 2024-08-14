@@ -11,12 +11,16 @@ import Data.Array as Array
 import Data.Compactable (compact)
 import Data.Foldable (for_, oneOfMap)
 import Data.Functor.App (App(..))
+import Data.Int as Int
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Monoid as Monoid
 import Data.Newtype (unwrap)
-import Data.Tuple.Nested ((/\), type (/\))
-import FRP.Event (class IsEvent, Event, filterMap, keepLatest, mailboxed, makeEvent, mapAccum, subscribe, withLast)
+import Data.Time.Duration (Milliseconds(..))
+import Data.Tuple (snd)
+import Data.Tuple.Nested (type (/\), (/\))
+import FRP.Event (class IsEvent, Event, delay, filterMap, keepLatest, mailboxed, makeEvent, mapAccum, subscribe, withLast)
+import FRP.Event.Class ((<*|>), (<|*>))
 import FRP.Memoize (pureFold)
 import Unsafe.Reference (unsafeRefEq)
 
@@ -101,3 +105,15 @@ sweepSave e f = makeEvent \k1 -> do
     -- free references - helps gc?
     void $ liftST $ STRef.write (Map.empty) r
     unsub
+
+
+
+debounce :: Milliseconds -> Event ~> Event
+debounce (Milliseconds timing) input =
+  let
+    tagged = counter input
+    tags = map snd tagged
+    delayLine = delay (Int.round timing) tagged
+    gateLatest requested (datum /\ arriving) =
+      if requested > arriving then Nothing else Just datum
+  in filterMap identity $ gateLatest <$> tags <|*> delayLine

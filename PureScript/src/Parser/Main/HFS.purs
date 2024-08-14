@@ -20,8 +20,7 @@ import Deku.Core (Nut, bussed, envy)
 import Deku.DOM as D
 import Effect (Effect)
 import Effect.Uncurried (EffectFn2, runEffectFn2)
-import FRP.Event.Time (debounce)
-import FRP.Helpers (dedup)
+import FRP.Helpers (dedup, debounce)
 import FRP.Memoize (memoBeh)
 import Foreign.Object as FO
 import Idiolect (intercalateMap, (>==>))
@@ -37,8 +36,10 @@ import Widget.Types (SafeNut(..))
 widgets :: FO.Object Widget
 widgets = FO.fromFoldable
   [ "Parser.Main.HFS.demo" /\ widget
-  , "Parser.Main.HFS.ops" /\ widgetOps
-  , "Parser.Main.HFS.stdlib" /\ widgetStdlib
+  , "Parser.Main.HFS.ops" /\ widget_ops All
+  , "Parser.Main.HFS.ops_binary" /\ widget_ops Binaries
+  , "Parser.Main.HFS.ops_n_ary" /\ widget_ops NAries
+  , "Parser.Main.HFS.stdlib" /\ widget_stdlib
   ]
 
 foreign import renderHFS :: EffectFn2 HFList Element Unit
@@ -46,41 +47,55 @@ foreign import renderHFS :: EffectFn2 HFList Element Unit
 graphHFS :: HFS -> Element -> Effect Unit
 graphHFS hfs el = runEffectFn2 renderHFS (hfsToTree hfs) el
 
+data OpsGroup = All | Binaries | NAries
 
-widgetOps :: Widget
-widgetOps _ = do
+widget_ops :: OpsGroup -> Widget
+widget_ops select _ = do
   pure $ SafeNut do
     let
+      ops dflt toks l r =
+        Array.cons dflt toks <#> \s -> l <> s <> r
       binaries = opMeta >>= case _ of
-        Symm _ s doc -> pure $ Tuple [s] $ text_ doc
-        Sided _ _ s doc -> pure $ Tuple [s <> ".", "." <> s] $ text_ doc
-        Order _ l _ r doc -> pure $ Tuple [l, r] $ text_ doc
+        Symm _ dflt toks _bigops doc -> pure $ Tuple [ops dflt toks "" ""] $ text_ doc
+        Sided _ _ dflt toks doc -> pure $ Tuple [ops dflt toks "" ".", ops dflt toks "." ""] $ text_ doc
+        Order _ l ls _ r rs doc -> pure $ Tuple [ops l ls "" "", ops r rs "" ""] $ text_ doc
       naries = opMeta >>= case _ of
-        Symm _ s doc -> pure $ Tuple ["#" <> s, s <> "#"] $ fold
+        Symm _ dflt toks bigops doc -> pure $ Tuple [bigops, ops dflt toks "#" "", ops dflt toks "" "#"] $ fold
           [ text_ "N-ary version of "
-          , code "op" s
+          , code "op" dflt
           , text_ ": "
           , text_ doc
           ]
-        Sided _ _ s doc -> pure $ Tuple ["#" <> s, s <> "#"] $ fold
+        Sided _ _ dflt toks doc -> pure $ Tuple [ops dflt toks "#" "", ops dflt toks "" "#"] $ fold
           [ text_ "N-ary version of "
-          , code "op" ("." <> s)
+          , code "op" ("." <> dflt)
           , text_ " and "
-          , code "op" (s <> ".")
+          , code "op" (dflt <> ".")
           , text_ ": "
           , text_ doc
           ]
-        Order _ _ _ _ _ -> []
+        Order _ l ls _ r rs doc -> pure $ Tuple [ops l ls "#" "", ops r rs "#" ""] $ fold
+          [ text_ "N-ary version of "
+          , code "op" l
+          , text_ " and "
+          , code "op" r
+          , text_ ": "
+          , text_ doc
+          ]
       style = "column-width: 250px; padding-left: 16px; padding-right: 16px"
+      selected = case select of
+        All -> binaries <> naries
+        Binaries -> binaries
+        NAries -> naries
     D.div (D.Class !:= "") $ pure $ D.dl (D.Style !:= style) $
-      (binaries <> naries) <#> \(Tuple op doc) ->
+      selected <#> \(Tuple op doc) ->
         D.div (D.Style !:= "break-inside: avoid")
-          [ D.dt_ [ intercalateMap (text_ ", ") (code "op") op ]
+          [ D.dt_ [ intercalateMap (text_ ", ") (code "op") (join op) ]
           , D.dd_ [ doc ]
           ]
 
-widgetStdlib :: Widget
-widgetStdlib _ = do
+widget_stdlib :: Widget
+widget_stdlib _ = do
   pure $ SafeNut do
     D.div
       ( D.Class !:= "sourceCode unicode"
@@ -114,7 +129,7 @@ widget _ = do
                     , D.Style !:= "height: 20vh"
                     ]
             , D.div (D.Style !:= "flex: 0 0 50%; overflow: auto; font-size: 70%")
-                [ switcher (either renderParseError renderOutput) $ gateSuccess identity done ]
+                [ switcher (either (either renderParseError \s -> text_ $ "Runtime error: " <> s) renderOutput) $ gateSuccess identity done ]
             ]
           ]
   where

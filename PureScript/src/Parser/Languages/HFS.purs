@@ -5,6 +5,7 @@ import Parser.Parserlude
 import Control.Alternative (guard)
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
+import Data.Bifunctor (bimap)
 import Data.Bounded.Generic (genericBottom, genericTop)
 import Data.Enum (class BoundedEnum, enumFromTo)
 import Data.Enum.Generic (genericCardinality, genericFromEnum, genericPred, genericSucc, genericToEnum)
@@ -332,7 +333,7 @@ hfsAsHFS = SetLike <<< Set.map (\x -> hfsAsHFS x) <<< hfs
 stdlib :: String
 stdlib = """
 def single
-  {.}
+  1#{}
 end
 
 def dup
@@ -347,13 +348,98 @@ def rot
   3#[.1 .0 .2]
 end
 
+def drop
+  1#[]
+end
+
 0 set false
 1 set true
+
+def not
+  0 ==
+end
+
+## Unpack a singleton set
+def unsingle
+  $#
+  1 != if
+    throw
+  end
+end
+
+## Kuratowski encoding of ordered pairs
+def pair
+  2#[ {{.0}, {.0, .1}} ]
+end
+
+## Unpack an ordered pair
+def unpair
+  $#
+  dup 2 == if
+    drop
+    2#[
+      .0 .1 .\ unsingle
+      .0 unsingle
+    ]
+    return
+  end
+  dup 1 == if
+    drop
+    unsingle
+    return
+  end
+  throw
+end
+
+## Project out the first element of the pair
+## (the top of the stack)
+def fst
+  unpair 2#[ .0 ]
+end
+
+## Project out the second element of the pair
+## (just below the top of the stack)
+def snd
+  unpair 2#[ .1 ]
+end
+
+## Maps are (finite) graphs of functions,
+## a set of pairs
+def apply
+  2#[ .1# .0 ]
+  begin
+    $1 while
+    3#[ .1-- .0  .2 ]
+    unpair
+    $2 == if
+      $2 3+ #[ .0 ]
+      return
+    end
+    drop
+  end
+  throw
+end
+
 """
+
+{-
+def apply
+  2#[ .1# .0 ]
+  ⎛ $1 while
+  ⎜ 3#[ .1-- .0  .2 ]
+  ⎜ unpair
+  ⎜ $2 == if
+  ⎜   $2 3+ #[ .0 ]
+  ⎜   return
+  ⎜ end
+  ⎝ drop
+  throw
+end
+-}
 
 stdenv :: Lazy Env
 stdenv = defer \_ ->
-  case String.trim stdlib # Comb.parseRegex topName (unwrap parser) of
+  case String.trim stdlib # force theParser of
     Left _ -> emptyEnv
     Right instrs -> run (emptyEnv { instrs = instrs })
 
@@ -370,10 +456,7 @@ lit = "lit" #-> \litRec -> oneOf
   , rawr "0x[\\da-fA-F]+" <#> mkBigNat >>> NumLike Hex
   , zero <$ rawr "0b"
   , zero <$ rawr "0x"
-  , mempty <$ token "{" <* token "}"
   , mempty <$ token "∅"
-  , map (SetLike <<< Set.fromFoldable) $ delim "{" "}" $
-      many1SepBy "litz" (token "," <* ws) litRec
   ]
 
 -- | Binary operators.
@@ -420,122 +503,136 @@ data Op
 
 -- | Data about each binary operator.
 data OpMeta
-  = Symm Op String String
-  | Sided Op Op String String
-  | Order Op String Op String String
+  = Symm Op String (Array String) (Array String) String
+  | Sided Op Op String (Array String) String
+  | Order Op String (Array String) Op String (Array String) String
 
 -- | Listing of the operators.
 opMeta :: Array OpMeta
 opMeta =
   -- Arithmetic
-  [ Symm Add "+" "Addition as numbers"
-  , Sided Sub Bus "-" "Monus (truncating minus) as numbers"
-  , Symm Mul "*" "Multiplication as numbers"
-  , Sided Div Vid "/" "Integer division (rounding down)"
-  , Sided Mod Dom "%" "Integer modulus (remainder)"
-  , Sided Pow Wop "^" "Integer power"
-  , Symm Min "/\\" "Minimum"
-  , Symm Max "\\/" "Maximum"
+  [ Symm Add "+" [] ["\x2211"] "Addition as numbers"
+  , Sided Sub Bus "-" ["\x2238", "\x2212"] "Monus (truncating minus) as numbers"
+  , Symm Mul "*" ["\x00D7"] ["\x220F"] "Multiplication as numbers"
+  , Sided Div Vid "/" ["\x00F7", "\x2215"] "Integer division (rounding down)"
+  , Sided Mod Dom "%" [] "Integer modulus (remainder)"
+  , Sided Pow Wop "^" [] "Integer power"
+  , Symm Min "/\\" ["\x2227"] ["\x22C0"] "Minimum"
+  , Symm Max "\\/" ["\x2228"] ["\x22C1"]"Maximum"
   -- Bitwise/set-theory operators
-  , Sided ShL LSh "<<" "Left shift"
-  , Sided ShR RSh ">>" "Right shift"
-  , Symm Uni "|" "Union (as sets) or bitwise OR"
-  , Symm Int "&" "Intersection (as sets) or bitwise AND"
-  , Sided Dif Fid "\\" "Difference of sets, clear bits" -- \.#2->1 := 2#[.1 .1 .0] & -.
-  , Symm Sym "<>" "Symmetric difference of sets or bitwise XOR" -- bitwise XOR
-  , Sided Mem Rem "@" "Set membership" -- .@#2->1 := 1 .<< =|
+  , Sided ShL LSh "<<" ["\x226A"] "Left shift"
+  , Sided ShR RSh ">>" ["\x226B"] "Right shift"
+  , Symm Uni "|" ["\x222A"] ["\x22C3"] "Union (as sets) or bitwise OR"
+  , Symm Int "&" ["\x2229"] ["\x22C2"] "Intersection (as sets) or bitwise AND"
+  , Sided Dif Fid "\\" ["\x2216"] "Difference of sets, clear bits" -- \.#2->1 := 2#[.1 .1 .0] & -.
+  , Symm Sym "<>" ["\x2296"] [] "Symmetric difference of sets or bitwise XOR" -- bitwise XOR
+  , Sided Mem Rem "@" ["\x2208"] "Set membership" -- .@#2->1 := 1 .<< =|
   -- Boolean logic (not bitwise)
-  , Symm Dis "||" "Boolean OR"
-  , Symm Con "&&" "Boolean AND"
-  , Sided Imp Pmi "=>"
+  , Symm Dis "||" [] [] "Boolean OR"
+  , Symm Con "&&" [] [] "Boolean AND"
+  , Sided Imp Pmi "=>" ["\x21D2"]
     "Boolean implies (false implies anything, and anything implies true)" -- (x => y) := (!x || y)
-  , Symm Xor ">|<"
+  , Symm Xor ">|<" ["\x22BB"] []
     "Boolean XOR (see, it is an X and an OR)" -- ((x || y) && !(x && y))
-  , Symm Sel "><"
+  , Symm Sel "><" ["\x22C8"] []
     "Select (unique non-zero operand)" -- (x ? y ? 0 : x : y)
   -- Comparisons: equality
-  , Symm CEQ "==" "Equals"
-  , Symm CNE "!=" "Not equals"
+  , Symm CEQ "==" [] [] "Equals"
+  , Symm CNE "!=" ["/="] [] "Not equals"
   -- Comparisons: total order
-  , Order CLT "<" CGT ">" "Strict greater/less than, as numbers (total order)"
-  , Order CLE "<=" CGE ">=" "Weak greater/less than, as numbers (total order)"
+  , Order CLT "<" [] CGT ">" [] "Strict greater/less than, as numbers (total order)"
+  , Order CLE "<=" ["\x2264", "\x226F"] CGE ">=" ["\x2265", "\x226E"] "Weak greater/less than, as numbers (total order)"
   -- Comparisons: partial order
-  , Order PLT "<|" PGT "|>"
+  , Order PLT "<|" ["\x228A", "\x2282"] PGT "|>" ["\x228B", "\x2283"]
     "Strict subset (partial order – the pipe is a hint that it involves bitwise OR)"
-  , Order PLE "=|" PGE "|="
+  , Order PLE "=|" ["\x2286", "\x2AE4"] PGE "|=" ["\x2287", "\x22A8"]
     "Weak subset (partial order – the pipe is a hint that it involves bitwise OR, also looks like the entails sign)" -- (x =| y) := (x == x & y)
   ]
 
+data OpExec
+  = NoId (HFS -> HFS -> HFS)
+  | ZeroId (HFS -> HFS -> HFS)
+  | OneId (HFS -> HFS -> HFS)
+  | Transitively (HFS -> HFS -> Boolean)
+  | NonAssoc (Array HFS -> HFS)
+
 -- | Implementation of the binary operators, and the identity element to use
 -- | for their N-ary versions.
-chooseIdOp :: Op -> Tuple (Maybe HFS) (HFS -> HFS -> HFS)
+chooseIdOp :: Op -> OpExec
 chooseIdOp = case _ of
   -- Arithmetic
-  Add -> Tuple (Just zero) hfsAdd
-  Sub -> Tuple Nothing hfsSub
-  Bus -> Tuple Nothing (flip hfsSub)
-  Mul -> Tuple (Just one) hfsMul
-  Div -> Tuple Nothing hfsDiv
-  Vid -> Tuple Nothing (flip hfsDiv)
-  Mod -> Tuple Nothing hfsMod
-  Dom -> Tuple Nothing (flip hfsMod)
-  Pow -> Tuple Nothing hfsPow
-  Wop -> Tuple Nothing (flip hfsPow)
-  Min -> Tuple Nothing min
-  Max -> Tuple (Just zero) max
+  Add -> ZeroId hfsAdd
+  Sub -> NoId hfsSub
+  Bus -> NoId (flip hfsSub)
+  Mul -> OneId hfsMul
+  Div -> NoId hfsDiv
+  Vid -> NoId (flip hfsDiv)
+  Mod -> NoId hfsMod
+  Dom -> NoId (flip hfsMod)
+  Pow -> NoId hfsPow
+  Wop -> NoId (flip hfsPow)
+  Min -> NoId min
+  Max -> ZeroId max
   -- Bitwise/set-theory operators
-  ShL -> Tuple Nothing hfsShL
-  ShR -> Tuple Nothing hfsShR
-  LSh -> Tuple Nothing (flip hfsShL)
-  RSh -> Tuple Nothing (flip hfsShR)
+  ShL -> NoId hfsShL
+  ShR -> NoId hfsShR
+  LSh -> NoId (flip hfsShL)
+  RSh -> NoId (flip hfsShR)
   -- Boolean logic (not bitwise)
-  Dis -> Tuple (Just zero) (booly (||))
-  Con -> Tuple (Just one) (booly (&&))
-  Imp -> Tuple Nothing (booly implies)
-  Pmi -> Tuple Nothing (booly (flip implies))
-  Xor -> Tuple (Just zero) (booly (/=))
-  Sel -> Tuple (Just zero) \x y -> if x /= zero then if y /= zero then zero else x else y
-  Uni -> Tuple (Just zero) hfsUni
-  Int -> Tuple Nothing hfsInt
-  Dif -> Tuple Nothing \x y -> hfsSub x (hfsInt x y)
-  Fid -> Tuple Nothing \y x -> hfsSub x (hfsInt x y)
-  Sym -> Tuple (Just zero) hfsSym
-  Mem -> Tuple Nothing $ comp \x y -> hfsInt (hfsShL one x) y /= zero
-  Rem -> Tuple Nothing $ comp \y x -> hfsInt (hfsShL one x) y /= zero
+  Dis -> ZeroId (booly (||))
+  Con -> OneId (booly (&&))
+  Imp -> Transitively \x y -> (x /= zero) `implies` (y /= zero)
+  Pmi -> Transitively \y x -> (x /= zero) `implies` (y /= zero)
+  Xor -> ZeroId (booly (/=))
+  Sel -> NonAssoc \xs ->
+    case Array.filter (_ /= zero) xs of
+      [x] -> x
+      _ -> zero
+  Uni -> ZeroId hfsUni
+  Int -> NoId hfsInt
+  Dif -> NoId \x y -> hfsSub x (hfsInt x y)
+  Fid -> NoId \y x -> hfsSub x (hfsInt x y)
+  Sym -> ZeroId hfsSym
+  Mem -> Transitively \x y -> hfsInt (hfsShL one x) y /= zero
+  Rem -> Transitively \y x -> hfsInt (hfsShL one x) y /= zero
   -- Comparisons: equality
-  CEQ -> Tuple Nothing $ comp (==)
-  CNE -> Tuple Nothing $ comp (/=)
+  CEQ -> Transitively (==)
+  CNE -> NonAssoc \xs ->
+    if Array.length xs == Array.length (Array.nub xs) then one else zero
   -- Comparisons: total order
-  CLT -> Tuple Nothing $ comp (<)
-  CGT -> Tuple Nothing $ comp (>)
-  CLE -> Tuple Nothing $ comp (<=)
-  CGE -> Tuple Nothing $ comp (>=)
+  CLT -> Transitively (<)
+  CGT -> Transitively (>)
+  CLE -> Transitively (<=)
+  CGE -> Transitively (>=)
   -- Comparisons: partial order
-  PLT -> Tuple Nothing $ comp \x y -> x /= y && x == hfsInt x y
-  PLE -> Tuple Nothing $ comp \x y -> x == hfsInt x y
-  PGT -> Tuple Nothing $ comp \y x -> x /= y && x == hfsInt x y
-  PGE -> Tuple Nothing $ comp \y x -> x == hfsInt x y
+  PLT -> Transitively \x y -> x /= y && x == hfsInt x y
+  PLE -> Transitively \x y -> x == hfsInt x y
+  PGT -> Transitively \y x -> x /= y && x == hfsInt x y
+  PGE -> Transitively \y x -> x == hfsInt x y
   where
   booly f x y = if f (x /= zero) (y /= zero) then one else zero
-  comp f x y = if f x y then one else zero
 
 -- | Parser for the n-ary and binary operators, respectively.
 op :: Comber (Either Op Op)
-op = oneOf $ opMeta >>= case _ of
-  Symm r tok _doc ->
-    [ Right r <$ token tok
-    , Left r <$ (token ("#" <> tok) <|> token (tok <> "#"))
-    ]
-  Sided l r tok _doc ->
-    [ Right l <$ token ("." <> tok)
-    , Left l <$ token ("#" <> tok)
-    , Right r <$ token (tok <> ".")
-    , Left r <$ token (tok <> "#")
-    ]
-  Order l tl r tr _doc ->
-    [ Right l <$ token tl
-    , Right r <$ token tr
-    ]
+op = "op"#: oneOf do
+  opMeta >>= case _ of
+    Symm r dflt toks bigops _doc -> (Array.cons dflt toks) >>= \tok ->
+      [ Right r <$ token tok
+      , Left r <$ (token ("#" <> tok) <|> token (tok <> "#"))
+      , Left r <$ if tok == dflt then oneOfMap token bigops else empty
+      ]
+    Sided l r dflt toks _doc -> (Array.cons dflt toks) >>= \tok ->
+      [ Right l <$ token (tok <> ".")
+      , Left l <$ token ("#" <> tok)
+      , Right r <$ token ("." <> tok)
+      , Left r <$ token (tok <> "#")
+      ]
+    Order l tl tls r tr trs _doc ->
+      [ Right l <$ oneOfMap token (Array.cons tl tls)
+      , Left l <$ oneOfMap (token <<< ("#" <> _)) (Array.cons tl tls)
+      , Right r <$ oneOfMap token (Array.cons tr trs)
+      , Left r <$ oneOfMap (token <<< ("#" <> _)) (Array.cons tr trs)
+      ]
 
 -- | Builtin functions.
 data Fn
@@ -551,21 +648,28 @@ data Fn
   | ToDec
   | ToHex
   | ToHFS
+  | NoOp
+  | Decr
+  | Incr
 
 -- | Parse for these builtins.
 fn :: Comber Fn
-fn = oneOf
-  [ Count <$ token "Count"
-  , Width <$ token "Width"
-  , Single <$ token "{" <* token "." <* token "}"
-  , Unpack <$ do token "Unpack" <|> token "$#"
-  , Pack <$ do token "Pack" <|> token "{#}"
+fn = "fn"#: oneOf
+  [ Count <$ token "count"
+  , Width <$ token "width"
+  , Single <$ token "{.}"
+  , Unpack <$ do token "unpack" <|> token "$#"
+  , Pack <$ do token "pack" <|> token "{#}"
   , ToSet <$ token "Set"
   , ToNat <$ (token "Nat" <|> token "Num")
   , ToBin <$ token "Bin"
   , ToDec <$ token "Dec"
   , ToHex <$ token "Hex"
   , ToHFS <$ token "HFS"
+  , NoOp <$ token ","
+  , NoOp <$ rawr "##[^\n]*(\n|$)"
+  , Decr <$ token "--"
+  , Incr <$ token "++"
   ]
 
 data Braces
@@ -579,7 +683,7 @@ data Braces
   | NEndSet
 
 braces :: Comber Braces
-braces = oneOf
+braces = "braces"#: oneOf
   [ StartStack <$ token "["
   , NStartStack <$ token "#["
   , EndStack <$ token "]"
@@ -626,9 +730,10 @@ instance showCtrl :: Show Ctrl where
   show = genericShow
 
 ctrl :: Comber Ctrl
-ctrl = oneOf $ (identity :: Array ~> Array) $
-  enumFromTo bottom top <#> \v ->
-    v <$ token (String.toLower (show v))
+ctrl = "ctrl"#: do
+  oneOf $ (identity :: Array ~> Array) $
+    enumFromTo bottom top <#> \v ->
+      v <$ token (String.toLower (show v))
 
 -- | All instructions.
 data Instr
@@ -673,16 +778,20 @@ data StackKind
 
 type Stack = List HFS
 
+theParser :: Lazy (String -> Either FullParseError (Array Instr))
+theParser = defer \_ ->
+  Comb.parseRegex topName (unwrap parser)
+
 parseAndRun :: String -> Either String String
-parseAndRun = convertingParseError parseAndRun' >>> map
+parseAndRun = parseAndRun' >>> bimap (either convertParseError identity)
   (intercalateMap "\n---\n" (intercalateMap "\n" showHFS))
 
-parseAndRun' :: String -> Either FullParseError
+parseAndRun' :: String -> Either (Either FullParseError String)
   (NonEmptyArray (Array HFS))
-parseAndRun' = String.trim >>> (Comb.parseRegex topName (unwrap parser)) >>> case _ of
-  Left err -> Left err
+parseAndRun' s = case String.trim s # force theParser of
+  Left err -> Left (Left err)
   Right instrs -> case run (withStdenv instrs) of
-    { error: Just err } -> Left (CrashedStack err)
+    { error: Just err } -> Left (Right err)
     { stacks } -> Right $ NEA.fromFoldable1 stacks <#> Array.fromFoldable
 
 -- | This used to be a `foldMap`, but then I added functions and looping.
@@ -703,6 +812,9 @@ type Env =
   , funs :: Map String Pointer
   -- The stack of stacks
   , stacks :: NonEmpty List Stack
+  -- Which stack is referenced by `.0` et al.
+  -- (Indexing into `NonEmpty List`)
+  , pointed :: Int
   -- Frames of control flow
   , flow :: List { here :: Flow, prev :: Boolean }
   -- The list of instructions currently running
@@ -734,8 +846,8 @@ data Flow
   | InFunDef
   -- Pointer to return to
   | InFunCall Pointer
-  | BuildingSet HFS
-  | BuildingStack Int
+  | BuildingSet Int HFS
+  | BuildingStack Int Int
 
 -- | Start from nothing.
 emptyEnv :: Env
@@ -744,6 +856,7 @@ emptyEnv =
   , vars: Map.empty
   , funs: Map.empty
   , stacks: Nil :| Nil
+  , pointed: 0
   , flow: Nil
   , running: true
   , instrs: []
@@ -926,12 +1039,12 @@ interpret instr original = case instr, env of
   Set _, _ -> env { error = Just $ underflow 1 }
   PeekPrev idx unpack, _ ->
     case env.stacks of
-      this :| prev : stacks ->
+      this :| stacks | Just prev <- stacks List.!! (env.pointed - 1) ->
         case prev List.!! idx of
           Just x | unpack ->
             let xs = hfsUnpack x in
-            env { stacks = ((hfsFromInt (Array.length xs) : Array.toUnfoldable xs) <> this) :| prev : stacks }
-          Just x -> env { stacks = x : this :| prev : stacks }
+            env { stacks = ((hfsFromInt (Array.length xs) : Array.toUnfoldable xs) <> this) :|  stacks }
+          Just x -> env { stacks = x : this :| stacks }
           Nothing -> env { error = Just $ underflow (idx+1) }
       _ -> env { error = Just ("." <> show idx <> " needs a previous stack, use $" <> show idx <> " if you want to target the current stack") }
   PeekThis idx unpack, _ ->
@@ -961,10 +1074,14 @@ interpret instr original = case instr, env of
     ToDec -> stack1 hfsAsDec
     ToHex -> stack1 hfsAsHex
     ToHFS -> stack1 hfsAsHFS
+    NoOp -> Right
+    Decr -> stack1 (hfsSub <@> one)
+    Incr -> stack1 (hfsAdd <@> one)
   Braces b, _ -> case b of
     StartStack -> env
       { stacks = Nil :| List.fromFoldable env.stacks
-      , flow = { prev: true, here: BuildingStack 0 } : env.flow
+      , pointed = 1
+      , flow = { prev: true, here: BuildingStack env.pointed 0 } : env.flow
       }
     NStartStack ->
       case env.stacks of
@@ -972,48 +1089,55 @@ interpret instr original = case instr, env of
           case List.length prev >= len of
             true -> env
               { stacks = Nil :| prev : stacks
-              , flow = { prev: true, here: BuildingStack len } : env.flow
+              , pointed = 1
+              , flow = { prev: true, here: BuildingStack env.pointed len } : env.flow
               }
             false -> env { error = Just $ underflow (len+1) }
         _ -> env { error = Just $ underflow (-1) }
     EndStack ->
       case env.stacks, env.flow of
-        this :| prev : stacks, { here: BuildingStack len } : flows -> env
+        this :| prev : stacks, { here: BuildingStack ptd len } : flows -> env
           { stacks = (this <> List.drop len prev) :| stacks
+          , pointed = ptd
           , flow = flows
           }
         _, _ -> env { error = Just "Bad EndStack" }
     NEndStack ->
       case env.stacks, env.flow of
-        this :| prev : stacks, { here: BuildingStack len } : flows -> env
+        this :| prev : stacks, { here: BuildingStack ptd len } : flows -> env
           { stacks = hfsFromInt (List.length this) : (this <> List.drop len prev) :| stacks
+          , pointed = ptd
           , flow = flows
           }
         _, _ -> env { error = Just "Bad NEndStack" }
     StartSet -> env
       { stacks = Nil :| List.fromFoldable env.stacks
-      , flow = { prev: true, here: BuildingSet mempty } : env.flow
+      , pointed = env.pointed + 1
+      , flow = { prev: true, here: BuildingSet env.pointed mempty } : env.flow
       }
     NStartSet ->
       case env.stacks of
         hd : prev :| stacks | len <- toInt (bn hd) ->
           if List.length prev >= len then env
             { stacks = Nil :| List.drop len prev : stacks
-            , flow = { prev: true, here: BuildingSet (hfsFromFoldable (List.take len (NE.head env.stacks))) } : env.flow
+            , pointed = env.pointed + 1
+            , flow = { prev: true, here: BuildingSet env.pointed (hfsFromFoldable (List.take len prev)) } : env.flow
             }
           else env { error = Just $ underflow (len+1) }
         _ -> env { error = Just $ underflow (-1) }
     EndSet ->
       case env.stacks, env.flow of
-        this :| prev : stacks, { here: BuildingSet more } : flows -> env
+        this :| prev : stacks, { here: BuildingSet ptd more } : flows -> env
           { stacks = (more <> hfsFromFoldable this) : prev :| stacks
+          , pointed = ptd
           , flow = flows
           }
         _, _ -> env { error = Just "Bad EndSet" }
     NEndSet ->
       case env.stacks, env.flow of
-        this :| prev : stacks, { here: BuildingSet more } : flows -> env
+        this :| prev : stacks, { here: BuildingSet ptd more } : flows -> env
           { stacks = hfsFromInt (List.length this) : (more <> hfsFromFoldable this) : prev :| stacks
+          , pointed = ptd
           , flow = flows
           }
         _, _ -> env { error = Just "Bad NEndSet" }
@@ -1071,11 +1195,26 @@ interpret instr original = case instr, env of
         false -> Left $ underflow (len+1)
   stackN _ _ = Left $ underflow (-1)
 
-  chooseOp = snd <<< chooseIdOp
+  chooseOp = chooseIdOp >>> case _ of
+    NoId f -> f
+    ZeroId f -> f
+    OneId f -> f
+    Transitively f -> \x y -> if f x y then one else zero
+    NonAssoc f -> \x y -> f [x, y]
   chooseOpFold o = case chooseIdOp o, _ of
-    Tuple Nothing _, Nil -> Left "No identity for 0-ary operation"
-    Tuple (Just id) _, Nil -> Right id
-    Tuple _ f, hd : tl -> Right (foldl1 f (hd :| tl))
+    NoId _, Nil -> Left "No identity for 0-ary operation"
+    ZeroId _, Nil -> Right zero
+    OneId _, Nil -> Right one
+    Transitively f, xs ->
+      -- Reversed for good reason, to get the n-ary versions to match with the
+      -- binary versions
+      Right if transitively f (Array.reverse (Array.fromFoldable xs)) then one else zero
+    NonAssoc f, xs -> Right (f (Array.fromFoldable xs))
+    _, hd : tl -> Right (foldl1 (chooseOp o) (hd :| tl))
+
+transitively :: forall a. (a -> a -> Boolean) -> Array a -> Boolean
+transitively f [x, y] = f x y
+transitively f xs = and (Array.dropEnd 1 xs `Array.zipWith f` Array.drop 1 xs)
 
 -- | Catch runtime errors, e.g. from `BigInt` operations in JS.
 unsafeCatch :: forall i o.

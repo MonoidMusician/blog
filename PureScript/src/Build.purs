@@ -26,6 +26,7 @@ import Parser.Debug (thingy)
 import Parser.Languages as Languages
 import Parser.Languages.CSS as CSS
 import Parser.Languages.Dhall as Dhall
+import Parser.Languages.HFS as HFS
 import Parser.Languages.Show as Show
 import Parser.Languages.TMTTMT.Parser as TMTTMT
 import Parser.Lexing (applyPrecedence)
@@ -61,4 +62,5 @@ main = launchAff_ do
   process TMTTMT.typeP "tmttmt-types-parser-states"
   process Languages.json "json-parser-states"
   process Languages.arithmetic "arithmetic-parser-states"
+  process HFS.parser "hatstack-parser-states"
   -- process Dhall.complete_dhall_file "dhall-parser-states"

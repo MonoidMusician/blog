@@ -4,6 +4,7 @@ toc-depth: 5
 section-divs: true
 template: pandoc/post
 preserve-tabs: true
+wrap: preserve
 filters:
   - pandoc/lua/LilyPond.lua
   - pandoc/lua/PureScript.lua
