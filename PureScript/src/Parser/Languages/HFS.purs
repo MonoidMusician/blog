@@ -409,7 +409,7 @@ def apply
   2#[ .1# .0 ]
   begin
     $1 while
-    3#[ .1-- .0  .2 ]
+    3#[ .1-- , .0 , .2 ]
     unpair
     $2 == if
       $2 3+ #[ .0 ]
@@ -419,6 +419,79 @@ def apply
   end
   throw
 end
+
+## Domain of a map
+def domain
+  $#
+  {}
+  begin
+    $1 while
+    3#[ .1-- , .0 , .2 fst {.} | ]
+  end
+  swap drop
+end
+
+## Range of a map
+def range
+  $#
+  {}
+  begin
+    $1 while
+    3#[ .1-- , .0 , .2 snd {.} | ]
+  end
+  swap drop
+end
+
+
+## The Zermelo encoding of natural numbers
+## as nested singleton sets
+def Zermelo
+  {} swap
+  begin
+    dup while
+    2#[ {.1} , .0-- ]
+  end
+  drop
+end
+
+## The von Neumann ordinals
+def vonNeumann
+  {} swap
+  begin
+    dup while
+    2#[ .1 {.1} | , .0-- ]
+  end
+  drop
+end
+
+## Truncating integer square root, adapted from
+## https://github.com/waldemarhorwat/integer-roots
+def sqrt
+  ## Special case 0
+  dup 0 == if
+    return
+  end
+  ## Compute the initial estimate
+  ## 2 ^ (log2 .0 / 2)
+  ## (A lower bound, since both log2
+  ## and 1>>. are truncating)
+  [ .0 width-- 1>>. 1.<< ]
+  ## Apply one step of Newton's method
+  ## to get an overapproximation
+  1#[ .0 .1 .0 /. + 1>>. ]
+  begin
+    ## Iterate downwards
+    [ .0 .1 .0 /. + 1>>. ]
+    [ .0 .1 < ]
+    while
+    2#[ .0 ]
+  end
+  ## Take previous approximation,
+  ## not the last guess
+  3#[ .1 ]
+  Dec
+end
+
 
 """
 
