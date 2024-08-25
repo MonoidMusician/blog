@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <script src="stars.js"></script>
+    <style>
+      :root {
+        --bg: #000332;
+        --fg: white;
+      }
+      html, body {
+        background: var(--bg);
+        color: var(--fg);
+        margin: 0; padding: 0;
+      }
+      #paper > img {
+        max-width: 100%;
+        /* width: 100%; */
+        /* height: 100%; */
+        max-height: 100%;
+        margin: auto;
+        display: block;
+      }
+      #canvas, #paper {
+        position: relative;
+        display: grid;
+        grid-template: 1fr / 1fr;
+        place-items: center;
+        max-width: 100%;
+        width: 100vw;
+        height: 100vh;
+        max-height: 100%;
+      }
+      #canvas > * {
+        /* grid-column: 1 / 1;
+        grid-row: 1 / 1; */
+        position: absolute;
+        top: 0;
+        left: 0;
+        max-width: 100%;
+        width: 100%;
+        height: 100%;
+        max-height: 100%;
+      }
+      .hover:not(:hover) {
+        opacity: 0.25;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="canvas">
+    <canvas id="starry" style="opacity: 0.6;" width="1000" height="1000"></canvas>
+    <div id="paper" style="mix-blend-mode: screen;"><img alt="digital calligraphy that says “Love, Verity” in glowing pink text on top of a midnight blue background with stars twinkling through the text" src="scribed_effect_dark.png" style="mask-image: url(scribed_mask.svg); mask-size: contain"/></div>
+    </div>
+
+    <script>
+      function varCSS(name, value) {
+        document.documentElement.style.setProperty(`--${name}`, value);
+      }
+      var palettes = [
+        {
+          bg: "#000332",
+          flood: "#7800ba",
+          fill: "#cf13bd",
+          paper_blend: "screen",
+          stars: 0.6,
+          star_blend: "",
+          raster: "scribed_effect_dark.png",
+          alt: "digital calligraphy that says “Love, Verity” in glowing pink text on top of a midnight blue background with stars twinkling through the text",
+        },
+        {
+          bg: "#d167db",
+          flood: "#662ea3",
+          fill: "#cc00e3",
+          paper_blend: "multiply",
+          stars: 0.7,
+          star_blend: "screen",
+          raster: "scribed_effect_light.png",
+          alt: "digital calligraphy that says “Love, Verity” in dark purple text on top of a light pink background with white stars twinkling across it",
+        },
+      ];
+      var setColors = {
+        bg: color => {varCSS('bg', color)},
+        flood: color => {return;document.querySelector('#inset-shadow [flood-color]').setAttribute('flood-color', color)},
+        fill: color => {
+          for (let p of document.querySelectorAll('#paper path')) {
+            p.style.fill = color;
+            p.style.stroke = color;
+          }
+        },
+      };
+      function choosePalette(palette) {
+        if (typeof palette === 'boolean') palette = +palette;
+        if (palette in palettes) palette = palettes[palette];
+        Object.keys(setColors).map(k => palette[k]).forEach((color, i) => {
+          Object.values(setColors)[i](color);
+        });
+        document.querySelector("#paper > img").src = palette.raster;
+        document.getElementById("paper").style['mix-blend-mode'] = palette.paper_blend;
+        document.getElementById("starry").style['opacity'] = palette.stars;
+        document.getElementById("starry").style['mix-blend-mode'] = palette.star_blend;
+        document.querySelector("#paper > img").alt = palette.alt;
+      }
+      choosePalette(!!(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches));
+      if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', event => {
+          choosePalette(!!event.matches);
+        });
+      }
+    </script>
+
+    <script>
+      (function() {
+        var ctx = document.getElementById("starry").getContext('2d');
+        var seed = length => {
+          var res = [];
+          for (var i = length; i>0; i--)
+            res.push([Math.random(), Math.random()]);
+          return res;
+        };
+        var seeded = {
+          point: seed(100),
+          pointed: seed(50),
+          bluey: seed(20),
+          multi: seed(10),
+        };
+        function drawStars() {
+          var w = ctx.canvas.width;
+          var h = ctx.canvas.height;
+          var stars = paintStarsIn(ctx);
+          for (let variety in seeded) {
+            for (let [x, y] of seeded[variety]) {
+              stars[variety](x*w, y*h);
+            }
+          }
+        }
+        function resizeStars() {
+          var rect = ctx.canvas.getBoundingClientRect();
+          var w = Math.round(rect.width * window.devicePixelRatio);
+          var h = Math.round(rect.height * window.devicePixelRatio);
+          if (ctx.canvas.width !== w || ctx.canvas.height !== h) {
+            ctx.canvas.width = w;
+            ctx.canvas.height = h;
+            drawStars();
+          }
+        }
+
+        var counter = 0;
+        var running = false;
+        function willResizeStars() {
+          if (!running) return;
+          running = false;
+          var count = ++counter;
+          requestAnimationFrame(() => {
+            if (counter !== count) return;
+            resizeStars();
+          });
+        }
+        const resizeObserver = new ResizeObserver(entries => {
+          if (!running) {
+            running = true;
+            willResizeStars();
+            setTimeout(willResizeStars, 1000/5);
+          }
+        });
+        resizeObserver.observe(ctx.canvas);
+      })();
+    </script>
+  </body>
+</html>

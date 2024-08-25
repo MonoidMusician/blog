@@ -6,6 +6,7 @@ import Data.HeytingAlgebra (ff, tt)
 import Data.Lens as O
 import Data.Monoid.Conj (Conj(..))
 import Data.Monoid.Disj (Disj(..))
+import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\))
 import Dodo as Dodo
@@ -41,6 +42,25 @@ data WS
   | RequireSpace Boolean
   | RequireSpaceBreak
   | RequireNewline Boolean
+
+newtype ParseWS = ParseWS
+  { allowed_newline :: Conj Boolean
+  , allowed_space :: Conj Boolean
+  , required :: Disj Boolean
+  }
+
+derive newtype instance monoidParseWS :: Monoid ParseWS
+derive newtype instance semigroupParseWS :: Semigroup ParseWS
+
+instance semiringParseWS :: Semiring ParseWS where
+  one = mempty
+  mul = append
+  zero = coerce { allowed_newline: false, allowed_space: false, required: true }
+  add (ParseWS l) (ParseWS r) = ParseWS
+    { allowed_newline: Conj do unwrap l.allowed_newline || unwrap r.allowed_newline
+    , allowed_space: Conj do unwrap l.allowed_space || unwrap r.allowed_space
+    , required: Disj do unwrap l.required && unwrap r.required
+    }
 
 wsProps :: WS ->
   { allowed_newline :: Conj Boolean
