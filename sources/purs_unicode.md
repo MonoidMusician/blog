@@ -2,7 +2,7 @@
 title: Proposal for Unicode in PureScript
 subtitle: "Give us `CodePoint`{.haskell} literals!"
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 Revisiting [purescript/purescript#3362](https://github.com/purescript/purescript/issues/3662).

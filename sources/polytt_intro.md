@@ -1,7 +1,7 @@
 ---
 title: Introduction to PolyTT
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 https://github.com/ToposInstitute/polytt

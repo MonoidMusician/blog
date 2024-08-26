@@ -1,7 +1,7 @@
 ---
 title: Coffee Stain
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 <canvas id="canvas" style="display:block;margin:auto" width="500px" height="500px"></canvas>

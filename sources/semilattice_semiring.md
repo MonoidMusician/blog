@@ -2,7 +2,7 @@
 title: A Semiring From Any Semilattice
 subtitle: A mathematical pun?
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 date: 2023/10/28
 ---
 

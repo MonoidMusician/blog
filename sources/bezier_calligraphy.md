@@ -2,7 +2,7 @@
 title: Impossible Bézier Calligraphy
 subtitle: Approximating cubic nibs drawn along cubic strokes
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 date: 2022/09/18 – 2023/04/23
 ---
 

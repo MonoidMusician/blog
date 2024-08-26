@@ -2,7 +2,7 @@
 title: User Operators with Implicits & Overloads
 subtitle: In bidirectional type checkers
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 Okay, let me start off by saying Iʼm not a huge fan of bidirectional type theory.

@@ -1,7 +1,7 @@
 ---
 title: Guestbook
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 

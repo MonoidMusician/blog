@@ -1,7 +1,7 @@
 ---
 title: Interactive Parser Explanations
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 date: 2022/07/20
 ---
 

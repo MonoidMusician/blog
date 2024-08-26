@@ -2,7 +2,7 @@
 title: Knowlish (Overflow)
 subtitle: "Stuff that I barely understand that I came across that I want to keep around"
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 Basically a record of information Iʼve come across.

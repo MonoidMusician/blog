@@ -2,7 +2,7 @@
 title: HatStack
 subtitle: "A stack based, concatenative language for [Hereditarily Finite Sets](hereditarily_finite_sets.html)"
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 preroll: '<span data-widget="Parser.Main.HFS"></span>'
 ---
 

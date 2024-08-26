@@ -2,7 +2,7 @@
 title: Views on Applicative Functors
 subtitle: 3+ ways to think about applicative functors
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 Choose your fighter!

@@ -2,7 +2,7 @@
 title: Viewing `.mbox` emails, offline!
 subtitle: Out of Gmail and into Thunderbird
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 date: 2024/02/07
 ---
 

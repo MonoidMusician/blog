@@ -2,7 +2,7 @@
 title: Weather the Storm
 subtitle: What code can you write that assumes nothing about the state of the VM?
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 Take a runtime execution environment, like a JavaScript VM or Python or whatever.

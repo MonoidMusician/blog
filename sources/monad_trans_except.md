@@ -1,7 +1,7 @@
 ---
 title: "`ExceptT` vis-a-vis `StateT`"
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 When dealing with monad transformers, how do you want to stack `ExceptT`{.haskell} and `StateT`{.haskell}?

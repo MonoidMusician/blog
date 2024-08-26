@@ -1,7 +1,7 @@
 ---
 title: Eudoxus Real Numbers as Slopes of Pixelated Graphs
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 date: 2022/05/10 – 2022/07/20
 ---
 

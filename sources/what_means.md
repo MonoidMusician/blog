@@ -2,7 +2,7 @@
 title: What Means …
 subtitle: My definitions of various terms
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 ## Programming

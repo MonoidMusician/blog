@@ -2,7 +2,7 @@
 title: Uses of Grammars
 subtitle: "[Interactive Parser Explanations](parser.html)"
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 Thereʼs a couple distinct ways to use grammars, and this is why some of the explanations and terminology are confusing.

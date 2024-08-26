@@ -2,7 +2,7 @@
 title: "Basics of LR(1) Parsing"
 subtitle: "[Interactive Parser Explanations](parser.html)"
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 Here we will explore how LR(1) parsing works: its concepts, its algorithms, and most importantly the intuitions behind these things.

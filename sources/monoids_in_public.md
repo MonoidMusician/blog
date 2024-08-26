@@ -2,7 +2,7 @@
 title: Monoids in Public
 subtitle: Useful monoid structures in programming
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 ## VDOM trees as monoids

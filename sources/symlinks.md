@@ -1,7 +1,7 @@
 ---
 title: Symlinks, hardlinks, (bind) mounts, oh my
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 Iʼve always been a bit scared of symlinks and hardlinks.

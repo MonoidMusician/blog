@@ -2,7 +2,7 @@
 title: The Best Errors for Solving Dependency Versions
 subtitle: For the PureScript registry
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 date: 2023/01/02 – 2023/01/21
 ---
 

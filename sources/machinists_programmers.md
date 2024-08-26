@@ -1,7 +1,7 @@
 ---
 title: Machinists, Programmers, and Society
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 I follow a bunch of hobby machinist channels on YouTube (people using lathes, mills, CNC routers, plus hacksaws, angle grinders, taps, and the like to build small one-off projects, often with an educational bent), and Iʼve been reflecting on what I find attractive about the discipline of machining and the contrasts with the programming/mathematics industry/culture.

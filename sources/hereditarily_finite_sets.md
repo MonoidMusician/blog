@@ -2,7 +2,7 @@
 title: Hereditarily Finite Sets
 subtitle: A gentle, computational introduction to set theories/foundations <3
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 <script src="assets/js/hfs.js"></script>

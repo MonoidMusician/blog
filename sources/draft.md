@@ -10,7 +10,7 @@ title:
 <div style="font-variant-numeric: lining-nums tabular-nums" class="sourceCode unicode" data-lang="Markdown"><pre><code><textarea id="post" style="min-height: 40vh">---
 title: Draft
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 </textarea></code></pre></div>

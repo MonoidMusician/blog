@@ -1,5 +1,5 @@
 ---
 title: Row Constraints in PureScript
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---

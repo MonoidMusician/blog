@@ -2,7 +2,7 @@
 title: Pickling Tasty Data
 subtitle: The essence of runtime data (itʼs a graph!)
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 date: 2024/01/28
 ---
 

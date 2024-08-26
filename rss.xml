@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
 <channel>
-<atom:link href="https://cofree.coffee/~verity/rss.xml" rel="self" type="application/rss+xml" />
+<atom:link href="https://blog.veritates.love/rss.xml" rel="self" type="application/rss+xml" />
 <title>MonoidMusicianʼs blog</title>
-<link>https://cofree.coffee/~verity</link>
+<link>https://blog.veritates.love</link>
 <description>MonoidMusicianʼs blog</description>
 <language>en-US</language>
 <copyright>GPLv3</copyright>
@@ -12,7 +12,7 @@
 <item>
 <title>Pickling Tasty Data</title>
 <pubDate>Sun, 28 Jan 2024 00:00:00 +0000</pubDate>
-<guid>https://cofree.coffee/~verity/pickling.html</guid>
+<guid>https://blog.veritates.love/pickling.html</guid>
 <description><![CDATA[<p>I want to talk about data today. In particular, I want to talk about runtime representations of data, <strong>real</strong> data – data that can be mutable and referentially opaque at runtime – and demystify what they actually are in terms of more familiar notions of data.</p>
 <p>You shouldnʼt just throw up your hands once you have cyclic references! Itʼs possible and worthwhile to design tools to work with the raw graph of runtime data, no matter its shape. With the proper metaprogramming hooks, you could save and restore a whole runtime environment <em>from the inside</em>, which is pretty amazing to think about.</p>
 <p>(Well, okay, you might give up at things like functions, if there isnʼt enough metaprogramming, or running sockets, for example – thatʼs okay!)</p>
@@ -42,7 +42,7 @@
 <li>Functions? <em>Are</em> functions data?? (Iʼm including closures and procedures and routines and all that stuff in my definition of functions, btw.)</li>
 <li>Quotiented data (Agda, Lean, Rocq)
 <ul>
-<li>see <a href="https://cofree.coffee/~verity/adt_lies_for_truth.html">Subtypes/Quotients: Lies Told in Defense of the Truth</a> (<span data-t="" data-widget="">WIP</span>)</li>
+<li>see <a href="https://blog.veritates.love/adt_lies_for_truth.html">Subtypes/Quotients: Lies Told in Defense of the Truth</a> (<span data-t="" data-widget="">WIP</span>)</li>
 </ul></li>
 </ol>
 <p>It will be important to think about what notions of equality are useful and adequate for these kinds of data!</p>
@@ -551,7 +551,7 @@ intoObject path = first $ \key -&gt; ObjectIdx key : path</code></pre>
 <li id="fn3"><p>besides performance – we always disregard performance here<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn4"><p>Citation needed.<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn5"><p><a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
-<li id="fn6"><p>Sighs in <a href="https://cofree.coffee/~verity/tmttmt.html">tmTTmt</a> …<a href="#fnref6" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn6"><p>Sighs in <a href="https://blog.veritates.love/tmttmt.html">tmTTmt</a> …<a href="#fnref6" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn7"><p>Even in non-Turing-complete languages!<a href="#fnref7" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn8"><p>This is slightly unfair, considering that Dhall now uses <span data-t="" data-widget="">NbE</span>, but it amounts to the same thing.<a href="#fnref8" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn9"><p>BEAM uses mutation to construct data locally, but this is only an implementation detail that cannot be observed from Erlang.<a href="#fnref9" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
@@ -567,7 +567,7 @@ intoObject path = first $ \key -&gt; ObjectIdx key : path</code></pre>
 <item>
 <title>A Semiring From Any Semilattice</title>
 <pubDate>Sat, 28 Oct 2023 00:00:00 +0000</pubDate>
-<guid>https://cofree.coffee/~verity/semilattice_semiring.html</guid>
+<guid>https://blog.veritates.love/semilattice_semiring.html</guid>
 <description><![CDATA[<p>Iʼve been working on some theoretical aspects of programming recently. Writing new compiler optimization passes. Thinking about <a href="https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Parser/Languages/Talk.purs">parsers</a> through the lens of <a href="https://hackage.haskell.org/package/selective-0.7/docs/Control-Selective.html#t:Selective">selective applicative functors</a>, and tweaking them to encode <a href="https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Parser/Selective.purs">exclusive choice</a>.</p>
 <p>If you go far enough down the rabbit hole, it turns out that you want semirings for static analysis. This is not unheard of in compilers! Itʼs a really good technique for analyzing control flow, for example: information about exclusive branches are combined additively, and information from sequential operations are combined multiplicatively. It is especially appropriate because, semantically speaking, you want those sequential operations to distribute over the branching.</p>
 <p>(You can already see this in more typical typeclasses like <code class="haskell">Alternative</code>, which is naturally analyzed by taking <code class="haskell">&lt;*&gt;</code> to <code class="haskell">*</code> and <code class="haskell">&lt;|&gt;</code> to <code class="haskell">+</code>. Itʼs just that Iʼm interested in augmenting <code class="haskell">Selective</code> to encode exclusive choice too.)</p>
@@ -675,7 +675,7 @@ instance Monoid t =&gt; Semiring (WithZero t) where
 <item>
 <title>TransMorphism Type Theory MetaTheory</title>
 <pubDate>Fri, 13 Oct 2023 00:00:00 +0000</pubDate>
-<guid>https://cofree.coffee/~verity/tmttmt.html</guid>
+<guid>https://blog.veritates.love/tmttmt.html</guid>
 <description><![CDATA[<p><span style="display: block;text-align: center;font-size:1.2em">🦋 <em>heck u! *programs ur semicolons :3*</em> 🦋</span></p>
 <p>Iʼve been dreaming of making my own metalanguage for writing type theories for many years now. I havenʼt implemented much yet, but Iʼve been refining my ideas. Hereʼs a tiny taste:</p>
 <p><em>What you write:</em></p>
@@ -968,7 +968,7 @@ typecheck (App fn arg) =
 <item>
 <title>The Best Errors for Solving Dependency Versions</title>
 <pubDate>Sat, 21 Jan 2023 00:00:00 +0000</pubDate>
-<guid>https://cofree.coffee/~verity/version_solver.html</guid>
+<guid>https://blog.veritates.love/version_solver.html</guid>
 <description><![CDATA[<div class="Bonus" data-box-name="Backstory">
 <blockquote>
 <p>Just copy the <a href="https://github.com/elm/compiler/blob/0.19.1/builder/src/Deps/Solver.hs">Elm version solver</a> from Haskell to PureScript, itʼll be easy.</p>
@@ -1480,7 +1480,7 @@ data SolverPosition = Pos LocalSolverPosition (Set PackageName)</code></pre>
 <item>
 <title>Impossible Bézier Calligraphy</title>
 <pubDate>Sun, 23 Apr 2023 00:00:00 +0000</pubDate>
-<guid>https://cofree.coffee/~verity/bezier_calligraphy.html</guid>
+<guid>https://blog.veritates.love/bezier_calligraphy.html</guid>
 <description><![CDATA[<p>The story of how I implemented calligraphy for <a href="https://www.jasondavies.com/animated-bezier/">cubic Bézier curves</a> (the kind widely used in graphics programs, especially the common <a href="https://en.wikipedia.org/wiki/Scalable_Vector_Graphics">Scalable Vector Graphics (SVG) format</a>).</p>
 <p>The problem statement:</p>
 <div class="Key_Idea" data-box-name="Challenge">
@@ -1713,7 +1713,7 @@ q' = \frac{a' q^2 + b' q + c'}{2aq + b}.
 </annotation></semantics></math></span></p>
 <p>I think itʼs cute how the numerator is another quadratic polynomial with the derivatives of the coefficients of the original polynomial. Itʼs also convenient how we have no square roots or plusminus signs anymore – instead we write the derivative in terms of the original solution <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi></mrow><annotation encoding="application/x-tex">q</annotation></semantics></math></span>.</p>
 <p>We still have a denominator that can be zero, but this is for deeper reasons: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mn>2</mn><mi>a</mi><mi>q</mi><mo>+</mo><mi>b</mi><mo>=</mo><mo>−</mo><mi>b</mi><mo>±</mo><msqrt><mrow><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi></mrow></msqrt><mo>+</mo><mi>b</mi><mo>=</mo><mo>±</mo><msqrt><mrow><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi></mrow></msqrt><mo>=</mo><mn>0.</mn></mrow><annotation encoding="application/x-tex">2aq + b = -b \pm \sqrt{b^2 - 4ac} + b = \pm \sqrt{b^2 - 4ac} = 0.</annotation></semantics></math></span></p>
-<p>Obviously this is zero exactly when <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">b^2 - 4ac = 0</annotation></semantics></math></span>. This quantity is called the discriminant of the quadratic, and controls much of its behavior: the basic property of how many real-valued solutions it has, as well as deeper number-theoretic properties studied in <a href="https://cofree.coffee/~verity/">Galois theory</a>.</p>
+<p>Obviously this is zero exactly when <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">b^2 - 4ac = 0</annotation></semantics></math></span>. This quantity is called the discriminant of the quadratic, and controls much of its behavior: the basic property of how many real-valued solutions it has, as well as deeper number-theoretic properties studied in <a href="https://blog.veritates.love/">Galois theory</a>.</p>
 <div class="Bonus" data-box-name="Aside">
 <p>I was looking at this and seeing <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>q</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">q^2</annotation></semantics></math></span> made me think that it could be rewritten a bit, since we can solve for <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>q</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">q^2</annotation></semantics></math></span> in the defining equation:</p>
 <p><span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msup><mi>q</mi><mn>2</mn></msup><mo>=</mo><mfrac><mrow><mo>−</mo><mi>c</mi><mo>−</mo><mi>b</mi><mi>q</mi></mrow><mi>a</mi></mfrac><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">
@@ -1911,7 +1911,7 @@ R_1 &amp;:= \frac{3}{2}\frac{\kappa_1 (d_0 \times a)}{(a \times d_1)(d_0 \times 
 <item>
 <title>Interactive Parser Explanations</title>
 <pubDate>Wed, 20 Jul 2022 00:00:00 +0000</pubDate>
-<guid>https://cofree.coffee/~verity/parser.html</guid>
+<guid>https://blog.veritates.love/parser.html</guid>
 <description><![CDATA[<p>I have been building this framework for explaining, analyzing, and teaching about LR(1) grammars for a couple months now. I hope to turn it into a series of interactive blog posts to explain what parsing is and some approaches we can take to it, most notably <a href="https://en.wikipedia.org/wiki/Canonical_LR_parser">LR(1)</a> parsing. Many notable parser generators like Haskellʼs <a href="https://www.haskell.org/happy/">Happy</a> and the mainstream <a href="https://en.wikipedia.org/wiki/Yacc">Yacc</a>, <a href="https://en.wikipedia.org/wiki/GNU_Bison">Bison</a>, and <a href="https://tree-sitter.github.io/tree-sitter/">Tree-sitter</a> use variants of LR(1), modified for efficiency by reducing the number of generated states.<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a></p>
 <p>The interactive widgets here will allow you to build and verify your intuition by clicking through examples, because I believe that once you are armed with the basic ideas and the right intuition, you can figure out the rest of details for yourself.</p>
 <p>Alternatively, it can serve as a playground to test out hypotheses about grammars, see exactly where things go wrong when conflicts occur, and what to do to fix those errors.<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a></p>
@@ -1944,21 +1944,21 @@ instance Semigroup (ShiftReduce s r) where
 <p>EDIT: this project kind of stalled, sorry. Iʼm still thinking about parsers a lot, but not in this introductory way. You can bug or help me write more ^^</p>
 <h3 id="topics">Topics</h3>
 <ul>
-<li><span data-t="" data-widget="">TODO</span>: <a href="https://cofree.coffee/~verity/parser_by_example.html">Using this tool by example</a></li>
-<li><span data-t="" data-widget="">TODO</span>: <a href="https://cofree.coffee/~verity/parser_terminology.html">Terminology reference</a></li>
-<li><span data-t="" data-widget="">WIP</span>: <a href="https://cofree.coffee/~verity/parser_basics.html">Basics: What are grammars</a> (BNF, RegExp)
+<li><span data-t="" data-widget="">TODO</span>: <a href="https://blog.veritates.love/parser_by_example.html">Using this tool by example</a></li>
+<li><span data-t="" data-widget="">TODO</span>: <a href="https://blog.veritates.love/parser_terminology.html">Terminology reference</a></li>
+<li><span data-t="" data-widget="">WIP</span>: <a href="https://blog.veritates.love/parser_basics.html">Basics: What are grammars</a> (BNF, RegExp)
 <ol>
 <li>Nonterminals and terminals</li>
 <li>Sequencing and alternation (regexes)</li>
 </ol></li>
-<li><span data-t="" data-widget="">WIP</span>: <a href="https://cofree.coffee/~verity/parser_applications.html">Uses of grammars</a>:
+<li><span data-t="" data-widget="">WIP</span>: <a href="https://blog.veritates.love/parser_applications.html">Uses of grammars</a>:
 <ol>
 <li>Generators: nondeterministically generate strings in the grammar by following the rules as state transitions</li>
 <li>Recognition: recognize which strings belong to the grammar and which do not</li>
 <li>Syntax highlighting: cursed.</li>
 <li>Parsing: find an unambiguous parse tree for inputs that belong to the grammar</li>
 </ol></li>
-<li><span data-t="" data-widget="">WIP</span>: <a href="https://cofree.coffee/~verity/parser_lr1.html">Basics of LR(1) Parsing</a>
+<li><span data-t="" data-widget="">WIP</span>: <a href="https://blog.veritates.love/parser_lr1.html">Basics of LR(1) Parsing</a>
 <ol>
 <li>States</li>
 <li>State transitions</li>
@@ -2078,11 +2078,11 @@ instance Semigroup (ShiftReduce s r) where
 <item>
 <title>Eudoxus Real Numbers as Slopes of Pixelated Graphs</title>
 <pubDate>Wed, 20 Jul 2022 00:00:00 +0000</pubDate>
-<guid>https://cofree.coffee/~verity/Eudoxus.html</guid>
+<guid>https://blog.veritates.love/Eudoxus.html</guid>
 <description><![CDATA[<p>If you have a little background in classical constructions of the real numbers, you might have noticed that all of the usual constructions start with the rational numbers as a base, and then build up to real numbers. For example, Cauchy real numbers are constructed as sequences <em>of rational numbers</em> satisfying the Cauchy condition on the usual rational metric. Dedekind real numbers are constructed as sets <em>of rational numbers</em> satisfying the conditions to make them Dedekind cuts with the usual ordering.</p>
 <p>This is a post on constructing real numbers <em>without</em> constructing rational numbers. Along the way the rationals will sort of be constructed, or at least heavily implied, but they donʼt directly figure into the definition! Instead all we need is functions from integers to integers. </p>
 <p>The construction weʼll be talking about is my favorite esoteric construction of real numbers: the <em><a href="https://ncatlab.org/nlab/show/Eudoxus+real+number">Eudoxus real numbers</a></em>.</p>
-<img src="https://cofree.coffee/~verity/./rendered/c85c71d5af10f6359e4a7617d9ec0dd4626eca31.png" style="width: 100%">
+<img src="https://blog.veritates.love/./rendered/c85c71d5af10f6359e4a7617d9ec0dd4626eca31.png" style="width: 100%">
 <p>I want to explore <em>why</em> this definition works, not merely recite its definition and properties. So letʼs go on a journey together through various properties of linear and almost linear functions, and learn how to leverage “wrong” definitions of slope to create the real numbers!</p>
 <div class="Note">
 <p><em>If you donʼt have any background in real analysis or constructions of the real numbers, thatʼs okay. Bring along your intuitions nonetheless, they will aid you greatly! We will go over the necessary details as we get to them, although you may miss some of the depth of the discussion when I reference those other things. Just know that thereʼs a lot of strange and marvelous things going on that make constructing the real numbers an essential part of mathematics. Are these marvelous properties of the real numbers all coincidences? Surely not</em> 😉.</p>
@@ -2125,14 +2125,14 @@ instance Semigroup (ShiftReduce s r) where
 <p>Having hit these roadblocks, we need some inspiration. Letʼs revisit the idea of integer functions but in a new way.</p>
 <p>Hereʼs the thing: consider a graphing calculator, or a graphing app on a computer. What happens when we ask it to graph <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mo stretchy="false">(</mo><mn>1</mn><mi mathvariant="normal">/</mi><mi>π</mi><mo stretchy="false">)</mo><mo>∗</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">f(x) = (1/\pi) * x</annotation></semantics></math></span>? (Pick your favorite irrational-but-<a href="https://en.wikipedia.org/wiki/Computable_number">computable</a> real number there.)</p>
 <p>It does some math, and shows us a line on a screen … but wait, that line isnʼt a perfect mathematical function from real numbers to real numbers, itʼs a pixelated entity: <em>itʼs an <strong>integer</strong> function that approximates the <strong>real</strong> function</em>.<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a></p>
-<img src="https://cofree.coffee/~verity/./rendered/c590d03da6205ad1ad69aa978f1c470e37e017e9.png" style="width: 100%">
+<img src="https://blog.veritates.love/./rendered/c590d03da6205ad1ad69aa978f1c470e37e017e9.png" style="width: 100%">
 <h4 id="sampling-rational-slope">Sampling rational slope</h4>
 <p>What happens as we keep scrolling the screen? We could keep sampling snapshots of the screen at each moment, and see how they vary.</p>
 <p>If we had picked an integer slope, every snapshot would appear to have the same slope. For a slope of <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn></mrow><annotation encoding="application/x-tex">0</annotation></semantics></math></span>, there is never any change. For a slope of <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn></mrow><annotation encoding="application/x-tex">1</annotation></semantics></math></span>, it steadily moves up pixel by pixel. For a slope of <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn></mrow><annotation encoding="application/x-tex">2</annotation></semantics></math></span>, it skips a pixel as it goes. Et cetera. This isnʼt so interesting, yet!</p>
-<img src="https://cofree.coffee/~verity/./rendered/cdc3969580b332e35826231008f5078c0fa4c9ca.png" style="width: 100%">
+<img src="https://blog.veritates.love/./rendered/cdc3969580b332e35826231008f5078c0fa4c9ca.png" style="width: 100%">
 <p>But if we had picked a rational slope, we start to see something interesting happen: It doesnʼt always step by the same amount, sometimes it jumps more than it does other times.</p>
 <p>For instance, a slope of <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mi mathvariant="normal">/</mi><mn>7</mn></mrow><annotation encoding="application/x-tex">1/7</annotation></semantics></math></span> would only jump up a single pixel every <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>7</mn></mrow><annotation encoding="application/x-tex">7</annotation></semantics></math></span> pixels. A slope of <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4</mn><mi mathvariant="normal">/</mi><mn>3</mn></mrow><annotation encoding="application/x-tex">4/3</annotation></semantics></math></span> would jump up <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn></mrow><annotation encoding="application/x-tex">2</annotation></semantics></math></span> pixels one time, then jump up a single pixel twice more, making visible groups of three.</p>
-<img src="https://cofree.coffee/~verity/./rendered/46cf2bd1ee25dd6c848efaacc35d325cf01e946b.png" style="width: 100%">
+<img src="https://blog.veritates.love/./rendered/46cf2bd1ee25dd6c848efaacc35d325cf01e946b.png" style="width: 100%">
 <p>More complicated fractions will look more complicated and repeat over longer distances. Can you figure out what the third line graphed in this figure is? (Hint: how long does it take to repeat?)</p>
 <h4 id="sampling-irrational-slope">Sampling irrational slope</h4>
 <p>However, this same phenomenon occurs for irrational slopes too: how do we tell the difference now??</p>
@@ -2153,7 +2153,7 @@ instance Semigroup (ShiftReduce s r) where
 <p>What is this mysterious <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi></mrow><annotation encoding="application/x-tex">d</annotation></semantics></math></span> though? Itʼs the <strong>rise</strong> for the <strong>run</strong> <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi></mrow><annotation encoding="application/x-tex">p</annotation></semantics></math></span>. Weʼre saying that the function repeats every time we shift by <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi></mrow><annotation encoding="application/x-tex">p</annotation></semantics></math></span> steps of the <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span>-axis, but it has shifted by <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi></mrow><annotation encoding="application/x-tex">d</annotation></semantics></math></span> in the <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi></mrow><annotation encoding="application/x-tex">y</annotation></semantics></math></span>-axis in the meantime.</p>
 <p>Thatʼs right, weʼve circled back to good olʼ slope, but in a new way: instead of saying that we want the function to be linear by having rise over run being constant for all <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mn>1</mn></msub><mo separator="true">,</mo><msub><mi>x</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">x_1, x_2</annotation></semantics></math></span> we choose, we just want it to be constant when <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mn>2</mn></msub><mo>−</mo><msub><mi>x</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">x_2 - x_1</annotation></semantics></math></span> is a known period.</p>
 <p>This is much less restrictive: in particular, it lets us get rational slopes back out of integer functions! If we define the slope to be <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi mathvariant="normal">/</mi><mi>p</mi></mrow><annotation encoding="application/x-tex">d/p</annotation></semantics></math></span>, we see that for integer approximations it matches the slope of the original rational linear function, which we said would recur with period of the denominator, and of course it must travel vertically by the numerator in that time.</p>
-<img src="https://cofree.coffee/~verity/./rendered/0856e015b4b1fb39d0a8fb214392f215999e4889.png" style="width: 100%">
+<img src="https://blog.veritates.love/./rendered/0856e015b4b1fb39d0a8fb214392f215999e4889.png" style="width: 100%">
 <p>With how they wave around, these two functions donʼt look linear anymore, but they do follow a nice recurrence. Their shapes keep repeating every <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4</mn></mrow><annotation encoding="application/x-tex">4</annotation></semantics></math></span> or <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>8</mn></mrow><annotation encoding="application/x-tex">8</annotation></semantics></math></span> pixels, while they climb or fall by half that each time. That is, they have slope <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>+</mo><mn>1</mn><mi mathvariant="normal">/</mi><mn>2</mn></mrow><annotation encoding="application/x-tex">+1/2</annotation></semantics></math></span> and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>−</mo><mn>1</mn><mi mathvariant="normal">/</mi><mn>2</mn></mrow><annotation encoding="application/x-tex">-1/2</annotation></semantics></math></span> in our new system, even though they are not linear.</p>
 <h4 id="irrational-slopes">Irrational “slopes”</h4>
 <div class="Error">
@@ -2176,7 +2176,7 @@ instance Semigroup (ShiftReduce s r) where
 <p>Should another error affect the slope? Nahhh. Should any finite amount of errors affect the slope? Not even!</p>
 <p>Thus we can say that shifting vertically doesnʼt influence the slope and any finite number of errors wonʼt influence it either.</p>
 <p>Putting these together, we can wrap them up as a single property, and with a little extra sprinkle on top: <em>any two functions that differ by a <strong>bounded amount</strong> represent the same slope!</em><a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a></p>
-<img src="https://cofree.coffee/~verity/./rendered/0d29dca7daf441563080f9827c9f469f8ceb7b8f.png" style="width: 100%">
+<img src="https://blog.veritates.love/./rendered/0d29dca7daf441563080f9827c9f469f8ceb7b8f.png" style="width: 100%">
 <h4 id="what-is-slope-really">What <em>is</em> slope, really?</h4>
 <p>Finally we get to identify what slope actually is. Took us long enough!</p>
 <div class="Key_Idea">
@@ -2205,16 +2205,16 @@ instance Semigroup (ShiftReduce s r) where
 <h3 id="arithmetic">Arithmetic</h3>
 <h4 id="addition">Addition</h4>
 <p>We can add slopes in the obvious way, by adding the functions together (pointwise!): <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mi>f</mi><mo>+</mo><mi>g</mi><mo stretchy="false">)</mo><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mi>f</mi><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>+</mo><mi>g</mi><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(f+g)(x) = f(x) + g(x)</annotation></semantics></math></span>. And we can negate pointwise <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mo>−</mo><mi>f</mi><mo stretchy="false">)</mo><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(-f)(x) = -f(x)</annotation></semantics></math></span>, and the zero for this is of course the constantly zero function: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">0(x) = 0</annotation></semantics></math></span>. For example, we can add slope <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mi mathvariant="normal">/</mi><mn>6</mn></mrow><annotation encoding="application/x-tex">1/6</annotation></semantics></math></span> to slope <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>−</mo><mn>1</mn><mi mathvariant="normal">/</mi><mn>2</mn></mrow><annotation encoding="application/x-tex">-1/2</annotation></semantics></math></span> to get slope <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>−</mo><mn>1</mn><mi mathvariant="normal">/</mi><mn>3</mn></mrow><annotation encoding="application/x-tex">-1/3</annotation></semantics></math></span>:</p>
-<img src="https://cofree.coffee/~verity/./rendered/9df55eece203e884d7c6c32255a0cf47251c7378.png" style="width: 100%">
+<img src="https://blog.veritates.love/./rendered/9df55eece203e884d7c6c32255a0cf47251c7378.png" style="width: 100%">
 <p>Huh, that middle line doesnʼt look like the graph of the line with slope <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>−</mo><mn>1</mn><mi mathvariant="normal">/</mi><mn>3</mn></mrow><annotation encoding="application/x-tex">-1/3</annotation></semantics></math></span>! Itʼs very flakey, like it almost canʼt decide whether it wants to go up or down. Still, it looks like it does have the right trend overall, a general slope of <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>−</mo><mn>1</mn><mi mathvariant="normal">/</mi><mn>3</mn></mrow><annotation encoding="application/x-tex">-1/3</annotation></semantics></math></span>, and we will prove this later: addition works out just fine, within the bounded wiggle we expect!</p>
 <h4 id="multiplication">Multiplication</h4>
 <p>Now we get to my favorite part: how to multiply slopes.</p>
 <p>Multiplying the functions pointwise is the wrong move: that would produce something like quadratic functions, or worse.</p>
-<img src="https://cofree.coffee/~verity/./rendered/1559333778e9d0a1f9f803ee832780fc33544888.png" style="width: 100%">
+<img src="https://blog.veritates.love/./rendered/1559333778e9d0a1f9f803ee832780fc33544888.png" style="width: 100%">
 <p>That is a sad looking parabola indeed ☹️.</p>
 <p>Hmm … oh wait! What about <em>composing</em> functions?</p>
 <p>If you compose two functions, you multiply their slopes! So we have <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mi>f</mi><mo>∗</mo><mi>g</mi><mo stretchy="false">)</mo><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mi>f</mi><mo stretchy="false">(</mo><mi>g</mi><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(f*g)(x) = f(g(x))</annotation></semantics></math></span>. This suggests that the identity function acts as the identity for this multiplication, <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">1(x) = x</annotation></semantics></math></span> (of course it has slope <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn></mrow><annotation encoding="application/x-tex">1</annotation></semantics></math></span>!).</p>
-<img src="https://cofree.coffee/~verity/./rendered/6b2c5cc5731e137639bd476e522c8f2b03df0fa0.png" style="width: 100%">
+<img src="https://blog.veritates.love/./rendered/6b2c5cc5731e137639bd476e522c8f2b03df0fa0.png" style="width: 100%">
 <h3 id="ordering">Ordering</h3>
 <p>The goal is to come up with an ordering on almost-linear functions that is consistent with the arithmetic and the equivalence relation. So we can take a shortcut: we only need to define what it means to be positive, then <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo>&gt;</mo><mi>g</mi></mrow><annotation encoding="application/x-tex">f &gt; g</annotation></semantics></math></span> is defined by the difference <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo>−</mo><mi>g</mi></mrow><annotation encoding="application/x-tex">f - g</annotation></semantics></math></span> being positive.</p>
 <p>Before we ask what it means to positive or negative, what does it mean to be zero? We said that zero was the constant function – but wait, itʼs actually the <em>equivalence class</em> of the constant function, which consists of all functions that are bounded (since that means they have bounded difference from zero).</p>
@@ -2245,7 +2245,7 @@ instance Semigroup (ShiftReduce s r) where
 <p>Weʼve covered vertical shifting, but what about horizontal shifting? Does bounded (vertical) differences suffice to cover bounded (horizontal) differences? Obviously not for arbitrary functions, but hopefully for the almost-linear functions we are covering?</p>
 <p>It turns out yes, being almost-linear is exactly what it means that horizontal shifts of the function require just bounded vertical shifts to compensate: we need <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mi>n</mi><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mi>n</mi><mo>+</mo><mi>c</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(n) - f(n+c)</annotation></semantics></math></span> bounded (for fixed <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>c</mi></mrow><annotation encoding="application/x-tex">c</annotation></semantics></math></span>), but being almost linear means that <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mi>c</mi><mo stretchy="false">)</mo><mo>+</mo><mi>f</mi><mo stretchy="false">(</mo><mi>n</mi><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mi>n</mi><mo>+</mo><mi>c</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(c) + f(n) - f(n+c)</annotation></semantics></math></span> is bounded which is different just by the constant <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mi>c</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(c)</annotation></semantics></math></span>.</p>
 <p>For example, these two functions with slope <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>3</mn><mi mathvariant="normal">/</mi><mn>7</mn></mrow><annotation encoding="application/x-tex">3/7</annotation></semantics></math></span> are shifted by <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>6</mn></mrow><annotation encoding="application/x-tex">6</annotation></semantics></math></span> relative to each other, so their different forms a pretty checkerboard-like pattern, which is clearly bounded, only taking the values <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn></mrow><annotation encoding="application/x-tex">2</annotation></semantics></math></span> and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>3</mn></mrow><annotation encoding="application/x-tex">3</annotation></semantics></math></span> as the functions grow in close proportion.</p>
-<img src="https://cofree.coffee/~verity/./rendered/b9c12774439ae497d591674f8665287a95bccaf4.png" style="width: 100%">
+<img src="https://blog.veritates.love/./rendered/b9c12774439ae497d591674f8665287a95bccaf4.png" style="width: 100%">
 <h3 id="monotonicity">Monotonicity</h3>
 <p>Thereʼs one property we have not mentioned yet: monotonicity.</p>
 <p>All of the linear approximation functions we would come up with are monotonic: either for all <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi><mo>≤</mo><mi>n</mi></mrow><annotation encoding="application/x-tex">m \le n</annotation></semantics></math></span>, <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mi>m</mi><mo stretchy="false">)</mo><mo>≤</mo><mi>f</mi><mo stretchy="false">(</mo><mi>n</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(m) \le f(n)</annotation></semantics></math></span> (weakly monotonically increasing), or for all <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi><mo>≤</mo><mi>n</mi></mrow><annotation encoding="application/x-tex">m \le n</annotation></semantics></math></span>, <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mi>m</mi><mo stretchy="false">)</mo><mo>≥</mo><mi>f</mi><mo stretchy="false">(</mo><mi>m</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(m) \ge f(m)</annotation></semantics></math></span> (weakly monotonically decreasing). But weʼve never mentioned this. Why not include it as a property we care about having or respecting?</p>

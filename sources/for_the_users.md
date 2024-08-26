@@ -2,7 +2,7 @@
 title: For the Users!
 subtitle: My user scripts and user styles (& othersʼ!)
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 ## User styles
@@ -219,7 +219,7 @@ But you can of course scope it to just the websites you want!
     'use strict';
 
     var matches = Object.entries({
-        'https://cofree.coffee/~verity': 'http://localhost:7933',
+        'https://blog.veritates.love': 'http://localhost:7933',
         'https://monoidmusician.github.io': 'http://localhost',
         // ^ unfortunately this captures all of localhost, even different ports ...
     });

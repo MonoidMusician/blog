@@ -1,7 +1,7 @@
 ---
 title: OOP
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 date: 2023/10/28
 ---
 

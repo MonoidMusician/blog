@@ -1,7 +1,7 @@
 ---
 title: A Framework for Comprehensive Errors In a (Hypothetical?) Typechecker
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 I am on a quest for the best errors out there. Will I ever realize it? Nope, I clearly donʼt have the time. But hereʼs my blueprint for what I believe are my most significant contributions to it so far.

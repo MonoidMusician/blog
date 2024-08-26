@@ -2,7 +2,7 @@
 title: Computering
 subtitle: Consoles and terminals oh my
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 Consoles are so funny because Iʼve always thought they were pretty bad interfaces.

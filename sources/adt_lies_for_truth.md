@@ -2,7 +2,7 @@
 title: Lies Told in Defense of the Truth
 subtitle: "Subtypes and Quotients: The theory behind safe interfaces for ADTs in FP"
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 Hm can we just take a second to appreciate how beautiful the long stroke on the “Q” in “Quotients” is?

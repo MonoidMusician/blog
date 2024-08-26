@@ -1,7 +1,7 @@
 ---
 title: Blog Technology
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 The source can be found at [MonoidMusician/blog](https://github.com/MonoidMusician/blog) on GitHub.

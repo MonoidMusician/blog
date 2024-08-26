@@ -1,7 +1,7 @@
 ---
 title: Fantasy runtime
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 date: 2021/08/07
 ---
 

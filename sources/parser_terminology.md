@@ -2,7 +2,7 @@
 title: Terminology Reference
 subtitle: "[Interactive Parser Explanations](parser.html)"
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 Just a reference list of terminology, as a compact little walkthrough.

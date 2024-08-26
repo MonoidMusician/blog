@@ -1,7 +1,7 @@
 ---
 title: Unicode Explorer
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 <style>

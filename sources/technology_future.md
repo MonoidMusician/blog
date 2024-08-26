@@ -2,7 +2,7 @@
 title: We Were Lied to About Computer Technology
 subtitle: Programming is not “the future now” – at least, not yet
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 Computer technology seems like the future – from the semiconductor revolution to the birth of the modern smartphone, technology has raced ahead, quickly transforming the science fiction into the science reality.

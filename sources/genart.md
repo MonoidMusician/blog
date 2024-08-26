@@ -2,7 +2,7 @@
 title: Gen Art Scratchpad
 subtitle: A really simple editor for generative art in JS
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 Press shift-space and <button id="enjoy" class="add">enjoy</button> \^.\^

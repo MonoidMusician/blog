@@ -1,7 +1,7 @@
 ---
 title: Positionality
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 I donʼt know if this is an existing, established word.

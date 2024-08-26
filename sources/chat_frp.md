@@ -1,7 +1,7 @@
 ---
 title: "chat: ideas for FRP DOM library"
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 btw are you familiar with event streams in FRP?\

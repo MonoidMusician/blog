@@ -2,7 +2,7 @@
 title: Pragmaticsh
 subtitle: "How words are used, *descriptively*"
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 : clipping/noclip (in video games)

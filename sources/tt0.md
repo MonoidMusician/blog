@@ -1,7 +1,7 @@
 ---
 title: MonoidMusicianʼs Type Theory Musings
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 Welcome to my (un)scrambled thoughts on all things from the intersection of homotopy type theory, functional programming, and set theory!

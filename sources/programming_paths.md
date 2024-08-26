@@ -1,7 +1,7 @@
 ---
 title: Why You Should Believe in HoTT Path Induction as a (Haskell) Programmer
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 ## Outline

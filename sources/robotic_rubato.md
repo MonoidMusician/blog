@@ -1,7 +1,7 @@
 ---
 title: "Ruboto: Robotic Rubato"
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 In the course of transcribing [Le Vertigo] for the electronic music program Max/MSP, I decided that I didnʼt want it to sound robotic.

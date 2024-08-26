@@ -2,7 +2,7 @@
 title: Redesigning `Coercible`{.purescript}
 subtitle: Just use quantified constraints
 author:
-- "[@MonoidMusician](https://cofree.coffee/~verity/)"
+- "[@MonoidMusician](https://blog.veritates.love/)"
 date: 2021/12/12
 ---
 
