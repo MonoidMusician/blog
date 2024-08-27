@@ -420,4 +420,5 @@ renderParseError theError = case theError of
     P.Terminal P.EOF -> text_ "$"
     P.Terminal (P.Continue (Similar (Left s))) -> text_ (show s)
     P.Terminal (P.Continue (Similar (Right r))) -> text_ (show r)
+    P.InterTerminal _ -> unsafeCrashWith "Comb.part"
 

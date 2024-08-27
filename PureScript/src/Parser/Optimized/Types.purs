@@ -9,10 +9,11 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (class Newtype)
 import Data.Set (Set)
 import Data.Set as Set
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\))
 import Parser.Types (Fragment, ShiftReduce, Zipper(..))
 import Parser.Types as Old
@@ -21,10 +22,10 @@ import Safe.Coerce (coerce)
 import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Reference (unsafeRefEq)
 
-newtype Grammar nt tok = MkGrammar
-  (Map nt (Array (Maybe (Fragment nt tok))))
+newtype Grammar meta nt tok = MkGrammar
+  (Map nt (Array (Maybe (Fragment meta nt tok))))
 
-fromOld :: forall nt tok. Ord nt => Old.Grammar nt Int tok -> Grammar nt tok
+fromOld :: forall meta nt tok. Ord nt => Old.Grammar meta nt Int tok -> Grammar meta nt tok
 fromOld (Old.MkGrammar allRules) = MkGrammar
   let
     pNames = Set.toMap $ Set.fromFoldable $ allRules <#> _.pName
@@ -36,7 +37,7 @@ fromOld (Old.MkGrammar allRules) = MkGrammar
       \{ pName, rName, rule } ->
         if pName == pName0 then Just (Tuple rName rule) else Nothing
 
-getRule :: forall nt tok. Ord nt => nt -> Maybe Int -> Grammar nt tok -> Maybe (Fragment nt tok)
+getRule :: forall meta nt tok. Ord nt => nt -> Maybe Int -> Grammar meta nt tok -> Maybe (Fragment meta nt tok)
 getRule pName rName (MkGrammar rules) =
   unsafeFromJust "pName failed" (Map.lookup pName rules)
     # flip Array.index (fromMaybe 0 rName)
@@ -44,10 +45,10 @@ getRule pName rName (MkGrammar rules) =
     # unsafeFromJust "missing inside rName"
     # Just
 
-toZipper :: forall nt tok. Int -> Fragment nt tok -> Zipper nt tok
+toZipper :: forall meta nt tok. Int -> Fragment meta nt tok -> Zipper meta nt tok
 toZipper pos = Zipper <$> Array.take pos <*> Array.drop pos
 
-type Lookahead tok = Set tok
+type Lookahead meta tok = SemigroupMap tok (Additive meta)
 
 newtype CmpMap k v = CmpMap (Map k v)
 derive instance newtypeCmpMap :: Newtype (CmpMap k v) _
@@ -84,56 +85,61 @@ unsafeKeys = unsafeCoerce
 unsafeValues :: forall k v. Map k v -> Map (AlwaysEq k) v
 unsafeValues = unsafeCoerce
 
-newtype State nt tok = HiddenState (CmpMap nt (CmpMap (Maybe Int) (CmpMap Int (Lookahead tok))))
-derive instance newtypeState :: Newtype (State nt tok) _
+newtype State meta nt tok = HiddenState
+  (CmpMap nt (CmpMap (Maybe Int) (CmpMap Int { lookbehind :: Additive meta, lookahead :: Lookahead meta tok })))
+derive instance newtypeState :: Newtype (State meta nt tok) _
 
-type StateItem nt tok =
+type StateItem meta nt tok =
   { pName :: nt
   , rName :: Maybe Int
-  , rule :: Zipper nt tok
-  , lookahead :: Lookahead tok
+  , rule :: Zipper meta nt tok
+  , lookbehind :: Additive meta
+  , lookahead :: Lookahead meta tok
   }
-type StateItem' nt tok =
+type StateItem' meta nt tok =
   { pName :: nt
   , rName :: Maybe Int
   , rule :: Int
-  , lookahead :: Lookahead tok
+  , lookbehind :: Additive meta
+  , lookahead :: Lookahead meta tok
   }
 
-toItems :: forall nt tok m. Ord nt => Ord tok => Monoid m => Grammar nt tok -> (StateItem nt tok -> m) -> State nt tok -> m
+toItems :: forall meta nt tok m. Ord nt => Ord tok => Monoid m => Grammar meta nt tok -> (StateItem meta nt tok -> m) -> State meta nt tok -> m
 toItems grammar f (HiddenState items) = items #
   foldMapWithIndex \pName ->
   foldMapWithIndex \rName ->
-  foldMapWithIndex \pos lookahead ->
+  foldMapWithIndex \pos { lookbehind, lookahead } ->
     case getRule pName rName grammar of
       Nothing -> unsafeCrashWith "missing rule"
       Just rule ->
-        f { pName, rName, rule: toZipper pos rule, lookahead }
+        f { pName, rName, rule: toZipper pos rule, lookbehind, lookahead }
 
-fromItem :: forall nt tok. StateItem nt tok -> State nt tok
-fromItem { pName, rName, rule: Zipper before _, lookahead } =
-  fromItem' { pName, rName, rule: Array.length before, lookahead }
-fromItem' :: forall nt tok. StateItem' nt tok -> State nt tok
-fromItem' { pName, rName, rule: pos, lookahead } =
-  coerce $ Map.singleton pName $ Map.singleton rName $ Map.singleton pos lookahead
+fromItem :: forall meta nt tok. StateItem meta nt tok -> State meta nt tok
+fromItem { pName, rName, rule: Zipper before _, lookbehind, lookahead } =
+  fromItem' { pName, rName, rule: Array.length before, lookbehind, lookahead }
+fromItem' :: forall meta nt tok. StateItem' meta nt tok -> State meta nt tok
+fromItem' { pName, rName, rule: pos, lookbehind, lookahead } =
+  coerce $ Map.singleton pName $ Map.singleton rName $ Map.singleton pos { lookbehind, lookahead }
 
-derive newtype instance eqState :: (Eq nt, Eq tok) => Eq (State nt tok)
+derive newtype instance eqState :: (Eq meta, Eq nt, Eq tok) => Eq (State meta nt tok)
 
-derive newtype instance ordState :: (Ord nt, Ord tok) => Ord (State nt tok)
+derive newtype instance ordState :: (Ord meta, Ord nt, Ord tok) => Ord (State meta nt tok)
 
-derive newtype instance semigroupState :: (Ord nt, Ord tok) => Semigroup (State nt tok)
-derive newtype instance monoidState :: (Ord nt, Ord tok) => Monoid (State nt tok)
+derive newtype instance semigroupState :: (Semiring meta, Ord meta, Ord nt, Ord tok) => Semigroup (State meta nt tok)
+derive newtype instance monoidState :: (Semiring meta, Ord meta, Ord nt, Ord tok) => Monoid (State meta nt tok)
 
-newtype States nt tok = States
-  (Array (StateInfo nt tok))
+newtype States meta nt tok = States
+  (Array (StateInfo meta nt tok))
 
-type StateInfo nt tok =
-  { items :: State nt tok
-  , advance :: SemigroupMap tok (ShiftReduce Int (Fragment nt tok /\ nt /\ Maybe Int))
+type Reduction meta nt tok = Fragment meta nt tok /\ nt /\ Maybe Int
+
+type StateInfo meta nt tok =
+  { items :: State meta nt tok
+  , advance :: SemigroupMap tok (Additive meta /\ ShiftReduce Int (Reduction meta nt tok))
   , receive :: Map nt Int
   }
 
-toOld :: forall nt tok. Ord nt => Ord tok => Grammar nt tok -> States nt tok -> Old.States Int nt (Maybe Int) tok
+toOld :: forall meta nt tok. Ord nt => Ord tok => Grammar meta nt tok -> States meta nt tok -> Old.States Int meta nt (Maybe Int) tok
 toOld grammar (States states) = Old.States $ states # mapWithIndex \sName x ->
   { sName
   , advance: x.advance
@@ -141,12 +147,12 @@ toOld grammar (States states) = Old.States $ states # mapWithIndex \sName x ->
   , items: toOldState grammar x.items
   }
 
-toOldState :: forall nt tok. Ord nt => Ord tok => Grammar nt tok -> State nt tok -> Old.State nt (Maybe Int) tok
+toOldState :: forall meta nt tok. Ord nt => Ord tok => Grammar meta nt tok -> State meta nt tok -> Old.State meta nt (Maybe Int) tok
 toOldState grammar items = Old.State $ items # toItems grammar
-  \{ pName, rName, rule, lookahead } ->
-    [ { pName, rName, rule, lookahead: Set.toUnfoldable lookahead } ]
+  \{ pName, rName, rule, lookbehind, lookahead: SemigroupMap lookahead } ->
+    [ { pName, rName, rule, lookbehind, lookahead: (\(Tuple x (Additive y)) -> Tuple y x) <$> Map.toUnfoldable lookahead } ]
 
-derive instance newtypeStates :: Newtype (States nt tok) _
+derive instance newtypeStates :: Newtype (States meta nt tok) _
 
 unsafeFromJust :: forall a. String -> Maybe a -> a
 unsafeFromJust _ (Just a) = a

@@ -151,7 +151,7 @@ inputC' label placeholder initialValue onInput =
 
 type Header nt tok = Array tok /\ Array nt
 
-getHeader :: forall s nt r tok. Ord nt => Ord tok => States s nt r tok -> Header nt tok
+getHeader :: forall s nt r tok. Ord nt => Ord tok => States s Unit nt r tok -> Header nt tok
 getHeader (States states) = bimap Array.nub Array.nub $
   states # foldMap \{ items: State items } -> items # foldMap \item ->
     ([] /\ [ item.pName ]) <> foldZipper fromPart item.rule
@@ -159,6 +159,7 @@ getHeader (States states) = bimap Array.nub Array.nub $
   foldZipper f (Zipper l r) = foldMap f l <> foldMap f r
   fromPart (NonTerminal nt) = [] /\ [ nt ]
   fromPart (Terminal tok) = [ tok ] /\ []
+  fromPart (InterTerminal _) = [] /\ []
 
 col :: forall a e. Eq a => Attr e D.Class String => a -> a -> Event (Attribute e)
 col j i =
@@ -203,7 +204,7 @@ renderParseTable info (MkGrammar grammar) (States states) =
       renderGoto (Just s) = [ renderCmd mempty "g", renderStHere s ]
       cols state =
         let
-          forTerminal tok = map (snd <<< snd) <$> Map.lookup tok (unwrap state.advance)
+          forTerminal tok = map (snd <<< snd) <<< snd <$> Map.lookup tok (unwrap state.advance)
           forNonTerminal nt = Map.lookup nt state.receive
         in
           map (pure <<< renderShiftReduce <<< forTerminal) terminals <> map (renderGoto <<< forNonTerminal) nonTerminals
@@ -418,7 +419,7 @@ renderItem s j { pName, rName, rule: rule@(Zipper _ after), lookahead } =
   , renderNT mempty pName
   , renderMeta mempty ": "
   , renderZipper rule
-  , renderLookahead (if Array.null after then " reducible" else "") lookahead
+  , renderLookahead (if Array.null after then " reducible" else "") (map snd lookahead)
   , D.span_ [ renderMeta mempty " #", renderRule mempty rName ]
   , D.span_ case toAdvanceTo s rule of
       Nothing -> []
@@ -481,9 +482,10 @@ renderSt c x = D.span (D.OnClick ?:= c <|> D.Class !:= "state" <> if isJust c th
 renderSt' :: forall lock payload. Event String -> Maybe (Effect Unit) -> Int -> Domable lock payload
 renderSt' cls c x = D.span (D.OnClick ?:= c <|> D.Class <:=> (pure "state" <|> (append "state " <$> cls))) [ text_ (show x) ]
 
-renderPart :: Maybe (Effect Unit) -> Part NonEmptyString CodePoint -> Nut
+renderPart :: Maybe (Effect Unit) -> Part Unit NonEmptyString CodePoint -> Nut
 renderPart c (NonTerminal nt) = renderNT c nt
 renderPart c (Terminal t) = renderTok c t
+renderPart _ (InterTerminal _) = mempty
 
 renderCmd :: Maybe (Effect Unit) -> String -> Nut
 renderCmd c x = D.span (D.OnClick ?:= c <|> D.Class !:= "cmd" <> if isJust c then " clickable" else "") [ text_ x ]
@@ -545,6 +547,7 @@ parseGrammar top rules = do
       , rName: topRule.rName
       , rule: Zipper [] topRule.rule
       , lookahead: []
+      , lookbehind: mempty
       }
 
     tokenRefs = gatherTokens_ (MkGrammar rules')
@@ -894,6 +897,7 @@ explorerComponent { produced: producedRules, grammar: { augmented: MkGrammar rul
               (D.Class <:=> (currentFocused <#> any (fst >>> eq i) >>> if _ then "selected" else ""))
               [ renderNT (Just (push.focus (Just (i /\ nt)))) nt ]
           renderPartHere _ (Terminal tok) = renderTok mempty tok
+          renderPartHere _ (InterTerminal _) = mempty
           send = currentParts <#> \parts ->
             case traverse unTerminal parts of
               Nothing -> Nothing

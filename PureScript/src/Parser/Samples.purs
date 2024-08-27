@@ -17,7 +17,7 @@ import Parser.ProtoG8 as G8
 import Parser.Types (AST, Augmented, CST, Grammar(..), OrEOF, Part(..), SATable, SAugmented, SCTable, SGrammar, State, States)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 
-g8Grammar :: Grammar G8.Sorts G8.Rule G8.Tok
+g8Grammar :: Grammar Unit G8.Sorts G8.Rule G8.Tok
 g8Grammar = MkGrammar
   [ { pName: G8.RE, rName: G8.RE1, rule: [ Terminal G8.LParen, NonTerminal G8.RL, Terminal G8.RParen ] }
   , { pName: G8.RE, rName: G8.RE2, rule: [ Terminal G8.X ] }
@@ -33,7 +33,7 @@ exGrammar = parseIntoGrammar
   , { pName: "L", rName: "L2", rule: "L,E" }
   ]
 
-g8Seed :: Augmented (Maybe G8.Sorts) (Maybe G8.Rule) (OrEOF G8.Tok)
+g8Seed :: Augmented Unit (Maybe G8.Sorts) (Maybe G8.Rule) (OrEOF G8.Tok)
 g8Seed = fromSeed g8Grammar G8.RE
 
 defaultTopName :: NonEmptyString
@@ -48,17 +48,17 @@ defaultEOF = (codePointFromChar '␄')
 exSeed :: SAugmented
 exSeed = fromSeed' defaultTopName defaultTopRName defaultEOF exGrammar (unsafePartial (fromJust (NES.fromString "E")))
 
-g8Generated :: forall a. a -> Array (State (Maybe G8.Sorts) (Maybe G8.Rule) (OrEOF G8.Tok))
+g8Generated :: forall a. a -> Array (State Unit (Maybe G8.Sorts) (Maybe G8.Rule) (OrEOF G8.Tok))
 g8Generated _ = generate g8Grammar G8.RE
 
-exGenerated :: forall t. t -> Array (State NonEmptyString String CodePoint)
+exGenerated :: forall t. t -> Array (State Unit NonEmptyString String CodePoint)
 exGenerated _ = generate' defaultTopName defaultTopRName defaultEOF exGrammar (unsafePartial (fromJust (NES.fromString "E")))
 
-g8States :: forall a. a -> States Int (Maybe G8.Sorts) (Maybe G8.Rule) (OrEOF G8.Tok)
+g8States :: forall a. a -> States Int Unit (Maybe G8.Sorts) (Maybe G8.Rule) (OrEOF G8.Tok)
 g8States a = fromRight' (\_ -> unsafeCrashWith "state generation did not work")
   (numberStatesBy (add 1) g8Seed.augmented (g8Generated a))
 
-exStates :: forall t. t -> States Int NonEmptyString String CodePoint
+exStates :: forall t. t -> States Int Unit NonEmptyString String CodePoint
 exStates a = fromRight' (\_ -> unsafeCrashWith "state generation did not work")
   (numberStatesBy (add 1) exSeed.augmented (exGenerated a))
 

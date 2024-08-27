@@ -60,18 +60,20 @@ import Parser.Selective (class Casing, class Select)
 import Parser.Types (OrEOF) as ReExports
 import Parser.Types (ShiftReduce(..), unShift)
 import Parser.Types as P
+import Partial.Unsafe (unsafeCrashWith)
 import Prim.Row as Row
 import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
 import Type.Equality (class TypeEquals, to, from)
 import Type.Proxy (Proxy(..))
+import Whitespace (ParseWS(..))
 
 type ParseError = String
 type UserError = String
 
 newtype Comber a = Comber
-  (Comb Rec UserError Rational String (String ~ Rawr) String a)
+  (Comb Rec UserError Rational ParseWS String String (String ~ Rawr) String a)
 derive instance Newtype (Comber a) _
 derive newtype instance functorComber :: Functor Comber
 derive newtype instance applyComber :: Apply Comber
@@ -88,9 +90,9 @@ derive newtype instance heytingAlgebraComber :: HeytingAlgebra a => HeytingAlgeb
 
 type Parsing a = String -> Either String a
 
-type Part = P.Part String (String ~ Rawr)
-type Fragment = P.Fragment String (String ~ Rawr)
-type Zipper = P.Zipper String (String ~ Rawr)
+type Part = P.Part ParseWS String (String ~ Rawr)
+type Fragment = P.Fragment ParseWS String (String ~ Rawr)
+type Zipper = P.Zipper ParseWS String (String ~ Rawr)
 
 -- | Parse a regex.
 rawr :: String -> Comber String
@@ -136,10 +138,10 @@ withSourceOf = over Comber Comb.withSourceOf
 -- | Return the source tokens parsed by the given parser, instead of whatever
 -- | its applicative result was.
 tokensSourceOf :: forall a. Comber a -> Comber (Array String)
-tokensSourceOf = over Comber Comb.tokensSourceOf
+tokensSourceOf = map (map (either identity identity)) <<< over Comber Comb.tokensSourceOf
 
 withTokensSourceOf :: forall a. Comber a -> Comber (Array String /\ a)
-withTokensSourceOf = over Comber Comb.withTokensSourceOf
+withTokensSourceOf = map (lmap (map (either identity identity))) <<< over Comber Comb.withTokensSourceOf
 
 
 piggyback ::
@@ -165,7 +167,7 @@ parse = convertingParseError <<< Comb.parseRegex topName <<< un Comber
 parse' :: forall a. Comber a -> StateTable /\ (String -> Either ParseError a)
 parse' = map convertingParseError <<< Comb.parseRegex' topName <<< un Comber
 
-type Conf = CombR.CConf UserError Int String (String ~ Rawr) String String
+type Conf = CombR.CConf UserError Rational ParseWS String String (String ~ Rawr) String String
 
 parseWith :: forall a. Conf -> Comber a -> (String -> Either ParseError a)
 parseWith conf = convertingParseError <<< Comb.parseWith conf topName <<< un Comber
@@ -296,6 +298,7 @@ convertParseError = case _ of
     P.Terminal P.EOF -> "$"
     P.Terminal (P.Continue (Similar (Left s))) -> show s
     P.Terminal (P.Continue (Similar (Right r))) -> show r
+    P.InterTerminal _ -> unsafeCrashWith "part"
 
 --------------------------------------------------------------------------------
 
@@ -358,13 +361,13 @@ fetchAndThaw' comber url =
     Json.Named s e -> CA.Named s $ conv e
     Json.MissingValue -> CA.MissingValue
 
-type FullParseError = CombR.ParseError UserError String (String ~ Rawr) String String
-type Rec = CombR.Rec UserError String (String ~ Rawr) String String
-type States = CombR.CStates String (String ~ Rawr)
-type StateInfo = CombR.CStateInfo String (String ~ Rawr)
-type State = CombR.CState String (String ~ Rawr)
-type Resultant = CombT.CResultant Rec UserError String String
-type Options = CombT.COptions Rec UserError String (String ~ Rawr) String
+type FullParseError = CombR.ParseError UserError ParseWS String String (String ~ Rawr) String String
+type Rec = CombR.Rec UserError ParseWS String String (String ~ Rawr) String String
+type States = CombR.CStates ParseWS String (String ~ Rawr)
+type StateInfo = CombR.CStateInfo ParseWS String (String ~ Rawr)
+type State = CombR.CState ParseWS String (String ~ Rawr)
+type Resultant = CombT.CResultant Rec UserError String String String
+type Options = CombT.COptions Rec UserError ParseWS String String (String ~ Rawr) String
 type StateTable =
   { stateMap :: Map String Int
   , start :: Int
@@ -561,6 +564,7 @@ printPart :: PrintFn Part
 printPart p (P.NonTerminal nt) = p.nonTerminal nt
 printPart p (P.Terminal (Similar (Left tok))) = p.literal tok
 printPart p (P.Terminal (Similar (Right r))) = p.regex $ show r
+printPart p (P.InterTerminal _) = unsafeCrashWith "printPart"
 
 printFragment' :: PrintFn Fragment
 printFragment' p = intercalate (p.meta " ") <<< map (printPart p)
@@ -574,18 +578,19 @@ printZipper :: PrintFn Zipper
 printZipper p (P.Zipper l r) =
   intercalate (p.meta " • ") [ printFragment' p l, printFragment' p r ]
 
-printZipper' :: PrintFn (P.Zipper (Either String String) (P.OrEOF (String ~ Rawr)))
+printZipper' :: PrintFn (P.Zipper ParseWS (Either String String) (P.OrEOF (String ~ Rawr)))
 printZipper' p (P.Zipper l r) =
   intercalate (p.meta " • ") [ printFragment'' p l, printFragment'' p r ]
 
-printPart' :: PrintFn (P.Part (Either String String) (P.OrEOF (String ~ Rawr)))
+printPart' :: PrintFn (P.Part ParseWS (Either String String) (P.OrEOF (String ~ Rawr)))
 printPart' p (P.NonTerminal (Left nt)) = p.nonTerminal nt <> p.meta "$"
 printPart' p (P.NonTerminal (Right nt)) = p.nonTerminal nt
 printPart' p (P.Terminal P.EOF) = p.meta "$"
 printPart' p (P.Terminal (P.Continue (Similar (Left tok)))) = p.literal tok
 printPart' p (P.Terminal (P.Continue (Similar (Right r)))) = p.regex $ show r
+printPart' p (P.InterTerminal _) = unsafeCrashWith "printPart'"
 
-printFragment'' :: PrintFn (P.Fragment (Either String String) (P.OrEOF (String ~ Rawr)))
+printFragment'' :: PrintFn (P.Fragment ParseWS (Either String String) (P.OrEOF (String ~ Rawr)))
 printFragment'' p = intercalate (p.meta " ") <<< map (printPart' p)
 
 
@@ -654,8 +659,8 @@ printConflicts p states@(P.States index) =
               , p.rule sName
               , p.meta " @ "
               , case advance of
-                  P.Continue a -> printPart p (P.Terminal a)
-                  P.EOF -> p.meta "EOF"
+                  _meta /\ P.Continue a -> printPart p (P.Terminal a)
+                  _meta /\ P.EOF -> p.meta "EOF"
               , p.meta ")"
               ]
             , fold do
@@ -677,7 +682,7 @@ printStateTable p { states: P.States states } =
     [ Just $ p.meta $ "- " <> show sName <> ":"
     , Just $ p.lines $ (p.meta "  - " <> _) <$> printState p items
     , guard (not Map.isEmpty advance) $> do
-        p.lines $ advance # foldMapWithIndex \cat sr -> fold
+        p.lines $ advance # foldMapWithIndex \cat (_meta /\ sr) -> fold
           [ pure $ p.meta "  ? " <> case cat of
               P.Continue a -> printPart p (P.Terminal a)
               P.EOF -> p.meta "EOF"

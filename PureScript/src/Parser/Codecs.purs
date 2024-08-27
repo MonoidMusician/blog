@@ -19,22 +19,24 @@ import Data.List (List(..))
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
+import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Profunctor (dimap)
 import Data.Set (Set)
 import Data.Set as Set
+import Data.String (CodePoint)
 import Data.String as String
 import Data.String.NonEmpty (NonEmptyString)
 import Data.String.NonEmpty as NES
 import Data.Traversable (traverse)
-import Data.Tuple (fst, snd, uncurry)
+import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.Tuple.Nested ((/\), type (/\))
 import Data.Variant as V
 import Data.Variant as Variant
 import Foreign.Object as Object
 import Parser.Algorithms (parseDefinitions, unParseDefinition)
 import Parser.Proto (ParseSteps(..), Stack(..))
-import Parser.Types (CST(..), Grammar(..), Part(..), SAugmented, SCParseSteps, SCST, SCStack, SFragment, SPart, SProducible, SState, SStateInfo, SStates, ShiftReduce(..), Zipper(..))
+import Parser.Types (CST(..), Grammar(..), Part(..), SAugmented, SCParseSteps, SCST, SCStack, SFragment, SPart, SProducible, SState, SStateInfo, SStates, ShiftReduce(..), Zipper(..), Fragment)
 import Record as Record
 import Safe.Coerce (coerce)
 import Type.Proxy (Proxy(..))
@@ -55,14 +57,14 @@ rulesCodec
    . Applicative m
   => Codec' m
        (Array { pName :: NonEmptyString, rule :: String | r })
-       (Array { pName :: NonEmptyString, rule :: SFragment | r })
+       (Array { pName :: NonEmptyString, rule :: Fragment Unit NonEmptyString CodePoint | r })
 rulesCodec = codec
   (pure <<< parseDefinitions)
   (map \r -> r { rule = unParseDefinition r.rule })
 
 lastMile
   :: Codec' (Either JsonDecodeError)
-       (Array { pName :: NonEmptyString, rName :: String, rule :: SFragment })
+       (Array { pName :: NonEmptyString, rName :: String, rule :: Fragment Unit NonEmptyString CodePoint })
        SAugmented
 lastMile = codec
   (fromRules)
@@ -75,7 +77,7 @@ lastMile = codec
         { augmented: MkGrammar rules
         , entry
         , eof
-        , start: { lookahead: [], pName: top.pName, rName: top.rName, rule: Zipper [] top.rule }
+        , start: { lookbehind: Additive one, lookahead: [], pName: top.pName, rName: top.rName, rule: Zipper [] top.rule }
         }
       _ -> Left $ AtIndex 0 $ UnexpectedValue $ Json.fromString $ unParseDefinition top.rule
 
@@ -150,7 +152,7 @@ stateInfoCodec =
   CAR.object "State"
     { sName: CA.int
     , items: stateCodec
-    , advance: _n $ mappy CA.codePoint $ shiftReduceCodec CA.int (tuple fragmentCodec $ tuple nonEmptyStringCodec CA.string)
+    , advance: _n $ mappy CA.codePoint $ dimap snd (Tuple mempty) $ shiftReduceCodec CA.int (tuple fragmentCodec $ tuple nonEmptyStringCodec CA.string)
     , receive: mappy nonEmptyStringCodec CA.int
     }
 
@@ -174,7 +176,8 @@ shiftReduceCodec sC rC = CAV.variantMatch
 
 stateCodec :: JsonCodec SState
 stateCodec = _n $ CA.array $ CAR.object "StateItem"
-  { lookahead: CA.array CA.codePoint
+  { lookahead: CA.array $ dimap snd (Tuple unit) CA.codePoint
+  , lookbehind: _n CA.null
   , pName: nonEmptyStringCodec
   , rName: CA.string
   , rule: CA.indexedArray "Zipper" $ Zipper
@@ -189,15 +192,18 @@ partCodec :: JsonCodec SPart
 partCodec = CAV.variantMatch
   { "Terminal": Right CA.codePoint
   , "NonTerminal": Right nonEmptyStringCodec
+  , "InterTerminal": Right CA.null
   } # dimap
     do
       case _ of
         Terminal s -> Variant.inj (Proxy :: Proxy "Terminal") s
         NonTerminal r -> Variant.inj (Proxy :: Proxy "NonTerminal") r
+        InterTerminal r -> Variant.inj (Proxy :: Proxy "InterTerminal") r
     do
       Variant.match
         { "Terminal": Terminal
         , "NonTerminal": NonTerminal
+        , "InterTerminal": InterTerminal
         }
 
 producibleCodec :: JsonCodec SProducible

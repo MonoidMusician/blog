@@ -24,6 +24,7 @@ import Data.List as List
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (class Newtype, over2, unwrap)
 import Data.Semigroup.Foldable (maximum)
 import Data.Set as Set
@@ -42,8 +43,9 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Algorithms (indexStates)
 import Parser.Comb.Types (Associativity(..), LogicParts(..), Option, Options(..), PartialResult(..), applyLogic)
 import Parser.Proto (Stack(..), topOf)
-import Parser.Types (CST(..), Fragment, OrEOF(..), Part(..), ShiftReduce(..), State(..), StateInfo, States(..), Zipper(..), decide, decisionUnique, filterSR, filterSR')
+import Parser.Types (Fragment, ICST(..), OrEOF(..), Part(..), ShiftReduce(..), State(..), StateInfo, States(..), Zipper(..), decide, decisionUnique, filterSR, filterSR')
 import Partial.Unsafe (unsafeCrashWith)
+import Safe.Coerce (coerce)
 import Type.Proxy (Proxy(..))
 
 data Scanning i = Scanning Int i
@@ -319,20 +321,20 @@ screenPrecedence (ResolvePrec f) = traverse \(sr /\ cat /\ oi) ->
   f cat identity sr <#> \sr' -> sr' /\ cat /\ oi
 
 applyPrecedence ::
-  forall m s nt r tok.
+  forall m s meta nt r tok.
     Applicative m =>
-  ResolvePrec m tok (Fragment nt tok /\ nt /\ r) ->
-  States s nt r tok ->
-  m (States s nt r tok)
+  ResolvePrec m tok (Fragment meta nt tok /\ nt /\ r) ->
+  States s meta nt r tok ->
+  m (States s meta nt r tok)
 applyPrecedence (ResolvePrec prec) =
   traverseOf _Newtype $ traverse $
     traverseOf (prop (Proxy :: Proxy "advance")) $
       traverseWithIndex \tok ->
-        prec tok identity
+        traverse $ prec tok identity
 
 -- -- | Resolve precedence like Happy does
 happyPrecedence' ::
-  forall m measure nt r tok.
+  forall m measure meta nt r tok.
     Monad m =>
   (measure -> Associativity) ->
   -- Disqualifies the right option when returns `Just GT`.
@@ -340,7 +342,7 @@ happyPrecedence' ::
   (measure -> measure -> Maybe Ordering) ->
   (tok -> Maybe measure) ->
   (nt /\ r -> Maybe measure) ->
-  ResolvePrec m tok (Fragment nt tok /\ nt /\ r)
+  ResolvePrec m tok (Fragment meta nt tok /\ nt /\ r)
 happyPrecedence' assoc cmp measureTok measureRule =
   ResolvePrec \tok getR sr' -> pure
     let
@@ -350,6 +352,7 @@ happyPrecedence' assoc cmp measureTok measureRule =
       lastToken = Array.reverse >>> Array.findMap case _ of
         Terminal t -> Just t
         NonTerminal _ -> Nothing
+        InterTerminal _ -> Nothing
 
       measureS = measureTok tok
       measureR = getR >>> \(fragment /\ ruleName) ->
@@ -383,27 +386,27 @@ happyPrecedence' assoc cmp measureTok measureRule =
     in bimap snd snd (fromMaybe measuredSR filtered)
 
 happyPrecedenceOrd ::
-  forall m measure nt r tok.
+  forall m measure meta nt r tok.
     Monad m =>
     Ord measure =>
   (tok -> Maybe (measure /\ Associativity)) ->
   (nt /\ r -> Maybe measure) ->
-  ResolvePrec m tok (Fragment nt tok /\ nt /\ r)
+  ResolvePrec m tok (Fragment meta nt tok /\ nt /\ r)
 happyPrecedenceOrd measureTok measureRule =
   happyPrecedence' snd
     do \a b -> Just (compare (fst a) (fst b))
     do \tok -> measureTok tok
     do \rule -> measureRule rule <#> (_ /\ NoAssoc)
 
-addSpine :: forall r tok. Array (Tuple (Array (CST r tok)) r) -> Array (CST r tok) -> Array (CST r tok)
-addSpine = flip $ foldr (\(Tuple prev r) children -> prev <> [Branch r children])
+addSpine :: forall air r tok. Array (Tuple (Array (ICST air r tok)) r) -> Array (ICST air r tok) -> Array (ICST air r tok)
+addSpine = flip $ foldr (\(Tuple prev r) children -> prev <> [IBranch r children])
 
 stillAccept ::
-  forall rec err nt r cat o.
+  forall rec err meta air nt r cat o.
   rec ->
-  Option rec err nt r cat o ->
-  CST (nt /\ r) o ->
-  Either (Array err) (Option rec err nt r cat o)
+  Option rec err meta air nt r cat o ->
+  ICST air (nt /\ r) o ->
+  Either (Array err) (Option rec err meta air nt r cat o)
 stillAccept rec opt@{ logicParts: LogicParts { necessary } } shift =
   let advanced = opt.advanced <> [shift] in
   map (opt { advanced = advanced, logicParts = _ } <<< LogicParts <<< { necessary: _ }) $
@@ -414,21 +417,21 @@ stillAccept rec opt@{ logicParts: LogicParts { necessary } } shift =
       _ -> Right (Just part)
 
 advanceAccepting ::
-  forall rec err nt r cat o.
+  forall rec err meta air nt r cat o.
     Eq cat =>
     Eq nt =>
     Eq r =>
   rec ->
-  Options rec err nt r cat o ->
-  Part (CST (nt /\ r) o) (cat /\ o) ->
-  Either (Array err) (Options rec err nt r cat o)
+  Options rec err meta air nt r cat o ->
+  Part meta (ICST air (nt /\ r) o) (cat /\ o) ->
+  Either (Array err) (Options rec err meta air nt r cat o)
 advanceAccepting rec (Options options) shift = bimap (foldMap snd) Options $ options # someSucceed' \option@{ advanced } ->
   case option.rule !! Array.length advanced of
     Just head ->
       case head, shift of
         Terminal cat', Terminal (cat /\ o) | cat == cat' ->
-          stillAccept rec option (Leaf o)
-        NonTerminal (_ /\ nt'), NonTerminal b@(Branch (nt /\ _) _) | nt' == nt ->
+          stillAccept rec option (ILeaf o)
+        NonTerminal (_ /\ nt'), NonTerminal b@(IBranch (nt /\ _) _) | nt' == nt ->
           stillAccept rec option b
         _, _ -> Left [] -- this is totally okay, just means some other rule matched
     Nothing | Array.length advanced == Array.length option.rule -> -- ??
@@ -436,19 +439,20 @@ advanceAccepting rec (Options options) shift = bimap (foldMap snd) Options $ opt
     _ -> Left [] -- this is bad, means we advanced too much
 
 closeA1 ::
-  forall rec err nt r cat o.
+  forall rec err meta air nt r cat o.
+    Eq air =>
     Ord nt =>
     Eq r =>
     Ord cat =>
     Eq o =>
-  Options rec err nt r cat o -> Options rec err nt r cat o
+  Options rec err meta air nt r cat o -> Options rec err meta air nt r cat o
 closeA1 (Options items) = acceptMore (Options items) $ items # foldMap closeAItem
 
 pushLogicParts ::
-  forall rec err nt r cat o.
-  Option rec err nt r cat o ->
-  Option rec err nt r cat o ->
-  LogicParts err (nt /\ r) o rec
+  forall rec err meta air nt r cat o.
+  Option rec err meta air nt r cat o ->
+  Option rec err meta air nt r cat o ->
+  LogicParts err air (nt /\ r) o rec
 pushLogicParts parent@{ logicParts: LogicParts { necessary } } child =
   LogicParts
     { necessary: necessary <#> \n ->
@@ -460,13 +464,13 @@ pushLogicParts parent@{ logicParts: LogicParts { necessary } } child =
     }
 
 closeAItem ::
-  forall rec err nt r cat o.
+  forall rec err meta air nt r cat o.
     Ord nt =>
     Eq r =>
     Ord cat =>
     Eq o =>
-  Option rec err nt r cat o ->
-  Options rec err nt r cat o
+  Option rec err meta air nt r cat o ->
+  Options rec err meta air nt r cat o
 closeAItem parent =
   case parent.rule !! Array.length parent.advanced of
     Just (NonTerminal (opts /\ _)) ->
@@ -476,23 +480,25 @@ closeAItem parent =
     _ -> mempty
 
 closeA ::
-  forall rec err nt r cat o.
+  forall rec err meta air nt r cat o.
+    Eq air =>
     Ord nt =>
     Eq r =>
     Ord cat =>
     Eq o =>
-  Options rec err nt r cat o -> Options rec err nt r cat o
+  Options rec err meta air nt r cat o -> Options rec err meta air nt r cat o
 closeA items =
   let items' = closeA1 items
   in if Array.length (unwrap items') == Array.length (unwrap items) then items else closeA items'
 
 acceptMore ::
-  forall rec err nt r cat o.
+  forall rec err meta air nt r cat o.
+    Eq air =>
     Ord nt =>
     Eq r =>
     Ord cat =>
     Eq o =>
-  Options rec err nt r cat o -> Options rec err nt r cat o -> Options rec err nt r cat o
+  Options rec err meta air nt r cat o -> Options rec err meta air nt r cat o -> Options rec err meta air nt r cat o
 acceptMore = over2 Options $
   let
     comp a b =
@@ -503,34 +509,34 @@ acceptMore = over2 Options $
   --   bs # Array.filter \b ->
   --     isNothing $ as # Array.find \a -> comp a b
 
-type ContextStack s rec err nt r cat o =
-  Stack (Options rec err nt r cat o /\ s) (CST (nt /\ r) o)
+type ContextStack s rec err meta air nt r cat o =
+  Stack (Options rec err meta air nt r cat o /\ s) (ICST air (nt /\ r) o)
 
 -- type Poss s nt r cat i o =
 --   { action :: ShiftReduce s (nt /\ r)
 --   , token :: cat /\ o
 --   , nextInput :: i
 --   }
-type Poss s nt r cat i o = ShiftReduce s (Fragment nt cat /\ nt /\ r) /\ cat /\ o /\ i
+type Poss s meta nt r cat i o = ShiftReduce s (Fragment meta nt cat /\ nt /\ r) /\ cat /\ o /\ i
 
-nPossibilities :: forall s nt r cat i o. NonEmptyArray (Poss s nt r cat i o) -> Int
+nPossibilities :: forall s meta nt r cat i o. NonEmptyArray (Poss s meta nt r cat i o) -> Int
 nPossibilities = sum <<< map case _ of
   Shift _ /\ _ -> 1
   Reduces rs /\ _ -> NEA.length rs
   ShiftReduces _ rs /\ _ -> 1 + NEA.length rs
 
-data FailedStack err s rec nt r cat i o
+data FailedStack err s rec meta air nt r cat i o
   = FailedStack
-    { states :: States s nt r cat
-    , lookupState :: s -> Maybe (StateInfo s nt r cat)
+    { states :: States s meta nt r cat
+    , lookupState :: s -> Maybe (StateInfo s meta nt r cat)
     , initialInput :: i
-    , failedStack :: ContextStack s rec err nt r cat o
-    , failedState :: Maybe (StateInfo s nt r cat)
+    , failedStack :: ContextStack s rec err meta air nt r cat o
+    , failedState :: Maybe (StateInfo s meta nt r cat)
     , currentInput :: i
-    , failReason :: FailReason err s nt r cat i o
+    , failReason :: FailReason err s meta nt r cat i o
     }
   | CrashedStack String
-data FailReason err s nt r cat i o
+data FailReason err s meta nt r cat i o
   = StackInvariantFailed
   | UnknownState
     { state :: s
@@ -545,27 +551,27 @@ data FailReason err s nt r cat i o
     { userErr :: Array err
     }
   | NoTokenMatches
-    { advance :: Map cat (ShiftReduce s (Fragment nt cat /\ nt /\ r))
+    { advance :: Map cat (meta /\ ShiftReduce s (Fragment meta nt cat /\ nt /\ r))
     }
   | UnexpectedToken
-    { advance :: Map cat (ShiftReduce s (Fragment nt cat /\ nt /\ r))
+    { advance :: Map cat (meta /\ ShiftReduce s (Fragment meta nt cat /\ nt /\ r))
     , matched :: NonEmptyArray (cat /\ o /\ i)
     }
   | AllActionsRejected
-    { possibilities :: NonEmptyArray (Poss s nt r cat i o /\ Array (FailReason err s nt r cat i o))
+    { possibilities :: NonEmptyArray (Poss s meta nt r cat i o /\ Array (FailReason err s meta nt r cat i o))
     }
   | Ambiguity
-    { allPossibilities :: NonEmptyArray (Poss s nt r cat i o)
-    , filtered :: NonEmptyArray (Poss s nt r cat i o)
+    { allPossibilities :: NonEmptyArray (Poss s meta nt r cat i o)
+    , filtered :: NonEmptyArray (Poss s meta nt r cat i o)
     , userErr :: Array err
     }
 
-justErrorName :: forall err s rec nt r cat i o. Len i => FailedStack err s rec nt r cat i o -> String
+justErrorName :: forall err s rec meta air nt r cat i o. Len i => FailedStack err s rec meta air nt r cat i o -> String
 justErrorName (FailedStack { failReason, initialInput, currentInput }) =
   errorName failReason <> " at " <> show (1 + len initialInput - len currentInput)
 justErrorName (CrashedStack crash) = crash
 
-errorName :: forall err s nt r cat i o. FailReason err s nt r cat i o -> String
+errorName :: forall err s meta nt r cat i o. FailReason err s meta nt r cat i o -> String
 errorName StackInvariantFailed = "Internal parser error: Stack invariant failed"
 errorName (UnknownState _) = "Internal parser error: Unknown state"
 errorName (Uhhhh _) = "Internal parser error: Uhhhh"
@@ -576,7 +582,7 @@ errorName (UnexpectedToken _) = "Parse error: Unexpected token(s) match"
 errorName (AllActionsRejected _) = "Parse error: All actions rejected"
 errorName (Ambiguity _) = "Parse error: LR(1) ambiguity"
 
-userErrors :: forall err s nt r cat i o. FailReason err s nt r cat i o -> Array err
+userErrors :: forall err s meta nt r cat i o. FailReason err s meta nt r cat i o -> Array err
 userErrors (UserRejection { userErr }) = userErr
 userErrors (AllActionsRejected { possibilities }) = foldMap (foldMap userErrors <<< snd) possibilities
 userErrors (Ambiguity { userErr }) = userErr
@@ -602,20 +608,21 @@ someSucceed' f as = case partitionMap f' as of
     Right b -> Right b
 
 contextLexingParse ::
-  forall s rec err nt r cat i o.
+  forall s rec err meta air nt r cat i o.
     Ord s =>
+    Eq air =>
     Ord nt =>
     Eq r =>
     Ord cat =>
     Tokenize cat i o =>
     Eq o =>
-  { best :: Best err s (Fragment nt cat /\ nt /\ r) cat i o
+  { best :: Best err s (Fragment meta nt cat /\ nt /\ r) cat i o
   } ->
-  s /\ States s nt r cat ->
-  Options rec err nt r cat o ->
+  s /\ States s meta nt r cat ->
+  Options rec err meta air nt r cat o ->
   rec ->
   i ->
-  FailedStack err s rec nt r cat i o \/ ContextStack s rec err nt r cat o
+  FailedStack err s rec meta air nt r cat i o \/ ContextStack s rec err meta air nt r cat o
 contextLexingParse { best } (initialState /\ States states) acceptings rec initialInput =
   tailRecM go (Zero (initialMeta /\ initialState) /\ Left initialInput)
   where
@@ -625,7 +632,7 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
   reachable s delta =
     let
       more = foldMap $ lookupState >>> foldMap \{ advance, receive } ->
-        foldMap (bifoldMap Set.singleton mempty) advance
+        foldMap (bifoldMap Set.singleton mempty <<< snd) advance
           <> foldMap Set.singleton receive
       s' = s <> more delta
     in if s' == s then s else reachable s' (Set.difference s' s)
@@ -635,23 +642,23 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
       Array.filter (_.sName >>> Set.member <@> join reachable (Set.singleton i)) states
     Set.toUnfoldable $ Map.keys advance
 
-  lookupState :: s -> Maybe (StateInfo s nt r cat)
+  lookupState :: s -> Maybe (StateInfo s meta nt r cat)
   lookupState s = tabulated s >>= Array.index states
 
   lookupAction ::
-    ContextStack s rec err nt r cat o -> StateInfo s nt r cat -> Either i (cat /\ o /\ i) ->
-    FailReason err s nt r cat i o \/ _
+    ContextStack s rec err meta air nt r cat o -> StateInfo s meta nt r cat -> Either i (cat /\ o /\ i) ->
+    FailReason err s meta nt r cat i o \/ _
   lookupAction stack { advance: SemigroupMap advance } = case _ of
     Left input -> do
       let actions = NEA.fromArray $ Array.mapMaybe (matchCat input) $ Map.toUnfoldable advance
-      possibilities <- (actions?? NoTokenMatches { advance })? \e ->
+      possibilities <- (actions?? NoTokenMatches { advance: coerce advance })? \e ->
         case NEA.fromArray $ Array.mapMaybe (matchCatFallback input) $ allCatsFrom initialState of
           Nothing -> e
-          Just matched -> UnexpectedToken { advance, matched }
-      checkBest stack possibilities
+          Just matched -> UnexpectedToken { advance: coerce advance, matched }
+      checkBest stack $ possibilities <#> lmap \(Additive meta /\ sr) -> sr
     Right (cat /\ o /\ i) -> do
-      sr <- Map.lookup cat advance?? Uhhhh { token: cat }
-      checkBest stack (NEA.singleton $ sr /\ cat /\ o /\ i)
+      Additive meta /\ sr <- Map.lookup cat advance?? Uhhhh { token: cat }
+      checkBest stack (NEA.singleton (sr /\ cat /\ o /\ i))
   matchCat input (cat /\ act) =
     recognize cat input <#> \d -> act /\ cat /\ d
   matchCatFallback input cat =
@@ -659,8 +666,8 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
 
   test ::
     _ ->
-    ShiftReduce (s /\ cat /\ o) ((Fragment nt cat /\ nt /\ r) /\ cat /\ o) ->
-    Either (Array (FailReason err s nt r cat i o)) (ShiftReduce (s /\ cat /\ o) ((Fragment nt cat /\ nt /\ r) /\ cat /\ o))
+    ShiftReduce (s /\ cat /\ o) ((Fragment meta nt cat /\ nt /\ r) /\ cat /\ o) ->
+    Either (Array (FailReason err s meta nt r cat i o)) (ShiftReduce (s /\ cat /\ o) ((Fragment meta nt cat /\ nt /\ r) /\ cat /\ o))
   test stack = filterSR' (testShift stack) (testReduce stack)
   testShift stack (s /\ cat /\ o) = lmap Array.singleton do
     (s /\ cat /\ o) <$ advanceMeta (topOf stack) (Terminal (cat /\ o))
@@ -672,16 +679,16 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
     -- traceM "testReduce"
     ((_rule /\ r) /\ cat /\ o) <$ drain reduced (cat /\ o)
 
-  drain :: ContextStack s rec err nt r cat o -> cat /\ o -> Either _ (ContextStack s rec err nt r cat o)
+  drain :: ContextStack s rec err meta air nt r cat o -> cat /\ o -> Either _ (ContextStack s rec err meta air nt r cat o)
   -- drain stack _ = pure stack
   drain stack (cat /\ o) = do
     state@{ advance: SemigroupMap m } <-
       lookupState (snd (topOf stack))??
         UnknownState { state: snd (topOf stack) }
-    sr <- Map.lookup cat m?? Uhhhh { token: cat }
+    Additive meta /\ sr <- Map.lookup cat m?? Uhhhh { token: cat }
     case sr of
       Shift s -> do
-        Snoc stack (Leaf o) <$> (advanceMeta (topOf stack) (Terminal (cat /\ o)) <#> (_ /\ s))
+        Snoc stack (ILeaf o) <$> (advanceMeta (topOf stack) (Terminal (cat /\ o)) <#> (_ /\ s))
       Reduces rs | [r] <- snd <$> NEA.toArray rs -> do
         reduction <- lookupReduction r state?? UnknownReduction { reduction: r }
         stacked <- takeStack r stack reduction
@@ -717,10 +724,10 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
 
 
   go ::
-    (ContextStack s rec err nt r cat o /\ Either i (cat /\ o /\ i)) ->
-    FailedStack err s rec nt r cat i o \/ Step
-      (ContextStack s rec err nt r cat o /\ Either i (cat /\ o /\ i))
-      (ContextStack s rec err nt r cat o)
+    (ContextStack s rec err meta air nt r cat o /\ Either i (cat /\ o /\ i)) ->
+    FailedStack err s rec meta air nt r cat i o \/ Step
+      (ContextStack s rec err meta air nt r cat o /\ Either i (cat /\ o /\ i))
+      (ContextStack s rec err meta air nt r cat o)
   go (stack /\ Left input) | len input == 0 = pure (Done stack)
   go (stack /\ input) = do
     let
@@ -741,7 +748,7 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
       Left s /\ cat /\ o /\ i -> do
         case advanceMeta (topOf stack) (Terminal (cat /\ o)) of
           Right x ->
-            pure $ Loop $ (Snoc stack (Leaf o) (x /\ s)) /\ (Left i)
+            pure $ Loop $ (Snoc stack (ILeaf o) (x /\ s)) /\ (Left i)
           Left e -> Left (contextualize (Just state) e)
       Right (_rule /\ r) /\ cat /\ o /\ i -> do
         reduction <- lookupReduction r state?? contextualize (Just state) (UnknownReduction { reduction: r })
@@ -753,35 +760,36 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
     _ -> Nothing
   takeStack ::
     nt /\ r ->
-    ContextStack s rec err nt r cat o ->
+    ContextStack s rec err meta air nt r cat o ->
     Array _ ->
-    Either _ (ContextStack s rec err nt r cat o)
+    Either _ (ContextStack s rec err meta air nt r cat o)
   takeStack r stack0 parsed =
     let
       take1 (taken /\ stack) = case _ of
         Terminal _ -> case stack of
-          Snoc stack' v@(Leaf _) _ ->
+          Snoc stack' v@(ILeaf _) _ ->
             Right $ ([ v ] <> taken) /\ stack'
           _ -> Left StackInvariantFailed
         NonTerminal nt -> case stack of
-          Snoc stack' v@(Branch (p /\ _) _) _ | p == nt ->
+          Snoc stack' v@(IBranch (p /\ _) _) _ | p == nt ->
             Right $ ([ v ] <> taken) /\ stack'
           _ -> Left StackInvariantFailed
+        InterTerminal _ -> unsafeCrashWith "unimplemented 0"
     in
       Array.foldM take1 ([] /\ stack0) (Array.reverse parsed) >>= \(taken /\ stack) ->
-        Snoc stack (Branch r taken) <$> goto r taken (topOf stack)
-  goto :: nt /\ r -> Array _ -> (Options rec err nt r cat o /\ s) -> Either _ (Options rec err nt r cat o /\ s)
+        Snoc stack (IBranch r taken) <$> goto r taken (topOf stack)
+  goto :: nt /\ r -> Array _ -> (Options rec err meta air nt r cat o /\ s) -> Either _ (Options rec err meta air nt r cat o /\ s)
   goto shifting@(p /\ _) taken s = do
       st <- lookupState (snd s)?? UnknownState { state: snd s }
       r <- Map.lookup p st.receive?? UnknownReduction { reduction: shifting }
-      advanceMeta s (NonTerminal (Branch shifting taken)) <#> (_ /\ r)
+      advanceMeta s (NonTerminal (IBranch shifting taken)) <#> (_ /\ r)
 
-  initialMeta :: Options rec err nt r cat o
+  initialMeta :: Options rec err meta air nt r cat o
   initialMeta = closeA acceptings
   advanceMeta ::
-    Options rec err nt r cat o /\ s ->
-    Part (CST (nt /\ r) o) (cat /\ o) ->
-    Either _ (Options rec err nt r cat o)
+    Options rec err meta air nt r cat o /\ s ->
+    Part meta (ICST air (nt /\ r) o) (cat /\ o) ->
+    Either _ (Options rec err meta air nt r cat o)
   advanceMeta (accept /\ _s) advance =
     closeA <$> advanceAccepting rec accept advance?
       \userErr -> UserRejection { userErr }

@@ -15,13 +15,15 @@ import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.Map (Map, SemigroupMap)
 import Data.Maybe (Maybe(..))
+import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (class Newtype)
 import Data.Show.Generic (genericShow)
 import Data.String (CodePoint)
+import Data.String as String
 import Data.String.NonEmpty as NES
 import Data.String.NonEmpty.Internal (NonEmptyString)
 import Data.Traversable (class Foldable, foldMap, mapAccumL, traverse)
-import Data.Tuple (fst)
+import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Proto as Proto
 
@@ -37,151 +39,170 @@ notEOF :: OrEOF ~> Maybe
 notEOF EOF = Nothing
 notEOF (Continue a) = Just a
 
-newtype Grammar nt r tok = MkGrammar
-  (Array (GrammarRule nt r tok))
-derive newtype instance showGrammar :: (Show nt, Show r, Show tok) => Show (Grammar nt r tok)
-derive instance newtypeGrammar :: Newtype (Grammar nt r tok) _
-derive newtype instance semigroupGrammar :: Semigroup (Grammar nt r tok)
-derive newtype instance monoidGrammar :: Monoid (Grammar nt r tok)
+newtype Grammar meta nt r tok = MkGrammar
+  (Array (GrammarRule meta nt r tok))
+derive newtype instance showGrammar :: (Show meta, Show nt, Show r, Show tok) => Show (Grammar meta nt r tok)
+derive instance newtypeGrammar :: Newtype (Grammar meta nt r tok) _
+derive newtype instance semigroupGrammar :: Semigroup (Grammar meta nt r tok)
+derive newtype instance monoidGrammar :: Monoid (Grammar meta nt r tok)
 
-type GrammarRule nt r tok =
+type GrammarRule meta nt r tok =
   { pName :: nt -- nonterminal / production rule name
   , rName :: r -- each rule has a unique name
-  , rule :: Fragment nt tok -- sequence of nonterminals and terminals that make up the rule
+  , rule :: Fragment meta nt tok -- sequence of nonterminals and terminals that make up the rule
   }
 
-getRulesFor :: forall nt r tok. Eq nt => Array (Produced nt r tok) -> nt -> Array { rule :: Fragment nt tok, produced :: Array tok }
+getRulesFor :: forall meta nt r tok. Eq nt => Array (Produced meta nt r tok) -> nt -> Array { rule :: Fragment meta nt tok, produced :: Array tok }
 getRulesFor rules nt = rules # Array.mapMaybe \rule ->
   if rule.production.pName /= nt then Nothing
   else
     Just { rule: rule.production.rule, produced: rule.produced }
 
-type Produced nt r tok =
-  { production :: GrammarRule nt r tok
+type Produced meta nt r tok =
+  { production :: GrammarRule meta nt r tok
   , produced :: Array tok
   }
 
-type Producible nt r tok =
-  { grammar :: Augmented nt r tok
-  , produced :: Array (Produced nt r tok)
+type Producible meta nt r tok =
+  { grammar :: Augmented meta nt r tok
+  , produced :: Array (Produced meta nt r tok)
   }
 
-type SProducible = Producible NonEmptyString String CodePoint
+type SProducible = Producible Unit NonEmptyString String CodePoint
 
-type Augmented nt r tok =
-  { augmented :: Grammar nt r tok
-  , start :: StateItem nt r tok
+type Augmented meta nt r tok =
+  { augmented :: Grammar meta nt r tok
+  , start :: StateItem meta nt r tok
   , eof :: tok
   , entry :: nt
   }
-type Augmenteds nt r tok =
-  { augmented :: Grammar nt r tok
+type Augmenteds meta nt r tok =
+  { augmented :: Grammar meta nt r tok
   , eof :: tok
-  , starts :: Array (StateItem nt r tok)
+  , starts :: Array (StateItem meta nt r tok)
   }
 
-type SAugmented = Augmented NonEmptyString String CodePoint
+type SAugmented = Augmented Unit NonEmptyString String CodePoint
 
 
 
-type SGrammar = Grammar NonEmptyString String CodePoint
-data Part nt tok = NonTerminal nt | Terminal tok
+type SGrammar = Grammar Unit NonEmptyString String CodePoint
+data Part meta nt tok = NonTerminal nt | Terminal tok | InterTerminal meta
 
-derive instance eqPart :: (Eq nt, Eq tok) => Eq (Part nt tok)
-derive instance ordPart :: (Ord nt, Ord tok) => Ord (Part nt tok)
-derive instance genericPart :: Generic (Part state tok) _
-instance showPart :: (Show nt, Show tok) => Show (Part nt tok) where
+derive instance eqPart :: (Eq meta, Eq nt, Eq tok) => Eq (Part meta nt tok)
+derive instance ordPart :: (Ord meta, Ord nt, Ord tok) => Ord (Part meta nt tok)
+derive instance genericPart :: Generic (Part meta nt tok) _
+instance showPart :: (Show meta, Show nt, Show tok) => Show (Part meta nt tok) where
   show x = genericShow x
 
-derive instance functorPart :: Functor (Part nt)
-instance bifunctorPart :: Bifunctor Part where
+derive instance functorPart :: Functor (Part meta nt)
+instance bifunctorPart :: Bifunctor (Part meta) where
   bimap f _ (NonTerminal nt) = NonTerminal (f nt)
   bimap _ g (Terminal tok) = Terminal (g tok)
+  bimap _ _ (InterTerminal meta) = InterTerminal meta
 
-type SPart = Part NonEmptyString CodePoint
+type SPart = Part Unit NonEmptyString CodePoint
 
-isNonTerminal :: forall nt tok. Part nt tok -> Boolean
+isNonTerminal :: forall meta nt tok. Part meta nt tok -> Boolean
 isNonTerminal (NonTerminal _) = true
 isNonTerminal _ = false
 
-isTerminal :: forall nt tok. Part nt tok -> Boolean
+isTerminal :: forall meta nt tok. Part meta nt tok -> Boolean
 isTerminal (Terminal _) = true
 isTerminal _ = false
 
-unNonTerminal :: forall nt tok. Part nt tok -> Maybe nt
+isInterTerminal :: forall meta nt tok. Part meta nt tok -> Boolean
+isInterTerminal (InterTerminal _) = true
+isInterTerminal _ = false
+
+unNonTerminal :: forall meta nt tok. Part meta nt tok -> Maybe nt
 unNonTerminal (NonTerminal nt) = Just nt
 unNonTerminal _ = Nothing
 
-unTerminal :: forall nt tok. Part nt tok -> Maybe tok
+unTerminal :: forall meta nt tok. Part meta nt tok -> Maybe tok
 unTerminal (Terminal t) = Just t
 unTerminal _ = Nothing
 
+unInterTerminal :: forall meta nt tok. Part meta nt tok -> Maybe meta
+unInterTerminal (InterTerminal it) = Just it
+unInterTerminal _ = Nothing
+
+noInterTerminal :: forall meta nt tok. Part meta nt tok -> Maybe (Part Void nt tok)
+noInterTerminal (InterTerminal _) = Nothing
+noInterTerminal (Terminal t) = Just (Terminal t)
+noInterTerminal (NonTerminal nt) = Just (NonTerminal nt)
+
+noInterTerminals :: forall meta nt tok. Fragment meta nt tok -> Fragment Void nt tok
+noInterTerminals = Array.mapMaybe noInterTerminal
+
+noInterTerminalz :: forall meta nt tok. Zipper meta nt tok -> Zipper Void nt tok
+noInterTerminalz (Zipper before after) = Zipper (noInterTerminals before) (noInterTerminals after)
+
 unSPart :: SPart -> String
-unSPart = NES.toString <<< unSPart'
+unSPart (Terminal t) = String.singleton t
+unSPart (NonTerminal nt) = NES.toString nt
+unSPart (InterTerminal _) = mempty
 
-unSPart' :: SPart -> NonEmptyString
-unSPart' (Terminal t) = NES.singleton t
-unSPart' (NonTerminal nt) = nt
+type Fragment meta nt tok = Array (Part meta nt tok)
+type SFragment = Fragment Unit NonEmptyString CodePoint
 
-type Fragment nt tok = Array (Part nt tok)
-type SFragment = Fragment NonEmptyString CodePoint
+data Zipper meta nt tok = Zipper (Fragment meta nt tok) (Fragment meta nt tok)
 
-data Zipper nt tok = Zipper (Fragment nt tok) (Fragment nt tok)
+derive instance bifunctorZipper :: Bifunctor (Zipper meta)
 
-derive instance bifunctorZipper :: Bifunctor Zipper
-
-derive instance eqZipper :: (Eq nt, Eq tok) => Eq (Zipper nt tok)
-derive instance ordZipper :: (Ord nt, Ord tok) => Ord (Zipper nt tok)
-derive instance genericZipper :: Generic (Zipper nt tok) _
-instance showZipper :: (Show nt, Show tok) => Show (Zipper nt tok) where
+derive instance eqZipper :: (Eq meta, Eq nt, Eq tok) => Eq (Zipper meta nt tok)
+derive instance ordZipper :: (Ord meta, Ord nt, Ord tok) => Ord (Zipper meta nt tok)
+derive instance genericZipper :: Generic (Zipper meta nt tok) _
+instance showZipper :: (Show meta, Show nt, Show tok) => Show (Zipper meta nt tok) where
   show x = genericShow x
 
-type SZipper = Zipper NonEmptyString CodePoint
+type SZipper = Zipper Unit NonEmptyString CodePoint
 
-unZipper :: forall nt tok. Zipper nt tok -> Fragment nt tok
+unZipper :: forall meta nt tok. Zipper meta nt tok -> Fragment meta nt tok
 unZipper (Zipper before after) = before <> after
 
-newtype State nt r tok = State (Array (StateItem nt r tok))
-derive instance newtypeState :: Newtype (State nt r tok) _
+newtype State meta nt r tok = State (Array (StateItem meta nt r tok))
+derive instance newtypeState :: Newtype (State meta nt r tok) _
 
-instance eqState :: (Eq nt, Eq r, Eq tok) => Eq (State nt r tok) where
+instance eqState :: (Eq meta, Eq nt, Eq r, Eq tok) => Eq (State meta nt r tok) where
   eq (State s1) (State s2) = s1 == s2 ||
     Array.length s1 == Array.length s2 &&
       noNew s1 s2 && noNew s2 s1
 
-instance ordState :: (Ord nt, Ord r, Ord tok) => Ord (State nt r tok) where
+instance ordState :: (Ord meta, Ord nt, Ord r, Ord tok) => Ord (State meta nt r tok) where
   compare (State s1) (State s2) = compare (deepSort s1) (deepSort s2)
     where
     deepSort = Array.sort <<< map \item ->
       item { lookahead = Array.sort item.lookahead }
 
-derive instance genericState :: Generic (State nt r tok) _
-instance showState :: (Show nt, Show r, Show tok) => Show (State nt r tok) where
+derive instance genericState :: Generic (State meta nt r tok) _
+instance showState :: (Show meta, Show nt, Show r, Show tok) => Show (State meta nt r tok) where
   show = genericShow
 
-instance semigroupState :: (Eq nt, Eq r, Eq tok) => Semigroup (State nt r tok) where
+instance semigroupState :: (Semiring meta, Eq meta, Eq nt, Eq r, Eq tok) => Semigroup (State meta nt r tok) where
   append s1 (State s2) = minimizeStateCat s1 s2
 
 nubEqCat :: forall a. Eq a => Array a -> Array a -> Array a
 nubEqCat as bs = as <> Array.filter (not Array.elem <@> as) bs
 
-sameRule :: forall nt r tok. Eq nt => Eq r => Eq tok => StateItem nt r tok -> StateItem nt r tok -> Boolean
+-- TODO meta
+sameRule :: forall meta nt r tok. Eq meta => Eq nt => Eq r => Eq tok => StateItem meta nt r tok -> StateItem meta nt r tok -> Boolean
 sameRule item newItem = item.pName == newItem.pName && item.rName == newItem.rName && item.rule == newItem.rule
 
-minimizeState :: forall nt r tok. Eq nt => Eq r => Eq tok => Array (StateItem nt r tok) -> State nt r tok
+minimizeState :: forall meta nt r tok. Semiring meta => Eq meta => Eq nt => Eq r => Eq tok => Array (StateItem meta nt r tok) -> State meta nt r tok
 minimizeState = compose State $ [] # Array.foldl \items newItem ->
   let
-    accumulate :: Boolean -> StateItem nt r tok -> { accum :: Boolean, value :: StateItem nt r tok }
+    accumulate :: Boolean -> StateItem meta nt r tok -> { accum :: Boolean, value :: StateItem meta nt r tok }
     accumulate alreadyFound item =
       if sameRule item newItem
-        then { accum: true, value: item { lookahead = nubEqCat item.lookahead newItem.lookahead } }
+        then { accum: true, value: item { lookbehind = item.lookbehind <> newItem.lookbehind, lookahead = nubEqCat item.lookahead newItem.lookahead } }
         else { accum: alreadyFound, value: item }
     { accum: found, value: items' } =
       mapAccumL accumulate false items
   in
     if found then items' else items' <> [ newItem ]
 
-minimizeStateCat :: forall nt r tok. Eq nt => Eq r => Eq tok => State nt r tok -> Array (StateItem nt r tok) -> State nt r tok
+minimizeStateCat :: forall meta nt r tok. Semiring meta => Eq meta => Eq nt => Eq r => Eq tok => State meta nt r tok -> Array (StateItem meta nt r tok) -> State meta nt r tok
 minimizeStateCat prev [] = prev
 minimizeStateCat (State prev) newItems = State result
   where
@@ -196,22 +217,23 @@ minimizeStateCat (State prev) newItems = State result
     [] -> prevAugmented
     _ -> prevAugmented <> newFiltered
 
-noNew :: forall nt r tok. Eq nt => Eq r => Eq tok => Array (StateItem nt r tok) -> Array (StateItem nt r tok) -> Boolean
+noNew :: forall meta nt r tok. Eq meta => Eq nt => Eq r => Eq tok => Array (StateItem meta nt r tok) -> Array (StateItem meta nt r tok) -> Boolean
 noNew prev newItems = newItems # Array.all \newItem ->
   prev # Array.any \item ->
-    sameRule item newItem && do
+    sameRule item newItem && item.lookbehind == newItem.lookbehind && do
       newItem.lookahead # Array.all \look -> item.lookahead # Array.any (eq look)
 
-type SState = State NonEmptyString String CodePoint
-type Lookahead tok = Array tok
-type StateItem nt r tok =
+type SState = State Unit NonEmptyString String CodePoint
+type Lookahead meta tok = Array (Tuple meta tok)
+type StateItem meta nt r tok =
   { rName :: r
   , pName :: nt
-  , rule :: Zipper nt tok
-  , lookahead :: Lookahead tok
+  , rule :: Zipper meta nt tok
+  , lookbehind :: Additive meta
+  , lookahead :: Lookahead meta tok
   }
 
-type SStateItem = StateItem NonEmptyString String CodePoint
+type SStateItem = StateItem Unit NonEmptyString String CodePoint
 
 data ShiftReduce s r
   = Shift s
@@ -294,35 +316,35 @@ instance semigroupShiftReduce :: Semigroup (ShiftReduce s r) where
   append (ShiftReduces s rs) (Reduces rs') = ShiftReduces s (rs <> rs')
   append (Reduces rs) (ShiftReduces s rs') = ShiftReduces s (rs <> rs')
 
-type StateInfo s nt r tok =
+type StateInfo s meta nt r tok =
   { sName :: s
-  , items :: State nt r tok
-  , advance :: SemigroupMap tok (ShiftReduce s (Fragment nt tok /\ nt /\ r))
+  , items :: State meta nt r tok
+  , advance :: SemigroupMap tok (Additive meta /\ ShiftReduce s (Fragment meta nt tok /\ nt /\ r))
   , receive :: Map nt s
   }
 
-type SStateInfo = StateInfo Int NonEmptyString String CodePoint
+type SStateInfo = StateInfo Int Unit NonEmptyString String CodePoint
 
-newtype States s nt r tok = States
-  (Array (StateInfo s nt r tok))
+newtype States s meta nt r tok = States
+  (Array (StateInfo s meta nt r tok))
 
-derive instance newtypeStates :: Newtype (States s nt r tok) _
+derive instance newtypeStates :: Newtype (States s meta nt r tok) _
 
-type SStates = States Int NonEmptyString String CodePoint
+type SStates = States Int Unit NonEmptyString String CodePoint
 
 conflicts ::
-  forall s nt r tok.
-  States s nt r tok ->
+  forall s meta nt r tok.
+  States s meta nt r tok ->
   Array
     { sName :: s
-    , items :: State nt r tok
-    , advance :: tok
-    , conflict :: ShiftReduce s (Fragment nt tok /\ nt /\ r)
+    , items :: State meta nt r tok
+    , advance :: meta /\ tok
+    , conflict :: ShiftReduce s (Fragment meta nt tok /\ nt /\ r)
     }
 conflicts (States states) =
   states # foldMap \{ sName, items, advance } ->
-  advance # foldMapWithIndex \tok sr ->
-    { sName, items, advance: tok, conflict: sr } <$
+  advance # foldMapWithIndex \tok (Additive meta /\ sr) ->
+    { sName, items, advance: meta /\ tok, conflict: sr } <$
       guard (not decisionUnique sr)
 
 
@@ -336,6 +358,19 @@ derive instance bifunctorCST :: Bifunctor CST
 sourceCST :: forall r tok. CST r tok -> Array tok
 sourceCST (Leaf tok) = pure tok
 sourceCST (Branch _ children) = children >>= sourceCST
+
+data ICST air r tok
+  = ILeaf tok
+  | IAir air
+  | IBranch r (Array (ICST air r tok))
+derive instance eqICST :: (Eq air, Eq r, Eq tok) => Eq (ICST air r tok)
+derive instance functorICST :: Functor (ICST air r)
+derive instance bifunctorICST :: Bifunctor (ICST air)
+
+sourceICST :: forall air r tok. ICST air r tok -> Array (Either air tok)
+sourceICST (ILeaf tok) = pure (Right tok)
+sourceICST (IAir tok) = pure (Left tok)
+sourceICST (IBranch _ children) = children >>= sourceICST
 
 type SCST = CST (NonEmptyString /\ String) CodePoint
 

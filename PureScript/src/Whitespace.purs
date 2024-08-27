@@ -6,7 +6,7 @@ import Data.HeytingAlgebra (ff, tt)
 import Data.Lens as O
 import Data.Monoid.Conj (Conj(..))
 import Data.Monoid.Disj (Disj(..))
-import Data.Newtype (unwrap)
+import Data.Newtype (class Newtype, unwrap)
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\))
 import Dodo as Dodo
@@ -49,8 +49,12 @@ newtype ParseWS = ParseWS
   , required :: Disj Boolean
   }
 
+derive instance newtypeParseWS :: Newtype ParseWS _
 derive newtype instance monoidParseWS :: Monoid ParseWS
 derive newtype instance semigroupParseWS :: Semigroup ParseWS
+derive newtype instance showParseWS :: Show ParseWS -- TODO
+derive newtype instance eqParseWS :: Eq ParseWS
+derive newtype instance ordParseWS :: Ord ParseWS
 
 instance semiringParseWS :: Semiring ParseWS where
   one = mempty
