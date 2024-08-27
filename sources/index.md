@@ -195,6 +195,7 @@ _data = information^[bits & bytes] + structure^[expectations of what the bits & 
   - [WIP]{t=}: [Subtypes/Quotients: Lies Told in Defense of the Truth](adt_lies_for_truth.html)
   - Quotients: Lets us have nice cake and eat things too.
   - [Hereditarily Finite Sets](hereditarily_finite_sets.html)
+    - [HatStack](hatstack.html), a stack based, concatenative language for Hereditarily Finite Sets
 
 ### Mathematics
 

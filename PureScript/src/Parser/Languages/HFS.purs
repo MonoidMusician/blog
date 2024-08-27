@@ -21,6 +21,9 @@ import Data.Semigroup.Foldable (foldl1)
 import Data.Set as Set
 import Data.Show.Generic (genericShow)
 import Data.String as String
+import Data.String.Regex as Regex
+import Data.String.Regex.Flags (global)
+import Data.String.Regex.Unsafe (unsafeRegex)
 import Debug (spy)
 import Effect.Exception (message, try)
 import Effect.Unsafe (unsafePerformEffect)
@@ -294,13 +297,14 @@ hfsPow l r = hfsBase l l {- sic. -} (bnPow (bn l) (bn r))
 -- | Bitshift left.
 hfsShL :: HFS -> HFS -> HFS
 hfsShL l _ | isZero l = l
+hfsShL l r | isZero r = l
 hfsShL l r | isOne l = hfsSingle r
 hfsShL l r = hfsBase l l {- sic. -} (bnShL (bn l) (bn r))
 
 -- | Bitshift right.
 hfsShR :: HFS -> HFS -> HFS
 hfsShR l _ | isZero l = l
-hfsShR l r | isOne l = hfsSingle r
+hfsShR l r | isZero r = l
 hfsShR l r | hfsWidth l < r = hfsBase l l {- sic. -} zero
 hfsShR l r = hfsBase l l {- sic. -} (bnShR (bn l) (bn r))
 
@@ -492,7 +496,60 @@ def sqrt
   Dec
 end
 
+## The Cantor pairing function
+def pairCantor 2#[
+  .0 .1 + $0++ * 2 /. .1 +
+] end
 
+def unpairCantor 1#[
+  .0 8 * ++ sqrt -- 2 /. ## w
+  [ .0 2 ^. .0 + 2 /. ] ## t
+    .0 .- ## y
+  [ .1 .0 -. ] ## x
+  3#[ .1 .0 ] ## w y x : y x
+] end
+
+## Bit interleaving
+def pairBits 2#[
+  .1 not .0 not && if
+    0
+  else
+    .1 1>>. .0 1>>. pairBits 2<<.
+      .1 1& 1<<. .0 1& | |
+  end
+] end
+
+def unpairBits 1#[
+  .0 if
+    .0 2& 1>>.
+    .0 1&
+    .0 2>>. unpairBits
+    4#[
+      .1 1<<. .3 |
+      .0 1<<. .2 |
+    ]
+  else
+    0 0
+  end
+] end
+
+## Elegant pairing function by Szudzik
+## https://en.wikipedia.org/wiki/Pairing_function#Other_pairing_functions
+def pairElegant 2#[
+  .0 .1 \/ 2 ^.
+    .1 +
+    .0  .0 .1 <= *  +
+] end
+
+def unpairElegant 1#[
+  .0 sqrt
+  $0 2 ^. .0 .-
+  [ .0 .1 < ] if
+    swap
+  else
+    $1 -.
+  end
+] end
 """
 
 {-
@@ -591,7 +648,7 @@ opMeta =
   , Sided Mod Dom "%" [] "Integer modulus (remainder)"
   , Sided Pow Wop "^" [] "Integer power"
   , Symm Min "/\\" ["\x2227"] ["\x22C0"] "Minimum"
-  , Symm Max "\\/" ["\x2228"] ["\x22C1"]"Maximum"
+  , Symm Max "\\/" ["\x2228"] ["\x22C1"] "Maximum"
   -- Bitwise/set-theory operators
   , Sided ShL LSh "<<" ["\x226A"] "Left shift"
   , Sided ShR RSh ">>" ["\x226B"] "Right shift"
@@ -614,7 +671,8 @@ opMeta =
   , Symm CNE "!=" ["/="] [] "Not equals"
   -- Comparisons: total order
   , Order CLT "<" [] CGT ">" [] "Strict greater/less than, as numbers (total order)"
-  , Order CLE "<=" ["\x2264", "\x226F"] CGE ">=" ["\x2265", "\x226E"] "Weak greater/less than, as numbers (total order)"
+  , Order CLE "<=" ["\x2264", "\x226F"] CGE ">=" ["\x2265", "\x226E"]
+    "Weak greater/less than, as numbers (total order)"
   -- Comparisons: partial order
   , Order PLT "<|" ["\x228A", "\x2282"] PGT "|>" ["\x228B", "\x2283"]
     "Strict subset (partial order – the pipe is a hint that it involves bitwise OR)"
@@ -687,25 +745,53 @@ chooseIdOp = case _ of
 
 -- | Parser for the n-ary and binary operators, respectively.
 op :: Comber (Either Op Op)
-op = "op"#: oneOf do
-  opMeta >>= case _ of
-    Symm r dflt toks bigops _doc -> (Array.cons dflt toks) >>= \tok ->
-      [ Right r <$ token tok
-      , Left r <$ (token ("#" <> tok) <|> token (tok <> "#"))
-      , Left r <$ if tok == dflt then oneOfMap token bigops else empty
-      ]
-    Sided l r dflt toks _doc -> (Array.cons dflt toks) >>= \tok ->
-      [ Right l <$ token (tok <> ".")
-      , Left l <$ token ("#" <> tok)
-      , Right r <$ token ("." <> tok)
-      , Left r <$ token (tok <> "#")
-      ]
-    Order l tl tls r tr trs _doc ->
-      [ Right l <$ oneOfMap token (Array.cons tl tls)
-      , Left l <$ oneOfMap (token <<< ("#" <> _)) (Array.cons tl tls)
-      , Right r <$ oneOfMap token (Array.cons tr trs)
-      , Left r <$ oneOfMap (token <<< ("#" <> _)) (Array.cons tr trs)
-      ]
+op = "op"#: do
+  piggyback
+    { errors: []
+    , name: "op_reparse"
+    , pattern: rawr bigRegex
+    } $ oneOf do
+      opMeta >>= case _ of
+        Symm r dflt toks bigops _doc -> (Array.cons dflt toks) >>= \tok ->
+          [ Right r <$ token tok
+          , Left r <$ (token ("#" <> tok) <|> token (tok <> "#"))
+          , Left r <$ if tok == dflt then oneOfMap token bigops else empty
+          ]
+        Sided l r dflt toks _doc -> (Array.cons dflt toks) >>= \tok ->
+          [ Right l <$ token (tok <> ".")
+          , Left l <$ token ("#" <> tok)
+          , Right r <$ token ("." <> tok)
+          , Left r <$ token (tok <> "#")
+          ]
+        Order l tl tls r tr trs _doc ->
+          [ Right l <$ oneOfMap token (Array.cons tl tls)
+          , Left l <$ oneOfMap (token <<< ("#" <> _)) (Array.cons tl tls)
+          , Right r <$ oneOfMap token (Array.cons tr trs)
+          , Left r <$ oneOfMap (token <<< ("#" <> _)) (Array.cons tr trs)
+          ]
+  where
+  reEscape = Regex.replace (unsafeRegex "[.*+?^${}()|[\\]\\\\]" global) "\\$&"
+  options toks = "(?:" <> intercalateMap "|" reEscape (Array.reverse (Array.sort toks)) <> ")"
+  allSymms = options $ opMeta >>= case _ of
+    Symm _ dflt toks _ _ -> Array.cons dflt toks
+    _ -> []
+  allBigops = options $ opMeta >>= case _ of
+    Symm _ _ _ bigops _ -> bigops
+    _ -> []
+  allSideds = options $ opMeta >>= case _ of
+    Sided _ _ dflt toks _ -> Array.cons dflt toks
+    _ -> []
+  allOrders = options $ opMeta >>= case _ of
+    Order _ tl tls _ tr trs _ -> Array.cons tl tls <> Array.cons tr trs
+    _ -> []
+  bigRegex = intercalate "|"
+    [ "#?" <> allSymms
+    , allSymms <> "#"
+    , allBigops
+    , "[.#]" <> allSideds
+    , allSideds <> "[.#]"
+    , "#?" <> allOrders
+    ]
 
 -- | Builtin functions.
 data Fn
@@ -830,7 +916,7 @@ parser = pure [] <|> do
       , Lit <$> lit
       , Ctrl <$> ctrl
       , Braces <$> braces
-      , token "." *> (PeekPrev <$> int <*> do isJust <$> optional (token "#"))
+      , rawr "\\." *> (PeekPrev <$> int <*> do isJust <$> optional (token "#"))
       , token "$" *> (PeekThis <$> int <*> do isJust <$> optional (token "#"))
       , Var <$> rawr "[a-zA-Z_-]+"
       , Set <$> do token "set" *> ws *> rawr "[a-zA-Z_-]+"
