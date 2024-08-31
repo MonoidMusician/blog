@@ -19,20 +19,20 @@ shrink :: forall m. MonadGen m => Int -> m ~> m
 shrink n = Gen.resize $ (_ - n) >>> (_ `div` 2)
 
 genNT
-  :: forall m meta nt r tok
+  :: forall m space nt r tok
    . Eq nt
   => MonadGen m
-  => Array (Produced meta nt r tok)
+  => Array (Produced space nt r tok)
   -> (nt -> Maybe (m (Array tok)))
 genNT grammar nt = genNT1 grammar nt <#> \mr ->
   mr >>= \r -> shrink (countTs r.rule) $ genMore grammar r
 
 genMore
-  :: forall m meta nt r tok
+  :: forall m space nt r tok
    . Eq nt
   => MonadGen m
-  => Array (Produced meta nt r tok)
-  -> { rule :: Fragment meta nt tok, produced :: Array tok }
+  => Array (Produced space nt r tok)
+  -> { rule :: Fragment space nt tok, produced :: Array tok }
   -> m (Array tok)
 genMore grammar { rule, produced } =
   -- `genMoreMaybe` should never fail, if the `Produced` data is any good
@@ -41,11 +41,11 @@ genMore grammar { rule, produced } =
   fromMaybe (pure produced) (genMoreMaybe grammar rule)
 
 genMoreMaybe
-  :: forall m meta nt r tok
+  :: forall m space nt r tok
    . Eq nt
   => MonadGen m
-  => Array (Produced meta nt r tok)
-  -> Fragment meta nt tok
+  => Array (Produced space nt r tok)
+  -> Fragment space nt tok
   -> Maybe (m (Array tok))
 genMoreMaybe grammar rule =
   map (map join <<< sequence) $
@@ -55,18 +55,18 @@ genMoreMaybe grammar rule =
       InterTerminal _ -> Just (pure [])
 
 genNT1
-  :: forall m meta nt r tok
+  :: forall m space nt r tok
    . Eq nt
   => MonadGen m
-  => Array (Produced meta nt r tok)
-  -> (nt -> Maybe (m { rule :: Fragment meta nt tok, produced :: Array tok }))
+  => Array (Produced space nt r tok)
+  -> (nt -> Maybe (m { rule :: Fragment space nt tok, produced :: Array tok }))
 genNT1 grammar nt =
   getRulesFor grammar nt # NEA.fromArray #
     map (\rules -> Gen.sized \sz -> chooseBySize sz rules # Gen.elements)
 
 
 
-sample :: forall meta nt r tok. Eq nt => Eq r => Eq tok => Producible meta nt r tok -> Maybe (Array tok)
+sample :: forall space nt r tok. Eq nt => Eq r => Eq tok => Producible space nt r tok -> Maybe (Array tok)
 sample grammar =
   QC.evalGen <$> genNT grammar.produced grammar.grammar.entry <@>
     { size: 15, newSeed: LCG.mkSeed 12345678 }
@@ -74,7 +74,7 @@ sample grammar =
 sampleS :: SProducible -> String
 sampleS = sample >>> maybe "" String.fromCodePointArray
 
-sampleE :: forall meta nt r tok. Eq nt => Eq r => Eq tok => Producible meta nt r tok -> Effect (Maybe (Array tok))
+sampleE :: forall space nt r tok. Eq nt => Eq r => Eq tok => Producible space nt r tok -> Effect (Maybe (Array tok))
 sampleE grammar = sequence $
   QC.randomSampleOne <$> genNT grammar.produced grammar.grammar.entry
 

@@ -23,98 +23,98 @@ import Parser.Proto (topOf)
 import Parser.Types (Fragment, Grammar(..), OrEOF(..), Part(..), State, StateInfo, States, notEOF)
 
 type CBest :: forall k. Type -> k -> Type -> Type -> Type -> Type -> Type -> Type -> Type
-type CBest err prec meta air nt cat i o =
-  Best err Int (Fragment meta (Either nt nt) (OrEOF cat) /\ Either nt nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
+type CBest err prec space air nt cat i o =
+  Best err Int (Fragment space (Either nt nt) (OrEOF cat) /\ Either nt nt /\ Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
 type CConf :: forall k. Type -> k -> Type -> Type -> Type -> Type -> Type -> Type -> Type
-type CConf err prec meta air nt cat i o =
-  { best :: CBest err prec meta air nt cat i o
+type CConf err prec space air nt cat i o =
+  { best :: CBest err prec space air nt cat i o
   }
-type CStates meta nt cat =
-  States Int meta (Either nt nt) (Maybe Int) (OrEOF cat)
-type CStateInfo meta nt cat =
-  StateInfo Int meta (Either nt nt) (Maybe Int) (OrEOF cat)
-type CState meta nt cat =
-  State meta (Either nt nt) (Maybe Int) (OrEOF cat)
+type CStates space nt cat =
+  States Int space (Either nt nt) (Maybe Int) (OrEOF cat)
+type CStateInfo space nt cat =
+  StateInfo Int space (Either nt nt) (Maybe Int) (OrEOF cat)
+type CState space nt cat =
+  State space (Either nt nt) (Maybe Int) (OrEOF cat)
 
-type ParseError err meta air nt cat i o =
-  FailedStack err Int (Rec err meta air nt cat i o) meta air (Either nt nt) (Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
-newtype Rec err meta air nt cat i o = Rec
+type ParseError err space air nt cat i o =
+  FailedStack err Int (Rec err space air nt cat i o) space air (Either nt nt) (Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
+newtype Rec err space air nt cat i o = Rec
   ( forall a.
       nt -> i ->
-      COptions (Rec err meta air nt cat i o) err meta air nt cat o ->
+      COptions (Rec err space air nt cat i o) err space air nt cat o ->
       (CCST air nt o -> Either (Array err) a) ->
-      Either (ParseError err meta air nt cat i o) a
+      Either (ParseError err space air nt cat i o) a
   )
 
-type StateTable meta nt cat =
+type StateTable space nt cat =
   { stateMap :: Map nt Int
   , start :: Int
-  , states :: CStates meta nt cat
+  , states :: CStates space nt cat
   }
 
 -- | Parse an input. You should partially apply it, and reuse that same
 -- | partially applied function for multiple inputs.
 parse ::
-  forall err prec meta air nt cat i o a.
+  forall err prec space air nt cat i o a.
     Ord prec =>
-    Semiring meta =>
-    Ord meta =>
+    Semiring space =>
+    Ord space =>
     Eq air =>
     Ord nt =>
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
-    Tokenize meta (OrEOF i) air =>
+    Tokenize space (OrEOF i) air =>
     Eq o =>
-  nt -> Comb (Rec err meta air nt cat i o) err prec meta air nt cat o a ->
-  (i -> Either (ParseError err meta air nt cat i o) a)
+  nt -> Comb (Rec err space air nt cat i o) err prec space air nt cat o a ->
+  (i -> Either (ParseError err space air nt cat i o) a)
 parse = parseWith { best: longest }
 
 -- | Parsing optimized for regexes and string literals, where the string
 -- | literals take precedence over the regexes always (and not just when they
 -- | match a longer string).
 parseRegex ::
-  forall err prec meta air nt a.
-    Semiring meta =>
-    Ord meta =>
+  forall err prec space air nt a.
+    Semiring space =>
+    Ord space =>
     Eq air =>
     Ord prec =>
     Ord nt =>
-    Tokenize meta (OrEOF String) air =>
-  nt -> Comb (Rec err meta air nt (Similar String Rawr) String String) err prec meta air nt (Similar String Rawr) String a ->
-  (String -> Either (ParseError err meta air nt (Similar String Rawr) String String) a)
+    Tokenize space (OrEOF String) air =>
+  nt -> Comb (Rec err space air nt (Similar String Rawr) String String) err prec space air nt (Similar String Rawr) String a ->
+  (String -> Either (ParseError err space air nt (Similar String Rawr) String String) a)
 parseRegex = parseWith { best: bestRegexOrString }
 
 parseWith ::
-  forall err prec meta air nt cat i o a.
+  forall err prec space air nt cat i o a.
     Ord prec =>
-    Semiring meta =>
-    Ord meta =>
+    Semiring space =>
+    Ord space =>
     Eq air =>
     Ord nt =>
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
-    Tokenize meta (OrEOF i) air =>
+    Tokenize space (OrEOF i) air =>
     Eq o =>
-  CConf err prec meta air nt cat i o -> nt -> Comb (Rec err meta air nt cat i o) err prec meta air nt cat o a ->
-  (i -> Either (ParseError err meta air nt cat i o) a)
+  CConf err prec space air nt cat i o -> nt -> Comb (Rec err space air nt cat i o) err prec space air nt cat o a ->
+  (i -> Either (ParseError err space air nt cat i o) a)
 parseWith conf name parser = snd (parseWith' conf name parser)
 
 parseWith' ::
-  forall err prec meta air nt cat i o a.
+  forall err prec space air nt cat i o a.
     Ord prec =>
-    Semiring meta =>
-    Ord meta =>
+    Semiring space =>
+    Ord space =>
     Eq air =>
     Ord nt =>
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
-    Tokenize meta (OrEOF i) air =>
+    Tokenize space (OrEOF i) air =>
     Eq o =>
-  CConf err prec meta air nt cat i o -> nt -> Comb (Rec err meta air nt cat i o) err prec meta air nt cat o a ->
-  StateTable meta nt cat /\ (i -> Either (ParseError err meta air nt cat i o) a)
+  CConf err prec space air nt cat i o -> nt -> Comb (Rec err space air nt cat i o) err prec space air nt cat o a ->
+  StateTable space nt cat /\ (i -> Either (ParseError err space air nt cat i o) a)
 parseWith' conf name parser = do
   -- First we build the LR(1) parsing table
   let compiled = compile name parser
@@ -122,29 +122,29 @@ parseWith' conf name parser = do
   compiled.states /\ execute conf compiled
 
 parseRegex' ::
-  forall err prec meta air nt a.
-    Semiring meta =>
-    Ord meta =>
+  forall err prec space air nt a.
+    Semiring space =>
+    Ord space =>
     Eq air =>
     Ord prec =>
     Ord nt =>
-    Tokenize meta (OrEOF String) air =>
-  nt -> Comb (Rec err meta air nt (Similar String Rawr) String String) err prec meta air nt (Similar String Rawr) String a ->
-  StateTable meta nt (Similar String Rawr) /\ (String -> Either (ParseError err meta air nt (Similar String Rawr) String String) a)
+    Tokenize space (OrEOF String) air =>
+  nt -> Comb (Rec err space air nt (Similar String Rawr) String String) err prec space air nt (Similar String Rawr) String a ->
+  StateTable space nt (Similar String Rawr) /\ (String -> Either (ParseError err space air nt (Similar String Rawr) String String) a)
 parseRegex' = parseWith' { best: bestRegexOrString }
 
 -- | Compile the LR(1) state table for the grammar
 compile ::
-  forall rec err prec meta air nt cat o a.
-    Semiring meta =>
-    Ord meta =>
+  forall rec err prec space air nt cat o a.
+    Semiring space =>
+    Ord space =>
     Ord prec =>
     Ord nt =>
     Ord cat =>
-  nt -> Comb rec err prec meta air nt cat o a ->
-  { states :: StateTable meta nt cat
+  nt -> Comb rec err prec space air nt cat o a ->
+  { states :: StateTable space nt cat
   , resultants :: nt /\ Array (CResultant rec err air nt o a)
-  , options :: COptions rec err meta air nt cat o
+  , options :: COptions rec err space air nt cat o
   , precedences :: Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
   }
 compile name parser = do
@@ -160,19 +160,19 @@ compile name parser = do
   }
 
 gatherPrecedences ::
-  forall rec err prec meta air nt cat o a.
+  forall rec err prec space air nt cat o a.
     Ord nt =>
     Ord cat =>
-  Comb rec err prec meta air nt cat o a ->
+  Comb rec err prec space air nt cat o a ->
   Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
 gatherPrecedences (Comb { grammar: MkGrammar initialWithPrec, tokenPrecedence }) =
   gatherPrecedences' initialWithPrec tokenPrecedence
 
 gatherPrecedences' ::
-  forall prec meta nt cat.
+  forall prec space nt cat.
     Ord nt =>
     Ord cat =>
-  Array (CGrammarRule prec meta nt cat) ->
+  Array (CGrammarRule prec space nt cat) ->
   Array (cat /\ (prec /\ Associativity)) ->
   Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
 gatherPrecedences' initialWithPrec tokenPrecedence = Tuple
@@ -188,29 +188,29 @@ lookupTuple :: forall a b. Eq a => a -> a /\ b -> Maybe b
 lookupTuple a1 (a2 /\ b) | a1 == a2 = Just b
 lookupTuple _ _ = Nothing
 
-resultantsOf :: forall rec err prec meta air nt cat o a. Comb rec err prec meta air nt cat o a -> Array (CResultant rec err air nt o a)
+resultantsOf :: forall rec err prec space air nt cat o a. Comb rec err prec space air nt cat o a -> Array (CResultant rec err air nt o a)
 resultantsOf (Comb { rules: cases }) = cases <#> _.resultant
 
 -- | Execute the parse.
 execute ::
-  forall err prec meta air nt cat i o a.
+  forall err prec space air nt cat i o a.
     Ord prec =>
-    Semiring meta =>
-    Ord meta =>
+    Semiring space =>
+    Ord space =>
     Eq air =>
     Ord nt =>
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
-    Tokenize meta (OrEOF i) air =>
+    Tokenize space (OrEOF i) air =>
     Eq o =>
-  CConf err prec meta air nt cat i o ->
-  { states :: StateTable meta nt cat
-  , resultants :: nt /\ Array (CResultant (Rec err meta air nt cat i o) err air nt o a)
-  , options :: COptions (Rec err meta air nt cat i o) err meta air nt cat o
+  CConf err prec space air nt cat i o ->
+  { states :: StateTable space nt cat
+  , resultants :: nt /\ Array (CResultant (Rec err space air nt cat i o) err air nt o a)
+  , options :: COptions (Rec err space air nt cat i o) err space air nt cat o
   , precedences :: Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
   } ->
-  (i -> Either (ParseError err meta air nt cat i o) a)
+  (i -> Either (ParseError err space air nt cat i o) a)
 execute conf0 { states: { stateMap, start, states }, resultants, options, precedences } = do
   let
     xx = fullMapOptions
@@ -223,8 +223,8 @@ execute conf0 { states: { stateMap, start, states }, resultants, options, preced
       }
     options' ::
       nt ->
-      Options (Rec err meta air nt cat i o) err meta air nt Int cat o ->
-      Options (Rec err meta air nt cat i o) err meta air (Either nt nt) (Maybe Int) (OrEOF cat) (OrEOF o)
+      Options (Rec err space air nt cat i o) err space air nt Int cat o ->
+      Options (Rec err space air nt cat i o) err space air (Either nt nt) (Maybe Int) (OrEOF cat) (OrEOF o)
     options' name opts =
       let
         x = xx opts
@@ -236,7 +236,7 @@ execute conf0 { states: { stateMap, start, states }, resultants, options, preced
             , advanced: []
             }
           ]
-    conf :: CConf err prec meta air nt cat i o
+    conf :: CConf err prec space air nt cat i o
     conf = conf0 { best = \x -> ((<=<) conf0.best $ screenPrecedence $ combPrecedence precedences) x }
     rec = Rec \name input optionsHere result -> do
       state <- Map.lookup name stateMap?? CrashedStack "Could not find parser in table"
@@ -267,13 +267,13 @@ execute conf0 { states: { stateMap, start, states }, resultants, options, preced
 
 
 combPrecedence ::
-  forall m prec meta cat nt.
+  forall m prec space cat nt.
     Monad m =>
     Ord prec =>
     Ord cat =>
     Ord nt =>
   Tuple (Map cat (Tuple prec Associativity)) (Map (nt /\ Int) prec) ->
-  ResolvePrec m (OrEOF cat) (Fragment meta (Either nt nt) (OrEOF cat) /\ Either nt nt /\ Maybe Int)
+  ResolvePrec m (OrEOF cat) (Fragment space (Either nt nt) (OrEOF cat) /\ Either nt nt /\ Maybe Int)
 combPrecedence precedences =
   happyPrecedenceOrd
     (notEOF >=> flip Map.lookup (fst precedences))
@@ -283,24 +283,24 @@ combPrecedence precedences =
 
 -- Compile multiple parsers together into one LR(1) table with multiple
 -- entrypoints.
-type Compiled prec meta nt cat =
+type Compiled prec space nt cat =
   -- Could almost be an existential type? But literally no reason to do that
   { entrypoints :: Map nt Int
-  , states :: CStates meta nt cat
+  , states :: CStates space nt cat
   , precedences :: Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
   }
-type Parsing err meta air nt cat i o a = i -> Either (ParseError err meta air nt cat i o) a
+type Parsing err space air nt cat i o a = i -> Either (ParseError err space air nt cat i o) a
 
-newtype Coll err prec meta air nt cat i o parsers = Coll
-  { grammar :: CGrammar prec meta nt cat
-  , prettyGrammar :: Array (Tuple nt (Maybe (CSyntax meta nt cat)))
+newtype Coll err prec space air nt cat i o parsers = Coll
+  { grammar :: CGrammar prec space nt cat
+  , prettyGrammar :: Array (Tuple nt (Maybe (CSyntax space nt cat)))
   , entrypoints :: Array nt
   , tokenPrecedence :: Array (Tuple cat (Tuple prec Associativity))
-  , compilation :: Compiled prec meta nt cat -> CConf err prec meta air nt cat i o -> parsers
+  , compilation :: Compiled prec space nt cat -> CConf err prec space air nt cat i o -> parsers
   }
 
-derive instance functorColl :: Functor (Coll err prec meta air nt cat i o)
-instance applyColl :: Apply (Coll err prec meta air nt cat i o) where
+derive instance functorColl :: Functor (Coll err prec space air nt cat i o)
+instance applyColl :: Apply (Coll err prec space air nt cat i o) where
   apply (Coll c1) (Coll c2) = Coll
     { grammar: c1.grammar <> c2.grammar
     , prettyGrammar: c1.prettyGrammar <|> c2.prettyGrammar
@@ -308,7 +308,7 @@ instance applyColl :: Apply (Coll err prec meta air nt cat i o) where
     , tokenPrecedence: c1.tokenPrecedence <|> c2.tokenPrecedence
     , compilation: \x y -> c1.compilation x y (c2.compilation x y)
     }
-instance applicativeColl :: Applicative (Coll err prec meta air nt cat i o) where
+instance applicativeColl :: Applicative (Coll err prec space air nt cat i o) where
   pure r = Coll
     { grammar: mempty
     , prettyGrammar: empty
@@ -321,18 +321,18 @@ instance applicativeColl :: Applicative (Coll err prec meta air nt cat i o) wher
 -- maybe there is a way to encode this in the types
 
 coll ::
-  forall err prec meta air nt cat i o a.
+  forall err prec space air nt cat i o a.
     Ord prec =>
-    Semiring meta =>
-    Ord meta =>
+    Semiring space =>
+    Ord space =>
     Eq air =>
     Ord nt =>
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
-    Tokenize meta (OrEOF i) air =>
+    Tokenize space (OrEOF i) air =>
     Eq o =>
-  nt -> Comb (Rec err meta air nt cat i o) err prec meta air nt cat o a -> Coll err prec meta air nt cat i o (Parsing err meta air nt cat i o a)
+  nt -> Comb (Rec err space air nt cat i o) err prec space air nt cat o a -> Coll err prec space air nt cat i o (Parsing err space air nt cat i o a)
 coll name parser@(Comb c) = Coll
   { grammar: c.grammar
   , prettyGrammar: c.prettyGrammar
@@ -352,16 +352,16 @@ coll name parser@(Comb c) = Coll
   }
 
 collect ::
-  forall err prec meta air nt cat i o parsers.
-    Semiring meta =>
-    Ord meta =>
+  forall err prec space air nt cat i o parsers.
+    Semiring space =>
+    Ord space =>
     Eq air =>
     Ord nt =>
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
-    Tokenize meta (OrEOF i) air =>
-  CConf err prec meta air nt cat i o -> Coll err prec meta air nt cat i o parsers -> parsers
+    Tokenize space (OrEOF i) air =>
+  CConf err prec space air nt cat i o -> Coll err prec space air nt cat i o parsers -> parsers
 collect conf (Coll { grammar: MkGrammar initialWithPrec, entrypoints, compilation, tokenPrecedence }) = do
   let initial = initialWithPrec <#> \r -> r { rName = snd r.rName }
   let grammar = MkGrammar (Array.nub initial)
@@ -387,13 +387,13 @@ collect conf (Coll { grammar: MkGrammar initialWithPrec, entrypoints, compilatio
 -- | (rather than simply invalidating the construct, as grammar mismatches
 -- | tend to do).
 withReparserFor ::
-  forall err prec meta air nt cat i o a b c.
+  forall err prec space air nt cat i o a b c.
     Ord nt =>
   nt ->
-  Comb (Rec err meta air nt cat i o) err prec meta air nt cat o a ->
-  Comb (Rec err meta air nt cat i o) err prec meta air nt cat o b ->
-  ((i -> Either (ParseError err meta air nt cat i o) a) -> b -> c) ->
-  Comb (Rec err meta air nt cat i o) err prec meta air nt cat o c
+  Comb (Rec err space air nt cat i o) err prec space air nt cat o a ->
+  Comb (Rec err space air nt cat i o) err prec space air nt cat o b ->
+  ((i -> Either (ParseError err space air nt cat i o) a) -> b -> c) ->
+  Comb (Rec err space air nt cat i o) err prec space air nt cat o c
 withReparserFor name aux (Comb cb) f = do
   let Comb ca = named name aux
   Comb

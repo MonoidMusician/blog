@@ -39,47 +39,47 @@ notEOF :: OrEOF ~> Maybe
 notEOF EOF = Nothing
 notEOF (Continue a) = Just a
 
-newtype Grammar meta nt r tok = MkGrammar
-  (Array (GrammarRule meta nt r tok))
-derive newtype instance showGrammar :: (Show meta, Show nt, Show r, Show tok) => Show (Grammar meta nt r tok)
-derive instance newtypeGrammar :: Newtype (Grammar meta nt r tok) _
-derive newtype instance semigroupGrammar :: Semigroup (Grammar meta nt r tok)
-derive newtype instance monoidGrammar :: Monoid (Grammar meta nt r tok)
+newtype Grammar space nt r tok = MkGrammar
+  (Array (GrammarRule space nt r tok))
+derive newtype instance showGrammar :: (Show space, Show nt, Show r, Show tok) => Show (Grammar space nt r tok)
+derive instance newtypeGrammar :: Newtype (Grammar space nt r tok) _
+derive newtype instance semigroupGrammar :: Semigroup (Grammar space nt r tok)
+derive newtype instance monoidGrammar :: Monoid (Grammar space nt r tok)
 
-type GrammarRule meta nt r tok =
+type GrammarRule space nt r tok =
   { pName :: nt -- nonterminal / production rule name
   , rName :: r -- each rule has a unique name
-  , rule :: Fragment meta nt tok -- sequence of nonterminals and terminals that make up the rule
+  , rule :: Fragment space nt tok -- sequence of nonterminals and terminals that make up the rule
   }
 
-getRulesFor :: forall meta nt r tok. Eq nt => Array (Produced meta nt r tok) -> nt -> Array { rule :: Fragment meta nt tok, produced :: Array tok }
+getRulesFor :: forall space nt r tok. Eq nt => Array (Produced space nt r tok) -> nt -> Array { rule :: Fragment space nt tok, produced :: Array tok }
 getRulesFor rules nt = rules # Array.mapMaybe \rule ->
   if rule.production.pName /= nt then Nothing
   else
     Just { rule: rule.production.rule, produced: rule.produced }
 
-type Produced meta nt r tok =
-  { production :: GrammarRule meta nt r tok
+type Produced space nt r tok =
+  { production :: GrammarRule space nt r tok
   , produced :: Array tok
   }
 
-type Producible meta nt r tok =
-  { grammar :: Augmented meta nt r tok
-  , produced :: Array (Produced meta nt r tok)
+type Producible space nt r tok =
+  { grammar :: Augmented space nt r tok
+  , produced :: Array (Produced space nt r tok)
   }
 
 type SProducible = Producible Unit NonEmptyString String CodePoint
 
-type Augmented meta nt r tok =
-  { augmented :: Grammar meta nt r tok
-  , start :: StateItem meta nt r tok
+type Augmented space nt r tok =
+  { augmented :: Grammar space nt r tok
+  , start :: StateItem space nt r tok
   , eof :: tok
   , entry :: nt
   }
-type Augmenteds meta nt r tok =
-  { augmented :: Grammar meta nt r tok
+type Augmenteds space nt r tok =
+  { augmented :: Grammar space nt r tok
   , eof :: tok
-  , starts :: Array (StateItem meta nt r tok)
+  , starts :: Array (StateItem space nt r tok)
   }
 
 type SAugmented = Augmented Unit NonEmptyString String CodePoint
@@ -87,55 +87,55 @@ type SAugmented = Augmented Unit NonEmptyString String CodePoint
 
 
 type SGrammar = Grammar Unit NonEmptyString String CodePoint
-data Part meta nt tok = NonTerminal nt | Terminal tok | InterTerminal meta
+data Part space nt tok = NonTerminal nt | Terminal tok | InterTerminal space
 
-derive instance eqPart :: (Eq meta, Eq nt, Eq tok) => Eq (Part meta nt tok)
-derive instance ordPart :: (Ord meta, Ord nt, Ord tok) => Ord (Part meta nt tok)
-derive instance genericPart :: Generic (Part meta nt tok) _
-instance showPart :: (Show meta, Show nt, Show tok) => Show (Part meta nt tok) where
+derive instance eqPart :: (Eq space, Eq nt, Eq tok) => Eq (Part space nt tok)
+derive instance ordPart :: (Ord space, Ord nt, Ord tok) => Ord (Part space nt tok)
+derive instance genericPart :: Generic (Part space nt tok) _
+instance showPart :: (Show space, Show nt, Show tok) => Show (Part space nt tok) where
   show x = genericShow x
 
-derive instance functorPart :: Functor (Part meta nt)
-instance bifunctorPart :: Bifunctor (Part meta) where
+derive instance functorPart :: Functor (Part space nt)
+instance bifunctorPart :: Bifunctor (Part space) where
   bimap f _ (NonTerminal nt) = NonTerminal (f nt)
   bimap _ g (Terminal tok) = Terminal (g tok)
-  bimap _ _ (InterTerminal meta) = InterTerminal meta
+  bimap _ _ (InterTerminal space) = InterTerminal space
 
 type SPart = Part Unit NonEmptyString CodePoint
 
-isNonTerminal :: forall meta nt tok. Part meta nt tok -> Boolean
+isNonTerminal :: forall space nt tok. Part space nt tok -> Boolean
 isNonTerminal (NonTerminal _) = true
 isNonTerminal _ = false
 
-isTerminal :: forall meta nt tok. Part meta nt tok -> Boolean
+isTerminal :: forall space nt tok. Part space nt tok -> Boolean
 isTerminal (Terminal _) = true
 isTerminal _ = false
 
-isInterTerminal :: forall meta nt tok. Part meta nt tok -> Boolean
+isInterTerminal :: forall space nt tok. Part space nt tok -> Boolean
 isInterTerminal (InterTerminal _) = true
 isInterTerminal _ = false
 
-unNonTerminal :: forall meta nt tok. Part meta nt tok -> Maybe nt
+unNonTerminal :: forall space nt tok. Part space nt tok -> Maybe nt
 unNonTerminal (NonTerminal nt) = Just nt
 unNonTerminal _ = Nothing
 
-unTerminal :: forall meta nt tok. Part meta nt tok -> Maybe tok
+unTerminal :: forall space nt tok. Part space nt tok -> Maybe tok
 unTerminal (Terminal t) = Just t
 unTerminal _ = Nothing
 
-unInterTerminal :: forall meta nt tok. Part meta nt tok -> Maybe meta
+unInterTerminal :: forall space nt tok. Part space nt tok -> Maybe space
 unInterTerminal (InterTerminal it) = Just it
 unInterTerminal _ = Nothing
 
-noInterTerminal :: forall meta nt tok. Part meta nt tok -> Maybe (Part Void nt tok)
+noInterTerminal :: forall space nt tok. Part space nt tok -> Maybe (Part Void nt tok)
 noInterTerminal (InterTerminal _) = Nothing
 noInterTerminal (Terminal t) = Just (Terminal t)
 noInterTerminal (NonTerminal nt) = Just (NonTerminal nt)
 
-noInterTerminals :: forall meta nt tok. Fragment meta nt tok -> Fragment Void nt tok
+noInterTerminals :: forall space nt tok. Fragment space nt tok -> Fragment Void nt tok
 noInterTerminals = Array.mapMaybe noInterTerminal
 
-noInterTerminalz :: forall meta nt tok. Zipper meta nt tok -> Zipper Void nt tok
+noInterTerminalz :: forall space nt tok. Zipper space nt tok -> Zipper Void nt tok
 noInterTerminalz (Zipper before after) = Zipper (noInterTerminals before) (noInterTerminals after)
 
 unSPart :: SPart -> String
@@ -143,56 +143,56 @@ unSPart (Terminal t) = String.singleton t
 unSPart (NonTerminal nt) = NES.toString nt
 unSPart (InterTerminal _) = mempty
 
-type Fragment meta nt tok = Array (Part meta nt tok)
+type Fragment space nt tok = Array (Part space nt tok)
 type SFragment = Fragment Unit NonEmptyString CodePoint
 
-data Zipper meta nt tok = Zipper (Fragment meta nt tok) (Fragment meta nt tok)
+data Zipper space nt tok = Zipper (Fragment space nt tok) (Fragment space nt tok)
 
-derive instance bifunctorZipper :: Bifunctor (Zipper meta)
+derive instance bifunctorZipper :: Bifunctor (Zipper space)
 
-derive instance eqZipper :: (Eq meta, Eq nt, Eq tok) => Eq (Zipper meta nt tok)
-derive instance ordZipper :: (Ord meta, Ord nt, Ord tok) => Ord (Zipper meta nt tok)
-derive instance genericZipper :: Generic (Zipper meta nt tok) _
-instance showZipper :: (Show meta, Show nt, Show tok) => Show (Zipper meta nt tok) where
+derive instance eqZipper :: (Eq space, Eq nt, Eq tok) => Eq (Zipper space nt tok)
+derive instance ordZipper :: (Ord space, Ord nt, Ord tok) => Ord (Zipper space nt tok)
+derive instance genericZipper :: Generic (Zipper space nt tok) _
+instance showZipper :: (Show space, Show nt, Show tok) => Show (Zipper space nt tok) where
   show x = genericShow x
 
 type SZipper = Zipper Unit NonEmptyString CodePoint
 
-unZipper :: forall meta nt tok. Zipper meta nt tok -> Fragment meta nt tok
+unZipper :: forall space nt tok. Zipper space nt tok -> Fragment space nt tok
 unZipper (Zipper before after) = before <> after
 
-newtype State meta nt r tok = State (Array (StateItem meta nt r tok))
-derive instance newtypeState :: Newtype (State meta nt r tok) _
+newtype State space nt r tok = State (Array (StateItem space nt r tok))
+derive instance newtypeState :: Newtype (State space nt r tok) _
 
-instance eqState :: (Eq meta, Eq nt, Eq r, Eq tok) => Eq (State meta nt r tok) where
+instance eqState :: (Eq space, Eq nt, Eq r, Eq tok) => Eq (State space nt r tok) where
   eq (State s1) (State s2) = s1 == s2 ||
     Array.length s1 == Array.length s2 &&
       noNew s1 s2 && noNew s2 s1
 
-instance ordState :: (Ord meta, Ord nt, Ord r, Ord tok) => Ord (State meta nt r tok) where
+instance ordState :: (Ord space, Ord nt, Ord r, Ord tok) => Ord (State space nt r tok) where
   compare (State s1) (State s2) = compare (deepSort s1) (deepSort s2)
     where
     deepSort = Array.sort <<< map \item ->
       item { lookahead = Array.sort item.lookahead }
 
-derive instance genericState :: Generic (State meta nt r tok) _
-instance showState :: (Show meta, Show nt, Show r, Show tok) => Show (State meta nt r tok) where
+derive instance genericState :: Generic (State space nt r tok) _
+instance showState :: (Show space, Show nt, Show r, Show tok) => Show (State space nt r tok) where
   show = genericShow
 
-instance semigroupState :: (Semiring meta, Eq meta, Eq nt, Eq r, Eq tok) => Semigroup (State meta nt r tok) where
+instance semigroupState :: (Semiring space, Eq space, Eq nt, Eq r, Eq tok) => Semigroup (State space nt r tok) where
   append s1 (State s2) = minimizeStateCat s1 s2
 
 nubEqCat :: forall a. Eq a => Array a -> Array a -> Array a
 nubEqCat as bs = as <> Array.filter (not Array.elem <@> as) bs
 
--- TODO meta
-sameRule :: forall meta nt r tok. Eq meta => Eq nt => Eq r => Eq tok => StateItem meta nt r tok -> StateItem meta nt r tok -> Boolean
+-- TODO space
+sameRule :: forall space nt r tok. Eq space => Eq nt => Eq r => Eq tok => StateItem space nt r tok -> StateItem space nt r tok -> Boolean
 sameRule item newItem = item.pName == newItem.pName && item.rName == newItem.rName && item.rule == newItem.rule
 
-minimizeState :: forall meta nt r tok. Semiring meta => Eq meta => Eq nt => Eq r => Eq tok => Array (StateItem meta nt r tok) -> State meta nt r tok
+minimizeState :: forall space nt r tok. Semiring space => Eq space => Eq nt => Eq r => Eq tok => Array (StateItem space nt r tok) -> State space nt r tok
 minimizeState = compose State $ [] # Array.foldl \items newItem ->
   let
-    accumulate :: Boolean -> StateItem meta nt r tok -> { accum :: Boolean, value :: StateItem meta nt r tok }
+    accumulate :: Boolean -> StateItem space nt r tok -> { accum :: Boolean, value :: StateItem space nt r tok }
     accumulate alreadyFound item =
       if sameRule item newItem
         then { accum: true, value: item { lookbehind = item.lookbehind <> newItem.lookbehind, lookahead = nubEqCat item.lookahead newItem.lookahead } }
@@ -202,7 +202,7 @@ minimizeState = compose State $ [] # Array.foldl \items newItem ->
   in
     if found then items' else items' <> [ newItem ]
 
-minimizeStateCat :: forall meta nt r tok. Semiring meta => Eq meta => Eq nt => Eq r => Eq tok => State meta nt r tok -> Array (StateItem meta nt r tok) -> State meta nt r tok
+minimizeStateCat :: forall space nt r tok. Semiring space => Eq space => Eq nt => Eq r => Eq tok => State space nt r tok -> Array (StateItem space nt r tok) -> State space nt r tok
 minimizeStateCat prev [] = prev
 minimizeStateCat (State prev) newItems = State result
   where
@@ -217,20 +217,20 @@ minimizeStateCat (State prev) newItems = State result
     [] -> prevAugmented
     _ -> prevAugmented <> newFiltered
 
-noNew :: forall meta nt r tok. Eq meta => Eq nt => Eq r => Eq tok => Array (StateItem meta nt r tok) -> Array (StateItem meta nt r tok) -> Boolean
+noNew :: forall space nt r tok. Eq space => Eq nt => Eq r => Eq tok => Array (StateItem space nt r tok) -> Array (StateItem space nt r tok) -> Boolean
 noNew prev newItems = newItems # Array.all \newItem ->
   prev # Array.any \item ->
     sameRule item newItem && item.lookbehind == newItem.lookbehind && do
       newItem.lookahead # Array.all \look -> item.lookahead # Array.any (eq look)
 
 type SState = State Unit NonEmptyString String CodePoint
-type Lookahead meta tok = Array (Tuple meta tok)
-type StateItem meta nt r tok =
+type Lookahead space tok = Array (Tuple space tok)
+type StateItem space nt r tok =
   { rName :: r
   , pName :: nt
-  , rule :: Zipper meta nt tok
-  , lookbehind :: Additive meta
-  , lookahead :: Lookahead meta tok
+  , rule :: Zipper space nt tok
+  , lookbehind :: Additive space
+  , lookahead :: Lookahead space tok
   }
 
 type SStateItem = StateItem Unit NonEmptyString String CodePoint
@@ -316,35 +316,35 @@ instance semigroupShiftReduce :: Semigroup (ShiftReduce s r) where
   append (ShiftReduces s rs) (Reduces rs') = ShiftReduces s (rs <> rs')
   append (Reduces rs) (ShiftReduces s rs') = ShiftReduces s (rs <> rs')
 
-type StateInfo s meta nt r tok =
+type StateInfo s space nt r tok =
   { sName :: s
-  , items :: State meta nt r tok
-  , advance :: SemigroupMap tok (Additive meta /\ ShiftReduce s (Fragment meta nt tok /\ nt /\ r))
+  , items :: State space nt r tok
+  , advance :: SemigroupMap tok (Additive space /\ ShiftReduce s (Fragment space nt tok /\ nt /\ r))
   , receive :: Map nt s
   }
 
 type SStateInfo = StateInfo Int Unit NonEmptyString String CodePoint
 
-newtype States s meta nt r tok = States
-  (Array (StateInfo s meta nt r tok))
+newtype States s space nt r tok = States
+  (Array (StateInfo s space nt r tok))
 
-derive instance newtypeStates :: Newtype (States s meta nt r tok) _
+derive instance newtypeStates :: Newtype (States s space nt r tok) _
 
 type SStates = States Int Unit NonEmptyString String CodePoint
 
 conflicts ::
-  forall s meta nt r tok.
-  States s meta nt r tok ->
+  forall s space nt r tok.
+  States s space nt r tok ->
   Array
     { sName :: s
-    , items :: State meta nt r tok
-    , advance :: meta /\ tok
-    , conflict :: ShiftReduce s (Fragment meta nt tok /\ nt /\ r)
+    , items :: State space nt r tok
+    , advance :: space /\ tok
+    , conflict :: ShiftReduce s (Fragment space nt tok /\ nt /\ r)
     }
 conflicts (States states) =
   states # foldMap \{ sName, items, advance } ->
-  advance # foldMapWithIndex \tok (Additive meta /\ sr) ->
-    { sName, items, advance: meta /\ tok, conflict: sr } <$
+  advance # foldMapWithIndex \tok (Additive space /\ sr) ->
+    { sName, items, advance: space /\ tok, conflict: sr } <$
       guard (not decisionUnique sr)
 
 

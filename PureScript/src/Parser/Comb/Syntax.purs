@@ -7,16 +7,16 @@ import Data.Either (Either(..), either)
 import Data.List (List(..), (:))
 import Parser.Types (Part, Fragment)
 
-data Syntax meta nt tok
-  = Conj (Syntax meta nt tok) (Syntax meta nt tok)
-  | Disj (Syntax meta nt tok) (Syntax meta nt tok)
-  | Part (Part meta nt tok)
+data Syntax space nt tok
+  = Conj (Syntax space nt tok) (Syntax space nt tok)
+  | Disj (Syntax space nt tok) (Syntax space nt tok)
+  | Part (Part space nt tok)
   | Null
 
-derive instance eqSyntax :: (Eq meta, Eq nt, Eq tok) => Eq (Syntax meta nt tok)
-derive instance ordSyntax :: (Ord meta, Ord nt, Ord tok) => Ord (Syntax meta nt tok)
+derive instance eqSyntax :: (Eq space, Eq nt, Eq tok) => Eq (Syntax space nt tok)
+derive instance ordSyntax :: (Ord space, Ord nt, Ord tok) => Ord (Syntax space nt tok)
 
-printSyntax'' :: forall m meta nt tok. Semigroup m => (String -> m) -> Syntax meta nt tok -> Array (Either m (Part meta nt tok))
+printSyntax'' :: forall m space nt tok. Semigroup m => (String -> m) -> Syntax space nt tok -> Array (Either m (Part space nt tok))
 printSyntax'' t (Conj l r) =
   let
     printFactor = case _ of
@@ -34,11 +34,11 @@ printSyntax'' t (Disj l r) = printSyntax'' t l <> [ Left $ t "|" ] <> printSynta
 printSyntax'' _ (Part p) = [ Right p ]
 printSyntax'' _ Null = []
 
-printSyntax' :: forall m meta nt tok. Monoid m => (String -> m) -> (Fragment meta nt tok -> m) -> Syntax meta nt tok -> m
+printSyntax' :: forall m space nt tok. Monoid m => (String -> m) -> (Fragment space nt tok -> m) -> Syntax space nt tok -> m
 printSyntax' t f syntax =
   intercalate (t " ") $ map (either identity f) $ coalesce $ map (map pure) $ printSyntax'' t syntax
 
-printSyntax :: forall meta nt tok. (Fragment meta nt tok -> String) -> Syntax meta nt tok -> String
+printSyntax :: forall space nt tok. (Fragment space nt tok -> String) -> Syntax space nt tok -> String
 printSyntax f syntax =
   intercalate " " $ map (either identity f) $ coalesce $ map (map pure) $ printSyntax'' identity syntax
 

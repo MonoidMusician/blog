@@ -19,18 +19,18 @@ import Parser.Comb.Types (Associativity(..), Comb(..), Options(..), Resultant(..
 import Parser.Lexing (class ToString, class Token, type (~), Rawr, Similar(..), rawr, rerecognize, toString)
 import Parser.Types (Grammar(..), ICST(..), Part(..), sourceCST, sourceICST)
 
-setPrecA :: forall rec err prec meta air nt cat o. cat -> Associativity -> prec -> Comb rec err prec meta air nt cat o Unit
+setPrecA :: forall rec err prec space air nt cat o. cat -> Associativity -> prec -> Comb rec err prec space air nt cat o Unit
 setPrecA cat assoc prec = case pure unit of
   Comb c -> Comb c { tokenPrecedence = [cat /\ (prec /\ assoc)] }
 
-setPrecL :: forall rec err prec meta air nt cat o. cat -> prec -> Comb rec err prec meta air nt cat o Unit
+setPrecL :: forall rec err prec space air nt cat o. cat -> prec -> Comb rec err prec space air nt cat o Unit
 setPrecL = setPrecA <@> AssocL
-setPrecR :: forall rec err prec meta air nt cat o. cat -> prec -> Comb rec err prec meta air nt cat o Unit
+setPrecR :: forall rec err prec space air nt cat o. cat -> prec -> Comb rec err prec space air nt cat o Unit
 setPrecR = setPrecA <@> AssocR
-setPrec :: forall rec err prec meta air nt cat o. cat -> prec -> Comb rec err prec meta air nt cat o Unit
+setPrec :: forall rec err prec space air nt cat o. cat -> prec -> Comb rec err prec space air nt cat o Unit
 setPrec = setPrecA <@> NoAssoc
 
-token :: forall rec err prec meta air nt cat o. Token cat o => cat -> Comb rec err prec meta air nt cat o o
+token :: forall rec err prec space air nt cat o. Token cat o => cat -> Comb rec err prec space air nt cat o o
 token cat = Comb
   { grammar: mempty
   , entrypoints: empty
@@ -46,23 +46,23 @@ token cat = Comb
     }
   }
 
-tokenPrecA :: forall rec err prec meta air nt cat o. Token cat o => cat -> Associativity -> prec -> Comb rec err prec meta air nt cat o o
+tokenPrecA :: forall rec err prec space air nt cat o. Token cat o => cat -> Associativity -> prec -> Comb rec err prec space air nt cat o o
 tokenPrecA cat assoc prec = setPrecA cat assoc prec *> token cat
 
-tokenPrecL :: forall rec err prec meta air nt cat o. Token cat o => cat -> prec -> Comb rec err prec meta air nt cat o o
+tokenPrecL :: forall rec err prec space air nt cat o. Token cat o => cat -> prec -> Comb rec err prec space air nt cat o o
 tokenPrecL = tokenPrecA <@> AssocL
-tokenPrecR :: forall rec err prec meta air nt cat o. Token cat o => cat -> prec -> Comb rec err prec meta air nt cat o o
+tokenPrecR :: forall rec err prec space air nt cat o. Token cat o => cat -> prec -> Comb rec err prec space air nt cat o o
 tokenPrecR = tokenPrecA <@> AssocR
-tokenPrec :: forall rec err prec meta air nt cat o. Token cat o => cat -> prec -> Comb rec err prec meta air nt cat o o
+tokenPrec :: forall rec err prec space air nt cat o. Token cat o => cat -> prec -> Comb rec err prec space air nt cat o o
 tokenPrec = tokenPrecA <@> NoAssoc
 
-tokenRawr :: forall rec err prec meta air nt. String -> Comb rec err prec meta air nt (String ~ Rawr) String String
+tokenRawr :: forall rec err prec space air nt. String -> Comb rec err prec space air nt (String ~ Rawr) String String
 tokenRawr = rawr >>> Right >>> Similar >>> token
 
-tokenStr :: forall s rec err prec meta air nt. ToString s => s -> Comb rec err prec meta air nt (String ~ Rawr) String String
+tokenStr :: forall s rec err prec space air nt. ToString s => s -> Comb rec err prec space air nt (String ~ Rawr) String String
 tokenStr = toString >>> Left >>> Similar >>> token
 
-tokens :: forall rec err prec meta air nt cat o. Token cat o => Array cat -> Comb rec err prec meta air nt cat o (Array o)
+tokens :: forall rec err prec space air nt cat o. Token cat o => Array cat -> Comb rec err prec space air nt cat o (Array o)
 tokens cats = Comb
   { grammar: mempty
   , entrypoints: empty
@@ -78,7 +78,7 @@ tokens cats = Comb
     }
   }
 
-space :: forall rec err prec meta air nt cat o. Token cat o => meta -> Comb rec err prec meta air nt cat o Unit
+space :: forall rec err prec space air nt cat o. Token cat o => space -> Comb rec err prec space air nt cat o Unit
 space h = Comb
   { grammar: mempty
   , entrypoints: empty
@@ -93,8 +93,8 @@ space h = Comb
   }
 
 buildTree ::
-  forall rec err prec meta air nt cat o a.
-  nt -> Comb rec err prec meta air nt cat o a -> Options rec err meta air nt Int cat o
+  forall rec err prec space air nt cat o a.
+  nt -> Comb rec err prec space air nt cat o a -> Options rec err space air nt Int cat o
 buildTree name (Comb c) = Options $
   c.rules # mapWithIndex \i { resultant: Resultant { accepting }, rule } ->
     { pName: name
@@ -106,20 +106,20 @@ buildTree name (Comb c) = Options $
 
 -- | Name a nonterminal production, this allows recursion.
 namedRec ::
-  forall rec err prec meta air nt cat o a.
+  forall rec err prec space air nt cat o a.
     Ord nt =>
   nt ->
-  (Comb rec err prec meta air nt cat o a -> Comb rec err prec meta air nt cat o a) ->
-  Comb rec err prec meta air nt cat o a
+  (Comb rec err prec space air nt cat o a -> Comb rec err prec space air nt cat o a) ->
+  Comb rec err prec space air nt cat o a
 namedRec name defineParser = fst $
   namedRec' name (Tuple <$> defineParser <@> unit)
 
 namedRec' ::
-  forall rec err prec meta air nt cat o a r.
+  forall rec err prec space air nt cat o a r.
     Ord nt =>
   nt ->
-  (Comb rec err prec meta air nt cat o a -> Comb rec err prec meta air nt cat o a /\ r) ->
-  Comb rec err prec meta air nt cat o a /\ r
+  (Comb rec err prec space air nt cat o a -> Comb rec err prec space air nt cat o a /\ r) ->
+  Comb rec err prec space air nt cat o a /\ r
 namedRec' name defineParser =
   let
     recursive = defineParser $ Comb
@@ -158,27 +158,27 @@ namedRec' name defineParser =
 
 -- | Name a parser. This may introduce ambiguity into the grammar where it
 -- | otherwise did not exist.
-named :: forall rec err prec meta air nt cat o a. Ord nt => nt -> Comb rec err prec meta air nt cat o a -> Comb rec err prec meta air nt cat o a
+named :: forall rec err prec space air nt cat o a. Ord nt => nt -> Comb rec err prec space air nt cat o a -> Comb rec err prec space air nt cat o a
 named name = namedRec name <<< const
 
-rulePrec :: forall rec err prec meta air nt cat o a. prec -> Comb rec err prec meta air nt cat o a -> Comb rec err prec meta air nt cat o a
+rulePrec :: forall rec err prec space air nt cat o a. prec -> Comb rec err prec space air nt cat o a -> Comb rec err prec space air nt cat o a
 rulePrec prec (Comb c) = Comb c { rules = c.rules <#> _ { prec = Last (Just prec) } }
 
 -- | Return the source parsed by the given parser, instead of whatever its
 -- | applicative result was.
-sourceOf :: forall rec err prec meta nt cat o a. Monoid o => Comb rec err prec meta o nt cat o a -> Comb rec err prec meta o nt cat o o
+sourceOf :: forall rec err prec space nt cat o a. Monoid o => Comb rec err prec space o nt cat o a -> Comb rec err prec space o nt cat o o
 sourceOf = tokensSourceOf >== (foldMap (either identity identity))
 
 -- | Return the source tokens parsed by the given parser, instead of whatever
 -- | its applicative result was.
-tokensSourceOf :: forall rec err prec meta air nt cat o a. Comb rec err prec meta air nt cat o a -> Comb rec err prec meta air nt cat o (Array (Either air o))
+tokensSourceOf :: forall rec err prec space air nt cat o a. Comb rec err prec space air nt cat o a -> Comb rec err prec space air nt cat o (Array (Either air o))
 tokensSourceOf = withCST_ \_ csts _ -> csts >>= sourceICST
 
-withSourceOf :: forall rec err prec meta nt cat o a. Monoid o => Comb rec err prec meta o nt cat o a -> Comb rec err prec meta o nt cat o (o /\ a)
+withSourceOf :: forall rec err prec space nt cat o a. Monoid o => Comb rec err prec space o nt cat o a -> Comb rec err prec space o nt cat o (o /\ a)
 withSourceOf = withTokensSourceOf >== lmap (foldMap (either identity identity))
 
 -- | Return the source tokens parsed by the given parser, instead of whatever
 -- | its applicative result was.
-withTokensSourceOf :: forall rec err prec meta air nt cat o a. Comb rec err prec meta air nt cat o a -> Comb rec err prec meta air nt cat o (Array (Either air o) /\ a)
+withTokensSourceOf :: forall rec err prec space air nt cat o a. Comb rec err prec space air nt cat o a -> Comb rec err prec space air nt cat o (Array (Either air o) /\ a)
 withTokensSourceOf = withCST' \_ csts res -> res unit <#> \a ->
   Tuple (csts >>= sourceICST) a
