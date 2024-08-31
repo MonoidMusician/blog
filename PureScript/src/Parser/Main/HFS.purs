@@ -7,7 +7,8 @@ import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Either (Either(..), either, hush, isLeft)
 import Data.Filterable (filterMap)
-import Data.Foldable (fold, oneOf)
+import Data.Foldable (fold, foldMap, oneOf)
+import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.String as String
@@ -16,7 +17,7 @@ import Data.Tuple (Tuple(..), snd)
 import Data.Tuple.Nested ((/\))
 import Deku.Attribute (cb, xdata, (!:=), (<:=>))
 import Deku.Control (switcher, switcherFlipped, text_)
-import Deku.Core (Nut, bussed, envy)
+import Deku.Core (Domable, Nut, bussed, envy)
 import Deku.DOM as D
 import Effect (Effect)
 import Effect.Uncurried (EffectFn2, runEffectFn2)
@@ -24,7 +25,7 @@ import FRP.Helpers (dedup, debounce)
 import FRP.Memoize (memoBeh)
 import Foreign.Object as FO
 import Idiolect (intercalateMap, (>==>))
-import Parser.Languages.HFS (HFList, HFS, OpMeta(..), StackKind(..), hfsFromInt, hfsToTree, opMeta, showHFS, stdlib)
+import Parser.Languages.HFS (HFList, HFS, IsPointed(..), OpMeta(..), RuntimeError(..), emptyEnv, hfsCount, hfsFromInt, hfsToTree, opMeta, showHFS, stacksInfo, stdlib)
 import Parser.Languages.HFS as HFS
 import Parser.Main.Comb (renderParseError)
 import Web.DOM (Element)
@@ -106,16 +107,44 @@ widget_stdlib _ = do
 code :: String -> String -> Nut
 code cls c = D.code (D.Class !:= cls) [ text_ c ]
 
+span :: String -> String -> Nut
+span cls c = D.span (D.Class !:= cls) [ text_ c ]
+
+color :: String -> String -> Nut
+color clr v = D.span (D.Style !:= ("color:"<>clr)) [ text_ v ]
+
+half :: forall lock payload. Domable lock payload -> Domable lock payload
+half = D.span (D.Style !:= "opacity:0.6") <<< pure
+
 widget :: Widget
 widget _ = do
   pure $ SafeNut do
     let
-      renderOutput x = D.pre_
-        [ text_ $ (intercalateMap "\n---\n" (intercalateMap "\n" showHFS)) x ]
+      wrapOutput content =
+        D.div (D.Class !:= "sourceCode" <|> D.Style !:= "") $ pure $
+          D.pre_ $ pure $ D.code (D.Style !:= "margin: 0") $ content
+      renderOutput = wrapOutput <<< foldMap \{ building, pointed, values } ->
+        Array.singleton $ D.div_
+          [ values # foldMapWithIndex \i { value, dequeued } -> D.div_
+              [ case pointed of
+                  NotPointed -> text_ "  "
+                  Pointed -> color "#7f2db9" $ "." <> show i
+                  Current -> color "#7f2db9" $ "$" <> show i
+              , text_ " "
+              , (if dequeued then color "#ff6565" else span "dv") $ showHFS value
+              ]
+          , D.div_ $ pure $ building # foldMap \x ->
+              (\y -> text_ "--- " <> span "dv" y <> text_ " ---") case x of
+                Left hfs | hfs == mempty -> "{"
+                Left hfs -> showHFS (hfsCount hfs) <> "#{"
+                Right 0 -> "["
+                Right n -> show n <> "#["
+          ]
     bussed \setValue valueSet -> envy $
-      memoBeh (map HFS.parseAndRun' <$> debounce (100.0 # Milliseconds) (dedup valueSet)) (Tuple false (Right (pure []))) \done ->
+      memoBeh (map HFS.parseAndRun' <$> debounce (100.0 # Milliseconds) (dedup valueSet)) (Tuple false (Right emptyEnv)) \done ->
         D.div_
           [ D.div_ [ switcherFlipped (pure (hfsFromInt 157842) <|> dedup (filterMap topOfStack done)) \hfs -> D.div (D.Self !:= (graphHFS hfs)) [] ]
+          -- , D.div_ $ switcher
           , D.div (D.Style !:= "display: flex; width: 100%")
             [ D.div
                 ( D.Style !:= "flex: 0 0 50%; padding-right: 10px; box-sizing: border-box;"
@@ -129,12 +158,14 @@ widget _ = do
                     , D.Style !:= "height: 20vh"
                     ]
             , D.div (D.Style !:= "flex: 0 0 50%; overflow: auto; font-size: 70%")
-                [ switcher (either (either renderParseError \s -> text_ $ "Runtime error: " <> s) renderOutput) $ gateSuccess identity done ]
+                [ switcher (either (either renderParseError \(RuntimeError _ s) -> text_ $ "Runtime error: " <> s) (renderOutput <<< stacksInfo)) $
+                    gateSuccess identity done
+                ]
             ]
           ]
   where
   -- parseAndRun =
-  topOfStack = snd >>> hush >=> NEA.head >>> Array.head
+  topOfStack = snd >>> hush >=> stacksInfo >>> NEA.head >>> _.values >>> Array.head >>> map _.value
   gateSuccess f = filterMap \(Tuple force a) -> case f a, force of
     Left _, false -> Nothing
     r, _ -> Just r

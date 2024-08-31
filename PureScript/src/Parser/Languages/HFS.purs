@@ -14,7 +14,7 @@ import Data.Lazy (Lazy, defer, force)
 import Data.List (List(..), (:))
 import Data.List as List
 import Data.Map as Map
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, isNothing)
 import Data.NonEmpty (NonEmpty, (:|))
 import Data.NonEmpty as NE
 import Data.Semigroup.Foldable (foldl1)
@@ -844,11 +844,6 @@ showHFS (NumLike b n) = case b of
 showHFS (SetLike members) = (\m -> "{" <> m <> "}") $
   intercalateMap ", " showHFS (Array.reverse (Array.fromFoldable members))
 
-data StackKind
-  = BaseStack
-  | MkListDrop Int
-  | MkSetDrop Int
-
 type Stack = List HFS
 
 theParser :: Lazy (String -> Either FullParseError (Array Instr))
@@ -856,16 +851,16 @@ theParser = defer \_ ->
   Comb.parseRegex topName (unwrap parser)
 
 parseAndRun :: String -> Either String String
-parseAndRun = parseAndRun' >>> bimap (either convertParseError identity)
-  (intercalateMap "\n---\n" (intercalateMap "\n" showHFS))
+parseAndRun = parseAndRun' >>> bimap
+  (either convertParseError (\(RuntimeError _ msg) -> msg))
+  (_.stacks >>> intercalateMap "\n---\n" (intercalateMap "\n" showHFS))
 
-parseAndRun' :: String -> Either (Either FullParseError String)
-  (NonEmptyArray (Array HFS))
+parseAndRun' :: String -> Either (Either FullParseError RuntimeError) Env
 parseAndRun' s = case String.trim s # force theParser of
   Left err -> Left (Left err)
   Right instrs -> case run (withStdenv instrs) of
     { error: Just err } -> Left (Right err)
-    { stacks } -> Right $ NEA.fromFoldable1 stacks <#> Array.fromFoldable
+    env -> Right env
 
 -- | This used to be a `foldMap`, but then I added functions and looping.
 run :: Env -> Env
@@ -878,7 +873,7 @@ run env = env
 -- | an endomorphism `Env -> Env`.
 type Env =
   -- The error message if an error has occurred
-  { error :: Maybe String
+  { error :: Maybe RuntimeError
   -- A map of global variables set to values
   , vars :: Map String HFS
   -- A map of procedures (not closures)
@@ -898,6 +893,9 @@ type Env =
   , instruction :: Pointer
   }
 
+data RuntimeError
+  = RuntimeError Env String
+
 -- | A pointer to an instruction (just an `Int`)
 type Pointer = Int
 
@@ -910,7 +908,7 @@ data Flow
   -- (No data, just a marker)
   | InTry
   -- The exception, if there was one
-  | InCatch (Maybe String)
+  | InCatch (Maybe RuntimeError)
   -- Pointer to itself
   | InBegin Pointer
   -- Pointer to the previous begin
@@ -949,7 +947,7 @@ interpret instr original = case instr, env of
     -- Try just pushes itself onto the stack
     Try -> env { flow = { prev: env.running, here: InTry } : env.flow }
     -- Throw sets an error if we are actually running
-    Throw | env.running -> env { error = Just "Throw" }
+    Throw | (env.running && isNothing env.error) -> env { error = Just $ RuntimeError original "Throw" }
     Throw -> env
     -- Catch will catch an error
     Catch ->
@@ -962,7 +960,7 @@ interpret instr original = case instr, env of
               , running = true
               }
             _ -> env { flow = { prev: true, here: InCatch Nothing } : flows, running = false }
-        _ -> env { error = Just "Catch without matching try" }
+        _ -> env { error = env.error <|> Just (RuntimeError original "Catch without matching try") }
     Rethrow | not env.running -> env
     -- Rethrow will rethrow the error (since strings cannot be represented
     -- on the stack)
@@ -970,7 +968,7 @@ interpret instr original = case instr, env of
       case env.flow of
         { prev: true, here: InCatch (Just msg) } : _ ->
           env { error = Just msg }
-        _ -> env { error = Just "Rethrow outside of catch block" }
+        _ -> env { error = env.error <|> Just (RuntimeError original "Rethrow outside of catch block") }
     -- Recover is unscoped catch?? idk
     Recover | env.running -> env
       { error = Nothing
@@ -986,7 +984,7 @@ interpret instr original = case instr, env of
     While ->
       case env of
         -- Track scope without affecting the stack
-        { flow: { here: InBegin _ } : flows } | not env.running -> env
+        { flow: { here: InBegin _ } : flows } | not env.running || isJust env.error -> env
           { flow = { prev: false, here: InWhile Nothing } : flows
           }
         -- Pop the condition, replace the InBegin with InWhile
@@ -1004,14 +1002,13 @@ interpret instr original = case instr, env of
               }
         _ -> env
           { flow = { prev: env.running, here: InWhile Nothing } : env.flow
-          , error = Just "Bad while"
-          , running = false
+          , error = env.error <|> Just (RuntimeError original "Bad while")
           }
     -- If pops a condition off the stack
     If ->
       case env of
         -- Track scope without affecting the stack
-        _ | not env.running -> env
+        _ | not env.running || isJust env.error -> env
           { flow = { prev: false, here: InIf false } : env.flow
           }
         -- Pop and use that to take this branch (or wait for Else to resume it)
@@ -1023,8 +1020,7 @@ interpret instr original = case instr, env of
           }
         _ -> env
           { flow = { prev: env.running, here: InIf false } : env.flow
-          , error = Just $ underflow 1
-          , running = false
+          , error = env.error <|> Just do underflow 1
           }
     -- Else flips the condition from If, but only if it was running in the first place
     Else ->
@@ -1035,8 +1031,7 @@ interpret instr original = case instr, env of
           }
         _ -> env
           { flow = { prev: env.running, here: InElse false } : env.flow
-          , error = Just "Bad else"
-          , running = false
+          , error = env.error <|> Just (RuntimeError original "Bad else")
           }
     Def ->
       case env.instrs Array.!! env.instruction of
@@ -1070,8 +1065,14 @@ interpret instr original = case instr, env of
     End ->
       case env.flow of
         Nil -> env
-          { error = Just "End without any control flow"
+          { error = env.error <|> Just (RuntimeError original "End without any control flow")
           }
+        flows
+          | flows' <- List.dropWhile isBuilding flows
+          , List.length flows' /= List.length flows -> env
+            { error = env.error <|> Just (RuntimeError original "End against unclosed brackets/braces")
+            , flow = flows'
+            }
         -- begin…while…end will jump back to the begin
         { prev: true, here: InWhile (Just jmp) } : flows -> env
           { flow = flows
@@ -1097,8 +1098,8 @@ interpret instr original = case instr, env of
   -- Look up variables as values or functions.
   Var name, _ ->
     case Map.lookup name env.vars, Map.lookup name env.funs of
-      Nothing, Nothing -> env { error = Just $ "Unknown name " <> show name }
-      Just _, Just _ -> env { error = Just $ "Name cannot be a variable and function " <> show name }
+      Nothing, Nothing -> env { error = Just $ RuntimeError original $ "Unknown name " <> show name }
+      Just _, Just _ -> env { error = Just $ RuntimeError original $ "Name cannot be a variable and function " <> show name }
       Just val, Nothing | stack :| stacks <- env.stacks ->
         env { stacks = val : stack :| stacks }
       Nothing, Just jmp -> env
@@ -1119,7 +1120,7 @@ interpret instr original = case instr, env of
             env { stacks = ((hfsFromInt (Array.length xs) : Array.toUnfoldable xs) <> this) :|  stacks }
           Just x -> env { stacks = x : this :| stacks }
           Nothing -> env { error = Just $ underflow (idx+1) }
-      _ -> env { error = Just ("." <> show idx <> " needs a previous stack, use $" <> show idx <> " if you want to target the current stack") }
+      _ -> env { error = Just $ RuntimeError original $ ("." <> show idx <> " needs a previous stack, use $" <> show idx <> " if you want to target the current stack") }
   PeekThis idx unpack, _ ->
     case env.stacks of
       this :| stacks ->
@@ -1174,7 +1175,7 @@ interpret instr original = case instr, env of
           , pointed = ptd
           , flow = flows
           }
-        _, _ -> env { error = Just "Bad EndStack" }
+        _, _ -> env { error = Just $ RuntimeError original "Bad EndStack" }
     NEndStack ->
       case env.stacks, env.flow of
         this :| prev : stacks, { here: BuildingStack ptd len } : flows -> env
@@ -1182,7 +1183,7 @@ interpret instr original = case instr, env of
           , pointed = ptd
           , flow = flows
           }
-        _, _ -> env { error = Just "Bad NEndStack" }
+        _, _ -> env { error = Just $ RuntimeError original "Bad NEndStack" }
     StartSet -> env
       { stacks = Nil :| List.fromFoldable env.stacks
       , pointed = env.pointed + 1
@@ -1205,7 +1206,7 @@ interpret instr original = case instr, env of
           , pointed = ptd
           , flow = flows
           }
-        _, _ -> env { error = Just "Bad EndSet" }
+        _, _ -> env { error = Just $ RuntimeError original "Bad EndSet" }
     NEndSet ->
       case env.stacks, env.flow of
         this :| prev : stacks, { here: BuildingSet ptd more } : flows -> env
@@ -1213,7 +1214,7 @@ interpret instr original = case instr, env of
           , pointed = ptd
           , flow = flows
           }
-        _, _ -> env { error = Just "Bad NEndSet" }
+        _, _ -> env { error = Just $ RuntimeError original "Bad NEndSet" }
   -- And of course, the lowly literals (nullary operations)
   Lit l, _ -> onStack do stack0 l
   where
@@ -1236,7 +1237,8 @@ interpret instr original = case instr, env of
       , running = false
       }
 
-  underflow i = fold
+  underflow i = RuntimeError original $ underflow' i
+  underflow' i = fold
     [ "Stack too small, present: "
     , show (List.length (NE.head env.stacks))
     , ", required: "
@@ -1248,25 +1250,25 @@ interpret instr original = case instr, env of
   -- Manipulate the stack.
   onStack f | { stacks: stack :| stacks } <- env =
     case unsafeCatch f stack of
-      Left message -> env { error = Just message }
+      Left message -> env { error = Just $ RuntimeError original message }
       Right stack' -> env { stacks = stack' :| stacks }
   stack0 val = Right <<< List.Cons val
   stack1 f (top : stack) = Right (f top : stack)
-  stack1 _ _ = Left $ underflow 1
+  stack1 _ _ = Left $ underflow' 1
   stack2 f (y : x : stack) = Right (f x y : stack)
-  stack2 _ _ = Left $ underflow 2
+  stack2 _ _ = Left $ underflow' 2
   -- Add a length-headed list
   stacking f (top : stack) =
     let r = f top in Right $
       NumLike Dec (fromInt (Array.length r)) : Array.toUnfoldable r <> stack
-  stacking _ _ = Left $ underflow 1
+  stacking _ _ = Left $ underflow' 1
   -- Pop a length-headed list
   stackN f (top : stack)
     | len <- toInt (bn top) =
       case List.length stack >= len of
         true -> f (List.take len stack) <#> \hd -> (hd : List.drop len stack)
-        false -> Left $ underflow (len+1)
-  stackN _ _ = Left $ underflow (-1)
+        false -> Left $ underflow' (len+1)
+  stackN _ _ = Left $ underflow' (-1)
 
   chooseOp = chooseIdOp >>> case _ of
     NoId f -> f
@@ -1300,3 +1302,47 @@ unsafeCatch f i = unsafePerformEffect do
   pure case r of
     Left e -> Left ((message e))
     Right x -> x
+
+isBuilding :: { here :: Flow, prev :: Boolean } -> Boolean
+isBuilding = case _ of
+  { here: BuildingStack _ i } -> true
+  { here: BuildingSet _ s } -> true
+  _ -> false
+
+type StacksInfo = NonEmptyArray
+  { building :: Maybe (Either HFS Int)
+  , pointed :: IsPointed
+  , values :: Array
+    { value :: HFS
+    , dequeued :: Boolean
+    }
+  }
+data IsPointed = NotPointed | Pointed | Current
+
+stacksInfo :: Env -> StacksInfo
+stacksInfo env =
+  stacks # mapWithIndex \i (Tuple (Tuple values building) nDequeued) ->
+    { building
+    , values: Array.fromFoldable values # mapWithIndex \j ->
+        { value: _
+        , dequeued: j < nDequeued
+        }
+    , pointed: case i of
+        0 -> Current
+        _ | i == env.pointed -> Pointed
+        _ -> NotPointed
+    }
+  where
+  buildings = Array.fromFoldable env.flow # Array.mapMaybe case _ of
+    { here: BuildingStack _ i } -> Just (Right i)
+    { here: BuildingSet _ s } -> Just (Left s)
+    _ -> Nothing
+  dequeues = buildings <#> case _ of
+    Right i -> i
+    _ -> 0
+  stacks =
+    NEA.fromFoldable1 env.stacks
+    `NEA.zip`
+    NEA.snoc' (map Just buildings) Nothing
+    `NEA.zip`
+    NEA.cons' 0 dequeues
