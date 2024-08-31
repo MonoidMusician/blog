@@ -23,13 +23,14 @@ import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.Tuple.Nested ((/\))
 import Dodo as Dodo
 import Parser.Comb as Comb
-import Parser.Comb.Comber (Comber, lift2)
+import Parser.Comb.Comber (Comber, lift2, wsOf)
 import Parser.Comb.Comber as Comber
 import Parser.Comb.Types (Associativity(..))
 import Parser.Printer.Juxt (class Awajuxt, class Conjuxt, class Disjuxt, class GuideFlow, CaseTree(..), _Array, _NEA, casesSplit, cleaveCases, summarizeCaseTree, (!!!), (!>), (/!\), (<!), (\!/))
 import Parser.Printer.Prec (Prec(..))
 import Parser.Selective (casingOn, cmapCaseTree, hoistCaseTree', secondCaseTree)
-import Whitespace (WSDoc, _wsDoc, docWS)
+import Whitespace (WS, WSDoc, _wsDoc, docWS)
+import Whitespace as WS
 
 -- TODO: standard syntactic categories
 newtype Ann = Ann
@@ -314,6 +315,17 @@ many1_ (SepBy1 h before after) name p =
    !> p
   /!\ many name (h !> p)
   <!  applySepPref h after
+
+
+wsOf :: WS -> PrinterParser Unit Unit
+wsOf h = PrinterParser
+  { allOpts: mempty
+  , prec: NoPrec
+  , printer: \_ _ _ _ -> WS.JustWS $ WS.wsRender h
+  , parser: carbonCopy $ Comber.wsOf (WS.wsProps h)
+  }
+
+
 
 data SepBy h
   = NoSep

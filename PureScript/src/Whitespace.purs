@@ -49,6 +49,21 @@ newtype ParseWS = ParseWS
   , required :: Disj Boolean
   }
 
+mkParseWS ::
+  { allowed_newline :: Boolean
+  , allowed_space :: Boolean
+  , required :: Boolean
+  } -> ParseWS
+mkParseWS = coerce
+
+unParseWS ::
+  ParseWS ->
+  { allowed_newline :: Boolean
+  , allowed_space :: Boolean
+  , required :: Boolean
+  }
+unParseWS = coerce
+
 derive instance newtypeParseWS :: Newtype ParseWS _
 derive newtype instance monoidParseWS :: Monoid ParseWS
 derive newtype instance semigroupParseWS :: Semigroup ParseWS
@@ -66,11 +81,7 @@ instance semiringParseWS :: Semiring ParseWS where
     , required: Disj do unwrap l.required && unwrap r.required
     }
 
-wsProps :: WS ->
-  { allowed_newline :: Conj Boolean
-  , allowed_space :: Conj Boolean
-  , required :: Disj Boolean
-  }
+wsProps :: WS -> ParseWS
 wsProps = coerce <<< case _ of
   Failed ->
     { allowed_newline: false
@@ -177,10 +188,7 @@ docWS doc | Dodo.isEmpty doc = mempty
 docWS doc = WSDoc { before: mempty, doc, after: mempty }
 
 fromStuff ::
-  { allowed_newline :: Conj Boolean
-  , allowed_space :: Conj Boolean
-  , required :: Disj Boolean
-  } ->
+  ParseWS ->
   RenderWS ->
   WS
 fromStuff = coerce >>> case _ of

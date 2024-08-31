@@ -318,6 +318,7 @@ renderParseError theError = case theError of
           UnknownState { state } -> text_ $ "Internal parser error: Unknown state " <> show state
           Uhhhh { token: cat } -> text_ $ "Internal parser error: Uhhhh " <> show cat
           UnknownReduction { reduction: nt /\ r } -> text_ $ "Internal parser error: UnknownReduction " <> show nt <> "#" <> show r
+          MetaFailed {} -> text_ $ "Interal parser error: Meta failed"
 
           UserRejection { userErr } -> fold
             [ text_ "Parse error: User rejection"
@@ -334,7 +335,7 @@ renderParseError theError = case theError of
                 showCat cat
             ]
           UnexpectedToken { advance, matched }
-            | [ cat0 /\ o /\ _i ] <- NEA.toArray matched -> fold
+            | [ _meta /\ _air /\ cat0 /\ o /\ _i ] <- NEA.toArray matched -> fold
             [ text_ "Parse error: Unexpected token "
             , showCatTok cat0 o
             , text_ ", expected"
@@ -347,7 +348,7 @@ renderParseError theError = case theError of
             ]
           UnexpectedToken { advance, matched: matched } -> fold
             [ text_ "Parse error: Unexpected+ambiguous token "
-            , listing (NEA.toArray matched) \(cat0 /\ o /\ _i) ->
+            , listing (NEA.toArray matched) \(_meta /\ _air /\ cat0 /\ o /\ _i) ->
                 showCatTok cat0 o
             , text_ "\nExpected"
             , text_ case Map.size advance of

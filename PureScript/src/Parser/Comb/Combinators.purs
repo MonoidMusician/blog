@@ -78,6 +78,20 @@ tokens cats = Comb
     }
   }
 
+space :: forall rec err prec meta air nt cat o. Token cat o => meta -> Comb rec err prec meta air nt cat o Unit
+space h = Comb
+  { grammar: mempty
+  , entrypoints: empty
+  , pretty: Just $ Part $ InterTerminal h
+  , prettyGrammar: empty
+  , tokenPrecedence: empty
+  , rules: pure
+    { rule: pure (InterTerminal h)
+    , resultant: pure unit
+    , prec: mempty
+    }
+  }
+
 buildTree ::
   forall rec err prec meta air nt cat o a.
   nt -> Comb rec err prec meta air nt cat o a -> Options rec err meta air nt Int cat o

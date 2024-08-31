@@ -64,6 +64,7 @@ parse ::
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
+    Tokenize meta (OrEOF i) air =>
     Eq o =>
   nt -> Comb (Rec err meta air nt cat i o) err prec meta air nt cat o a ->
   (i -> Either (ParseError err meta air nt cat i o) a)
@@ -79,6 +80,7 @@ parseRegex ::
     Eq air =>
     Ord prec =>
     Ord nt =>
+    Tokenize meta (OrEOF String) air =>
   nt -> Comb (Rec err meta air nt (Similar String Rawr) String String) err prec meta air nt (Similar String Rawr) String a ->
   (String -> Either (ParseError err meta air nt (Similar String Rawr) String String) a)
 parseRegex = parseWith { best: bestRegexOrString }
@@ -93,6 +95,7 @@ parseWith ::
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
+    Tokenize meta (OrEOF i) air =>
     Eq o =>
   CConf err prec meta air nt cat i o -> nt -> Comb (Rec err meta air nt cat i o) err prec meta air nt cat o a ->
   (i -> Either (ParseError err meta air nt cat i o) a)
@@ -108,6 +111,7 @@ parseWith' ::
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
+    Tokenize meta (OrEOF i) air =>
     Eq o =>
   CConf err prec meta air nt cat i o -> nt -> Comb (Rec err meta air nt cat i o) err prec meta air nt cat o a ->
   StateTable meta nt cat /\ (i -> Either (ParseError err meta air nt cat i o) a)
@@ -124,6 +128,7 @@ parseRegex' ::
     Eq air =>
     Ord prec =>
     Ord nt =>
+    Tokenize meta (OrEOF String) air =>
   nt -> Comb (Rec err meta air nt (Similar String Rawr) String String) err prec meta air nt (Similar String Rawr) String a ->
   StateTable meta nt (Similar String Rawr) /\ (String -> Either (ParseError err meta air nt (Similar String Rawr) String String) a)
 parseRegex' = parseWith' { best: bestRegexOrString }
@@ -190,11 +195,14 @@ resultantsOf (Comb { rules: cases }) = cases <#> _.resultant
 execute ::
   forall err prec meta air nt cat i o a.
     Ord prec =>
+    Semiring meta =>
+    Ord meta =>
     Eq air =>
     Ord nt =>
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
+    Tokenize meta (OrEOF i) air =>
     Eq o =>
   CConf err prec meta air nt cat i o ->
   { states :: StateTable meta nt cat
@@ -228,7 +236,8 @@ execute conf0 { states: { stateMap, start, states }, resultants, options, preced
             , advanced: []
             }
           ]
-    conf = conf0 { best = _ } $ (<=<) conf0.best $ screenPrecedence $ combPrecedence precedences
+    conf :: CConf err prec meta air nt cat i o
+    conf = conf0 { best = \x -> ((<=<) conf0.best $ screenPrecedence $ combPrecedence precedences) x }
     rec = Rec \name input optionsHere result -> do
       state <- Map.lookup name stateMap?? CrashedStack "Could not find parser in table"
       stack <- contextLexingParse conf (state /\ states) (options' name optionsHere) rec (Continue input)
@@ -321,6 +330,7 @@ coll ::
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
+    Tokenize meta (OrEOF i) air =>
     Eq o =>
   nt -> Comb (Rec err meta air nt cat i o) err prec meta air nt cat o a -> Coll err prec meta air nt cat i o (Parsing err meta air nt cat i o a)
 coll name parser@(Comb c) = Coll
@@ -350,6 +360,7 @@ collect ::
     Ord cat =>
     Monoid i =>
     Tokenize cat i o =>
+    Tokenize meta (OrEOF i) air =>
   CConf err prec meta air nt cat i o -> Coll err prec meta air nt cat i o parsers -> parsers
 collect conf (Coll { grammar: MkGrammar initialWithPrec, entrypoints, compilation, tokenPrecedence }) = do
   let initial = initialWithPrec <#> \r -> r { rName = snd r.rName }

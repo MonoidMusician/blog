@@ -190,6 +190,7 @@ convertParseError = case _ of
           UnknownState { state } -> "Internal parser error: Unknown state " <> show state
           Uhhhh { token: cat } -> "Internal parser error: Uhhhh " <> show cat
           UnknownReduction { reduction: nt /\ r } -> "Internal parser error: UnknownReduction " <> show nt <> "#" <> show r
+          MetaFailed {} -> "Internal parser error: Meta failed"
 
           UserRejection { userErr } -> fold
             [ "Parse error: User rejection"
@@ -207,7 +208,7 @@ convertParseError = case _ of
                 "\n  - " <> showCat cat
             ]
           UnexpectedToken { advance, matched }
-            | [ cat0 /\ o /\ _i ] <- NEA.toArray matched -> fold
+            | [ _meta /\ _air /\ cat0 /\ o /\ _i ] <- NEA.toArray matched -> fold
             [ "Parse error: Unexpected token "
             , showCatTok cat0 o
             , ", expected"
@@ -220,7 +221,7 @@ convertParseError = case _ of
             ]
           UnexpectedToken { advance, matched: matched } -> fold
             [ "Parse error: Unexpected+ambiguous token "
-            , matched # foldMap \(cat0 /\ o /\ _i) -> fold
+            , matched # foldMap \(_meta /\ _air /\ cat0 /\ o /\ _i) -> fold
               [ "\n  - "
               , showCatTok cat0 o
               ]
@@ -481,6 +482,9 @@ wsws' a = oneOf
   [ Nothing <$ wss
   , Just <$> wsws a
   ]
+
+wsOf :: ParseWS -> Comber Unit
+wsOf h = Comber $ Comb.space h
 
 
 --------------------------------------------------------------------------------
