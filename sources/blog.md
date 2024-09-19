@@ -94,6 +94,10 @@ pre, code {
 Typography test
 ---------------
 
+```re
+{ratio,(?P<intN>-?[0-9]+),(?P<intD>[0-9]+)}
+```
+
 [Welcome to this lovely "blog" here! ñéŪ ]{.main}[ᾍδης
 ᾇβγδζσπ]{.greek} and
 then `this.do(the_thing') ᾍδης ᾇβγδζσπ <= => >= => := ::`\

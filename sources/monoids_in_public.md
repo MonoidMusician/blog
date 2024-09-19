@@ -175,6 +175,149 @@ joinWithComma = unwrap <<< foldMap
 And the real benefit of making a proper monoid structure is that it is now compositional.
 You can just chuck it in a record and it does the right thing \^.\^
 
+## Top-Down Traversals
+
+Recently I faced a problem: how do I get more control out of a traversal in PureScript?
+
+There are two problems here:
+
+1. Collapsing a tree to a flat, one-dimensional monoid structure is too simplified
+2. PureScript is strict, so short-circuiting is more complicated
+
+In particular, I want to do a single top-down traversal and estimate the complexity of evaluating an Erlang expression.
+The hardest part is the complexity of literals: a statically-allocated literal is trivial to evaluate, but all children of a literal must be literals.
+Additionally, we need to not count the complexity of the bodies of lambdas: they are just a single allocation too.
+
+As a refresher on the kind of traversal I am talking about, I had the existing signature
+
+```purescript
+visit ::
+  forall m.
+    Monoid m =>
+  -- A callback to value a single node
+  (ErlExpr -> m) ->
+  -- The aggregate of the node and its children
+  (ErlExpr -> m)
+```
+
+My first iteration was returning `Tuple Boolean m`{.purescript}, but this suffered from being confusing (does `true`{.purescript} mean to keep the childrenʼs result or skip it?), and it did not solve the first point.
+
+Eventually I landed on this type:
+
+```purescript
+data Visit m
+  -- Skip evaluating the children
+  = ShortCircuit m
+  -- Evaluate the children and append this value
+  | Append m
+  -- Customize the result of evaluating the children
+  | Continue (m -> m)
+```
+
+Note that `Append`{.purescript} is just for convenience, it is equivalent to `Continue <<< append`{.purescript} (where [`append :: m -> m -> m`{.purescript}](https://pursuit.purescript.org/packages/purescript-prelude/6.0.1/docs/Data.Semigroup#v:append) is the monoid operation, also written `(<>)`{.purescript}).
+
+`ShortCircuit`{.purescript} also would not be necessary, if the monoid operation was lazy.
+It would be equivalent to `Continue <<< const`{.purescript}.
+But alas, PureScript is strict and its Prelude only includes strict append, and itʼs not really worth having a lazy append.
+
+No matter, it is pretty simple to case on `Visit`{.purescript}.
+
+```purescript
+-- | Traverse with the ability to short circuit
+-- | and alter results of child traversals
+visit' ::
+  forall m.
+    Monoid m =>
+  (ErlExpr -> Visit m) ->
+  (ErlExpr -> m)
+visit' f = go
+  where
+  go e = case f e of
+    -- Avoid computing `children e`
+    ShortCircuit m -> m
+    -- Just append, like normal `visit`
+    Append m -> m <> children e
+    -- Allow it to manipulate `children e`
+    -- however it wants to based on `e`
+    Continue mm -> mm (children e)
+
+  -- Recurse into the children
+  children = case _ of
+    -- ^ `case _ of` is an anonymous        --
+    -- argument, equal to `\e -> case e of` --
+    Literal _ -> mempty
+    Var _ _ -> mempty
+    BinOp _ e1 e2 -> go e1 <> go e2
+    UnaryOp _ e1 -> go e1
+    BinaryAppend e1 e2 -> go e1 <> go e2
+    List es -> foldMap go es
+    ...
+```
+
+This structure of `Monoid m => m -> m`{.purescript} is great for making the most out of the tree traversal: it allows you to delimit the children and operate on them as a group, which was not possible before.
+
+Itʼs also related to the [Endomorphism Semiring](https://en.wikipedia.org/wiki/Endomorphism_ring), which is [very cool](Eudoxus.html).
+One of the algebraic structures of all time.
+
+Anyways, now we can do what I came here to do: estimate the runtime complexity of an Erlang expression.
+
+We start by crafting a monoid `Complexity`{.purescript} to keep track of the information about the cumulative complexity of an expression, including whether it is a group of literals.
+It is based on `Additive Int`{.purescript} (the integers as a monoid under addition), with the twist of the Boolean distinction between `Lit`{.purescript} and `Complex`{.purescript} (preferring `Complex`{.purescript} of course, which makes `Lit 0`{.purescript} the identity).
+
+Note that literals still have the `Int`{.purescript} cost because multiple literals side-by-side have a cumulative cost (this is what is modeled in `Semigroup Complexity`{.purescript}), which is canceled out in `groupOfLiterals`{.purescript} when it forms part of a larger literal (only if all children are literals).
+
+That is, `{ 3 => 4, 5 => [6,7,8] }`{.erl} is a literal, but `{ x => fun f/1, y => 2 }`{.erl} is not a literal (only the keys `x`{.erl} and `y`{.erl} and the value `2`{.erl} is a literal there).
+
+```purescript
+data Complexity
+  = Lit Int
+  | Complex Int
+instance semigroupComplexity :: Semigroup Complexity where
+  append (Complex i) (Complex j) = Complex (i + j)
+  append (Lit i) (Complex j) = Complex (i + j)
+  append (Complex i) (Lit j) = Complex (i + j)
+  append (Lit i) (Lit j) = Lit (i + j)
+instance monoidComplexity :: Monoid Complexity where
+  mempty = Lit 0
+
+unComplexity :: Complexity -> Int
+unComplexity (Lit _) = 1
+unComplexity (Complex i) = i
+
+-- | Estimate the runtime complexity of an expression.
+-- | Used for determining when to memoize a function.
+estimatedComplexity :: ErlExpr -> Int
+estimatedComplexity = unComplexity <<< visit' case _ of
+  -- Do not recurse into closures
+  Fun _ _ -> ShortCircuit (Complex 1)
+  -- Yeah, `fun f/1` is an allocation ...
+  FunName _ _ _ -> ShortCircuit (Complex 1)
+  -- A curried call costs one
+  FunCall Nothing (FunCall _ _ _) _ -> Append (Complex 1)
+  -- Base calls cost more since they might do more work
+  -- (Note: atoms count during recursion, so unqualitifed >= 3,
+  -- and qualified calls >= 4, plus arguments of course)
+  FunCall _ _ _ -> Append (Complex 2)
+  -- Literals are cheap
+  Literal _ -> ShortCircuit (Lit 1)
+  -- Literal constructors are cheap if
+  -- all of their children are literals
+  List _ -> groupOfLiterals
+  Tupled _ -> groupOfLiterals
+  Map _ -> groupOfLiterals
+  Record _ -> groupOfLiterals
+  -- Everything else costs 1 plus its children
+  _ -> Append (Complex 1)
+  where
+  groupOfLiterals :: Visit Complexity
+  groupOfLiterals = Continue case _ of
+    Lit _ -> Lit 1
+    Complex i -> Complex (i + 1)
+```
+
+- https://github.com/id3as/purescript-backend-erl/blob/703361c61b5848de1b8e4cb894cc8f2307618d4e/src/PureScript/Backend/Erl/Syntax.purs#L253-L261
+- https://github.com/id3as/purescript-backend-erl/blob/703361c61b5848de1b8e4cb894cc8f2307618d4e/src/PureScript/Backend/Erl/Syntax.purs#L310-L352
+
 ## Your Requests Here
 
 know any other cute liʼl monoids I should include?

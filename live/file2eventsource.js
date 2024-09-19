@@ -55,7 +55,7 @@ app.get('*', async function(req, res, next) {
 app.use(express.static('./'));
 app.use(express.static(__dirname + '/'));
 
-var port = 666;
+var port = 5678;
 app.listen(port, function() {
   console.log("Edit ./live/scribe.svg (e.g. in Inkscape)");
   console.log("and view the result live at http://localhost:"+port+"/scribe.html?live");
