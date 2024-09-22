@@ -57,6 +57,7 @@ body > header > h1, body > #TOC + section > h1
 
 body > header > *
   text-align: center
+  text-wrap: balance
   margin-left: auto
   margin-right: auto
 body > header > h1:not(:last-child)
@@ -136,13 +137,18 @@ div.sourceCode[data-lang], pre.sourceCode
   &::before
     font-family: 'Fira Code'
     position: absolute
+    font-size: 80%
+    opacity: 0.4
+    transition: opacity 0.6s ease-in
+  &:not(.side-label)
+    margin-bottom: 3.2ex
+    &::before
+      bottom: -2.2ex
+  &.side-label::before
     transform: rotate(90deg)
     transform-origin: bottom left
     left: -3.2ex
     top: -2.2ex
-    font-size: 80%
-    opacity: 0.4
-    transition: opacity 0.6s ease-in
   &:hover::before
     opacity: 0.6
   &:not([data-lang]).haskell::before

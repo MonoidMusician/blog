@@ -300,7 +300,7 @@ https://cohost.org/monoidmusician/post/3252802-first-class-patterns
     tokenPrec = tokenPrecA <@> NoAssoc
     ```
 
-    Does reifying the arugments as a datatype with super lightweight syntax do what we need? maybe …
+    Does reifying the arguments as a datatype with super lightweight syntax do what we need? maybe …
   - Would be nice to have ways to say “add a precedence to *this* (whatever it is)” or “add a name to *that*”.
     Idk.
 

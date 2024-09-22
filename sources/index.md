@@ -127,7 +127,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
     - Might require it to be a [thin category](https://ncatlab.org/nlab/show/thin+category), or at least have canonical resolutions
       - Could use normalization to check thinness
       - Probably want extra eta principles
-    - Generate automatic upgrades based on structure of the types where possible (e.g. removing a record field, adding a sum type)
+    - Generate automatic upgrades based on structure of the types where possible ([e.g.]{t=} removing a record field, adding a sum type)
 
 ### Programming Linguistics
 

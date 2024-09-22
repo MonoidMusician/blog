@@ -67,6 +67,11 @@ function makeVisibleSpaces(tab_width=2) {
     }
   }
   forEach(document.querySelectorAll('pre, code'), visit);
+  forEach(document.querySelectorAll('pre, code'), function(n) {
+    if (n.textContent.split("\n").length >= 4) {
+      n.classList.add("side-label");
+    }
+  });
 }
 if (document.readyState === 'complete') {
   makeVisibleSpaces();

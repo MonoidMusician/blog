@@ -18,3 +18,5 @@ output-es/
 /assets/json/
 /assets/ps/*
 /dist-newstyle/
+*.o
+*.hi

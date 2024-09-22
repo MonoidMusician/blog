@@ -123,7 +123,7 @@ We can describe its execution on the stack `{} {{}}`{.hatstack} like so:
 ### Operators
 
 There are binary operators, which pop two and push one, and n-ary operators which pop their arity, pop that many operands, and push the result.
-(In general it is common for functions to take a variable number of arugments in this way, see [length-headed lists](#length-headed-lists).)
+(In general it is common for functions to take a variable number of arguments in this way, see [length-headed lists](#length-headed-lists).)
 Some operators will throw an error if they are called as 0-ary, since they do not have an identity.
 
 There are three syntactic categories:
