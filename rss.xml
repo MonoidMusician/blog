@@ -10,11 +10,155 @@
 <docs>https://www.rssboard.org/rss-specification</docs>
 <generator>pandoc-rss</generator>
 <item>
+<title>Infodumping About Selective Applicative Functors</title>
+<pubDate>Wed, 10 Apr 2024 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/infodump_selective_applicatives.html</guid>
+<description><![CDATA[<div class="centered">
+<p><em>Originally posted at <a href="https://tech.lgbt/@monoidmusician/112250458187094582" class="uri">https://tech.lgbt/@monoidmusician/112250458187094582</a></em></p>
+</div>
+<p>tonightʼs infodump on selective applicative functors:</p>
+<p>we know about monads, which have dynamic control flow: based on the result of a previous computation, you can invent a whole new computation to run in the chain</p>
+<pre class="purescript"><code>(&gt;&gt;=) :: m x -&gt; (x -&gt; m y) -&gt; m y</code></pre>
+<p>this is the most flexible you can be, and it necessitates a linear order of evaluation</p>
+<p>applicatives have static control flow: the set of computations to run is fixed up front, and then you get to combine their results at the end</p>
+<p>applicatives can evaluate however they like: sequentially, in parallel … they can even evaluate right-to-left (like monoids, they can be flipped via <code>^op</code>)</p>
+<pre class="purescript"><code>(&lt;**&gt;) :: m x -&gt; m (x -&gt; y) -&gt; m y</code></pre>
+<p>alternatives model nondeterminism: you donʼt write into the program what branch to choose, but however you interpret the functor has to decide</p>
+<p>this is useful for parsers: the parser will return results from branches that match, discarding branches that fail</p>
+<pre class="purescript"><code>(&lt;|&gt;) :: m x -&gt; m x -&gt; m x</code></pre>
+<hr>
+<p>selective applicative functors lie in between monads and applicatives in terms of their power, and show similarities with alternatives too</p>
+<p>unfortunately, selective applicatives are tricky to formulate correctly, but the basic flavor is given by <code class="purescript">select</code> and <code class="purescript">branch</code>:</p>
+<pre class="purescript"><code>select :: m (Either u v) -&gt; m (u -&gt; v) -&gt; m v
+branch :: m (Either x y) -&gt; m (x -&gt; z) -&gt; m (y -&gt; z) -&gt; m z</code></pre>
+<p>one way to think of it from a high level is that selective applicative functors let you have <em>determined</em> choice:</p>
+<p>the computation itself gets to determine what branch to take, by whether it returns a <code class="purescript">Left</code> or a <code class="purescript">Right</code></p>
+<p>it is no longer nondeterministic like <code class="purescript">&lt;|&gt;</code></p>
+<p>but it also isnʼt completely dynamic like monads: you have to declare all the branches up front, make some dynamic choices along the way, and use all the information to come up with a final result</p>
+<hr>
+<p>for several months Iʼve been thinking about selective applicative functors in the context of parsers specifically</p>
+<p>I realized that thereʼs a reason that <code class="purescript">&lt;|&gt;</code> and <code class="purescript">branch</code> feel similar in terms of both being branching structures of control flow, and the implications that has for scoping and syntax and such:</p>
+<p>selective parsers are just parsers with dynamic failure: <code class="purescript">try :: m x -&gt; (x -&gt; Maybe y) -&gt; m y</code>, where you get to inspect a result but choose to make the parser fail anyways</p>
+<p>parsers with (finite!) case matching built in, and just the intuitive notion of scope that that brings</p>
+<p>I posted some notes about why this is on cohost:</p>
+<p><a href="https://cohost.org/monoidmusician/post/2588944-more-more-more-seman" class="uri">https://cohost.org/monoidmusician/post/2588944-more-more-more-seman</a></p>
+<p>and my notes on selective functors more generally:</p>
+<p><a href="https://cohost.org/monoidmusician/tagged/selective%20applicative%20functor" class="uri">https://cohost.org/monoidmusician/tagged/selective%20applicative%20functor</a></p>
+<p>and Iʼve been developing a framework for parser combinators that will hopefully execute selective applicative structures with <span data-t="" data-widget="">LR(1)</span> or <span data-t="" data-widget="">GLR</span> tables</p>
+<p>(uhhh I havenʼt figured out if it corresponds to a known class of grammars yet)</p>
+<hr>
+<p>so why is it so tricky to formulate?</p>
+<pre class="purescript"><code>select :: m (Either u v) -&gt; m (u -&gt; v) -&gt; m v
+branch :: m (Either x y) -&gt; m (x -&gt; z) -&gt; m (y -&gt; z) -&gt; m z</code></pre>
+<p><code class="purescript">select</code> is weird: <code class="purescript">Either</code> is a tensor, but <code class="purescript">-&gt;</code> sure as heck isnʼt.</p>
+<p>an alternative formulation goes like</p>
+<pre class="purescript"><code>m u -&gt; m (Either v (u -&gt; v)) -&gt; m v</code></pre>
+<p>where you have a “maybe constant function” (<code class="purescript">Either v (u -&gt; v)</code>), but this still doesnʼt fit into category theory nicely at all</p>
+<p><code class="purescript">branch</code> is even weirder: it looks like it has the right shape, but it doesnʼt compose!!</p>
+<p>the 2-ary <code class="purescript">branch</code> does not easily give rise to 3-ary <code class="purescript">branch</code>, you basically have to reimplement <code class="purescript">select</code> in terms of <code class="purescript">branch</code> and then apply it multiple times, it is so annoying</p>
+<p>my solution and notes on why this is is here:</p>
+<p><a href="https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Parser/Selective.purs" class="uri">https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Parser/Selective.purs</a></p>
+<p>basically you have to treat it like the control flow it is: break out the profunctors/arrows, specifically have a profunctor for “finite case branching on some type”, and then use that as your building block for a N-ary <code class="purescript">branch</code></p>
+<hr>
+<p>so the formulation I like says, “follow a computation with a finite case tree on its result, whose result is the result of the whole computation”:</p>
+<pre class="purescript"><code>caseTreeOn :: forall i r. f i -&gt; CaseTree i f r -&gt; f r</code></pre>
+<p>(<code class="purescript">CaseTree</code> is tricky to define, with existential quantification … I think thatʼs part of why nobody has stumbled across it to my knowledge)</p>
+<p>these are strong functors, so you can pass down any information you learned in the first computation into the branches of the second … basically how you would expect variable scoping to work (in non-linear type theories) :)</p>
+<p>(yes you can shut up about how monads need to be strong to be applicative functors: everything is strong here.)</p>
+<hr>
+<p>this is a strengthening of the usual definition of selective functors (which just use <code class="purescript">select</code>): it encodes <em>exclusive determined choice</em></p>
+<p>now, itʼs a bit tricky to answer what this gives you, what any of this gives you,</p>
+<p>but exclusive determined choice is important for parsers, at least: for the purposes of static analysis, you would like to know that two branches are exclusive, to know that ambiguities between them will always be resolved</p>
+<p>you simply do not get this knowledge with <code class="purescript">select</code>: if you look at how to encode <code class="purescript">branch</code> via <code class="purescript">select</code>, youʼll realize that you have to inspect the control flow of (potentially) arbitrary functions to make that determination, which is absolutely forbidden</p>
+<p>(basically it works by saying that each branch “could” be run, and shuffling around data to ensure that the right branch gets chosen or skipped each time … it is really annoying and inelegant)</p>
+<hr>
+<p>now would be a great time to clarify this:</p>
+<p><strong>nothing in the formalism says that branches have to be skipped, and this is a feature not a bug</strong></p>
+<p>I will repeat</p>
+<p><strong>branches can be executed even if they were not chosen, and this is on purpose</strong></p>
+<p>in the case of <code class="purescript">select</code>, it means that <code class="purescript">select</code> can be implemented in terms of <code class="purescript">&lt;*&gt;</code> which always runs both branches! (and just discard the result of the one that was not necessary)</p>
+<p>I will get more into this when I ask “what does this formalism get us, anyway?”</p>
+<p>but for now, observe that the <em>beauty</em> (yes, beauty) of selective applicative functors is that they are more plentiful:</p>
+<p>whereas types mostly have one monad instance, and maybe a couple different applicative instances, they will have a proliferation of selective instances:</p>
+<p>lists have their usual monad structure which gives an applicative structure (Cartesian product), but they also have a ziplist structure, and then their flipped/<code>^op</code> versions</p>
+<p>all these give different selective structures, and more!</p>
+<hr>
+<p>another example: the <code class="purescript">Const</code> functor has no monad structure, but it has a standard applicative structure given by monoid concatenation (and its opposite order, which we do not care about)</p>
+<p>but as a selective functor we can work some magic: <code class="purescript">Under</code> with only capture the effect executed unconditionally (<span data-t="" data-widget="">i.e.</span> the first arguments of <code class="purescript">select</code>, ignoring the second arguments) and <code class="purescript">Over</code> will take it all, regardless of if it would be ignored during runtime (this is the selective structure given by the applicative)</p>
+<p>this is in The Paper, read more there (section 2.2): <a href="https://dl.acm.org/doi/10.1145/3341694" class="uri">https://dl.acm.org/doi/10.1145/3341694</a></p>
+<p>but it starts to answer our question: why is this useful?</p>
+<p>itʼs useful because you can approximate the effects you are about to run, in advance: they all exist statically, the control flow <em>can</em> be dynamic, but itʼs tailor made so you can <em>ignore</em> the control flow and know everything that might pop up</p>
+<hr>
+<p>itʼs tempting to impose a law that branches of control flow that are never taken are always ignored</p>
+<p>but there is a huge problem with that: to obey the law, an implementation either needs to (1) inspect arbitrary functions to determine if the next computation could possibly run, or (2) actually execute the one or many possibilities and keep track of the results … <span data-t="" data-widget="">i.e.</span> run/simulate the computation.</p>
+<p>both of those are non-starters for static analysis, it simply ruins the abstraction we are going for</p>
+<p>you might ask, “why not formulate static analysis as a separate abstraction, and leave selective functors for the well-behaved ones?”,</p>
+<p>The Paper tells you why!!</p>
+<p>through the example of Haxl (a library mostly meant for DB queries) shows that you want it to live in a single abstraction so that you can have <em>static analysis interleaved with dynamic execution</em></p>
+<p>how cool is that??</p>
+<p>basically batches DB queries to get all required data and maybe conditionally required data, Iʼm fuzzy on the details still</p>
+<hr>
+<p>so yeah, if you let it all live under one abstraction, you get nice things</p>
+<p>like, you can take the product of two selective applicative functors,</p>
+<p>so you can just tuple up your over-approximation, your under-approximation, and your actual execution context into one functor, simply because they all worked on their own …</p>
+<p>… or you can find ways to interleave them like Haxl did</p>
+<p>the main problem with Haxl, which is not its fault but rather Haskellʼs, is that Haskell typeclasses require that instances agree with each other:</p>
+<p>if a type implements Monad, it needs to implement Applicative in a closely compatible way</p>
+<p>and the same choice was made with Selective: must agree with Monad instance if it exists</p>
+<p>I think this is mostly good design, itʼs important that things behave predictably</p>
+<p>itʼs just so tempting to cut corners and implement more interesting instances for Applicative and Selective, mostly because no language nor library features make dealing with it easier</p>
+<hr>
+<p>Haxl in particular got in hot water for having an Applicative instance that didnʼt agree with its Monad instance, since the Applicative wants to do static analysis and batch everything, while Monad simply does not allow batching</p>
+<p>we should support this somehow! thereʼs a really interesting story to be told there! we do want to prefer static analysis when possible!</p>
+<p>itʼs just hard to express currently (it requires making newtypes for each behavior you think of), and I really think we need to make this easier at the language+library level (itʼs something that I want to address in tmTTmt!)</p>
+<p>there is <a href="https://pursuit.purescript.org/packages/purescript-parallel/7.0.0/docs/Control.Parallel.Class"><code class="purescript">Parallel</code></a> in PureScript, which gives <code class="purescript">parTraverse</code> and other goodies, but idk Iʼve never enjoyed making new types for it……</p>
+<hr>
+<p>okay so as the final word in what selective applicative functors get us in terms of static analysis:</p>
+<p>my case tree abstraction makes it more clear</p>
+<p>the whole deal with regular applicative functors is that their static analysis is just a monoid, given by the <code class="purescript">Const</code> instance</p>
+<p>in fact, I would argue thatʼs all that static analysis is: an interpretation of the functor <code class="purescript">f a -&gt; c</code> that is lawful as a morphism of the appropriate structure of type <code class="purescript">f a -&gt; Const c a</code>.</p>
+<p>with <code class="purescript">caseTreeOn</code>, we donʼt just have a monoid anymore: we still combine effects sequentially with a monoid, but we combine the alternatives with a (potentially differently behaved) semigroup</p>
+<p>(we can ignore empty case trees: 0-ary branch just evaluates its first argument)</p>
+<p>thereʼs probably some laws you want to impose between the monoid and semigroup</p>
+<p>in fact, having a lattice or semilattice <a href="https://blog.veritates.love/semilattice_semiring.html">is particularly nice</a></p>
+<p>and semilattices crawl all over static analysis, you wouldnʼt believe it</p>
+<p>(well, maybe you would ^^)</p>
+<hr>
+<p>and as a final message that should have been a first message for intuition:</p>
+<p>what type of <code class="purescript">do</code> syntax would we give to selective applicatives?</p>
+<p>for monads we have regular <code class="purescript">do</code> syntax:</p>
+<pre class="purescript"><code>do
+  x &lt;- f
+  y &lt;- g x
+  case x + y of
+    42 -&gt; return True
+    r -&gt; loop r</code></pre>
+<p>for applicatives we have much stricter <code class="purescript">ado</code> notation, where each binding only is visible in the final <code class="purescript">in</code> clause (return statement):</p>
+<pre class="purescript"><code>ado
+  x1 &lt;- c1
+  x2 &lt;- c2
+  in x1 + x2</code></pre>
+<p><code class="purescript">selective</code> will allow case branches, where the bound variables are visible in <code class="purescript">case</code> and <code class="purescript">in</code> but still not the right sides of binds:</p>
+<pre class="purescript"><code>ado
+  x1 &lt;- c1
+  x2 &lt;- c2
+  case x1 + x2 of
+    42 -&gt; pure True
+    r -&gt; ado
+      -- x1, x2, and r are still not in scope
+      x3 &lt;- c3
+      -- until `in`
+      in x1 + x2 + x3 == 42</code></pre>
+<p>unfortunately the desugaring will be a lot more complicated: the compiler essentially needs to pick a strategy for pattern matching and expose it during desugaring</p>
+<p>thereʼs also details in branching in the middle vs at the end, yeah …</p>]]></description>
+</item>
+<item>
 <title>Pickling Tasty Data</title>
 <pubDate>Sun, 28 Jan 2024 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/pickling.html</guid>
 <description><![CDATA[<p>I want to talk about data today. In particular, I want to talk about runtime representations of data, <strong>real</strong> data – data that can be mutable and referentially opaque at runtime – and demystify what they actually are in terms of more familiar notions of data.</p>
-<p>You shouldnʼt just throw up your hands once you have cyclic references! Itʼs possible and worthwhile to design tools to work with the raw graph of runtime data, no matter its shape. With the proper metaprogramming hooks, you could save and restore a whole runtime environment <em>from the inside</em>, which is pretty amazing to think about.</p>
+<p>You shouldnʼt just throw up your hands once you have cyclic references! Itʼs possible and worthwhile to design tools to work with the raw graph of runtime data, no matter its shape.</p>
+<p>With the proper metaprogramming hooks, you could save and restore a whole runtime environment <em>from the inside</em>, which is pretty amazing to think about.</p>
 <p>(Well, okay, you might give up at things like functions, if there isnʼt enough metaprogramming, or running sockets, for example – thatʼs okay!)</p>
 <p>The main thing we will work up to (and go beyond) is Pythonʼs <a href="https://docs.python.org/3/library/pickle.html"><code class="python">pickle</code> module</a>, including my own implementation of it for the <a href="https://wiki.flightgear.org/Nasal_scripting_language">Nasal scripting language</a> (which I believe is cleaner in some respects, although obviously less industrial).</p>
 <h2 id="background">Background</h2>
@@ -246,7 +390,7 @@ console.log(JSON.stringify(gemini)); // [{name: "Lo"}, {name: "Hi"}]</code></pre
 <p>You can imagine an algorithm (well, I could write it if I wasnʼt sleepy) that pickles JSON-like objects, but in a way that respects mutability and sharing. It would write out a function definition to reconstruct a new mutable object equivalent to the one it was given.</p>
 <p>In JavaScript you would have to do this the slow way. You would maintain a list of <strong>all</strong> mutable objects you have seen, along with where you saw them as a path down from the root object. You would then output code that reconstructs an object incrementally, by adding properties in order, and grabbing shared references from other parts of the object as necessary (or caching them in variables).</p>
 <p>The cool thing is that you can do it all with <code class="javascript">const</code>! You donʼt need mutability at the variable level, you can (and should) do it all at the mutable value level.</p>
-<p>The algorithm I decscribed can do this for data that is simple in structure, but complicated in terms of references, and with extensions it could handle more things (like regular expressions would be easy to add, <code class="javascript">undefined</code> would be trivial). Actually, it is funny – it would also need to be extended to handle sparse arrays, and all of these little details tell you about how simplified JSON is from the actual data model of JavaScript.</p>
+<p>The algorithm I described can do this for data that is simple in structure, but complicated in terms of references, and with extensions it could handle more things (like regular expressions would be easy to add, <code class="javascript">undefined</code> would be trivial). Actually, it is funny – it would also need to be extended to handle sparse arrays, and all of these little details tell you about how simplified JSON is from the actual data model of JavaScript.</p>
 <p>This would give you your own faithful, accurate slice of the runtime heap as viewed from the perspective of one objectʼs watershed of references. The resulting reconstructed value would behave the same with regards to mutability of its children. It just would not compare equal with <code class="javascript">===</code>, since it is a newly allocated value (and all of its children are too).</p>
 <p>However, if nobody else remembered the old object, and you substituted in the new object very sneakily … nobody would know 🤫</p>
 <h4 id="python">Python</h4>
@@ -543,7 +687,7 @@ intoObject path = first $ \key -&gt; ObjectIdx key : path</code></pre>
 <div class="Warning">
 <p>The main difference is that, in Haskell, the infinite <code class="haskell">JSON</code> could be truly infinite (like, procedurally generated) – it does not need to be backed by a finite amount of data like it would be in JavaScript.</p>
 </div>
-<aside id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
 <hr>
 <ol>
 <li id="fn1"><p>Except in Rust, I think?<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
@@ -562,7 +706,7 @@ intoObject path = first $ \key -&gt; ObjectIdx key : path</code></pre>
 <li id="fn14"><p>Sorry, wrong word.<a href="#fnref14" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn15"><p>think: pointer<a href="#fnref15" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
-</aside>]]></description>
+</section>]]></description>
 </item>
 <item>
 <title>A Semiring From Any Semilattice</title>
@@ -665,12 +809,12 @@ instance Monoid t =&gt; Semiring (WithZero t) where
 <p>Important to note that all of these algebraic constructs (monoids, semilattices, semirings<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>) are closed under taking products. This is why I said “how do you <em>also</em> keep other data around” in the introduction.</p>
 <h3 id="explaining-to-non-mathematicians">Explaining to non-mathematicians</h3>
 <p>The concept of a semiring is an abstract conception of what a number is. A particular semiring is a specific conception of what can be a number. We can manipulate these “numbers” in the familiar ways – mostly.</p>
-<aside id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
 <hr>
 <ol>
 <li id="fn1"><p>but <strong>not</strong> fields<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
-</aside>]]></description>
+</section>]]></description>
 </item>
 <item>
 <title>TransMorphism Type Theory MetaTheory</title>
@@ -720,24 +864,19 @@ normalize (Roll layer) = Roll (map normalize layer)</code></pre>
 <p>I want to skew to the left of many design choices that have been made for most languages, aiming for very specific tradeoffs to achieve aesthetics and functionality.</p>
 <p>My goal is to have a syntax that is straightforward for humans to write and easy for computers to interpret.</p>
 <p>But I donʼt want this process to be magic! I just want it to look convenient for writing powerful systems of type theory.</p>
-<h2 id="implementation">Implementation</h2>
+<h2 id="demos">Demos</h2>
 <p>AAaaahhhh</p>
+<p>Implementation in progress!</p>
+<p>See also <a href="#development">Development</a>.</p>
 <div class="widget" data-widget="Widget.Query" data-widget-empty="true" data-widget-datakey="default" data-widget-data-keys="tmttmt-example">
 
 </div>
-<div class="widget" data-widget="Parser.Main.TMTTMT" data-widget-datakey="default" data-widget-loading="true" style="display: contents" data-widget-data-example="uncurry/ f [a b] => r1:
-  f a b => r1
-curry/ f c d => r2:
-  f [c d] => r2
-identity/ x => x;
-tuple/ y z => [y z];
-test/ [g] [h] => [g h];
-tset/ [[i] [j]] => [i j];
-> uncurry tuple [&quot;1&quot; &quot;2&quot;]
-> uncurry test [[&quot;3&quot;] [&quot;4&quot;]]
-> curry identity &quot;5&quot; &quot;6&quot;
-> curry tset [&quot;7&quot;] [&quot;8&quot;]
-">
+<h3 id="type-system">Type system</h3>
+<div class="widget" data-widget="Parser.Main.TMTTMT" data-widget-loading="true" style="display: contents" data-widget-data-example="typecheck-examples">
+
+</div>
+<h3 id="evaluation">Evaluation</h3>
+<div class="widget" data-widget="Parser.Main.TMTTMT" data-widget-loading="true" style="display: contents" data-widget-data-example="eval-examples">
 
 </div>
 <h2 id="motivation">Motivation</h2>
@@ -842,6 +981,32 @@ tset/ [[i] [j]] => [i j];
 <li>Codecs. Parsing. I love parsers so it would be great to integrate them. Maybe even into the type theory! (It is apparently possible to algorithmically decided whether one regular expression is contained in another uwu :3.)</li>
 <li>STM. Eventual consistency. Other lattice-y stuff.</li>
 <li>Parallel evaluation, à la <code class="haskell">unamb</code> or so.</li>
+</ul></li>
+<li><p>Idiolects?</p>
+<ul>
+<li><p>Providing N×M variations of APIs is annoying:</p>
+<pre class="purescript"><code>setPrecA :: forall rec err prec nt cat o. cat -&gt; Associativity -&gt; prec -&gt; Comb rec err prec nt cat o Unit
+setPrecA cat assoc prec = case pure unit of
+  Comb c -&gt; Comb c { tokenPrecedence = [cat /\ (prec /\ assoc)] }
+
+setPrecL :: forall rec err prec nt cat o. cat -&gt; prec -&gt; Comb rec err prec nt cat o Unit
+setPrecL = setPrecA &lt;@&gt; AssocL
+setPrecR :: forall rec err prec nt cat o. cat -&gt; prec -&gt; Comb rec err prec nt cat o Unit
+setPrecR = setPrecA &lt;@&gt; AssocR
+setPrec :: forall rec err prec nt cat o. cat -&gt; prec -&gt; Comb rec err prec nt cat o Unit
+setPrec = setPrecA &lt;@&gt; NoAssoc
+
+tokenPrecA :: forall rec err prec nt cat o. Token cat o =&gt; cat -&gt; Associativity -&gt; prec -&gt; Comb rec err prec nt cat o o
+tokenPrecA cat assoc prec = setPrecA cat assoc prec *&gt; token cat
+
+tokenPrecL :: forall rec err prec nt cat o. Token cat o =&gt; cat -&gt; prec -&gt; Comb rec err prec nt cat o o
+tokenPrecL = tokenPrecA &lt;@&gt; AssocL
+tokenPrecR :: forall rec err prec nt cat o. Token cat o =&gt; cat -&gt; prec -&gt; Comb rec err prec nt cat o o
+tokenPrecR = tokenPrecA &lt;@&gt; AssocR
+tokenPrec :: forall rec err prec nt cat o. Token cat o =&gt; cat -&gt; prec -&gt; Comb rec err prec nt cat o o
+tokenPrec = tokenPrecA &lt;@&gt; NoAssoc</code></pre>
+<p>Does reifying the arguments as a datatype with super lightweight syntax do what we need? maybe …</p></li>
+<li><p>Would be nice to have ways to say “add a precedence to <em>this</em> (whatever it is)” or “add a name to <em>that</em>”. Idk.</p></li>
 </ul></li>
 </ul>
 <h2 id="non-goals">Non-goals</h2>
@@ -963,7 +1128,96 @@ typecheck (App fn arg) =
     ( strictly $ typecheck arg &gt;&gt;= \argType -&gt;
         unify argType domain &lt;#&gt; \_unified -&gt;
           apply binder arg codomain
-    )</code></pre>]]></description>
+    )</code></pre>
+<h2 id="development">Development</h2>
+<p>For ease of development I am just embedding it as part of the <a href="https://github.com/MonoidMusician/blog/tree/main/PureScript/src/Parser/Languages/TMTTMT">the code for my blog</a>.</p>
+<p>I have a rough parser (needs to be updated) using my parser combinator library, yay.</p>
+<p>Working on the type system currently: starting with structural types. Then need nominal types, constraints, effects, polymorphism, …</p>
+<p>The evaluator needs local variables.</p>
+<h3 id="types">Types</h3>
+<p>Implementing the basic structural type system for tmTTmt. Basically composed of unions of structural types in the language of JSON, including singletons, tuples, (non-empty) lists, and (non-empty) strings. (No objects, yet – those require constraints.) Oh, and functions, though you cannot interact with those via pattern matching (no view patterns!).</p>
+<p>Enter a type in the top box and some patterns in the bottom box, and it will show you the type that each pattern matches (and the types of the variables it binds), and it will show you the refined type of the leftover <em>non</em>-match at the end. (Currently does not handle the fact that non-linear pattern matches should not refine the type … or something. Idk how exhaustivity checking is going to work tbh.)</p>
+<div class="widget" data-widget="Parser.Main.TMTTMT.TypeSplit" data-widget-loading="true" style="display: contents">
+
+</div>
+<p>The rough grammar for types:</p>
+<pre class="bnf"><code>ty =
+  | '[' ty+ ']' -- fixed-size tuple
+  | '+' ty -- non-empty list
+  | '*' ty -- sugar for `'+' ty '|' '[' ']'`
+  | ty '|' ty -- union
+  | '$$' -- non-empty strings
+  | '$' -- strings, sugar for `'$$' '|' '"' '"'`
+  | '"' strchar* '"' -- string literal
+  | ty '-&gt;' ty -- function type
+  | name -- type variable
+  | '(' ty+ ')' -- type application
+  | '(' '?' ty+ ')' -- type hole
+  | '(' '|' ')' -- empty type (Void/never)</code></pre>
+<details class="Example">
+<summary>
+Example types
+</summary>
+<pre class="tmttmt"><code>(# primitive #)
+#type Void = (|)
+
+#type Unit = []
+
+#type Wrap a = [a]
+
+(# sugar for `$$ | ""` #)
+#type String = $
+(# primitive #)
+#type NEString = $$
+
+(# `Maybe a` can be coerced to `List a` #)
+#type Maybe a = [] | [a]
+
+Maybe2List : forall a. Maybe a -&gt; List a
+Maybe2List a =&gt; a
+
+(# sugar for `+a | []` #)
+#type List a = *a
+(# primitive #)
+#type NEList a = +a
+
+#type Cons a = [] | [a (Cons a)]
+#type Snoc a = [] | [(Snoc a) a]
+
+#type Endo a = a -&gt; a
+
+#type Tuple a b = [a b]
+
+#type Either a b =
+  | ["L" a]
+  | ["R" b]
+
+(# newtype (once I have nominal types) #)
+#type Validation a b = Either a b
+
+#type These a b =
+  | Either a b
+  | ["B" a b]
+
+(# strings and lists, recursively #)
+#type AnyData =
+  | $
+  | *AnyData
+
+(# strings, lists, and functions, recursively #)
+(# for an untyped language #)
+#type UniType =
+  | AnyData
+  | (UniType -&gt; UniType)
+
+(# sorry not sorry #)
+(# (you will appreciate me later) #)
+#type Nat = [] | [Nat]</code></pre>
+</details>
+<p>Check whether one type is a subtype of another:</p>
+<div class="widget" data-widget="Parser.Main.TMTTMT.SubType" data-widget-loading="true" style="display: contents">
+
+</div>]]></description>
 </item>
 <item>
 <title>The Best Errors for Solving Dependency Versions</title>
@@ -1111,7 +1365,7 @@ isn'tWorseSolutionThan other optimal =
 </ol>
 <p>There are some existing approaches to increase sharing/reduce duplicate work, in the context of general constraint solving and more particularly version solving with these type of bounds. I briefly glanced at them, but they donʼt seem to address the heart of the issue like my algorithm does.</p>
 <h4 id="algebraic-errors">Algebraic errors</h4>
-<p>In a solver algorithm, we write programs in terms of some error monad. The backtracking algorithm essentially corresponds to a complicated Boolean expression, a tree of various constraints joined with conjunction and disjunction. Thinking of it as <code>Applicative</code>purescript+<code>Alternative</code>purescript, we see that <code>&lt;*&gt;</code>purescript corresponds to conjunction <code>&amp;&amp;</code>purescript and <code>&lt;|&gt;</code>purescript corresponds to disjunction <code>||</code>purescript.</p>
+<p>In a solver algorithm, we write programs in terms of some error monad. The backtracking algorithm essentially corresponds to a complicated Boolean expression, a tree of various constraints joined with conjunction and disjunction. Thinking of it as <code class="purescript">Applicative</code>+<code class="purescript">Alternative</code>, we see that <code class="purescript">&lt;*&gt;</code> corresponds to conjunction <code class="purescript">&amp;&amp;</code> and <code class="purescript">&lt;|&gt;</code> corresponds to disjunction <code class="purescript">||</code>.</p>
 <pre class="boo"><code>console &gt;=5.0.0 &lt;6.0.0
 
 (console == 5.0.0 &amp;&amp; prelude &gt;=5.0.0 &lt;6.0.0)
@@ -1163,7 +1417,7 @@ foldMap1
   -&gt; App (Map PackageName) Loose
 
 instance Coercible Manifest (App (Map PackageName) Loose)</code></pre>
-<p>Note that this is in fact not a monoid: <a href="https://pursuit.purescript.org/packages/purescript-ordered-collections/docs/Data.Map#t:Map"><code>Map</code>purescript</a> only has an <a href="https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Apply#t:Apply"><code>Apply</code>purescript</a> instance (which gives the <code>&lt;*&gt;</code>purescript operator to merge common keys), not <a href="https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Applicative#t:Applicative"><code>Applicative</code>purescript</a> (which would give <code>pure</code>purescript but does not make sense for <code>Map</code>purescript since it would have to contain <em>all</em> possible keys!).</p>
+<p>Note that this is in fact not a monoid: <a href="https://pursuit.purescript.org/packages/purescript-ordered-collections/docs/Data.Map#t:Map"><code class="purescript">Map</code></a> only has an <a href="https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Apply#t:Apply"><code class="purescript">Apply</code></a> instance (which gives the <code class="purescript">&lt;*&gt;</code> operator to merge common keys), not <a href="https://pursuit.purescript.org/packages/purescript-prelude/docs/Control.Applicative#t:Applicative"><code class="purescript">Applicative</code></a> (which would give <code class="purescript">pure</code> but does not make sense for <code class="purescript">Map</code> since it would have to contain <em>all</em> possible keys!).</p>
 <p>As a further optimization, while we are checking package versions, we may discard those that do not solve due to an obvious conflict. This may seem strange: In the PureScript registry, each package will solve individually, we check that on upload. But given the additional constraints of a particular manifest we are solving, we may end up with conflicts against various package versions that are incompatible with the global requirements, especially as we continue to aggregate quasi-transitive dependencies.</p>
 <pre class="purescript"><code>-- | We record what dependency ranges are required no matter which version
 -- | of the package we pick from the registry. That is, we report the loosest
@@ -1216,8 +1470,8 @@ commonDependencies registry package range =
 <h4 id="monoids-monoids-everywhere">Monoids, monoids everywhere</h4>
 <p>Again, a topic for another blog post, but I love monoids, especially semilattices, because they capture information gathering in ways that lend themselves to reliable implementation.</p>
 <p>In particular, because of their idempotence, semilattices are great because you just need to make sure you cover all cases. Thereʼs no such thing as double-counting in a semilattice computation! When youʼre dealing with a well-behaved logical scenario, if have written your logic correctly (<span data-t="" data-widget="">i.e.</span> each derivation is valid) and you cover all the cases (you eventually produce every fact you are allowed to derive), thereʼs no chance that you accidentally make things break.<a href="#fn8" class="footnote-ref" id="fnref8" role="doc-noteref"><sup>8</sup></a></p>
-<p>We already saw our first semilattice <code>Semigroup (App (Map PackageName) Loose)</code>purescript above. However, I left out the definition of <code>Loose</code>purescript and its <code>Semigroup</code>purescript instance.</p>
-<p>The <em>data</em> contained in <code>Loose</code>purescript is just a lower bound and an upper bound, and we want the lower bound to be less than the upper bound for it to be valid. We also pack in <em>metadata</em> that describes where each bound came from, the <code>SolverPosition</code>purescript datatype which we will discuss below in <a href="#provenance">Provenance</a>.</p>
+<p>We already saw our first semilattice <code class="purescript">Semigroup (App (Map PackageName) Loose)</code> above. However, I left out the definition of <code class="purescript">Loose</code> and its <code class="purescript">Semigroup</code> instance.</p>
+<p>The <em>data</em> contained in <code class="purescript">Loose</code> is just a lower bound and an upper bound, and we want the lower bound to be less than the upper bound for it to be valid. We also pack in <em>metadata</em> that describes where each bound came from, the <code class="purescript">SolverPosition</code> datatype which we will discuss below in <a href="#provenance">Provenance</a>.</p>
 <p>To achieve this, we first define a type that describes a bound with metadata packed in. Then we add to this operations that take the maximum and minimum of the bounds, and <em>aggregate</em> the metadata if they were the same bound. Thatʼs right, <strong>the metadata itself forms a semilattice!</strong><a href="#fn9" class="footnote-ref" id="fnref9" role="doc-noteref"><sup>9</sup></a></p>
 <pre class="purescript"><code>data Sourced = Sourced Version SolverPosition
 
@@ -1238,7 +1492,7 @@ instance Semigroup MaxSourced where
       GT -&gt; a
       LT -&gt; b
       EQ -&gt; MaxSourced (Sourced av (as &lt;&gt; bs))</code></pre>
-<p>Now we get both <code>Loose</code>purescript and <code>Intersection</code>purescript for free by the right arrangement of these types. Heck, we even get their coercion for free:</p>
+<p>Now we get both <code class="purescript">Loose</code> and <code class="purescript">Intersection</code> for free by the right arrangement of these types. Heck, we even get their coercion for free:</p>
 <pre class="purescript"><code>newtype Loose = Loose
   { lower :: MinSourced
   , upper :: MaxSourced
@@ -1273,11 +1527,11 @@ toLoose _ = Nothing
 
 fromLoose :: Loose -&gt; Intersection
 fromLoose = coerce</code></pre>
-<p>Why donʼt we require <code>Intersection</code>purescript to be a valid interval? As we will talk about in the next section, <code>Intersection</code>purescript is the primary way we keep track of the knowledge we have learned already. Being in the business of aggregating information, we want to know all we can about the situation our solver is confronted with, and we just can accumulate knowledge by throwing it into this semilattice.</p>
-<p>We could make taking the intersection of intervals a partially-defined operation (<code>Intersection -&gt; Intersection -&gt; Either Error Intersection</code>purescript), but that means we have to bail out once a single intersection becomes invalid. Instead, we integrate them directly into the semilattice structure by keeping invalid intervals around and turning them into <a href="#errors">errors</a> later (this is why we give them the metadata about <a href="#provenance">provenance</a>!). This gives us multiple errors emerging from one step for free, it is incredibly convenient.</p>
+<p>Why donʼt we require <code class="purescript">Intersection</code> to be a valid interval? As we will talk about in the next section, <code class="purescript">Intersection</code> is the primary way we keep track of the knowledge we have learned already. Being in the business of aggregating information, we want to know all we can about the situation our solver is confronted with, and we just can accumulate knowledge by throwing it into this semilattice.</p>
+<p>We could make taking the intersection of intervals a partially-defined operation (<code class="purescript">Intersection -&gt; Intersection -&gt; Either Error Intersection</code>), but that means we have to bail out once a single intersection becomes invalid. Instead, we integrate them directly into the semilattice structure by keeping invalid intervals around and turning them into <a href="#errors">errors</a> later (this is why we give them the metadata about <a href="#provenance">provenance</a>!). This gives us multiple errors emerging from one step for free, it is incredibly convenient.</p>
 <h4 id="knowledge-propagation">Knowledge propagation</h4>
 <p>Figuring out the correct way to propagate known requirements kept me occupied for days. It turns out I had done it wrong the first time, so it is good I thought it over again!</p>
-<p>Our goal is to implement <code>solveStep</code>purescript here using <code>commonDependencies</code>purescript (see <a href="#intuitive-foundations-quasi-transitive-dependencies">above</a>) and <code>exploreTransitiveDependencies</code>purescript:</p>
+<p>Our goal is to implement <code class="purescript">solveStep</code> here using <code class="purescript">commonDependencies</code> (see <a href="#intuitive-foundations-quasi-transitive-dependencies">above</a>) and <code class="purescript">exploreTransitiveDependencies</code>:</p>
 <pre class="purescript"><code>-- Semilattice version of `Registry`
 type TransitivizedRegistry =
   SemigroupMap PackageName
@@ -1297,9 +1551,9 @@ solveStep :: RRU -&gt; RRU
 
 -- Key piece:
 exploreTransitiveDependencies :: RRU -&gt; RRU</code></pre>
-<p>The <code>registry :: TransitivizedRegistry</code>purescript and <code>required :: SemigroupMap PackageName Intersection</code>purescript represent the local dependencies for each package version and the global requirements of the initial manifest given to the solver, respectively. They both are purely accumulative: what goes in comes out with some more information. The additional information will simply be added dependencies and tightened bounds on existing dependencies. Provenance metadata may accumulate too (we donʼt really need to care about that, it is just along for the ride).</p>
-<p>The other field, <code>updated :: TransitivizedRegistry</code>purescript, is a bit different: it does not carry over from step to step, it only talks about what changed at the last step. This is because as weʼre keeping <code>registry :: TransitivizedRegistry</code>purescript updated, we want to only calculate updates to the things that might need it.</p>
-<p>When we first call <code>solveStep</code>purescript, we treat everything as updated:</p>
+<p>The <code class="purescript">registry :: TransitivizedRegistry</code> and <code class="purescript">required :: SemigroupMap PackageName Intersection</code> represent the local dependencies for each package version and the global requirements of the initial manifest given to the solver, respectively. They both are purely accumulative: what goes in comes out with some more information. The additional information will simply be added dependencies and tightened bounds on existing dependencies. Provenance metadata may accumulate too (we donʼt really need to care about that, it is just along for the ride).</p>
+<p>The other field, <code class="purescript">updated :: TransitivizedRegistry</code>, is a bit different: it does not carry over from step to step, it only talks about what changed at the last step. This is because as weʼre keeping <code class="purescript">registry :: TransitivizedRegistry</code> updated, we want to only calculate updates to the things that might need it.</p>
+<p>When we first call <code class="purescript">solveStep</code>, we treat everything as updated:</p>
 <pre class="purescript"><code>solveSeed :: RR () -&gt; RRU
 solveSeed { registry, required } = { registry, required, updated: registry }</code></pre>
 <p>and the process stabilizes when there are no updates:</p>
@@ -1417,10 +1671,10 @@ wouldUpdate j i =
 <p>I also needed a histogram viewer.</p>
 <p>Lots of micro optimizations.</p>
 <ul>
-<li>Using a specific order of <code>&lt;&gt;</code>purescript, since <code>Map</code>purescript appends are implemented as a fold over the second argument so it should be the smaller argument.</li>
+<li>Using a specific order of <code class="purescript">&lt;&gt;</code>, since <code class="purescript">Map</code> appends are implemented as a fold over the second argument so it should be the smaller argument.</li>
 <li>Using a difflist (Cayley) representation when I know Iʼm only appending one key at a time but with mixed associativity.</li>
-<li>Implementing <code>wouldUpdate</code>purescript directly instead of using the semigroup operation.</li>
-<li>Optimizing the <code>Ord Version</code>purescript instance since it is the most common operation in this whole thing.</li>
+<li>Implementing <code class="purescript">wouldUpdate</code> directly instead of using the semigroup operation.</li>
+<li>Optimizing the <code class="purescript">Ord Version</code> instance since it is the most common operation in this whole thing.</li>
 </ul>
 <p>Did they make a difference? I donʼt know! They appeared to make incremental difference as I was testing it, but once I did the big optimization above I gave up on testing that.</p>
 <h3 id="errors">Errors</h3>
@@ -1440,7 +1694,7 @@ wouldUpdate j i =
 <p>But it does keep around provenance information that tells you enough about where it originated.</p>
 <h4 id="provenance">Provenance</h4>
 <p>Normally I like to keep full provenance to detail exactly the path a piece of data took to get through the logic.<a href="#fn11" class="footnote-ref" id="fnref11" role="doc-noteref"><sup>11</sup></a> However, it is really slick in this domain: we only need to keep track of the endpoints, users donʼt exactly care about what came in between (just that it is reasonable to assume, because it is in fact correct).</p>
-<p>So in this case I keep track of which particular package version manifest(s) gave us the constraint we are talking about (<code>LocalSolverPosition</code>purescript), and which constraints in the current manifest caused it to be required. Thereʼs some logic to combine these positions which I will not reproduce here.</p>
+<p>So in this case I keep track of which particular package version manifest(s) gave us the constraint we are talking about (<code class="purescript">LocalSolverPosition</code>), and which constraints in the current manifest caused it to be required. Thereʼs some logic to combine these positions which I will not reproduce here.</p>
 <pre class="purescript"><code>data LocalSolverPosition
   -- | Dependency asked for in manifest
   = Root
@@ -1460,7 +1714,7 @@ data SolverPosition = Pos LocalSolverPosition (Set PackageName)</code></pre>
 <div class="Bonus" data-box-name="Side thought">
 <p>Itʼs interesting that nothing here required that dependencies are acyclic. I actually made some tiny decisions that ensured that this would work, without causing an infinite loop for example, but it was minor things.</p>
 </div>
-<aside id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
 <hr>
 <ol>
 <li id="fn1"><p>The Elm version solver has <a href="https://github.com/elm/compiler/blob/c9aefb6230f5e0bda03205ab0499f6e4af924495/builder/src/Reporting/Exit.hs#L902-L905">network errors</a>, but apparently <a href="https://github.com/elm/compiler/blob/c9aefb6230f5e0bda03205ab0499f6e4af924495/builder/src/Deps/Solver.hs#L102">no actual errors</a> from the simple solve-by-backtracking algorithm.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
@@ -1475,7 +1729,7 @@ data SolverPosition = Pos LocalSolverPosition (Set PackageName)</code></pre>
 <li id="fn10"><p>It turns out these are the <a href="https://github.com/purescript/registry-dev/blob/30a88ac7bd48a73bb2bcf9240b20b09a713ee0b9/lib/src/Solver.purs#L308-L311">same check</a>.<a href="#fnref10" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn11"><p> In particular, in dependently-typed languages it is really helpful to be able to trace terms through their evaluation, so that by the time you get to a type error you know exactly why those particular things popped up, not just a rough idea of where in the source they were originally found once upon a time. Especially because once separate terms are unified, you donʼt want to arbitrarily pick a location, you want to know both locations!<a href="#fnref11" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
-</aside>]]></description>
+</section>]]></description>
 </item>
 <item>
 <title>Impossible Bézier Calligraphy</title>
@@ -1898,7 +2152,7 @@ R_1 &amp;:= \frac{3}{2}\frac{\kappa_1 (d_0 \times a)}{(a \times d_1)(d_0 \times 
 <li><a href="https://math.stackexchange.com/questions/1954845/bezier-curvature-extrema/1956264#1956264">Bézier curvature extrema</a></li>
 <li>… can time-parameterization cut down on the configuration space of cubic curves too?</li>
 </ul>
-<aside id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
 <hr>
 <ol>
 <li id="fn1"><p>It should be possible to only compute the outer segments and skip that step, but for now itʼs better to overapproximate it and optimize later.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
@@ -1906,7 +2160,7 @@ R_1 &amp;:= \frac{3}{2}\frac{\kappa_1 (d_0 \times a)}{(a \times d_1)(d_0 \times 
 <li id="fn3"><p>I first verified this numerically, but it makes a lot of sense if you think about it.<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn4"><p>Note that we arenʼt doing other methods of error reduction, like <a href="https://raphlinus.github.io/curves/2021/03/11/bezier-fitting.html#signed-area">minimizing area</a>.<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
-</aside>]]></description>
+</section>]]></description>
 </item>
 <item>
 <title>Interactive Parser Explanations</title>
@@ -1987,6 +2241,12 @@ instance Semigroup (ShiftReduce s r) where
 <li>Generate example inputs for each state, especially to diagnose conflicts<a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a></li>
 <li>Explain <a href="https://en.wikipedia.org/wiki/Earley_parser">Earley parsing</a> using a similar approach</li>
 <li>Better errors!</li>
+<li>Hm maybe I can uhh suggest fixes to grammars, has that been done before …
+<ul>
+<li>at least precedence</li>
+<li>other ambiguity fixes are harder, but maybe factoring</li>
+</ul></li>
+<li>Whitespace</li>
 </ul>
 <h2 id="widgets">Widgets</h2>
 <div data-widget="Widget.Control" data-widget-datakey="main">
@@ -2066,14 +2326,14 @@ instance Semigroup (ShiftReduce s r) where
 <div data-widget="Widget.Control" data-widget-datakey="main" data-widget-parent="#TOC">
 
 </div>
-<aside id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
 <hr>
 <ol>
 <li id="fn1"><p>Specifically LALR(1) is the most common alternative, and it cuts down on states by merging ones that are the same except for their lookaheads. We will not focus on any of those details in this series, most likely.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn2"><p>Have you ever had to debug a Happy grammar by opening up the <a href="https://www.haskell.org/happy/doc/html/sec-invoking.html"><code>.info</code></a> file? Itʼs overwhelming!<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn3"><p>currently it only generates example inputs for nonterminals/productions<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
-</aside>]]></description>
+</section>]]></description>
 </item>
 <item>
 <title>Eudoxus Real Numbers as Slopes of Pixelated Graphs</title>
@@ -2197,7 +2457,7 @@ instance Semigroup (ShiftReduce s r) where
 <p>We didnʼt identify a property for abstractly looking at approximations of linear functions with irrational slopes, like we did with approximations of rational slopes. However, if we look at a typical approximation function, we know that, with whatever integer rounding it is using, its integer value will be within <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>±</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">\pm 1</annotation></semantics></math></span> of the actual real value at any given point. So when you look at the three terms <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><msub><mi>x</mi><mn>1</mn></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(x_1)</annotation></semantics></math></span>, <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><msub><mi>x</mi><mn>2</mn></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(x_2)</annotation></semantics></math></span>, and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><msub><mi>x</mi><mn>1</mn></msub><mo>+</mo><msub><mi>x</mi><mn>2</mn></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(x_1 + x_2)</annotation></semantics></math></span>, it is clear that the wiggle will be within <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>±</mo><mn>3</mn></mrow><annotation encoding="application/x-tex">\pm 3</annotation></semantics></math></span> of the value of the wiggle of the underlying linear function, which we know is constantly <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi></mrow><annotation encoding="application/x-tex">b</annotation></semantics></math></span>. So the wiggle is clearly bounded.</p>
 <h2 id="just-tell-me-definition">Just tell me: Definition</h2>
 <p>Having satisfied our curiosity that we have identified the necessary ingredients, letʼs finally define the actual mathematical object and the operations on it.</p>
-<p>The <strong>Eudoxus real numbers</strong> are <strong>almost linear functions</strong> but where two functions are considered the same when they have a <strong>bounded difference</strong>.</p>
+<p>The <strong>Eudoxus real numbers</strong> are <strong>almost linear functions</strong> but where two functions are considered the same when they have a <strong>bounded difference</strong>.<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a></p>
 <ul>
 <li><strong>Almost linear functions</strong> have bounded wiggle, which is our name for the quantity <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mi>f</mi></msub><mo stretchy="false">(</mo><msub><mi>x</mi><mn>1</mn></msub><mo separator="true">,</mo><msub><mi>x</mi><mn>2</mn></msub><mo stretchy="false">)</mo><mo>=</mo><mi>f</mi><mo stretchy="false">(</mo><msub><mi>x</mi><mn>1</mn></msub><mo stretchy="false">)</mo><mo>+</mo><mi>f</mi><mo stretchy="false">(</mo><msub><mi>x</mi><mn>2</mn></msub><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><msub><mi>x</mi><mn>1</mn></msub><mo>+</mo><msub><mi>x</mi><mn>2</mn></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">d_f(x_1, x_2) = f(x_1) + f(x_2) - f(x_1 + x_2)</annotation></semantics></math></span>. This property should make it possible to say this function has a slope!</li>
 <li><strong>Bounded difference</strong> just means that <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>−</mo><mi>g</mi><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(x) - g(x)</annotation></semantics></math></span> is bounded. This property eliminates what data each function carries that is extraneous to our goal of defining slopes.</li>
@@ -2249,7 +2509,7 @@ instance Semigroup (ShiftReduce s r) where
 <h3 id="monotonicity">Monotonicity</h3>
 <p>Thereʼs one property we have not mentioned yet: monotonicity.</p>
 <p>All of the linear approximation functions we would come up with are monotonic: either for all <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi><mo>≤</mo><mi>n</mi></mrow><annotation encoding="application/x-tex">m \le n</annotation></semantics></math></span>, <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mi>m</mi><mo stretchy="false">)</mo><mo>≤</mo><mi>f</mi><mo stretchy="false">(</mo><mi>n</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(m) \le f(n)</annotation></semantics></math></span> (weakly monotonically increasing), or for all <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi><mo>≤</mo><mi>n</mi></mrow><annotation encoding="application/x-tex">m \le n</annotation></semantics></math></span>, <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mi>m</mi><mo stretchy="false">)</mo><mo>≥</mo><mi>f</mi><mo stretchy="false">(</mo><mi>m</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(m) \ge f(m)</annotation></semantics></math></span> (weakly monotonically decreasing). But weʼve never mentioned this. Why not include it as a property we care about having or respecting?</p>
-<p>The first clue is what we saw above with addition: when we added two monotonic representative functions (with slope <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mi mathvariant="normal">/</mi><mn>6</mn></mrow><annotation encoding="application/x-tex">1/6</annotation></semantics></math></span> and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>−</mo><mn>1</mn><mi mathvariant="normal">/</mi><mn>2</mn></mrow><annotation encoding="application/x-tex">-1/2</annotation></semantics></math></span>), the result wasnʼt monotonic anymore, it went up and down and up and down, although in a nicely repeating pattern. So our naïve definition of addition did not preserve monotonicity.<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a></p>
+<p>The first clue is what we saw above with addition: when we added two monotonic representative functions (with slope <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mi mathvariant="normal">/</mi><mn>6</mn></mrow><annotation encoding="application/x-tex">1/6</annotation></semantics></math></span> and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>−</mo><mn>1</mn><mi mathvariant="normal">/</mi><mn>2</mn></mrow><annotation encoding="application/x-tex">-1/2</annotation></semantics></math></span>), the result wasnʼt monotonic anymore, it went up and down and up and down, although in a nicely repeating pattern. So our naïve definition of addition did not preserve monotonicity.<a href="#fn5" class="footnote-ref" id="fnref5" role="doc-noteref"><sup>5</sup></a></p>
 <p>However, you can in fact take any representative function and make it monotonic by only a bounded difference – but with one big catch: you have to know up front whether the slope is zero, positive, or negative,— and that property is <a href="https://en.wikipedia.org/wiki/Decision_problem">undecidable</a>.</p>
 <p>So it just seems more fussy and complicated to require the representative functions be monotonic, even though it could be done without resulting in a different theory.</p>
 <h2 id="proofs">Proofs</h2>
@@ -2265,7 +2525,7 @@ instance Semigroup (ShiftReduce s r) where
 <p>Proving that multiplication <em>on the left</em> distributes over addition is not so straightforward: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mo stretchy="false">(</mo><mi>h</mi><mo>∗</mo><mo stretchy="false">(</mo><mi>f</mi><mo>+</mo><mi>g</mi><mo stretchy="false">)</mo><mo stretchy="false">)</mo><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mi>h</mi><mo stretchy="false">(</mo><mo stretchy="false">(</mo><mi>f</mi><mo>+</mo><mi>g</mi><mo stretchy="false">)</mo><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo stretchy="false">)</mo><mo>=</mo><mi>h</mi><mo stretchy="false">(</mo><mi>f</mi><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>+</mo><mi>g</mi><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo stretchy="false">)</mo><mo>=</mo><mtext>&nbsp;</mtext><mo stretchy="false">?</mo><mo stretchy="false">?</mo></mrow><annotation encoding="application/x-tex">(h*(f+g))(x) = h((f+g)(x)) = h(f(x) + g(x)) =\ ??</annotation></semantics></math></span></p>
 <p>There doesnʼt seem to be a direct way to attack this. However, once we prove that <a href="#multiplication-is-commutative">multiplication is commutative</a>, it doesnʼt matter anymore. (In fact, I suspect that proving left-distributivity directly requires similar arguments to the commutativity of multiplication anyways.)</p>
 <h3 id="multiplication-is-well-defined">Multiplication is well-defined</h3>
-<p>Thereʼs two aspects to show that the multiplication is well-defined: since weʼre dealing with subquotients, we need to show that the result satisfies the necessary property, and also that it respects the quotienting relation.</p>
+<p>Thereʼs two aspects to show that the multiplication is well-defined: since weʼre dealing with <a href="https://en.wikipedia.org/wiki/Subquotient">subquotients</a>, we need to show that the result satisfies the necessary property, and also that it respects the quotienting relation.</p>
 <h4 id="multiplication-is-almost-linear">Multiplication is almost-linear</h4>
 <p>I think this first aspect requires one of the more tricky proofs: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo>∗</mo><mi>g</mi></mrow><annotation encoding="application/x-tex">f*g</annotation></semantics></math></span> is almost linear if <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi></mrow><annotation encoding="application/x-tex">f</annotation></semantics></math></span> and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi></mrow><annotation encoding="application/x-tex">g</annotation></semantics></math></span> are. (Remember we defined multiplication as the composition of those functions, not pointwise multiplication!)</p>
 <p>Assume <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mi>m</mi><mo>+</mo><mi>n</mi><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mi>m</mi><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mi>n</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(m+n) - f(m) - f(n)</annotation></semantics></math></span> and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mo stretchy="false">(</mo><mi>m</mi><mo>+</mo><mi>n</mi><mo stretchy="false">)</mo><mo>−</mo><mi>g</mi><mo stretchy="false">(</mo><mi>m</mi><mo stretchy="false">)</mo><mo>−</mo><mi>g</mi><mo stretchy="false">(</mo><mi>n</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">g(m+n) - g(m) - g(n)</annotation></semantics></math></span> are bounded, then show that <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mi>g</mi><mo stretchy="false">(</mo><mi>m</mi><mo>+</mo><mi>n</mi><mo stretchy="false">)</mo><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mi>g</mi><mo stretchy="false">(</mo><mi>m</mi><mo stretchy="false">)</mo><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mi>g</mi><mo stretchy="false">(</mo><mi>n</mi><mo stretchy="false">)</mo><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(g(m+n)) - f(g(m)) - f(g(n))</annotation></semantics></math></span> is bounded as well.</p>
@@ -2282,17 +2542,17 @@ instance Semigroup (ShiftReduce s r) where
 <h3 id="machinery">Machinery</h3>
 <p>Following <a href="http://arxiv.org/abs/math/0405454">Arthanʼs exposition</a>, we will need some more machinery before we tackle the rest of the proofs. Using the tools of <a href="https://en.wikipedia.org/wiki/Mathematical_analysis">mathematical analysis</a> we will establish further properties that capture the almost-linearity of functions, using the existing property of bounded wiggle.</p>
 <p>Let <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi></mrow><annotation encoding="application/x-tex">C</annotation></semantics></math></span> be a bound for the wiggle of the function; <span data-t="" data-widget="">i.e.</span> <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mi>f</mi></msub><mo stretchy="false">(</mo><mi>p</mi><mo separator="true">,</mo><mi>q</mi><mo stretchy="false">)</mo><mo>&lt;</mo><mi>C</mi></mrow><annotation encoding="application/x-tex">d_f(p, q) &lt; C</annotation></semantics></math></span> for all <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi></mrow><annotation encoding="application/x-tex">p</annotation></semantics></math></span> and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi></mrow><annotation encoding="application/x-tex">q</annotation></semantics></math></span>.</p>
-<p>The first lemma<a href="#fn5" class="footnote-ref" id="fnref5" role="doc-noteref"><sup>5</sup></a> we want to establish is the following<a href="#fn6" class="footnote-ref" id="fnref6" role="doc-noteref"><sup>6</sup></a>: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">∣</mi><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mi>q</mi><mo stretchy="false">)</mo><mo>−</mo><mi>p</mi><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>&lt;</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>p</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo><mi>C</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">|f(pq) − pf(q)| &lt; (|p| + 1)C.</annotation></semantics></math></span></p>
+<p>The first lemma<a href="#fn6" class="footnote-ref" id="fnref6" role="doc-noteref"><sup>6</sup></a> we want to establish is the following<a href="#fn7" class="footnote-ref" id="fnref7" role="doc-noteref"><sup>7</sup></a>: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">∣</mi><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mi>q</mi><mo stretchy="false">)</mo><mo>−</mo><mi>p</mi><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>&lt;</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>p</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo><mi>C</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">|f(pq) − pf(q)| &lt; (|p| + 1)C.</annotation></semantics></math></span></p>
 <p>We need to use induction on <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi></mrow><annotation encoding="application/x-tex">p</annotation></semantics></math></span>. This wasnʼt obvious to me at first, but it makes sense in retrospect!</p>
 <div class="Details">
 <p>For the base case <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">p = 0</annotation></semantics></math></span>, it is easy: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">∣</mi><mi>f</mi><mo stretchy="false">(</mo><mn>0</mn><mo stretchy="false">)</mo><mo>−</mo><mn>0</mn><mi mathvariant="normal">∣</mi><mo>=</mo><mi mathvariant="normal">∣</mi><mi>f</mi><mo stretchy="false">(</mo><mn>0</mn><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>=</mo><mi mathvariant="normal">∣</mi><mi>f</mi><mo stretchy="false">(</mo><mn>0</mn><mo>+</mo><mn>0</mn><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mn>0</mn><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mn>0</mn><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>=</mo><mi mathvariant="normal">∣</mi><msub><mi>d</mi><mi>f</mi></msub><mo stretchy="false">(</mo><mn>0</mn><mo separator="true">,</mo><mn>0</mn><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>&lt;</mo><mi>C</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">|f(0) - 0| = |f(0)| = |f(0 + 0) - f(0) - f(0)| = |d_f(0, 0)| &lt; C.</annotation></semantics></math></span> However, letʼs rewrite it using the point <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi></mrow><annotation encoding="application/x-tex">q</annotation></semantics></math></span>, to make the next steps of induction clearer: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">∣</mi><mi>f</mi><mo stretchy="false">(</mo><mn>0</mn><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>=</mo><mi mathvariant="normal">∣</mi><mi>f</mi><mo stretchy="false">(</mo><mn>0</mn><mo>+</mo><mi>q</mi><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mn>0</mn><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>=</mo><mi mathvariant="normal">∣</mi><msub><mi>d</mi><mi>f</mi></msub><mo stretchy="false">(</mo><mn>0</mn><mo separator="true">,</mo><mi>q</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>&lt;</mo><mi>C</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">|f(0)| = |f(0 + q) - f(0) - f(q)| = |d_f(0, q)| &lt; C.</annotation></semantics></math></span></p>
 <p>Now we need to establish that if it holds for <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi></mrow><annotation encoding="application/x-tex">p</annotation></semantics></math></span>, then it holds for <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>+</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">p+1</annotation></semantics></math></span>: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">∣</mi><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mi>q</mi><mo stretchy="false">)</mo><mo>−</mo><mi>p</mi><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>&lt;</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>p</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo><mi>C</mi><mtext>  </mtext><mo>⟹</mo><mtext>  </mtext><mspace linebreak="newline"></mspace><mi mathvariant="normal">∣</mi><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mi>q</mi><mo>+</mo><mi>q</mi><mo stretchy="false">)</mo><mo>−</mo><mi>p</mi><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>&lt;</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>p</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mn>2</mn><mo stretchy="false">)</mo><mi>C</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">|f(pq) - pf(q)| &lt; (|p| + 1)C \implies\\ |f(pq + q) - pf(q) - f(q)| &lt; (|p| + 2)C.</annotation></semantics></math></span></p>
 <p>How do we get from <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mi>q</mi><mo stretchy="false">)</mo><mo>−</mo><mi>p</mi><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(pq) - pf(q)</annotation></semantics></math></span> to <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mo stretchy="false">(</mo><mi>p</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo><mi>q</mi><mo stretchy="false">)</mo><mo>−</mo><mo stretchy="false">(</mo><mi>p</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f((p+1)q) - (p+1)f(q)</annotation></semantics></math></span>? The difference is <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mo stretchy="false">(</mo><mi>p</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo><mi>q</mi><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mi>q</mi><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f((p+1)q) - f(pq) - f(q)</annotation></semantics></math></span>: but this is actually <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mi>f</mi></msub><mo stretchy="false">(</mo><mi>p</mi><mi>q</mi><mo separator="true">,</mo><mi>q</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">d_f(pq, q)</annotation></semantics></math></span>, so it is also less than <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi></mrow><annotation encoding="application/x-tex">C</annotation></semantics></math></span> in absolute value.</p>
-<p>So this means that each step we take changes it by less than <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi></mrow><annotation encoding="application/x-tex">C</annotation></semantics></math></span>, and weʼre done by induction<a href="#fn7" class="footnote-ref" id="fnref7" role="doc-noteref"><sup>7</sup></a>. We can write it all out in one step like this: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">∣</mi><msub><mi>d</mi><mi>f</mi></msub><mo stretchy="false">(</mo><mn>0</mn><mo separator="true">,</mo><mi>q</mi><mo stretchy="false">)</mo><mo>+</mo><msub><mi>d</mi><mi>f</mi></msub><mo stretchy="false">(</mo><mi>q</mi><mo separator="true">,</mo><mi>q</mi><mo stretchy="false">)</mo><mo>+</mo><msub><mi>d</mi><mi>f</mi></msub><mo stretchy="false">(</mo><mn>2</mn><mi>q</mi><mo separator="true">,</mo><mi>q</mi><mo stretchy="false">)</mo><mo>+</mo><mo>⋯</mo><mo>+</mo><msub><mi>d</mi><mi>f</mi></msub><mo stretchy="false">(</mo><mi>p</mi><mi>q</mi><mo separator="true">,</mo><mi>q</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>&lt;</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>p</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo><mi>C</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">|d_f(0, q) + d_f(q, q) + d_f(2q, q) + \cdots + d_f(pq, q)| &lt; (|p|+1)C.</annotation></semantics></math></span></p>
+<p>So this means that each step we take changes it by less than <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi></mrow><annotation encoding="application/x-tex">C</annotation></semantics></math></span>, and weʼre done by induction<a href="#fn8" class="footnote-ref" id="fnref8" role="doc-noteref"><sup>8</sup></a>. We can write it all out in one step like this: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">∣</mi><msub><mi>d</mi><mi>f</mi></msub><mo stretchy="false">(</mo><mn>0</mn><mo separator="true">,</mo><mi>q</mi><mo stretchy="false">)</mo><mo>+</mo><msub><mi>d</mi><mi>f</mi></msub><mo stretchy="false">(</mo><mi>q</mi><mo separator="true">,</mo><mi>q</mi><mo stretchy="false">)</mo><mo>+</mo><msub><mi>d</mi><mi>f</mi></msub><mo stretchy="false">(</mo><mn>2</mn><mi>q</mi><mo separator="true">,</mo><mi>q</mi><mo stretchy="false">)</mo><mo>+</mo><mo>⋯</mo><mo>+</mo><msub><mi>d</mi><mi>f</mi></msub><mo stretchy="false">(</mo><mi>p</mi><mi>q</mi><mo separator="true">,</mo><mi>q</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>&lt;</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>p</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo><mi>C</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">|d_f(0, q) + d_f(q, q) + d_f(2q, q) + \cdots + d_f(pq, q)| &lt; (|p|+1)C.</annotation></semantics></math></span></p>
 </div>
-<p>Using that lemma, we get to the next lemma<a href="#fn8" class="footnote-ref" id="fnref8" role="doc-noteref"><sup>8</sup></a> in a very slick manner: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">∣</mi><mi>p</mi><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mo stretchy="false">)</mo><mo>−</mo><mi>q</mi><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>&lt;</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>p</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mi mathvariant="normal">∣</mi><mi>q</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mn>2</mn><mo stretchy="false">)</mo><mi>C</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">|pf(q) − qf(p)| &lt; (|p| + |q| + 2)C.</annotation></semantics></math></span></p>
+<p>Using that lemma, we get to the next lemma<a href="#fn9" class="footnote-ref" id="fnref9" role="doc-noteref"><sup>9</sup></a> in a very slick manner: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">∣</mi><mi>p</mi><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mo stretchy="false">)</mo><mo>−</mo><mi>q</mi><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>&lt;</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>p</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mi mathvariant="normal">∣</mi><mi>q</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mn>2</mn><mo stretchy="false">)</mo><mi>C</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">|pf(q) − qf(p)| &lt; (|p| + |q| + 2)C.</annotation></semantics></math></span></p>
 <p>Our task here is to compare <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">pf(q)</annotation></semantics></math></span> and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">qf(p)</annotation></semantics></math></span>. The magic of the above lemma is that it compared these values to a <em>common</em> value: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mi>q</mi><mo stretchy="false">)</mo><mo>=</mo><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mi>p</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(pq) = f(qp)</annotation></semantics></math></span>. So we have what we need now: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">∣</mi><mi>p</mi><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mo stretchy="false">)</mo><mo>−</mo><mi>q</mi><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>≤</mo><mi mathvariant="normal">∣</mi><mi>p</mi><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mi>q</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>+</mo><mi mathvariant="normal">∣</mi><mi>f</mi><mo stretchy="false">(</mo><mi>q</mi><mi>p</mi><mo stretchy="false">)</mo><mo>−</mo><mi>q</mi><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>&lt;</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>p</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mn>1</mn><mo>+</mo><mi mathvariant="normal">∣</mi><mi>q</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo><mi>C</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">|pf(q) - qf(p)| \le |pf(q) - f(pq)| + |f(qp) - qf(p)| &lt; (|p| + 1 + |q| + 1)C.</annotation></semantics></math></span></p>
-<p>While weʼre here, we need one more lemma<a href="#fn9" class="footnote-ref" id="fnref9" role="doc-noteref"><sup>9</sup></a> that certifies that <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi></mrow><annotation encoding="application/x-tex">f</annotation></semantics></math></span> acts like a linear function, approximately. We show that there are some constants <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi></mrow><annotation encoding="application/x-tex">A</annotation></semantics></math></span> and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span> such that the following holds for all <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi></mrow><annotation encoding="application/x-tex">p</annotation></semantics></math></span>: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">∣</mi><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>&lt;</mo><mi>A</mi><mi mathvariant="normal">∣</mi><mi>p</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mi>B</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">|f(p)| &lt; A|p| + B.</annotation></semantics></math></span></p>
+<p>While weʼre here, we need one more lemma<a href="#fn10" class="footnote-ref" id="fnref10" role="doc-noteref"><sup>10</sup></a> that certifies that <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi></mrow><annotation encoding="application/x-tex">f</annotation></semantics></math></span> acts like a linear function, approximately. We show that there are some constants <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi></mrow><annotation encoding="application/x-tex">A</annotation></semantics></math></span> and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span> such that the following holds for all <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi></mrow><annotation encoding="application/x-tex">p</annotation></semantics></math></span>: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">∣</mi><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>&lt;</mo><mi>A</mi><mi mathvariant="normal">∣</mi><mi>p</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mi>B</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">|f(p)| &lt; A|p| + B.</annotation></semantics></math></span></p>
 <p>Notice that this also says that <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi></mrow><annotation encoding="application/x-tex">f</annotation></semantics></math></span> is behaves like a linear: it cannot grow outside the confines of the linear function <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi mathvariant="normal">∣</mi><mi>p</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mi>B</mi></mrow><annotation encoding="application/x-tex">A|p| + B</annotation></semantics></math></span> (although those <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi></mrow><annotation encoding="application/x-tex">A</annotation></semantics></math></span> and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span> may be large numbers, thus providing only loose bounds on <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi></mrow><annotation encoding="application/x-tex">f</annotation></semantics></math></span>).</p>
 <p>It comes immediately from the above lemma: take <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">q = 1</annotation></semantics></math></span> to get <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">∣</mi><mi>p</mi><mi>f</mi><mo stretchy="false">(</mo><mn>1</mn><mo stretchy="false">)</mo><mo>−</mo><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>&lt;</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>p</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mn>3</mn><mo stretchy="false">)</mo><mi>C</mi></mrow><annotation encoding="application/x-tex">|pf(1) - f(p)| &lt; (|p| + 3)C</annotation></semantics></math></span> so with some rearranging we get <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">f(p)</annotation></semantics></math></span> by itself and a coefficient for <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">∣</mi><mi>p</mi><mi mathvariant="normal">∣</mi></mrow><annotation encoding="application/x-tex">|p|</annotation></semantics></math></span>: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">∣</mi><mi>f</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mo>&lt;</mo><mo stretchy="false">(</mo><mi>f</mi><mo stretchy="false">(</mo><mn>1</mn><mo stretchy="false">)</mo><mo>+</mo><mi>C</mi><mo stretchy="false">)</mo><mi mathvariant="normal">∣</mi><mi>p</mi><mi mathvariant="normal">∣</mi><mo>+</mo><mn>3</mn><mi>C</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">|f(p)| &lt; (f(1) + C)|p| + 3C.</annotation></semantics></math></span></p>
 <p>Thus we can take <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>=</mo><mo stretchy="false">(</mo><mi>f</mi><mo stretchy="false">(</mo><mn>1</mn><mo stretchy="false">)</mo><mo>+</mo><mi>C</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">A = (f(1) + C)</annotation></semantics></math></span> and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>=</mo><mn>3</mn><mi>C</mi></mrow><annotation encoding="application/x-tex">B = 3C</annotation></semantics></math></span> to accomplish the task.</p>
@@ -2335,20 +2595,21 @@ instance Semigroup (ShiftReduce s r) where
 <p>For more on Eudoxus reals, including a cool construction of <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>π</mi></mrow><annotation encoding="application/x-tex">\pi</annotation></semantics></math></span> as a Eudoxus real number and references to further connections made with the construction, I would recommend <a href="https://mattbaker.blog/2021/12/15/the-eudoxus-reals/">Matt Baker’s Math Blog</a>. And of course see the <a href="https://ncatlab.org/nlab/show/Eudoxus+real+number">nLab</a>, where I originally learned about this construction and which I already referenced several times, and <a href="http://arxiv.org/abs/math/0405454">Arthanʼs exposition</a>, which helped me fill in the tougher proofs.</p>
 </div>
 <p><br></p>
-<aside id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
 <hr>
 <ol>
 <li id="fn1"><p>Rational numbers are countable, so they qualify as a finite approximation for us!<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn2"><p>Okay, thereʼs some slight details here, like <a href="https://en.wikipedia.org/wiki/Spatial_anti-aliasing">antialiasing</a> and the fact it could draw several pixels stacked vertically. But for the sake of simplification letʼs assume that it only renders one pixel in each column, making it an honest-to-goodness integer function.<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn3"><p>This accounts for the two above properties as well as infinite differences that are not merely a shift but are still bounded. In fact, this allows us to get rid of horizontal shifts, as we will see <a href="#horizontal-shifting">later</a>.<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
-<li id="fn4"><p>Note that the plain definition of multiplication <em>does</em> preserve monotonicity!<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
-<li id="fn5"><p>Part of lemma 7 in Arthan<a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
-<li id="fn6"><p>Exercise: Why is this related to <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi></mrow><annotation encoding="application/x-tex">f</annotation></semantics></math></span> being an almost linear function? What if <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi></mrow><annotation encoding="application/x-tex">f</annotation></semantics></math></span> was actually a linear function?<a href="#fnref6" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
-<li id="fn7"><p>Technically we also need to cover the cases where <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi></mrow><annotation encoding="application/x-tex">p</annotation></semantics></math></span> is negative, but thatʼs easy.<a href="#fnref7" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
-<li id="fn8"><p>Lemma 7 in Arthan<a href="#fnref8" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
-<li id="fn9"><p>Lemma 8 in Arthan<a href="#fnref9" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn4"><p>In technical terms, this form of definition is known as a <a href="https://en.wikipedia.org/wiki/Subquotient"><em>subquotient</em></a> in type theory/category theory: it is a quotient (= set of equivalence classes) of a subobject (= subset).<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn5"><p>Note that the plain definition of multiplication <em>does</em> preserve monotonicity!<a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn6"><p>Part of lemma 7 in Arthan<a href="#fnref6" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn7"><p>Exercise: Why is this related to <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi></mrow><annotation encoding="application/x-tex">f</annotation></semantics></math></span> being an almost linear function? What if <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi></mrow><annotation encoding="application/x-tex">f</annotation></semantics></math></span> was actually a linear function?<a href="#fnref7" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn8"><p>Technically we also need to cover the cases where <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi></mrow><annotation encoding="application/x-tex">p</annotation></semantics></math></span> is negative, but thatʼs easy.<a href="#fnref8" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn9"><p>Lemma 7 in Arthan<a href="#fnref9" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn10"><p>Lemma 8 in Arthan<a href="#fnref10" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
-</aside>]]></description>
+</section>]]></description>
 </item>
 </channel>
 </rss>

@@ -1,3 +1,4 @@
+sources/infodump_selective_applicatives.md
 sources/pickling.md
 sources/semilattice_semiring.md
 sources/tmttmt.md

@@ -2,6 +2,7 @@
 title: Infodumping About Selective Applicative Functors
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
+date: 2024/04/10
 ---
 
 :::{.centered}

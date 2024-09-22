@@ -19,6 +19,26 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 
 ## Posts <a class="icon iconoir" href="rss.xml"><?xml version="1.0" encoding="UTF-8"?><svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
 
+- [Infodumping About Selective Applicative Functors](infodump_selective_applicatives.html) [2024/04/10]{.dated}
+
+  > selective applicative functors lie in between monads and applicatives in
+  > terms of their power, and show similarities with alternatives too
+  >
+  > unfortunately, selective applicatives are tricky to formulate correctly,
+  > but the basic flavor is given by `select`{.purescript} and `branch`{.purescript}:
+  >
+  > ```purescript
+  > select :: m (Either u v) -> m (u -> v) -> m v
+  > branch :: m (Either x y) -> m (x -> z) -> m (y -> z) -> m z
+  > ```
+  >
+  > one way to think of it from a high level is that selective applicative
+  > functors let you have *determined* choice:
+  >
+  > the computation itself gets to determine what branch to take, by whether
+  > it returns a `Left`{.purescript} or a `Right`{.purescript}
+
+
 - [Pickling Tasty Data: The essence of runtime data (itʼs a graph!)](pickling.html) [2024/01/28]{.dated}
 
   > I want to talk about data today.
