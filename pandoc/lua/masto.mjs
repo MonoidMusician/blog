@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// watchexec -c -w pandoc/masto.mjs --shell=fish -- "node pandoc/masto.mjs (cat thread_url) ~/Downloads/archive-*.zip | sponge sources/infodump.md"
+// watchexec -c -w pandoc/lua/masto.mjs --shell=fish -- "node pandoc/lua/masto.mjs (cat thread_url) ~/Downloads/archive-*.zip | sponge sources/infodump.md"
 
 import fs from "node:fs/promises";
 import { spawn } from "node:child_process";
