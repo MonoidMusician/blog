@@ -10,6 +10,250 @@
 <docs>https://www.rssboard.org/rss-specification</docs>
 <generator>pandoc-rss</generator>
 <item>
+<title>Monoids in Public</title>
+<pubDate>Wed, 18 Sep 2024 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/monoids_in_public.html</guid>
+<description><![CDATA[<h2 id="vdom-trees-as-monoids">VDOM trees as monoids</h2>
+<p>Imagine you have your favorite VDOM model:</p>
+<pre class="purescript"><code>data VDOM
+  = Text String
+  | Node
+      ElementType
+      (Array Attributes)
+      (Array VDOM)</code></pre>
+<p>Now, weʼve done this before, itʼs pretty inconvenient to use. It forces use to reify component boundaries in the DOM itself. If you need to return something of type <code class="haskell">VDOM</code>, but you produced several things, you need to wrap it in a <code class="html">&lt;div&gt;</code> or <code class="html">&lt;span&gt;</code> – but now you need to know which to choose! Itʼs not great.</p>
+<p>What if we made <code class="haskell">VDOM</code> into a monoid? That would solve lots of problems!</p>
+<p>This is basically what React Fragments are, so we add a new constructor:</p>
+<pre class="purescript"><code>data VDOM
+  = Text String
+  | Node
+      ElementType
+      (Array Attributes)
+      VDOM
+  | Fragment
+      (Array VDOM)</code></pre>
+<p>The advantage of adding a new constructor is that we donʼt have to change so many types, particularly when constructing things. We just need a new way to consume <code class="haskell">Fragment</code> at the end of the process.</p>
+<div class="Note" data-box-name="Side-Effect">
+<p>The children of a <code class="haskell">VDOM</code> do not have to be an array anymore, which makes constructing them slightly more convenient sometimes. (And in other circumstances, you can just use <code class="haskell">Fragment</code> or <code class="haskell">fold :: Array VDOM -&gt; VDOM</code>.)</p>
+</div>
+<p>Now we can write an interesting monoid instance for this, which builds up a fragment but tries to remove nesting as it does so.</p>
+<pre class="purescript"><code>instance Monoid VDOM where
+  mempty = Fragment []
+instance Semigroup VDOM where
+  append (Fragment []) vdom = vdom
+  append vdom (Fragment []) = vdom
+  append (Fragment v1s) (Fragment v2s) = Fragment (v1s &lt;&gt; v2s)
+
+  -- Keep flattening, to keep it associative
+  append v1 (Fragment v2s) = Fragment ([v1] &lt;&gt; v2s)
+  append (Fragment v1s) v2 = Fragment (v1s &lt;&gt; [v2])
+
+  -- Finally, if none of the above cases apply,
+  -- we wrap it up in a two-element array:
+  append v1 v2 = Fragment [v1, v2]</code></pre>
+<details class="Bonus">
+<summary>
+Bonus
+</summary>
+<p>You can also add special behavior if you want to collapse <code class="haskell">Text</code> nodes, but this starts to get a little ugly since it needs to look inside <code class="haskell">Fragment</code> too:</p>
+<pre class="purescript"><code>instance Semigroup VDOM where
+  append (Fragment []) vdom = vdom
+  append vdom (Fragment []) = vdom
+  append (Fragment v1s) (Fragment v2s) = Fragment (v1s &lt;&gt; v2s)
+
+  -- Handle text specially
+  append (Text "") vdom = vdom
+  append vdom (Text "") = vdom
+  append (Text t1) (Text t2) = Text (t1 &lt;&gt; t2)
+
+  -- We need to handle text at the edges of fragments too
+  -- for associativity (I did not check all of the details)
+  append (Fragment vs) (Text t2)
+    | Just (Tuple vs' t1) &lt;- stripTextEnd vs =
+      Fragment (vs' &lt;&gt; [Text (t1 &lt;&gt; t2)])
+  append (Text t1) (Fragment vs)
+    | Just (Tuple t2 vs') &lt;- stripTextStart vs =
+      Fragment ([Text (t1 &lt;&gt; t2)] &lt;&gt; vs')
+  append (Fragment v1s) (Fragment v2s)
+    | Just (Tuple v1s' t1) &lt;- stripTextEnd v1s
+    , Just (Tuple t2 v2s') &lt;- stripTextStart v2s =
+      Fragment (v1s' &lt;&gt; [Text (t1 &lt;&gt; t2)] &lt;&gt; v2s')
+
+  -- Keep flattening, to keep it associative
+  append v1 (Fragment v2s) = Fragment ([v1] &lt;&gt; v2s)
+  append (Fragment v1s) v2 = Fragment (v1s &lt;&gt; [v2])
+
+  -- Finally, if none of the above cases apply,
+  -- we wrap it up in a two-element array:
+  append v1 v2 = Fragment [v1, v2]
+
+stripTextStart :: Array VDOM -&gt; Maybe (Tuple String (Array VDOM))
+stripTextStart = Array.uncons &gt;=&gt; case _ of
+  { head: Text t1, tail: vs } -&gt; Just (Tuple t1 vs)
+  _ -&gt; Nothing
+
+stripTextEnd :: Array VDOM -&gt; Maybe (Tuple (Array VDOM) String)
+stripTextEnd = Array.unsnoc &gt;=&gt; case _ of
+  { init: vs, last: Text t2 } -&gt; Just (Tuple vs t2)
+  _ -&gt; Nothing</code></pre>
+<div class="Note">
+<p>With these additional cases, the empty text node <code class="haskell">Text ""</code> is <em>almost</em> an identity, but the empty fragment <code class="haskell">Fragment []</code> is still the identity of the monoid: <a href="https://proofwiki.org/wiki/Identity_is_Unique">you cannot have two identities in a monoid</a>. And I think thereʼs a specific reason why you want <code class="haskell">Fragment []</code> to be the identity, but I havenʼt actually worked through the details to fully justify it.</p>
+</div>
+</details>
+<h2 id="join-with-separator-monoid">Join with separator monoid</h2>
+<p>I confess that this is also motivated by webdev: for the class attribute, which is a space-separated list of class names.</p>
+<p>We do a similar trick: we detect the identity and handle it specially.<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a></p>
+<pre class="purescript"><code>newtype ClassName = ClassName String
+
+instance Monoid ClassName where
+  mempty = ClassName ""
+
+instance Semigroup ClassName where
+  append (ClassName "") e = e
+  append e (ClassName "") = e
+  -- Join two non-empty class names with a space
+  append (ClassName c1) (ClassName c2) =
+    ClassName (c1 &lt;&gt; " " &lt;&gt; c2)</code></pre>
+<p>Unfortunately, itʼs a bit of work to generalize this to any separator. Youʼd want to track the separator at the type level to ensure it is the same across the whole monoid. Without dependent types, you have to tie it to some typeclass, like some kind of singleton reflection.</p>
+<p>For the case of strings in PureScript, we can use symbols (type-level strings):</p>
+<pre class="purescript"><code>newtype JoinWith (s :: Symbol) = JoinedWith String
+
+instance IsSymbol s =&gt; Monoid (JoinWith s) where
+  mempty = JoinedWith ""
+
+instance IsSymbol s =&gt; Semigroup (JoinWith s) where
+  append (JoinedWith "") e = e
+  append e (JoinedWith "") = e
+  append (JoinedWith s1) (JoinedWith s2) =
+    JoinedWith
+      (s1 &lt;&gt; reflectSymbol (Proxy :: Proxy s) &lt;&gt; s2)</code></pre>
+<p>You could also easily adapt this for any type that you can construct with strings, like a <a href="https://pursuit.purescript.org/packages/purescript-dodo-printer/2.2.1/docs/Dodo.Internal#t:Doc">pretty printer</a>. (You also need to be able to check whether it <a href="https://pursuit.purescript.org/packages/purescript-dodo-printer/2.2.1/docs/Dodo.Internal#v:isEmpty">is empty</a>, of course.)</p>
+<p>Now you can do such fun stuff as:</p>
+<pre class="purescript"><code>joinWithComma :: Array String -&gt; String
+joinWithComma = unwrap &lt;&lt;&lt; foldMap
+  (JoinedWith :: String -&gt; JoinWith ", " String)</code></pre>
+<p>And the real benefit of making a proper monoid structure is that it is now compositional. You can just chuck it in a record and it does the right thing ^.^</p>
+<h2 id="top-down-traversals">Top-Down Traversals</h2>
+<p>Recently I faced a problem: how do I get more control out of a traversal in PureScript?</p>
+<p>There are two problems here:</p>
+<ol type="1">
+<li>Collapsing a tree to a flat, one-dimensional monoid structure is too simplified</li>
+<li>PureScript is strict, so short-circuiting is more complicated</li>
+</ol>
+<p>In particular, I want to do a single top-down traversal and estimate the complexity of evaluating an Erlang expression. The hardest part is the complexity of literals: a statically-allocated literal is trivial to evaluate, but all children of a literal must be literals. Additionally, we need to not count the complexity of the bodies of lambdas: they are just a single allocation too.</p>
+<p>As a refresher on the kind of traversal I am talking about, I had the existing signature</p>
+<pre class="purescript"><code>visit ::
+  forall m.
+    Monoid m =&gt;
+  -- A callback to value a single node
+  (ErlExpr -&gt; m) -&gt;
+  -- The aggregate of the node and its children
+  (ErlExpr -&gt; m)</code></pre>
+<p>My first iteration was returning <code class="purescript">Tuple Boolean m</code>, but this suffered from being confusing (does <code class="purescript">true</code> mean to keep the childrenʼs result or skip it?), and it did not solve the first point.</p>
+<p>Eventually I landed on this type:</p>
+<pre class="purescript"><code>data Visit m
+  -- Skip evaluating the children
+  = ShortCircuit m
+  -- Evaluate the children and append this value
+  | Append m
+  -- Customize the result of evaluating the children
+  | Continue (m -&gt; m)</code></pre>
+<p>Note that <code class="purescript">Append</code> is just for convenience, it is equivalent to <code class="purescript">Continue &lt;&lt;&lt; append</code> (where <a href="https://pursuit.purescript.org/packages/purescript-prelude/6.0.1/docs/Data.Semigroup#v:append"><code class="purescript">append :: m -&gt; m -&gt; m</code></a> is the monoid operation, also written <code class="purescript">(&lt;&gt;)</code>).</p>
+<p><code class="purescript">ShortCircuit</code> also would not be necessary, if the monoid operation was lazy. It would be equivalent to <code class="purescript">Continue &lt;&lt;&lt; const</code>. But alas, PureScript is strict and its Prelude only includes strict append, and itʼs not really worth having a lazy append.</p>
+<p>No matter, it is pretty simple to case on <code class="purescript">Visit</code>.</p>
+<pre class="purescript"><code>-- | Traverse with the ability to short circuit
+-- | and alter results of child traversals
+visit' ::
+  forall m.
+    Monoid m =&gt;
+  (ErlExpr -&gt; Visit m) -&gt;
+  (ErlExpr -&gt; m)
+visit' f = go
+  where
+  go e = case f e of
+    -- Avoid computing `children e`
+    ShortCircuit m -&gt; m
+    -- Just append, like normal `visit`
+    Append m -&gt; m &lt;&gt; children e
+    -- Allow it to manipulate `children e`
+    -- however it wants to based on `e`
+    Continue mm -&gt; mm (children e)
+
+  -- Recurse into the children
+  children = case _ of
+    -- ^ `case _ of` is an anonymous        --
+    -- argument, equal to `\e -&gt; case e of` --
+    Literal _ -&gt; mempty
+    Var _ _ -&gt; mempty
+    BinOp _ e1 e2 -&gt; go e1 &lt;&gt; go e2
+    UnaryOp _ e1 -&gt; go e1
+    BinaryAppend e1 e2 -&gt; go e1 &lt;&gt; go e2
+    List es -&gt; foldMap go es
+    ...</code></pre>
+<p>This structure of <code class="purescript">Monoid m =&gt; m -&gt; m</code> is great for making the most out of the tree traversal: it allows you to delimit the children and operate on them as a group, which was not possible before.</p>
+<p>Itʼs also related to the <a href="https://en.wikipedia.org/wiki/Endomorphism_ring">Endomorphism Semiring</a>, which is <a href="https://blog.veritates.love/Eudoxus.html">very cool</a>. One of the algebraic structures of all time.</p>
+<p>Anyways, now we can do what I came here to do: estimate the runtime complexity of an Erlang expression.</p>
+<p>We start by crafting a monoid <code class="purescript">Complexity</code> to keep track of the information about the cumulative complexity of an expression, including whether it is a group of literals. It is based on <code class="purescript">Additive Int</code> (the integers as a monoid under addition), with the twist of the Boolean distinction between <code class="purescript">Lit</code> and <code class="purescript">Complex</code> (preferring <code class="purescript">Complex</code> of course, which makes <code class="purescript">Lit 0</code> the identity).</p>
+<p>Note that literals still have the <code class="purescript">Int</code> cost because multiple literals side-by-side have a cumulative cost (this is what is modeled in <code class="purescript">Semigroup Complexity</code>), which is canceled out in <code class="purescript">groupOfLiterals</code> when it forms part of a larger literal (only if all children are literals).</p>
+<p>That is, <code class="erl">{ 3 =&gt; 4, 5 =&gt; [6,7,8] }</code> is a literal, but <code class="erl">{ x =&gt; fun f/1, y =&gt; 2 }</code> is not a literal (only the keys <code class="erl">x</code> and <code class="erl">y</code> and the value <code class="erl">2</code> is a literal there).</p>
+<pre class="purescript"><code>data Complexity
+  = Lit Int
+  | Complex Int
+instance semigroupComplexity :: Semigroup Complexity where
+  append (Complex i) (Complex j) = Complex (i + j)
+  append (Lit i) (Complex j) = Complex (i + j)
+  append (Complex i) (Lit j) = Complex (i + j)
+  append (Lit i) (Lit j) = Lit (i + j)
+instance monoidComplexity :: Monoid Complexity where
+  mempty = Lit 0
+
+unComplexity :: Complexity -&gt; Int
+unComplexity (Lit _) = 1
+unComplexity (Complex i) = i
+
+-- | Estimate the runtime complexity of an expression.
+-- | Used for determining when to memoize a function.
+estimatedComplexity :: ErlExpr -&gt; Int
+estimatedComplexity = unComplexity &lt;&lt;&lt; visit' case _ of
+  -- Do not recurse into closures
+  Fun _ _ -&gt; ShortCircuit (Complex 1)
+  -- Yeah, `fun f/1` is an allocation ...
+  FunName _ _ _ -&gt; ShortCircuit (Complex 1)
+  -- A curried call costs one
+  FunCall Nothing (FunCall _ _ _) _ -&gt; Append (Complex 1)
+  -- Base calls cost more since they might do more work
+  -- (Note: atoms count during recursion, so unqualitifed &gt;= 3,
+  -- and qualified calls &gt;= 4, plus arguments of course)
+  FunCall _ _ _ -&gt; Append (Complex 2)
+  -- Literals are cheap
+  Literal _ -&gt; ShortCircuit (Lit 1)
+  -- Literal constructors are cheap if
+  -- all of their children are literals
+  List _ -&gt; groupOfLiterals
+  Tupled _ -&gt; groupOfLiterals
+  Map _ -&gt; groupOfLiterals
+  Record _ -&gt; groupOfLiterals
+  -- Everything else costs 1 plus its children
+  _ -&gt; Append (Complex 1)
+  where
+  groupOfLiterals :: Visit Complexity
+  groupOfLiterals = Continue case _ of
+    Lit _ -&gt; Lit 1
+    Complex i -&gt; Complex (i + 1)</code></pre>
+<ul>
+<li><a href="https://github.com/id3as/purescript-backend-erl/blob/703361c61b5848de1b8e4cb894cc8f2307618d4e/src/PureScript/Backend/Erl/Syntax.purs#L253-L261" class="uri">https://github.com/id3as/purescript-backend-erl/blob/703361c61b5848de1b8e4cb894cc8f2307618d4e/src/PureScript/Backend/Erl/Syntax.purs#L253-L261</a></li>
+<li><a href="https://github.com/id3as/purescript-backend-erl/blob/703361c61b5848de1b8e4cb894cc8f2307618d4e/src/PureScript/Backend/Erl/Syntax.purs#L310-L352" class="uri">https://github.com/id3as/purescript-backend-erl/blob/703361c61b5848de1b8e4cb894cc8f2307618d4e/src/PureScript/Backend/Erl/Syntax.purs#L310-L352</a></li>
+</ul>
+<h2 id="your-requests-here">Your Requests Here</h2>
+<p>know any other cute liʼl monoids I should include?</p>
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn1"><p>Pedagogically I probably should have started with this example, but I donʼt really feel like re-working this post right now.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>]]></description>
+</item>
+<item>
 <title>Infodumping About Selective Applicative Functors</title>
 <pubDate>Wed, 10 Apr 2024 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/infodump_selective_applicatives.html</guid>

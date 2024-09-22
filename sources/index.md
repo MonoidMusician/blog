@@ -116,6 +116,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   #. [WIP]{t=}: [Basics of LR(1) Parsing](parser_lr1.html)
 
 ### Miniseries
+- [Monoids in Public](monoids_in_public.html) – cool little monoids and uses for monoids [2023/01/02 – 2024/09/18]{.dated}
 - [Knowlish](knowlish.html) – A list of little things I have learned and need reminders about.
 - [For the Users](for_the_users.html) – My user scripts and user styles (& othersʼ!)
 <!--

@@ -1,3 +1,4 @@
+sources/monoids_in_public.md
 sources/infodump_selective_applicatives.md
 sources/pickling.md
 sources/semilattice_semiring.md

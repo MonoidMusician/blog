@@ -3,6 +3,7 @@ title: Monoids in Public
 subtitle: Useful monoid structures in programming
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
+date: 2023/01/02 – 2024/09/18
 ---
 
 ## VDOM trees as monoids
