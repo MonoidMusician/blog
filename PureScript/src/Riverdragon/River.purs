@@ -112,6 +112,24 @@ createStream = do
         _.destroyed
     }
 
+createStreamBurst :: forall flow a. Effect (Array a) -> Allocar { send :: a -!> Unit, event :: Stream flow a, destroy :: Allocar Unit }
+createStreamBurst burst = do
+  id <- globalId
+  { push, notify, destroy } <- subscriptions
+  pure
+    { send: \a -> do
+        notify do
+          \{ receive } -> receive a
+        notify do
+          \{ commit } -> commit id
+    , event: Stream mempty \cbs -> do
+        bursted <- burst
+        push cbs <#> { burst: bursted, sources: [id], unsubscribe: _ }
+    , destroy: destroy do
+        _.destroyed
+    }
+
+
 createStream' :: forall flow a. Allocar { send :: a -!> Unit, commit :: Id -!> Unit, event :: Array Id -> Stream flow a, destroy :: Allocar Unit }
 createStream' = do
   { push, notify, destroy } <- subscriptions
@@ -226,7 +244,7 @@ createBehavioral = do
     write = \a -> void $ liftST (STRef.write (Just a) ref)
     downstream = unsafeMarkHot do
       makeStream \k -> do
-        liftST (STRef.read ref) >>= traverse_ (k)
+        liftST (STRef.read ref) >>= traverse_ k
         subscribe upstream.event k
   pure
     { send: write <> upstream.send

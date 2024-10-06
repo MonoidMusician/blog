@@ -46,6 +46,7 @@ to generate this file without the comments in this block.
   , "hyrule"
   , "identity"
   , "integers"
+  , "js-timers"
   , "js-uri"
   , "language-cst-parser"
   , "lazy"

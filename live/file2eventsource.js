@@ -19,6 +19,7 @@ async function resolve(path) {
 app.get('*', async function(req, res, next) {
   if (!('live' in req.query)) return next();
   const path = await resolve(req.path.substring(1));
+  if (!path) return res.sendStatus(404);
   res.send(await fs.readFile(path, 'utf-8') + `<script src="/selfwatch.js"></script>`);
 });
 

@@ -2,11 +2,12 @@ module Idiolect where
 
 import Prelude
 
-import Control.Alternative (class Alternative, (<|>))
+import Control.Alternative (class Alt, class Alternative, (<|>))
 import Control.Apply (lift2)
 import Control.Plus (class Plus)
 import Data.Compactable (class Compactable, compact)
-import Data.Decide (choose)
+import Data.Either (Either(..))
+import Data.Either.Nested (type (\/))
 import Data.Foldable (class Foldable, intercalate, oneOfMap)
 import Data.Maybe (Maybe)
 import Data.These (These(..))
@@ -50,9 +51,11 @@ composeTraverseFlipped :: forall f g a b c. Traversable f => Applicative g => (a
 composeTraverseFlipped f g = f >>> traverse g
 infixr 8 composeTraverseFlipped as >==>
 
-infixr 5 choose as \|/
+multiplexing :: forall f a b. Alt f => f a -> f b -> f (a \/ b)
+multiplexing a b = Left <$> a <|> Right <$> b
+infixr 5 multiplexing as \|/
 
-tupling :: forall f a b. Applicative f => f a -> f b -> f (a /\ b)
+tupling :: forall f a b. Apply f => f a -> f b -> f (a /\ b)
 tupling = lift2 Tuple
 infixr 6 tupling as /|\
 

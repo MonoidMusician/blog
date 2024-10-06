@@ -3,12 +3,12 @@ module Riverdragon.Dragon where
 import Prelude
 
 import Data.Array.NonEmpty as NEA
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
 import Data.Pair (Pair(..))
 import Data.Semigroup.First (First(..))
 import Data.Semigroup.Foldable (foldMap1)
 import Data.Semigroup.Last (Last(..))
-import Data.Traversable (for, for_, sequence_, traverse_)
+import Data.Traversable (foldMap, for, for_, sequence_, traverse_)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Uncurried (runEffectFn3)
@@ -19,12 +19,14 @@ import Riverdragon.River.Bed (accumulator, eventListener, globalId, ordMap, roll
 import Web.DOM (Comment, Node, Element)
 import Web.DOM.AttrName (AttrName(..))
 import Web.DOM.Comment as Comment
-import Web.DOM.Document (createComment, createElementNS, createTextNode)
+import Web.DOM.Document (createComment, createElement, createElementNS, createTextNode)
 import Web.DOM.Element (setAttribute)
 import Web.DOM.Element as Element
+import Web.DOM.ElementId (ElementId(..))
 import Web.DOM.ElementName (ElementName(..))
 import Web.DOM.NamespaceURI (NamespaceURI(..))
 import Web.DOM.Node (appendChild, insertBefore, parentNode, setTextContent)
+import Web.DOM.NonElementParentNode (getElementById)
 import Web.DOM.Text as Text
 import Web.Event.Event (EventType(..))
 import Web.Event.Event as Web
@@ -121,6 +123,13 @@ fromBookmarks (Pair l r) destroy =
   , tail: Last (Comment.toNode r)
   }
 
+renderId :: ElementId -> Dragon -> Effect (Effect Unit)
+renderId id dragon = do
+  mel <- getElementById id <<< HTMLDocument.toNonElementParentNode =<< document =<< window
+  mel # foldMap \el -> do
+    Tuple _ insert <- mkBookmarks (appendChild <@> Element.toNode el)
+    _.destroy <$> renderTo insert dragon
+
 renderTo :: (Node -> Effect Unit) -> Dragon -> Effect Rendered
 renderTo insert (Text changingValue) = do
   doc <- window >>= document
@@ -133,7 +142,8 @@ renderTo insert (Text changingValue) = do
     removeSelf do Text.toNode el
 renderTo insert (Element ns ty props children) = do
   doc <- window >>= document
-  el <- createElementNS (NamespaceURI <$> ns) (ElementName ty) (HTMLDocument.toDocument doc)
+  let create = maybe createElement (createElementNS <<< Just <<< NamespaceURI)
+  el <- create ns (ElementName ty) (HTMLDocument.toDocument doc)
   unSubscribeProps <- renderProps el props
   destroyChildren <- renderTo (appendChild <@> Element.toNode el) children
   insert do Element.toNode el
