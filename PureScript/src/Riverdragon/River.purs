@@ -15,7 +15,7 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Foreign.Object.ST as STO
 import Prim.Boolean (False, True)
-import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar, accumulator, allocLazy, cleanup, globalId, iteM, loadingBurst, ordMap, prealloc, prealloc2, subscriptions, threshold)
+import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar, accumulator, allocLazy, cleanup, globalId, iteM, breaker, loadingBurst, ordMap, prealloc, prealloc2, rolling, storeLast, subscriptions, threshold)
 
 type Id = Int
 
@@ -27,6 +27,10 @@ data Stream (flow :: Boolean) a = Stream (Conj Boolean)
   ( { receive :: a -!> Unit, commit :: Id -!> Unit, destroyed :: Allocar Unit } -&>
     { burst :: Array a, sources :: Array Id, unsubscribe :: Allocar Unit }
   )
+-- | A lake is stagnant until you tap into it.
+type Lake = Stream False
+-- | A river keeps flowing regardless of whether anyone is listening.
+type River = Stream True
 
 instance functorStream :: Functor (Stream flow) where
   map f (Stream t g) = Stream t \cbs -> do
@@ -112,7 +116,7 @@ createStream = do
         _.destroyed
     }
 
-createStreamBurst :: forall flow a. Effect (Array a) -> Allocar { send :: a -!> Unit, event :: Stream flow a, destroy :: Allocar Unit }
+createStreamBurst :: forall flow a. Allocar (Array a) -> Allocar { send :: a -!> Unit, event :: Stream flow a, destroy :: Allocar Unit }
 createStreamBurst burst = do
   id <- globalId
   { push, notify, destroy } <- subscriptions
@@ -158,6 +162,30 @@ makeStream eventTemplate = Stream (Conj false) \cbs -> do
             cbs.commit id
     pure { burst: _, sources: [id], unsubscribe }
 
+-- | A stream that works both as hot and cold.
+ambivalent :: forall a.
+  Allocar
+    { burst :: Allocar (Array a)
+    , subscribe :: (a -!> Unit) -> Allocar (Allocar Unit)
+    } ->
+  Tuple (Lake a) (Allocar { stream :: River a, destroy :: Allocar Unit })
+ambivalent init = Tuple
+  do
+    Stream (Conj false) \cbs -> do
+      id <- globalId
+      { burst, subscribe: subscriber } <- init
+      let cb = \a -> cbs.receive a *> cbs.commit id
+      -- ordering?
+      unsubscribe <- subscriber cb
+      bursted <- burst
+      pure { burst: bursted, sources: [id], unsubscribe }
+  do
+    { burst, subscribe: subscriber } <- init
+    { event: stream, send, destroy } <- createStreamBurst burst
+    unsubscribe <- subscriber send
+    pure { stream: stream, destroy: destroy <> unsubscribe }
+
+
 -- | Unsafe.
 unsafeMarkHot :: forall flowIn flowOut a. Stream flowIn a -> Stream flowOut a
 unsafeMarkHot (Stream _ f) = Stream (Conj true) f
@@ -170,8 +198,53 @@ chill (Stream _ f) = Stream (Conj false) f
 subscribe :: forall flow a. Stream flow a -> (a -!> Unit) -> Allocar (Allocar Unit)
 subscribe (Stream _ event) receive = do
   r <- event { receive, commit: mempty, destroyed: mempty }
-  for_ r.burst \a -> receive a
+  for_ r.burst receive
   pure r.unsubscribe
+
+subscribeIsh :: forall flow a. Allocar Unit -> Stream flow a -> (a -!> Unit) -> Allocar (Allocar Unit)
+subscribeIsh destroyed (Stream _ event) receive = do
+  r <- event { receive, commit: mempty, destroyed }
+  for_ r.burst receive
+  pure r.unsubscribe
+
+limitTo :: forall flow a. Int -> Stream flow a -> Stream flow a
+limitTo 0 _ = empty
+limitTo n (Stream flow setup) = Stream flow \cbs -> do
+  setUnsub <- rolling
+  receive <- breaker cbs.receive
+  commit <- breaker cbs.commit
+  let destroyed = receive.trip <> commit.trip <> cbs.destroyed
+  incr <- threshold n (setUnsub mempty <> destroyed)
+  sub <- setup
+    { receive: receive.run
+    , commit: const incr <> commit.run
+    , destroyed: destroyed
+    }
+  setUnsub sub.unsubscribe
+  pure sub
+
+selfGating :: forall flow a.
+  (Effect Unit -> Effect (a -> Effect Unit)) ->
+  Stream flow a -> Stream flow a
+selfGating logic (Stream flow setup) = Stream flow \cbs -> do
+  setUnsub <- rolling
+  receive <- breaker cbs.receive
+  commit <- breaker cbs.commit
+  let destroyed = receive.trip <> commit.trip <> cbs.destroyed
+  lastValue <- storeLast
+  process <- logic (setUnsub mempty <> destroyed)
+  sub <- setup $
+      { receive: lastValue.set >>> void
+      , commit: const $ lastValue.get >>= traverse_ process
+      , destroyed: mempty
+      }
+    <>
+      { receive: receive.run
+      , commit: commit.run
+      , destroyed: destroyed
+      }
+  setUnsub sub.unsubscribe
+  pure sub
 
 -- | Create a single subscriber to an upstream event that broadcasts it to
 -- | multiple downstream subscribers at once. This creation is effectful because

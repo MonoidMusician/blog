@@ -14,8 +14,8 @@ import Effect (Effect)
 import Effect.Uncurried (runEffectFn3)
 import Prim.Boolean (False)
 import Riverdragon.Dragon.Breath (removeSelf, unsafeSetProperty)
-import Riverdragon.River (Stream, subscribe)
-import Riverdragon.River.Bed (accumulator, eventListener, globalId, ordMap, rolling)
+import Riverdragon.River (Lake, Stream, subscribe, subscribeIsh)
+import Riverdragon.River.Bed (Allocar, accumulator, eventListener, freshId, ordMap, rolling, unsafeAllocate)
 import Web.DOM (Comment, Node, Element)
 import Web.DOM.AttrName (AttrName(..))
 import Web.DOM.Comment as Comment
@@ -37,13 +37,13 @@ import Web.HTML.Window (document)
 
 data Dragon
   = Fragment (Array Dragon)
-  -- Only renders one `Dragon` at once (which may be a `Fragment`, `Collection`,
+  -- Only renders one `Dragon` at once (which may be a `Fragment`, `Appending`,
   -- or whatever)
-  | Replaceable (Stream False Dragon)
+  | Replacing (Lake Dragon)
   -- Appends a new `Dragon` each time
-  | Collection (Stream False Dragon)
-  | Element (Maybe String) String (Stream False AttrProp) Dragon
-  | Text (Stream False String)
+  | Appending (Lake Dragon)
+  | Element (Maybe String) String (Lake AttrProp) Dragon
+  | Text (Lake String)
 
 instance semigroupDragon :: Semigroup Dragon where
   append (Fragment []) r = r
@@ -64,12 +64,20 @@ data PropVal
   | PropInt Int
   | PropNumber Number
 
-renderProps :: Element -> Stream False AttrProp -> Effect (Effect Unit)
+renderProps :: Element -> Lake AttrProp -> Effect (Effect Unit)
 renderProps el stream = do
   listeners <- ordMap
   let
     receive = case _ of
-      Attr ns name val -> setAttribute (AttrName name) val el
+      -- important for xmlns at least on firefox apparently
+      -- https://stackoverflow.com/questions/35057909/difference-between-setattribute-and-setattributensnull#comment135086722_45548128
+      Attr Nothing name val -> setAttribute (AttrName name) val el
+      -- ugh
+      Attr (Just ns) name val -> do
+        case Element.namespaceURI el == Just (NamespaceURI ns) of
+          true -> setAttribute (AttrName name) val el
+          -- TODO: setAttributeNS
+          false -> setAttribute (AttrName name) val el
       Prop name valTy -> case valTy of
         PropString val -> runEffectFn3 unsafeSetProperty el name val
         PropBoolean val -> runEffectFn3 unsafeSetProperty el name val
@@ -94,12 +102,19 @@ renderProps el stream = do
     unsubscribe
     listeners.reset >>= traverse_ identity
 
+globalId :: Allocar Int
+globalId = unsafeAllocate freshId
+
 mkBookmarks :: (Node -> Effect Unit) -> Effect (Tuple (Pair Comment) (Node -> Effect Unit))
 mkBookmarks insert = do
   doc <- window >>= document
-  bookmarks@(Pair _ bookend) <- for (Pair unit unit) \_ -> do
-    this <- globalId -- for hydration?
-    bookmark <- createComment (show this) (HTMLDocument.toDocument doc)
+  this <- globalId -- for hydration?
+  bookmarks@(Pair _ bookend) <- for (Pair false true) \side -> do
+    let
+      name = show this # case side of
+        false -> (_ <> "[")
+        true -> ("]" <> _)
+    bookmark <- createComment name (HTMLDocument.toDocument doc)
     insert (Comment.toNode bookmark)
     pure bookmark
   pure $ Tuple bookmarks \newSibling -> do
@@ -134,23 +149,24 @@ renderTo :: (Node -> Effect Unit) -> Dragon -> Effect Rendered
 renderTo insert (Text changingValue) = do
   doc <- window >>= document
   el <- createTextNode "" (HTMLDocument.toDocument doc)
-  unsubscribe <- subscribe changingValue \newValue -> do
-    setTextContent newValue do Text.toNode el
-  insert do Text.toNode el
+  let inactive = removeSelf (Text.toNode el)
+  unsubscribe <- subscribeIsh inactive changingValue \newValue -> do
+    setTextContent newValue (Text.toNode el)
+  insert (Text.toNode el)
   pure $ only (Text.toNode el) do
     unsubscribe
-    removeSelf do Text.toNode el
+    inactive
 renderTo insert (Element ns ty props children) = do
   doc <- window >>= document
   let create = maybe createElement (createElementNS <<< Just <<< NamespaceURI)
   el <- create ns (ElementName ty) (HTMLDocument.toDocument doc)
   unSubscribeProps <- renderProps el props
   destroyChildren <- renderTo (appendChild <@> Element.toNode el) children
-  insert do Element.toNode el
+  insert (Element.toNode el)
   pure $ only (Element.toNode el) do
     unSubscribeProps
     destroyChildren.destroy
-    removeSelf do Element.toNode el
+    removeSelf (Element.toNode el)
 renderTo insert (Fragment children) =
   case NEA.fromArray children of
     Nothing -> do
@@ -159,22 +175,24 @@ renderTo insert (Fragment children) =
       bookmark <- createComment (show this) (HTMLDocument.toDocument doc)
       pure $ (only <*> removeSelf) (Comment.toNode bookmark)
     Just children' -> foldMap1 (renderTo insert) children'
-renderTo insert (Replaceable revolving) = do
+renderTo insert (Replacing revolving) = do
   Tuple bookmarks insert' <- mkBookmarks insert
   unsubPrev <- rolling
-  unsubscribe <- subscribe revolving \newValue -> do
+  let inactive = for_ bookmarks (Comment.toNode >>> removeSelf)
+  unsubscribe <- subscribeIsh inactive revolving \newValue -> do
       unsubPrev mempty
       unsubPrev <<< _.destroy =<< renderTo insert' newValue
   pure $ fromBookmarks bookmarks do
     unsubscribe
     unsubPrev mempty
-    for_ bookmarks (Comment.toNode >>> removeSelf)
-renderTo insert (Collection items) = do
+    inactive
+renderTo insert (Appending items) = do
   Tuple bookmarks insert' <- mkBookmarks insert
   unsubAll <- accumulator
-  unsubscribe <- subscribe items \newChild -> do
+  let inactive = for_ bookmarks (Comment.toNode >>> removeSelf)
+  unsubscribe <- subscribeIsh inactive items \newChild -> do
     unsubAll.put <<< _.destroy =<< renderTo insert' newChild
   pure $ fromBookmarks bookmarks do
     unsubscribe
     join (unsubAll.reset)
-    for_ bookmarks (Comment.toNode >>> removeSelf)
+    inactive

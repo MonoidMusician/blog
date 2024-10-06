@@ -104,7 +104,6 @@ iteRef ref pred ifTrue ifFalse =
 cleanup' :: Allocar Unit -> Allocar
   { cleanup :: Allocar Unit
   , running :: Allocar Boolean
-  , runningE :: Effect Boolean
   }
 cleanup' act = do
   needsToRun <- liftST do STR.new true
@@ -113,7 +112,6 @@ cleanup' act = do
         _ <- liftST do STR.write false needsToRun
         act
     , running: liftST do STR.read needsToRun
-    , runningE: liftST do STR.read needsToRun
     }
 
 cleanup :: Allocar Unit -> Allocar (Allocar Unit)
@@ -123,7 +121,9 @@ rolling :: Allocar (Allocar Unit -> Allocar Unit)
 rolling = do
   past <- liftST do STR.new mempty
   pure \next -> do
-    join do liftST do STR.read past
+    act <- liftST do STR.read past
+    _ <- liftST do STR.write mempty past
+    act
     _ <- liftST do STR.write next past
     pure unit
 
@@ -131,9 +131,7 @@ cleanupFn' :: forall d.
   (d -&> Unit) -> Allocar
   { cleanup :: d -&> Unit
   , running :: Allocar Boolean
-  , runningE :: Effect Boolean
   , finished :: Allocar (Maybe d)
-  , finishedE :: Effect (Maybe d)
   }
 cleanupFn' act = do
   cleanupArg <- liftST do STR.new Nothing
@@ -145,10 +143,28 @@ cleanupFn' act = do
           _ <- liftST do STR.write (Just d) cleanupArg
           act d
     , running: isNothing <$> liftST do STR.read cleanupArg
-    , runningE: isNothing <$> liftST do STR.read cleanupArg
     , finished: liftST do STR.read cleanupArg
-    , finishedE: liftST do STR.read cleanupArg
     }
+
+
+-- | Act as a circuit breaker: normally pass events through, but disable and
+-- | re-enable flow as necessary.
+breaker :: forall d.
+  (d -!> Unit) -> Allocar
+  { run :: d -!> Unit
+  , trip :: Allocar Unit
+  , reset :: Allocar Unit
+  , running :: Allocar Boolean
+  }
+breaker act = do
+  needsToRun <- liftST do STR.new true
+  pure
+    { run: whenRef needsToRun identity <<< act
+    , trip: void do liftST do STR.write false needsToRun
+    , reset: void do liftST do STR.write true needsToRun
+    , running: liftST do STR.read needsToRun
+    }
+
 
 
 -- | Track subscriptions. When you add a subscription, you get back a
@@ -195,7 +211,7 @@ eventListener ::
   , eventTarget :: EventTarget
   } ->
   (Web.Event -> Effect Unit) -&> Allocar Unit
-eventListener { eventType, eventPhase, eventTarget } = coerce do
+eventListener { eventType, eventPhase, eventTarget } = do
   let capture = eventPhase == Capturing
   \(cb :: Web.Event -> Effect Unit) -> do
     listener <- Event.eventListener cb
@@ -241,9 +257,24 @@ ordMap = liftST (STRef.new Map.empty) <#> \ref ->
 
 -- | Only run it on the nth time.
 threshold :: Int -> Allocar Unit -> Allocar (Allocar Unit)
+threshold 0 act = act $> mempty
 threshold n act = liftST (STRef.new n) <#> \count -> do
   _ <- liftST do STRef.modify (_ - 1) count
   whenRef count (eq 0) act
+
+data Threshold a = BeforeTsh | AtTsh a | AfterTsh
+derive instance eqThreshold :: Eq a => Eq (Threshold a)
+derive instance ordThreshold :: Ord a => Ord (Threshold a)
+
+threshold' :: forall r. Int -> Allocar r -> Allocar (Allocar (Threshold r))
+threshold' 0 act = act $> pure AfterTsh
+threshold' n act = liftST (STRef.new n) <#> \count -> do
+  _ <- liftST do STRef.modify (_ - 1) count
+  left <- liftST do STRef.read count
+  case compare left 0 of
+    LT -> pure AfterTsh
+    EQ -> AtTsh <$> act
+    GT -> pure BeforeTsh
 
 -- | A push array, stored using a snoc list under the hood.
 pushArray :: forall a. Allocar
@@ -280,7 +311,14 @@ prealloc2 defaultL defaultR =
           STRef.read refR <* STRef.write v refR
       }
 
--- preallocMaybe
+storeLast :: forall a. Allocar { get :: Allocar (Maybe a), set :: a -&> Maybe a }
+storeLast =
+  liftST do
+    STRef.new Nothing <#> \ref ->
+      { get: liftST do STRef.read ref
+      , set: \v -> liftST do
+          STRef.read ref <* STRef.write (Just v) ref
+      }
 
 loading :: forall r. (Allocar Boolean -> Allocar r) -> Allocar r
 loading f = do
