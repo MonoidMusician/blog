@@ -87,7 +87,7 @@ If you want to export from Gmail, go to the Google Takeout website: https://take
 
     - Safari: open Preferences, General tab, set “File download location” to “Ask for each download”
     - Firefox: open Settings, search for “Downloads”, enable “Always ask you where to save files”.
-    - Chrome/etc.: open Settings, search for “Downloads”, enable “Ask where to save each file before downloading”.
+    - Chromium/etc.: open Settings, search for “Downloads”, enable “Ask where to save each file before downloading”.
 
 5. Extract your archive.
   It will be named something like `takeout-20240101T123456Z-001.zip`.

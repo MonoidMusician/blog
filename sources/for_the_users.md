@@ -7,7 +7,7 @@ author:
 
 ## User styles
 
-I use the Stylus extension for Chrome.
+I use the Stylus extension for Chromium.
 It is decent.
 Unlike Stylish, which is crap.
 (I lost all my user styles on Stylish.)
@@ -121,7 +121,7 @@ To make the logo fit in:
 
 ## User scripts
 
-I use TamperMonkey extension on Chrome.
+I use TamperMonkey extension on Chromium.
 
 ### Dark mode
 

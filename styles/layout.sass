@@ -108,7 +108,7 @@ pre > code
 
   & > textarea
     margin: -0.75em
-    /* looks bad on Firefox and causes additional scroll bar, uhhh Chrome bug? */
+    /* looks bad on Firefox and causes additional scroll bar, uhhh Chromium bug? */
     /* margin-bottom: calc(-1.45em + 4px) */
     padding: 0.75em
     resize: vertical
@@ -416,13 +416,13 @@ label.margin-toggle:not(.sidenote-number)
 
 
 .pixelated
-  image-rendering: optimizeSpeed             /* STOP SMOOTHING, GIVE ME SPEED  */
-  image-rendering: -moz-crisp-edges          /* Firefox                        */
-  image-rendering: -o-crisp-edges            /* Opera                          */
-  image-rendering: -webkit-optimize-contrast /* Chrome (and eventually Safari) */
-  image-rendering: optimize-contrast         /* CSS3 Proposed                  */
-  image-rendering: pixelated /* Chrome */
-  -ms-interpolation-mode: nearest-neighbor   /* IE8+                           */
+  image-rendering: optimizeSpeed             /* STOP SMOOTHING, GIVE ME SPEED    */
+  image-rendering: -moz-crisp-edges          /* Firefox                          */
+  image-rendering: -o-crisp-edges            /* Opera                            */
+  image-rendering: -webkit-optimize-contrast /* Chromium (and eventually Safari) */
+  image-rendering: optimize-contrast         /* CSS3 Proposed                    */
+  image-rendering: pixelated /* Chromium */
+  -ms-interpolation-mode: nearest-neighbor   /* IE8+                             */
 
 
 h2, h3, h4, h5, h6

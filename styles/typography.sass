@@ -101,7 +101,7 @@ blockquote
       font-weight: 200
 
 // Headings
-h1
+h1, h1 + p.dated
   text-align: center
   text-wrap: balance
   font-size: 45px
@@ -124,7 +124,7 @@ h1
     background-clip: text;
     */
 
-h2, h3, h4, h5
+h2, h3, h4, h5, h2 + p.dated
   font-weight: 500
   @if not $light
     text-shadow: 2px 2px 2px #000000b3
@@ -135,13 +135,14 @@ h2, h3, h4, h5
 
   font-feature-settings: "ss01" 1
 
-h2
+h2, h2 + p.dated
   text-align: center
   text-wrap: balance
-  font-size: 34px
+  font-size: 36px
   margin-top: 2em
   margin-bottom: 1em
   font-weight: 500
+  font-weight: 300
 
 h3
   font-size: 30px
@@ -277,3 +278,11 @@ pre > code .visible-space[data-whitespace]::before
 .dated
   float: right
   font-style: italic
+h1 + p.dated, h2 + p.dated
+  float: none
+  margin: 0
+  padding: 0
+  display: block
+  font-size: 28px
+h2 + p.dated
+  margin-top: -1.4em

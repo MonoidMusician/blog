@@ -150,7 +150,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
       - Probably want extra eta principles
     - Generate automatic upgrades based on structure of the types where possible ([e.g.]{t=} removing a record field, adding a sum type)
 
-### Programming Linguistics
+### Linguistics of Programming
 
   - Iʼve been thinking a lot about [selective applicative functors](https://dl.acm.org/doi/10.1145/3341694) lately.
     Mostly through the perspective of two contrasting applications: [selective applicative parsers](https://cohost.org/monoidmusician/post/2588944-more-more-more-seman), and functors for [typechecking with better errors](comprehensive_errors.html).
@@ -215,7 +215,8 @@ _data = information^[bits & bytes] + structure^[expectations of what the bits & 
   - The Anatomy of ADTs
   - [WIP]{t=}: [Subtypes/Quotients: Lies Told in Defense of the Truth](adt_lies_for_truth.html)
   - Quotients: Lets us have nice cake and eat things too.
-  - [Hereditarily Finite Sets](hereditarily_finite_sets.html)
+  - [Hereditarily Finite Sets (HFSes)](hereditarily_finite_sets.html)
+    - [HatStack: A stack based, concatenative language for Hereditarily Finite Sets](hatstack.html)
 
 ### Mathematics
 

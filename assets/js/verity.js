@@ -515,5 +515,57 @@ Verity = Ve = {};
 
   //////////////////////////////////////////////////////////////////////////////
 
+  Ve.dedent = (strings, ...values) => {
+    if ('raw' in strings) strings = strings['raw'];
+    if (typeof strings === 'string' || strings instanceof String) strings = [strings];
+    if (!strings.length) return '';
+    const lines = strings.flatMap((string, i) => {
+      const these_lines = string.split('\n').slice(1);
+      return these_lines.map((line, j) => {
+        return {line, follows: i !== strings.length-1 && j === these_lines.length-1};
+      });
+    });
+    // console.log({ lines });
+    let commonPrefix = null;
+    for (const {line, follows} of lines) {
+      const prefix = line.match(/^[^\S\r\n\f]*/u)[0];
+      if (!follows && prefix === line) continue; // no content
+      if (!commonPrefix || commonPrefix.startsWith(prefix)) {
+        // console.log({ commonPrefix, prefix });
+        commonPrefix = prefix;
+      }
+      if (!commonPrefix) break;
+    }
+    const replaced =
+      commonPrefix === null ? strings.map(s => s.split('\n').map(_=>'').join('\n')) :
+      strings.map(string => string.replaceAll('\n'+commonPrefix, '\n'));
+    // If there is no content on the first line, remove it
+    if (!replaced[0].split("\n")[0].trim())
+      // https://forum.keyboardmaestro.com/t/regex-for-horizontal-whitespace-s-h-t-blank-etc/8287/12
+      replaced[0] = replaced[0].replace(/^[^\S\r\n\f]*\n/, '');
+    const last = replaced.length-1;
+    // Trim the last line if it has no content but there is content in the string
+    const last_lines = replaced[last].split('\n');
+    if (commonPrefix !== null || values.length) {
+      if (!last_lines[last_lines.length - 1].trim()) {
+        replaced[last] = replaced[last].replace(/\n[^\S\r\n\f]*$/, '');
+      }
+    }
+    const result = String.raw({ raw: replaced }, ...values);
+    // console.log({ replaced, result });
+    return result;
+  };
+
+  Ve.escape = {
+    HTML: s => s
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;'),
+  };
+
+  //////////////////////////////////////////////////////////////////////////////
+
   return this;
 }).call(Ve);

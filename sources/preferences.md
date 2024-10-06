@@ -18,7 +18,7 @@ Note: website will flash while loading styles, sorry.
   <input type="checkbox" id="sans" value="sans">
 
 - User styles:
-  <div class="sourceCode css"><pre><code><textarea id="user" style="min-height: 200px"></textarea></code></pre></div>
+  <div class="sourceCode css"><pre><code><textarea id="user-style" style="min-height: 200px"></textarea></code></pre></div>
   <input id="color" type="color"></input>
 
 <script>
@@ -46,7 +46,7 @@ Array.prototype.forEach.call(els, el => {
   };
 });
 
-var user = document.querySelector('textarea#user');
+var user = document.querySelector('textarea#user-style');
 user.value = style_choice['user'] || "";
 user.onchange = function() {
   var style = getStyle();

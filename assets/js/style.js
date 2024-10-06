@@ -36,7 +36,7 @@ function loadStyle(new_choice, nowait) {
       console.debug("Stylesheet loaded");
       requestAnimationFrame(() => finish_load());
     }, { once: true });
-    // load is not firing on chrome after initial load???
+    // load is not firing on Chromium after initial load???
     requestAnimationFrame(() => finish_load());
 
     if (!el.href.endsWith(src))

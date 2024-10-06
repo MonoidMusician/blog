@@ -418,7 +418,7 @@ As will be the theme, references to foreign data (not strings, numbers, objects,
 
 Global object types are worth thinking about.
 They are opaque to code, but in theory they live in predictable places in the global namespace each time, so the proper reference to them can be reconstructed.
-However, thereʼs still complications, such as that different runtimes will expose different ones (Chrome, Firefox, Node, Deno, …).
+However, thereʼs still complications, such as that different runtimes will expose different ones (Chromium, Firefox, Node, Deno, …).
 
 By far the most common types of foreign objects will be from the DOM.
 Some can be serialized pretty directly – at least snapshotted if they arenʼt immutable (like all the little attribute list or node list types, or bounding box type).

@@ -120,6 +120,8 @@ The source can be found at [MonoidMusician/blog](https://github.com/MonoidMusici
 It supports lots of nice Markdown features, seems to have a sane data model, and is pretty easily extensible.
 I knew that optimizing for SSR static content that doesnʼt require JS was one of my design goals, so thatʼs why itʼs great.
 
+[djot](https://djot.net/)?
+
 ### Lua
 Pandoc includes a builtin Lua scripting language for extensions that transform the content, as opposed to slow external scrips that need to serialize the whole document back and forth.
 
@@ -219,7 +221,7 @@ Some weird quirks and anti-quirks Iʼve run into while implementing stuff:
   It works great in dashboard mode, but in the blogpost mode I have to set `{overflow: auto hidden}`{.css} so that it scrolls horizontally but not vertically in the body of the post.
   Unfortunately, due to how scroll containers work in CSS, this makes only the horizontal scrolling move the headers, not the vertical scrolling, which is kind of annoying 😒.
   I donʼt know what to do about it.
-1. Tiny thing: Only Chrome seems to implement `border-image`{.kw} tweening at the moment.
+1. Tiny thing: Only Chromium seems to implement `border-image`{.kw} tweening at the moment.
   Itʼs a long story why Iʼm using it in the first place (for info boxes), but I like it both with and without.
 1. Good news: Iʼm so happy that `:focus-visible`{.css} is actually supported now.
   I swear the last time I was doing this stuff I was going to have to implement it myself.

@@ -3,10 +3,11 @@ title: Monoids in Public
 subtitle: Useful monoid structures in programming
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
-date: 2023/01/02 – 2024/09/18
+date: 2023/11/15 – 2024/09/18
 ---
 
 ## VDOM trees as monoids
+<p class="dated">2023/11/15</p>
 
 Imagine you have your favorite VDOM model:
 
@@ -124,6 +125,7 @@ And I think thereʼs a specific reason why you want `Fragment []`{.haskell} to b
 </details>
 
 ## Join with separator monoid
+<p class="dated">2023/11/15</p>
 
 I confess that this is also motivated by webdev: for the class attribute, which is a space-separated list of class names.
 
@@ -176,7 +178,145 @@ joinWithComma = unwrap <<< foldMap
 And the real benefit of making a proper monoid structure is that it is now compositional.
 You can just chuck it in a record and it does the right thing \^.\^
 
+## Precedence in pretty printers
+<p class="dated">2024/05/01</p>
+
+:::{.centered}
+*Originally posted at <https://tech.lgbt/@monoidmusician/112368939004740994>*
+:::
+
+This semiring is an amalgamation of a few concepts: a unification monoid, the [`Last`{.purescript}](https://pursuit.purescript.org/packages/purescript-maybe/6.0.0/docs/Data.Maybe.Last#t:Last) monoid, and some other stuff.
+
+My goal is to capture precedence during the pretty-printing phase of my printer–parser–pretty-printer framework.
+It really *really* needs to be compositional and to handle arbitrary structures, not just the usual binary operators.
+
+The idea is that the applicative `<*>`{.purescript} combinators of the parser will correspond to multiplication `*`{.purescript} of precedence, and the alternative `<|>`{.purescript} combinators of the parser will correspond to addition of precedence.
+
+During printing, when the precedence combines in certain ways, it will automatically insert parentheses (or some other method of delineating precedence, obviously i am not going to hardcode it).
+
+The
+
+```purescript
+Prec 1 + Prec 1 * Prec 2
+  = Prec 1 + Prec 2
+  = NoPrec (since 1 /= 2)
+
+Prec 1 * (NoPrec + Prec 2)
+  = ??? no good answer …
+```
+
+------------------------------------------------------------------------
+
+it is a similar problem as follow sets: what do you do with empty
+alternatives? ... just not recursive (no need to peek inside
+nonterminals)
+
+------------------------------------------------------------------------
+
+well, this is algebra, so we can just invent an answer `MTPrec`{.purescript} ("empty
+or [known] precedence") and see if it still works out:
+
+```purescript
+NoPrec + Prec 2
+  = MTPrec 2
+
+Prec 1 * EmptyOrPrec 2
+  = NoPrec (since 1 /= 2)
+```
+
+I guess I also need a `DiffPrec`{.purescript}  ...
+
+hmm I wrote an impl, best to throw it into QuickCheck at this point, I
+think
+
+------------------------------------------------------------------------
+
+QuickCheck is happy! I will just have to consider tomorrow whether this
+actually buys me anything…
+
+specifically I want it to help me delineate precedence for pretty
+printing … *and* parsing? idk yet
+
+the specific idea is that it will explain why reduction rules can be
+assigned precedence in Happy (this is necessary for the implicit
+adjuxtaposition operator for function application), and how it defaults
+to that of the last token
+
+------------------------------------------------------------------------
+
+```purescript
+data Prec v
+  = NoPrec
+  | AnyPrec
+  | DiffPrec
+  | Prec v
+  | MTPrec v
+
+instance semiringPrec :: Eq v => Semiring (Prec v) where
+  zero = AnyPrec
+  one = NoPrec
+
+  add DiffPrec _ = DiffPrec
+  add _ DiffPrec = DiffPrec
+  add AnyPrec v = v
+  add v AnyPrec = v
+  add NoPrec (Prec v) = MTPrec v
+  add (Prec v) NoPrec = MTPrec v
+  add NoPrec (MTPrec v) = MTPrec v
+  add (MTPrec v) NoPrec = MTPrec v
+  add (Prec v1) (Prec v2)
+    | v1 == v2 = Prec v1
+    | otherwise = DiffPrec
+  add (Prec v1) (MTPrec v2)
+    | v1 == v2 = MTPrec v1
+    | otherwise = DiffPrec
+  add (MTPrec v1) (Prec v2)
+    | v1 == v2 = MTPrec v1
+    | otherwise = DiffPrec
+
+  mul AnyPrec _ = AnyPrec
+  mul _ AnyPrec = AnyPrec
+  mul NoPrec v = v
+  mul v NoPrec = v
+  mul _ DiffPrec = DiffPrec
+  mul DiffPrec (MTPrec _) = DiffPrec
+  mul (Prec v1) (MTPrec v2)
+    | v1 == v2 = Prec v2
+    | otherwise = DiffPrec
+  mul (MTPrec v1) (MTPrec v2)
+    | v1 == v2 = MTPrec v1
+    | otherwise = DiffPrec
+  mul _ (Prec v) = Prec v
+```
+
+------------------------------------------------------------------------
+
+shout-out to quickcheck-laws
+
+<https://github.com/purescript-contrib/purescript-quickcheck-laws/blob/v7.0.0/src/Test/QuickCheck/Laws/Data/Semiring.purs>
+
+------------------------------------------------------------------------
+
+I think the upshot is that parsing rules have a simple precedence
+behavior: just use the Last monoid for each rule, since the alternative
+rules are already in a list structure
+
+pretty printing will require this new semiring, since it does not have
+alternatives in the same structure, it is just a function
+
+so when you transition from “known precedence” to “unknown precedence”,
+is where it adds the opportunity to parenthesize
+
+ughhh how does this interact with CST nowwww
+
+------------------------------------------------------------------------
+
+CST shouldnʼt need precedence, right, thatʼs kind of the point of it,
+that it just preserves parentheses that existed in the input
+
+
 ## Top-Down Traversals
+<p class="dated">2024/09/18</p>
 
 Recently I faced a problem: how do I get more control out of a traversal in PureScript?
 
