@@ -1,10 +1,10 @@
-This input sends `\i -> Left (Tuple i i)`{.purescript}, which youʼll have to take my word for it that it is cool that it deduplicates events and does not send two events `Left (Tuple oldValue newValue), Left (Tuple newValue newValue)`{.purescript}.
+This input sends `\i -> Left (Tuple i i)`{.purescript}, which youʼll have to take my word for it that it is cool that it deduplicates events and does not send two events `Left (Tuple newValue oldValue), Left (Tuple newValue newValue)`{.purescript}.
 
 <input id="test-input" />
 
 These inputs are joined together `\i j -> Right (Tuple i j)`{.purescript} with `<*>`{.purescript}/`lift2`{.purescript}.
 This means it sends an event whenever either one updates.
-However, the subscription purposefully ignores the initial values, so it will not activate until both have received a value.
+However, the subscription is set up to ignore the initial value of the input, so the combined event will not activate until both inputs have received an updated value.
 
 <input id="test-input1" />
 <input id="test-input2" />

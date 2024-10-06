@@ -5,15 +5,14 @@ import Prelude
 import Data.Either (either)
 import Data.Foldable (oneOfMap)
 import Data.Time.Duration (Milliseconds(..))
-import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Console as Console
-import Idiolect (tupling, (/|\), (\|/))
+import Idiolect ((/|\), (\|/))
 import Riverdragon.Dragon (Dragon, renderId)
 import Riverdragon.Dragon as D
 import Riverdragon.Dragon.Bones as B
 import Riverdragon.Dragon.Wings (instantiateListenInput, listenInput, vanishing)
-import Riverdragon.River (Stream, chill, instantiate, subscribe)
+import Riverdragon.River (Stream, chill, subscribe)
 import Web.DOM.ElementId (ElementId(..))
 import Widget (Widget)
 

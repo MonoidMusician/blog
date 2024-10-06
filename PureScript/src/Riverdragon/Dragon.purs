@@ -12,17 +12,18 @@ import Data.Traversable (foldMap, for, for_, sequence_, traverse_)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Uncurried (runEffectFn3)
-import Prim.Boolean (False)
-import Riverdragon.Dragon.Breath (removeSelf, unsafeSetProperty)
-import Riverdragon.River (Lake, Stream, subscribe, subscribeIsh)
+import Idiolect ((>==))
+import Riverdragon.Dragon.Breath (removeSelf, setAttributeNS, unsafeSetProperty)
+import Riverdragon.River (Lake, subscribe, subscribeIsh)
 import Riverdragon.River.Bed (Allocar, accumulator, eventListener, freshId, ordMap, rolling, unsafeAllocate)
-import Web.DOM (Comment, Node, Element)
+import Web.DOM (Comment, Document, Element, Node)
 import Web.DOM.AttrName (AttrName(..))
 import Web.DOM.Comment as Comment
 import Web.DOM.Document (createComment, createElement, createElementNS, createTextNode)
+import Web.DOM.Document as Document
 import Web.DOM.Element (setAttribute)
 import Web.DOM.Element as Element
-import Web.DOM.ElementId (ElementId(..))
+import Web.DOM.ElementId (ElementId)
 import Web.DOM.ElementName (ElementName(..))
 import Web.DOM.NamespaceURI (NamespaceURI(..))
 import Web.DOM.Node (appendChild, insertBefore, parentNode, setTextContent)
@@ -37,6 +38,7 @@ import Web.HTML.Window (document)
 
 data Dragon
   = Fragment (Array Dragon)
+  | Egg (Effect Dragon)
   -- Only renders one `Dragon` at once (which may be a `Fragment`, `Appending`,
   -- or whatever)
   | Replacing (Lake Dragon)
@@ -76,8 +78,7 @@ renderProps el stream = do
       Attr (Just ns) name val -> do
         case Element.namespaceURI el == Just (NamespaceURI ns) of
           true -> setAttribute (AttrName name) val el
-          -- TODO: setAttributeNS
-          false -> setAttribute (AttrName name) val el
+          false -> setAttributeNS (Just (NamespaceURI ns)) (AttrName name) val el
       Prop name valTy -> case valTy of
         PropString val -> runEffectFn3 unsafeSetProperty el name val
         PropBoolean val -> runEffectFn3 unsafeSetProperty el name val
@@ -102,19 +103,30 @@ renderProps el stream = do
     unsubscribe
     listeners.reset >>= traverse_ identity
 
-globalId :: Allocar Int
-globalId = unsafeAllocate freshId
+type RndrMgr =
+  { doc :: Document
+  , domId :: Allocar String
+  }
 
-mkBookmarks :: (Node -> Effect Unit) -> Effect (Tuple (Pair Comment) (Node -> Effect Unit))
-mkBookmarks insert = do
-  doc <- window >>= document
-  this <- globalId -- for hydration?
+globalDomId :: Allocar Int
+globalDomId = unsafeAllocate freshId
+
+renderManager :: Allocar RndrMgr
+renderManager = do
+  doc <- window >>= document >== HTMLDocument.toDocument
+  prefix <- globalDomId <#> \i j -> show i <> "." <> show j
+  domId <- map prefix <$> freshId
+  pure { doc, domId }
+
+mkBookmarks :: RndrMgr -> (Node -> Effect Unit) -> Effect (Tuple (Pair Comment) (Node -> Effect Unit))
+mkBookmarks mgr insert = do
+  this <- mgr.domId -- for hydration?
   bookmarks@(Pair _ bookend) <- for (Pair false true) \side -> do
     let
-      name = show this # case side of
-        false -> (_ <> "[")
-        true -> ("]" <> _)
-    bookmark <- createComment name (HTMLDocument.toDocument doc)
+      name = this <> case side of
+        false -> "["
+        true -> "]"
+    bookmark <- createComment name mgr.doc
     insert (Comment.toNode bookmark)
     pure bookmark
   pure $ Tuple bookmarks \newSibling -> do
@@ -140,58 +152,55 @@ fromBookmarks (Pair l r) destroy =
 
 renderId :: ElementId -> Dragon -> Effect (Effect Unit)
 renderId id dragon = do
-  mel <- getElementById id <<< HTMLDocument.toNonElementParentNode =<< document =<< window
+  mgr <- renderManager
+  mel <- getElementById id (Document.toNonElementParentNode mgr.doc)
   mel # foldMap \el -> do
-    Tuple _ insert <- mkBookmarks (appendChild <@> Element.toNode el)
-    _.destroy <$> renderTo insert dragon
+    _.destroy <$> renderTo mgr (appendChild <@> Element.toNode el) dragon
 
-renderTo :: (Node -> Effect Unit) -> Dragon -> Effect Rendered
-renderTo insert (Text changingValue) = do
-  doc <- window >>= document
-  el <- createTextNode "" (HTMLDocument.toDocument doc)
-  let inactive = removeSelf (Text.toNode el)
-  unsubscribe <- subscribeIsh inactive changingValue \newValue -> do
+renderTo :: RndrMgr -> (Node -> Effect Unit) -> Dragon -> Effect Rendered
+renderTo mgr insert (Egg egg) = egg >>= renderTo mgr insert
+renderTo mgr insert (Text changingValue) = do
+  el <- createTextNode "" mgr.doc
+  unsubscribe <- subscribeIsh mempty changingValue \newValue -> do
     setTextContent newValue (Text.toNode el)
   insert (Text.toNode el)
   pure $ only (Text.toNode el) do
     unsubscribe
-    inactive
-renderTo insert (Element ns ty props children) = do
-  doc <- window >>= document
+    removeSelf (Text.toNode el)
+renderTo mgr insert (Element ns ty props children) = do
   let create = maybe createElement (createElementNS <<< Just <<< NamespaceURI)
-  el <- create ns (ElementName ty) (HTMLDocument.toDocument doc)
+  el <- create ns (ElementName ty) mgr.doc
   unSubscribeProps <- renderProps el props
-  destroyChildren <- renderTo (appendChild <@> Element.toNode el) children
+  destroyChildren <- renderTo mgr (appendChild <@> Element.toNode el) children
   insert (Element.toNode el)
   pure $ only (Element.toNode el) do
     unSubscribeProps
     destroyChildren.destroy
     removeSelf (Element.toNode el)
-renderTo insert (Fragment children) =
+renderTo mgr insert (Fragment children) =
   case NEA.fromArray children of
     Nothing -> do
-      doc <- window >>= document
-      this <- globalId -- for hydration?
-      bookmark <- createComment (show this) (HTMLDocument.toDocument doc)
+      this <- mgr.domId -- for hydration?
+      bookmark <- createComment this mgr.doc
       pure $ (only <*> removeSelf) (Comment.toNode bookmark)
-    Just children' -> foldMap1 (renderTo insert) children'
-renderTo insert (Replacing revolving) = do
-  Tuple bookmarks insert' <- mkBookmarks insert
+    Just children' -> foldMap1 (renderTo mgr insert) children'
+renderTo mgr insert (Replacing revolving) = do
+  Tuple bookmarks insert' <- mkBookmarks mgr insert
   unsubPrev <- rolling
   let inactive = for_ bookmarks (Comment.toNode >>> removeSelf)
-  unsubscribe <- subscribeIsh inactive revolving \newValue -> do
-      unsubPrev mempty
-      unsubPrev <<< _.destroy =<< renderTo insert' newValue
+  unsubscribe <- subscribeIsh (mempty inactive) revolving \newValue -> do
+    unsubPrev mempty
+    unsubPrev <<< _.destroy =<< renderTo mgr insert' newValue
   pure $ fromBookmarks bookmarks do
     unsubscribe
     unsubPrev mempty
     inactive
-renderTo insert (Appending items) = do
-  Tuple bookmarks insert' <- mkBookmarks insert
+renderTo mgr insert (Appending items) = do
+  Tuple bookmarks insert' <- mkBookmarks mgr insert
   unsubAll <- accumulator
   let inactive = for_ bookmarks (Comment.toNode >>> removeSelf)
-  unsubscribe <- subscribeIsh inactive items \newChild -> do
-    unsubAll.put <<< _.destroy =<< renderTo insert' newChild
+  unsubscribe <- subscribeIsh (mempty inactive) items \newChild -> do
+    unsubAll.put <<< _.destroy =<< renderTo mgr insert' newChild
   pure $ fromBookmarks bookmarks do
     unsubscribe
     join (unsubAll.reset)

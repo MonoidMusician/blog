@@ -1,0 +1,14 @@
+Data.Map.Internal.member never
+Data.Map.Internal.lookup never
+Data.Map.Internal.insert never
+Data.Map.Internal.delete never
+Data.Traversable.traversableMaybe.traverse arity=2
+Data.Traversable.for arity=2
+Data.Function.flip arity=2
+
+
+Data.Lens.Lens.lens arity=2
+Data.Lens.Record.prop arity=4
+Data.Lens.Iso.Newtype._Newtype arity=3
+Data.Profunctor.Strong.strongFn.first arity=1
+Data.Profunctor.Strong.strongFn.second arity=1

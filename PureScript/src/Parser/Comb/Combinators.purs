@@ -3,7 +3,6 @@ module Parser.Comb.Combinators where
 import Prelude
 
 import Control.Plus (empty)
-import Data.Array (fold)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
 import Data.FunctorWithIndex (mapWithIndex)

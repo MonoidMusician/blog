@@ -56,11 +56,11 @@ $(BUILDIR)/%.html : $(TXTDIR)/%.md pandoc/defaults.yaml pandoc/post.html PureScr
 watch-pandoc :
 	watchexec -w pandoc -f 'pandoc/**' -w $(TXTDIR) -f '$(TXTDIR)/*.md' -- make pandoc
 
-prod-ps : $(BUILDIR) PureScript/src packages.dhall spago.dhall
+prod-ps : $(BUILDIR) PureScript/src PureScript/directives.txt packages.dhall spago.dhall
 	rm -f $(BUILDIR)/widgets.js.gz
 	spago build --purs-args "-g corefn,js"
 	spago run --purs-args "-g corefn,js" -m PreBuild
-	purs-backend-es bundle-app --main Main --to $(BUILDIR)/widgets.js
+	purs-backend-es bundle-app --directives PureScript/directives.txt --main Main --to $(BUILDIR)/widgets.js
 	gzip -f9k $(BUILDIR)/widgets.js
 
 prebuild : PureScript/src/PreBuild.purs PureScript/src/Parser/Parserlude.purs

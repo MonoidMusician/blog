@@ -1,3 +1,28 @@
+-- | This module is all about helpers for managing the lifecycles of variables
+-- | with various semantics (replacement, accumulation, thresholds, and so on).
+-- |
+-- | It is sort of “OOP but done better”: each allocation of a variable runs in
+-- | `Allocar` and returns a bunch of instantiated methods encapsulated in a
+-- | record. It offers great abstraction, no manual handling of refs and such.
+-- |
+-- | It actually does a decent job of being inlined by the backend-optimizer,
+-- | with some help from inlining directives. It does not quite *look* like
+-- | something a dev would write (there are spurious constant declarations),
+-- | but it should perform similarly or identically.
+-- |
+-- | It is just really cute and nice and convenient!
+--
+-- @inline export loadingBurst arity=1
+-- @inline export storeLast always
+-- @inline export ordMap arity=1
+-- @inline export ordSet arity=1
+-- @inline export loading arity=1
+-- @inline export accumulator arity=1
+-- @inline export threshold arity=2
+-- @inline export rolling always
+-- @inline export subscriptions always
+-- @inline export cleanup' arity=1
+-- @inline export cleanup arity=1
 module Riverdragon.River.Bed where
 
 import Prelude
@@ -7,12 +32,15 @@ import Control.Monad.ST.Internal as STR
 import Control.Monad.ST.Internal as STRef
 import Data.Array as Array
 import Data.Array.ST as STA
+import Data.Foldable (traverse_)
 import Data.FoldableWithIndex (traverseWithIndex_)
 import Data.List as List
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), isNothing)
 import Data.Profunctor.Strong ((&&&))
+import Data.Set (Set)
+import Data.Set as Set
 import Data.Tuple (Tuple(..), fst, uncurry)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect, foreachE)
@@ -26,36 +54,16 @@ import Web.Event.EventTarget as Event
 
 
 -- | Benign effects of allocation and deallocation.
+-- | (Originally implemented as a newtype, but the syntactic noise was
+-- | unbearable.)
 type Allocar = Effect
--- newtype Allocar a = Allocar (Effect a)
-
--- derive instance newtypeAllocar :: Newtype (Allocar a) _
--- derive newtype instance functorAllocar :: Functor Allocar
--- derive newtype instance applyAllocar :: Apply Allocar
--- derive newtype instance applicativeAllocar :: Applicative Allocar
--- derive newtype instance bindAllocar :: Bind Allocar
--- derive newtype instance monadAllocar :: Monad Allocar
--- derive newtype instance monadSTAllocar :: MonadST ST.Global Allocar
--- derive newtype instance semigroupAllocar :: Semigroup a => Semigroup (Allocar a)
--- derive newtype instance monoidAllocar :: Monoid a => Monoid (Allocar a)
 
 unsafeAllocate :: forall a. Allocar a -> a
 unsafeAllocate = coerce (unsafePerformEffect :: Effect a -> a)
 
 type AllocateFrom a b = a -> Effect b
--- newtype AllocateFrom a b = AllocateFrom (EffectFn1 a b)
 infixr 1 type AllocateFrom as -&>
 infixr 1 type AllocateFrom as -!>
-
--- derive instance newtypeAllocateFrom :: Newtype (AllocateFrom a b) _
--- instance functorAllocateFrom :: Functor (AllocateFrom a) where
---   map f (AllocateFrom g) = AllocateFrom do
---     mkEffectFn1 \i -> f <$> runEffectFn1 g i
--- instance profunctorAllocateFrom :: Profunctor AllocateFrom where
---   dimap f g (AllocateFrom h) = AllocateFrom do
---     mkEffectFn1 \i -> g <$> runEffectFn1 h (f i)
--- derive newtype instance semigroupAllocateFrom :: Semigroup b => Semigroup (AllocateFrom a b)
--- derive newtype instance monoidAllocateFrom :: Monoid b => Monoid (AllocateFrom a b)
 
 unsafeAllocateFrom :: forall a b. AllocateFrom a b -> a -> b
 unsafeAllocateFrom f i = unsafePerformEffect (f i)
@@ -117,6 +125,8 @@ cleanup' act = do
 cleanup :: Allocar Unit -> Allocar (Allocar Unit)
 cleanup = cleanup' >>> map _.cleanup
 
+-- | Runs the last action each time a new action is set. Useful for when you are
+-- | replacing subscriptions or swapping out other resources.
 rolling :: Allocar (Allocar Unit -> Allocar Unit)
 rolling = do
   past <- liftST do STR.new mempty
@@ -211,12 +221,11 @@ eventListener ::
   , eventTarget :: EventTarget
   } ->
   (Web.Event -> Effect Unit) -&> Allocar Unit
-eventListener { eventType, eventPhase, eventTarget } = do
+eventListener { eventType, eventPhase, eventTarget } cb = do
   let capture = eventPhase == Capturing
-  \(cb :: Web.Event -> Effect Unit) -> do
-    listener <- Event.eventListener cb
-    Event.addEventListener eventType listener capture eventTarget $>
-      Event.removeEventListener eventType listener capture eventTarget
+  listener <- Event.eventListener cb
+  Event.addEventListener eventType listener capture eventTarget $>
+    Event.removeEventListener eventType listener capture eventTarget
 
 
 -- | Allocate an accumulator, that always adds in from the monoid. Useful for
@@ -230,6 +239,9 @@ accumulator = liftST (STRef.new mempty) <#> \acc ->
       pure unit
   }
 
+-- | Manage a “mutable” `Data.Map`, by manipulating specific keys and running
+-- | functions on all keys currently in the map. All methods return the previous
+-- | value where that makes sense (`set`, `remove`, `reset`).
 ordMap :: forall k v. Ord k => Allocar
   { read :: Allocar (Map k v)
   , set :: k -> v -> Allocar (Maybe v)
@@ -254,6 +266,29 @@ ordMap = liftST (STRef.new Map.empty) <#> \ref ->
   , reset: liftST do STRef.modify' (\value -> { value, state: Map.empty }) ref
   }
 
+ordSet :: forall k. Ord k => Allocar
+  { read :: Allocar (Set k)
+  , set :: k -> Allocar Boolean
+  , get :: k -> Allocar Boolean
+  , remove :: k -> Allocar Boolean
+  , traverse :: (k -> Allocar Unit) -> Allocar Unit
+  , whenPresent :: k -> Allocar Unit -> Allocar Unit
+  , reset :: Allocar (Set k)
+  -- , destroy :: Allocar (Set k)
+  }
+ordSet = liftST (STRef.new Set.empty) <#> \ref ->
+  { read: liftST do STRef.read ref
+  , set: \k -> liftST do STRef.modify' (\m -> { value: Set.member k m, state: Set.insert k m }) ref
+  , get: \k -> liftST do Set.member k <$> STRef.read ref
+  , remove: \k -> liftST do STRef.modify' (\m -> { value: Set.member k m, state: Set.delete k m }) ref
+  , traverse: \f -> (liftST do STRef.read ref) >>= traverse_ f
+  , whenPresent: \k f -> do
+      mv <- liftST do Set.member k <$> STRef.read ref
+      case mv of
+        true -> f
+        false -> pure unit
+  , reset: liftST do STRef.modify' (\value -> { value, state: Set.empty }) ref
+  }
 
 -- | Only run it on the nth time.
 threshold :: Int -> Allocar Unit -> Allocar (Allocar Unit)
@@ -289,6 +324,7 @@ pushArray = liftST (STRef.new List.Nil) <#> \acc ->
   , reset: Array.reverse <<< List.toUnfoldable <$> liftST (STRef.read acc <* STRef.write List.Nil acc)
   }
 
+-- | A single mutable cell, initialized with the specified default value.
 prealloc :: forall a. a -> Allocar { get :: Allocar a, set :: a -&> a }
 prealloc default =
   liftST do
@@ -311,15 +347,23 @@ prealloc2 defaultL defaultR =
           STRef.read refR <* STRef.write v refR
       }
 
-storeLast :: forall a. Allocar { get :: Allocar (Maybe a), set :: a -&> Maybe a }
+-- | Just a single memory cell storing `Just` the most recent value, or
+-- | `Nothing` at the start.
+storeLast :: forall a. Allocar
+  { get :: Allocar (Maybe a)
+  , run :: (a -!> Unit) -!> Unit
+  , set :: a -&> Maybe a
+  }
 storeLast =
   liftST do
     STRef.new Nothing <#> \ref ->
       { get: liftST do STRef.read ref
+      , run: \f -> liftST (STRef.read ref) >>= traverse_ f
       , set: \v -> liftST do
           STRef.read ref <* STRef.write (Just v) ref
       }
 
+-- | The variable is only `true` for the lifetime of the function.
 loading :: forall r. (Allocar Boolean -> Allocar r) -> Allocar r
 loading f = do
   isLoading <- liftST (STRef.new true)
@@ -327,12 +371,15 @@ loading f = do
   _ <- liftST (STRef.write false isLoading)
   pure r
 
+-- | Capture an array of values during the initial loading, otherwise let the
+-- | `Allocar Unit` callback handle them. Used for the `burst` field of streams.
 loadingBurst ::
   forall a r.
-  ((a -> Allocar Unit) -> Allocar Boolean -> Allocar (Array a -> r)) ->
+  ((a -> Allocar Unit -> Allocar Unit) -> Allocar (Array a -> r)) ->
   Allocar r
 loadingBurst f = do
   bursts <- pushArray
-  r <- loading (f bursts.push)
+  r <- loading \isLoading -> f \a whenDone ->
+    iteM isLoading (bursts.push a) whenDone
   burst <- bursts.reset
   pure (r burst)

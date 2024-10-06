@@ -67,7 +67,7 @@ import Record as Record
 import Safe.Coerce (coerce)
 import Type.Equality (class TypeEquals, to, from)
 import Type.Proxy (Proxy(..))
-import Whitespace (ParseWS(..))
+import Whitespace (ParseWS)
 
 type ParseError = String
 type UserError = String
