@@ -4,20 +4,18 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..))
-import Data.Newtype (unwrap)
 import Data.Pair (Pair(..))
 import Data.Semigroup.First (First(..))
 import Data.Semigroup.Foldable (foldMap1)
 import Data.Semigroup.Last (Last(..))
-import Data.Traversable (foldMap, for, for_, sequence_, traverse_)
+import Data.Traversable (for, for_, sequence_, traverse_)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
-import Effect.Uncurried (mkEffectFn1, runEffectFn1, runEffectFn3)
+import Effect.Uncurried (runEffectFn3)
 import Prim.Boolean (False)
 import Riverdragon.Dragon.Breath (removeSelf, unsafeSetProperty)
 import Riverdragon.River (Stream, subscribe)
-import Riverdragon.River.Bed (Allocar(..), AllocateFrom(..), accumulator, eventListener, globalId, ordMap, rolling)
-import Safe.Coerce (coerce)
+import Riverdragon.River.Bed (accumulator, eventListener, globalId, ordMap, rolling)
 import Web.DOM (Comment, Node, Element)
 import Web.DOM.AttrName (AttrName(..))
 import Web.DOM.Comment as Comment
@@ -66,9 +64,9 @@ data PropVal
 
 renderProps :: Element -> Stream False AttrProp -> Effect (Effect Unit)
 renderProps el stream = do
-  listeners <- unwrap ordMap
+  listeners <- ordMap
   let
-    receive = mkEffectFn1 case _ of
+    receive = case _ of
       Attr ns name val -> setAttribute (AttrName name) val el
       Prop name valTy -> case valTy of
         PropString val -> runEffectFn3 unsafeSetProperty el name val
@@ -76,29 +74,29 @@ renderProps el stream = do
         PropInt val -> runEffectFn3 unsafeSetProperty el name val
         PropNumber val -> runEffectFn3 unsafeSetProperty el name val
       Listener ty mcb -> do
-        unwrap (listeners.remove ty) >>= sequence_
+        (listeners.remove ty) >>= sequence_
         case mcb of
           Nothing -> pure unit
           Just cb -> do
             let
-              AllocateFrom doIt = eventListener
+              doIt = eventListener
                 { eventPhase: Bubbling
                 , eventTarget: Element.toEventTarget el
                 , eventType: EventType ty
                 }
-            r <- runEffectFn1 doIt cb
-            _ <- unwrap (listeners.set ty (unwrap r))
+            r <- doIt cb
+            _ <- listeners.set ty r
             pure unit
-  unsubscribe :: Effect Unit <- coerce do subscribe stream receive
+  unsubscribe <- subscribe stream receive
   pure do
     unsubscribe
-    unwrap listeners.reset >>= traverse_ identity
+    listeners.reset >>= traverse_ identity
 
 mkBookmarks :: (Node -> Effect Unit) -> Effect (Tuple (Pair Comment) (Node -> Effect Unit))
 mkBookmarks insert = do
   doc <- window >>= document
   bookmarks@(Pair _ bookend) <- for (Pair unit unit) \_ -> do
-    this <- unwrap globalId -- for hydration?
+    this <- globalId -- for hydration?
     bookmark <- createComment (show this) (HTMLDocument.toDocument doc)
     insert (Comment.toNode bookmark)
     pure bookmark
@@ -127,9 +125,8 @@ renderTo :: (Node -> Effect Unit) -> Dragon -> Effect Rendered
 renderTo insert (Text changingValue) = do
   doc <- window >>= document
   el <- createTextNode "" (HTMLDocument.toDocument doc)
-  unsubscribe :: Effect Unit <- coerce $ subscribe changingValue do
-    mkEffectFn1 \newValue -> do
-      setTextContent newValue do Text.toNode el
+  unsubscribe <- subscribe changingValue \newValue -> do
+    setTextContent newValue do Text.toNode el
   insert do Text.toNode el
   pure $ only (Text.toNode el) do
     unsubscribe
@@ -148,15 +145,14 @@ renderTo insert (Fragment children) =
   case NEA.fromArray children of
     Nothing -> do
       doc <- window >>= document
-      this <- unwrap globalId -- for hydration?
+      this <- globalId -- for hydration?
       bookmark <- createComment (show this) (HTMLDocument.toDocument doc)
       pure $ (only <*> removeSelf) (Comment.toNode bookmark)
     Just children' -> foldMap1 (renderTo insert) children'
 renderTo insert (Replaceable revolving) = do
   Tuple bookmarks insert' <- mkBookmarks insert
-  unsubPrev <- coerce rolling
-  unsubscribe :: Effect Unit <- coerce $ subscribe revolving do
-    mkEffectFn1 \newValue -> do
+  unsubPrev <- rolling
+  unsubscribe <- subscribe revolving \newValue -> do
       unsubPrev mempty
       unsubPrev <<< _.destroy =<< renderTo insert' newValue
   pure $ fromBookmarks bookmarks do
@@ -165,11 +161,10 @@ renderTo insert (Replaceable revolving) = do
     for_ bookmarks (Comment.toNode >>> removeSelf)
 renderTo insert (Collection items) = do
   Tuple bookmarks insert' <- mkBookmarks insert
-  unsubAll <- unwrap accumulator
-  unsubscribe :: Effect Unit <- coerce $ subscribe items do
-    mkEffectFn1 \newChild -> do
-      runEffectFn1 (unwrap unsubAll.put) <<< _.destroy =<< renderTo insert' newChild
+  unsubAll <- accumulator
+  unsubscribe <- subscribe items \newChild -> do
+    unsubAll.put <<< _.destroy =<< renderTo insert' newChild
   pure $ fromBookmarks bookmarks do
     unsubscribe
-    join (unwrap unsubAll.reset)
+    join (unsubAll.reset)
     for_ bookmarks (Comment.toNode >>> removeSelf)

@@ -3,7 +3,6 @@ module Riverdragon.River.Bed where
 import Prelude
 
 import Control.Monad.ST.Class (class MonadST, liftST)
-import Control.Monad.ST.Global as ST
 import Control.Monad.ST.Internal as STR
 import Control.Monad.ST.Internal as STRef
 import Data.Array as Array
@@ -13,16 +12,12 @@ import Data.List as List
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), isNothing)
-import Data.Newtype (class Newtype, unwrap)
-import Data.Profunctor (class Profunctor)
 import Data.Profunctor.Strong ((&&&))
 import Data.Tuple (Tuple(..), fst, uncurry)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect, foreachE)
 import Effect.Ref as Ref
-import Effect.Uncurried (EffectFn1, mkEffectFn1, runEffectFn1)
 import Effect.Unsafe (unsafePerformEffect)
-import Idiolect (type (-!>))
 import Safe.Coerce (coerce)
 import Web.Event.Event as Web
 import Web.Event.EventPhase (EventPhase(..))
@@ -31,36 +26,39 @@ import Web.Event.EventTarget as Event
 
 
 -- | Benign effects of allocation and deallocation.
-newtype Allocar a = Allocar (Effect a)
+type Allocar = Effect
+-- newtype Allocar a = Allocar (Effect a)
 
-derive instance newtypeAllocar :: Newtype (Allocar a) _
-derive newtype instance functorAllocar :: Functor Allocar
-derive newtype instance applyAllocar :: Apply Allocar
-derive newtype instance applicativeAllocar :: Applicative Allocar
-derive newtype instance bindAllocar :: Bind Allocar
-derive newtype instance monadAllocar :: Monad Allocar
-derive newtype instance monadSTAllocar :: MonadST ST.Global Allocar
-derive newtype instance semigroupAllocar :: Semigroup a => Semigroup (Allocar a)
-derive newtype instance monoidAllocar :: Monoid a => Monoid (Allocar a)
+-- derive instance newtypeAllocar :: Newtype (Allocar a) _
+-- derive newtype instance functorAllocar :: Functor Allocar
+-- derive newtype instance applyAllocar :: Apply Allocar
+-- derive newtype instance applicativeAllocar :: Applicative Allocar
+-- derive newtype instance bindAllocar :: Bind Allocar
+-- derive newtype instance monadAllocar :: Monad Allocar
+-- derive newtype instance monadSTAllocar :: MonadST ST.Global Allocar
+-- derive newtype instance semigroupAllocar :: Semigroup a => Semigroup (Allocar a)
+-- derive newtype instance monoidAllocar :: Monoid a => Monoid (Allocar a)
 
 unsafeAllocate :: forall a. Allocar a -> a
 unsafeAllocate = coerce (unsafePerformEffect :: Effect a -> a)
 
-newtype AllocateFrom a b = AllocateFrom (EffectFn1 a b)
+type AllocateFrom a b = a -> Effect b
+-- newtype AllocateFrom a b = AllocateFrom (EffectFn1 a b)
 infixr 1 type AllocateFrom as -&>
+infixr 1 type AllocateFrom as -!>
 
-derive instance newtypeAllocateFrom :: Newtype (AllocateFrom a b) _
-instance functorAllocateFrom :: Functor (AllocateFrom a) where
-  map f (AllocateFrom g) = AllocateFrom do
-    mkEffectFn1 \i -> f <$> runEffectFn1 g i
-instance profunctorAllocateFrom :: Profunctor AllocateFrom where
-  dimap f g (AllocateFrom h) = AllocateFrom do
-    mkEffectFn1 \i -> g <$> runEffectFn1 h (f i)
-derive newtype instance semigroupAllocateFrom :: Semigroup b => Semigroup (AllocateFrom a b)
-derive newtype instance monoidAllocateFrom :: Monoid b => Monoid (AllocateFrom a b)
+-- derive instance newtypeAllocateFrom :: Newtype (AllocateFrom a b) _
+-- instance functorAllocateFrom :: Functor (AllocateFrom a) where
+--   map f (AllocateFrom g) = AllocateFrom do
+--     mkEffectFn1 \i -> f <$> runEffectFn1 g i
+-- instance profunctorAllocateFrom :: Profunctor AllocateFrom where
+--   dimap f g (AllocateFrom h) = AllocateFrom do
+--     mkEffectFn1 \i -> g <$> runEffectFn1 h (f i)
+-- derive newtype instance semigroupAllocateFrom :: Semigroup b => Semigroup (AllocateFrom a b)
+-- derive newtype instance monoidAllocateFrom :: Monoid b => Monoid (AllocateFrom a b)
 
 unsafeAllocateFrom :: forall a b. AllocateFrom a b -> a -> b
-unsafeAllocateFrom (AllocateFrom f) i = unsafePerformEffect (runEffectFn1 f i)
+unsafeAllocateFrom f i = unsafePerformEffect (f i)
 
 -- | Promise that you could have allocated the resources ahead of time, though
 -- | it is more convenient/efficient to do it lazily.
@@ -76,8 +74,8 @@ allocRefLoop :: forall s o.
   , out :: Int -> s -> o
   } ->
   Allocar (Allocar o)
-allocRefLoop spec = Allocar do
-  Ref.new (0 /\ spec.start) <#> Allocar <<< Ref.modify'
+allocRefLoop spec = do
+  Ref.new (0 /\ spec.start) <#> Ref.modify'
     \s -> { value: uncurry spec.out s, state: (add 1 <<< fst &&& uncurry spec.incr) s }
 
 freshId :: Allocar (Allocar Int)
@@ -137,16 +135,15 @@ cleanupFn' :: forall d.
   , finished :: Allocar (Maybe d)
   , finishedE :: Effect (Maybe d)
   }
-cleanupFn' (AllocateFrom act) = do
+cleanupFn' act = do
   cleanupArg <- liftST do STR.new Nothing
   let
     shouldRun = isNothing <$> liftST do STR.read cleanupArg
   pure
-    { cleanup: AllocateFrom do
-        mkEffectFn1 \d -> do
-          whenM shouldRun do
-            _ <- liftST do STR.write (Just d) cleanupArg
-            runEffectFn1 act d
+    { cleanup: \d -> do
+        whenM shouldRun do
+          _ <- liftST do STR.write (Just d) cleanupArg
+          act d
     , running: isNothing <$> liftST do STR.read cleanupArg
     , runningE: isNothing <$> liftST do STR.read cleanupArg
     , finished: liftST do STR.read cleanupArg
@@ -167,30 +164,27 @@ subscriptions :: forall o. Allocar
 subscriptions = do
   listenersST <- liftST STA.new
   ids <- freshId
-  { cleanup: destroy, running } <- cleanupFn' do
-    AllocateFrom do
-      mkEffectFn1 \onDestroy -> do
-        -- sorry
-        len <- liftST do STA.pushAll [] listenersST
-        destroyed <- liftST do STA.splice 0 len [] listenersST
-        foreachE destroyed \(_ /\ o) -> runEffectFn1 onDestroy o
-        pure unit
+  { cleanup: destroy, running } <- cleanupFn' \onDestroy -> do
+    -- sorry
+    len <- liftST do STA.pushAll [] listenersST
+    destroyed <- liftST do STA.splice 0 len [] listenersST
+    foreachE destroyed \(_ /\ o) -> onDestroy o
+    pure unit
   pure
-    { notify: mkEffectFn1 \cb -> do
+    { notify: \cb -> do
         -- Freeze so we do not modify the array as we are iterating over it?
         -- I suppose we could catch new ones ... idk.
         listeners <- liftST do STA.freeze listenersST
-        foreachE listeners \(_ /\ o) -> runEffectFn1 cb o
-    , push: AllocateFrom do
-        mkEffectFn1 \o -> unwrap $ whenMM running do
-          id <- ids
-          _ <- liftST do STA.push (id /\ o) listenersST
-          cleanup $ liftST do
-            listeners <- STA.freeze listenersST
-            case Array.findIndex (fst >>> eq id) listeners of
-              Nothing -> pure unit -- ??
-              Just i -> void do
-                STA.splice i 1 [] listenersST
+        foreachE listeners \(_ /\ o) -> cb o
+    , push: \o -> whenMM running do
+        id <- ids
+        _ <- liftST do STA.push (id /\ o) listenersST
+        cleanup $ liftST do
+          listeners <- STA.freeze listenersST
+          case Array.findIndex (fst >>> eq id) listeners of
+            Nothing -> pure unit -- ??
+            Just i -> void do
+              STA.splice i 1 [] listenersST
     , destroy
     }
 
@@ -203,7 +197,7 @@ eventListener ::
   (Web.Event -> Effect Unit) -&> Allocar Unit
 eventListener { eventType, eventPhase, eventTarget } = coerce do
   let capture = eventPhase == Capturing
-  mkEffectFn1 \(cb :: Web.Event -> Effect Unit) -> do
+  \(cb :: Web.Event -> Effect Unit) -> do
     listener <- Event.eventListener cb
     Event.addEventListener eventType listener capture eventTarget $>
       Event.removeEventListener eventType listener capture eventTarget
@@ -215,10 +209,9 @@ accumulator :: forall m. Monoid m => Allocar { read :: Allocar m, put :: m -&> U
 accumulator = liftST (STRef.new mempty) <#> \acc ->
   { read: liftST do STRef.read acc
   , reset: liftST do STRef.read acc <* STRef.write mempty acc
-  , put: AllocateFrom do
-      mkEffectFn1 \m -> do
-        _ <- liftST do STRef.modify (_ <> m) acc
-        pure unit
+  , put: \m -> do
+      _ <- liftST do STRef.modify (_ <> m) acc
+      pure unit
   }
 
 ordMap :: forall k v. Ord k => Allocar
@@ -270,9 +263,8 @@ prealloc default =
   liftST do
     STRef.new default <#> \ref ->
       { get: liftST do STRef.read ref
-      , set: coerce do
-          mkEffectFn1 \v -> liftST do
-            STRef.read ref <* STRef.write v ref
+      , set: \v -> liftST do
+          STRef.read ref <* STRef.write v ref
       }
 
 prealloc2 :: forall a b. a -> b -> Allocar { get :: Allocar (Tuple a b), setL :: a -&> a, setR :: b -&> b }
@@ -282,12 +274,10 @@ prealloc2 defaultL defaultR =
     refR <- STRef.new defaultR
     in
       { get: liftST do Tuple <$> STRef.read refL <*> STRef.read refR
-      , setL: coerce do
-          mkEffectFn1 \v -> liftST do
-            STRef.read refL <* STRef.write v refL
-      , setR: coerce do
-          mkEffectFn1 \v -> liftST do
-            STRef.read refR <* STRef.write v refR
+      , setL: \v -> liftST do
+          STRef.read refL <* STRef.write v refL
+      , setR: \v -> liftST do
+          STRef.read refR <* STRef.write v refR
       }
 
 -- preallocMaybe
