@@ -2,11 +2,12 @@ module Riverdragon.River where
 
 import Prelude
 
-import Control.Alt (class Alt)
+import Control.Alt (class Alt, (<|>))
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Internal as STRef
 import Control.Plus (class Plus, empty)
 import Data.Array as Array
+import Data.Filterable (class Compactable, class Filterable, filterDefault, filterMap, partitionDefaultFilterMap, partitionMapDefault)
 import Data.Foldable (for_, traverse_)
 import Data.Maybe (Maybe(..))
 import Data.Monoid.Conj (Conj(..))
@@ -34,6 +35,7 @@ type Lake = Stream False
 type River = Stream True
 
 instance functorStream :: Functor (Stream flow) where
+  -- TODO memoize
   map f (Stream t g) = Stream t \cbs -> do
     r <- g cbs { receive = \a -> cbs.receive (f a) }
     pure r { burst = map f r.burst }
@@ -195,6 +197,40 @@ instantiate strm@(Stream _ stream) = do
     stream { receive: send, commit, destroyed: destroy }
   pure { stream: streamDependingOn sources, destroy: unsubscribe <> destroy }
 
+foldStream :: forall flow a b. b -> Stream flow a -> (b -> a -> b) -> Stream False b
+foldStream b upstream folder = pure b <|> statefulStream b upstream
+  \b' a -> join { state: _, emit: _ } $ folder b' a
+
+statefulStream :: forall flow a b c. b -> Stream flow a -> (b -> a -> { state :: b, emit :: c }) -> Stream False c
+statefulStream b upstream folder = makeStream \cb -> do
+  current <- prealloc b
+  unsubscribe <- subscribe upstream \a -> do
+    { state: b', emit: c } <- folder <$> current.get <@> a
+    _ <- current.set b'
+    cb c
+  pure unsubscribe
+
+instance compactableStream :: Compactable (Stream flow) where
+  compact s = filterMap identity s
+  separate s = partitionMapDefault identity s
+instance filterableStream :: Filterable (Stream flow) where
+  filter f s = filterDefault f s
+  partition f s = partitionDefaultFilterMap f s
+  partitionMap f s = partitionMapDefault f s
+  -- TODO memoize
+    -- { receive :: a -!> Unit, commit :: Id -!> Unit, destroyed :: Allocar Unit } -&>
+    -- { burst :: Array a, sources :: Array Id, unsubscribe :: Allocar Unit }
+  filterMap f (Stream flow stream) = Stream flow \cbs -> do
+    r <- stream
+      { receive: \a -> case f a of
+          Nothing -> mempty
+          Just b -> do
+            cbs.receive b
+      -- always pass commit through
+      , commit: cbs.commit
+      , destroyed: cbs.destroyed
+      }
+    pure r { burst = filterMap f r.burst }
 
 
 limitTo :: forall flow a. Int -> Stream flow a -> Stream flow a

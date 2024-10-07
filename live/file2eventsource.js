@@ -53,6 +53,7 @@ app.get('*', async function(req, res, next) {
   res.on('close', () => watching.close());
 });
 
+app.use(express.static('./static/'));
 app.use(express.static('./'));
 app.use(express.static(__dirname + '/'));
 

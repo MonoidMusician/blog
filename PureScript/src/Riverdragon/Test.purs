@@ -5,16 +5,21 @@ import Prelude
 import Data.Either (either)
 import Data.Foldable (oneOfMap)
 import Data.Time.Duration (Milliseconds(..))
+import Deku.Attribute ((!:=))
+import Deku.DOM as Deku
 import Effect (Effect)
 import Effect.Console as Console
+import FRP.Event (Event)
+import FRP.Event as FRP
 import Idiolect ((/|\), (\|/))
-import Riverdragon.Dragon (Dragon, renderId)
+import Riverdragon.Dragon (Dragon, renderEl, renderId)
 import Riverdragon.Dragon as D
 import Riverdragon.Dragon.Bones as B
 import Riverdragon.Dragon.Wings (instantiateListenInput, listenInput, vanishing)
-import Riverdragon.River (Stream, chill, subscribe)
+import Riverdragon.River (Lake, Stream, chill, makeStream, subscribe)
 import Web.DOM.ElementId (ElementId(..))
 import Widget (Widget)
+import Widget.Types (SafeNut(..))
 
 logging :: forall flow6 t8. Show t8 => Stream flow6 t8 -> Effect Unit
 logging event = void $ subscribe event Console.logShow
@@ -40,3 +45,11 @@ main = do
 
 widget :: Widget
 widget _ = main $> mempty
+
+host :: Effect Dragon -> Effect SafeNut
+host = map \dragon -> SafeNut do
+  flip Deku.span [] $ Deku.Self !:= \el ->
+    void do renderEl el dragon
+
+event2Lake :: Event ~> Lake
+event2Lake ev = makeStream \cb -> FRP.subscribe ev cb

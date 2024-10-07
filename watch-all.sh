@@ -11,6 +11,6 @@ make watch-sass &
 make watch-pandoc &
 #make watch-ps <&0 &
 #make watch-ps &
-which trypurescript && make trypurescript &
+# which trypurescript && make trypurescript &
 #make watch-ps
 wait

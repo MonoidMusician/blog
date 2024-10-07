@@ -4,13 +4,15 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..), maybe)
+import Data.Newtype (unwrap)
 import Data.Pair (Pair(..))
 import Data.Semigroup.First (First(..))
 import Data.Semigroup.Foldable (foldMap1)
 import Data.Semigroup.Last (Last(..))
-import Data.Traversable (foldMap, for, for_, sequence_, traverse_)
+import Data.Traversable (for, for_, sequence_, traverse_)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
+import Effect.Console as Console
 import Effect.Uncurried (runEffectFn3)
 import Idiolect ((>==))
 import Riverdragon.Dragon.Breath (removeSelf, setAttributeNS, unsafeSetProperty)
@@ -20,7 +22,6 @@ import Web.DOM (Comment, Document, Element, Node)
 import Web.DOM.AttrName (AttrName(..))
 import Web.DOM.Comment as Comment
 import Web.DOM.Document (createComment, createElement, createElementNS, createTextNode)
-import Web.DOM.Document as Document
 import Web.DOM.Element (setAttribute)
 import Web.DOM.Element as Element
 import Web.DOM.ElementId (ElementId)
@@ -38,7 +39,7 @@ import Web.HTML.Window (document)
 
 data Dragon
   = Fragment (Array Dragon)
-  | Egg (Effect Dragon)
+  | Egg (Effect { dragon :: Dragon, destroy :: Effect Unit })
   -- Only renders one `Dragon` at once (which may be a `Fragment`, `Appending`,
   -- or whatever)
   | Replacing (Lake Dragon)
@@ -152,13 +153,21 @@ fromBookmarks (Pair l r) destroy =
 
 renderId :: ElementId -> Dragon -> Effect (Effect Unit)
 renderId id dragon = do
+  doc <- window >>= document >== HTMLDocument.toNonElementParentNode
+  getElementById id doc >>= case _ of
+    Nothing -> mempty <$ do
+      Console.error $ "Could not find element by id " <> show (unwrap id)
+    Just el -> renderEl el dragon
+
+renderEl :: Element -> Dragon -> Effect (Effect Unit)
+renderEl el dragon = do
   mgr <- renderManager
-  mel <- getElementById id (Document.toNonElementParentNode mgr.doc)
-  mel # foldMap \el -> do
-    _.destroy <$> renderTo mgr (appendChild <@> Element.toNode el) dragon
+  _.destroy <$> renderTo mgr (appendChild <@> Element.toNode el) dragon
 
 renderTo :: RndrMgr -> (Node -> Effect Unit) -> Dragon -> Effect Rendered
-renderTo mgr insert (Egg egg) = egg >>= renderTo mgr insert
+renderTo mgr insert (Egg egg) = egg >>=
+  \{ dragon, destroy } -> renderTo mgr insert dragon <#>
+    \r -> r { destroy = r.destroy <> destroy }
 renderTo mgr insert (Text changingValue) = do
   el <- createTextNode "" mgr.doc
   unsubscribe <- subscribeIsh mempty changingValue \newValue -> do

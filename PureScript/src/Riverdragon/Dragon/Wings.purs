@@ -3,32 +3,47 @@ module Riverdragon.Dragon.Wings where
 import Prelude
 
 import Control.Alt ((<|>))
-import Data.Foldable (foldMap, for_, traverse_)
-import Data.Int as Int
-import Data.Time.Duration (Milliseconds(..))
-import Data.Tuple (Tuple, fst, snd)
+import Control.Plus (empty)
+import Data.Foldable (foldMap)
+import Data.Time.Duration (Milliseconds)
 import Effect (Effect)
-import Effect.Console (log)
-import Effect.Timer (clearTimeout, setTimeout)
-import Effect.Uncurried (EffectFn3)
 import Idiolect ((==<))
 import Prim.Boolean (False, True)
 import Riverdragon.Dragon (Dragon(..))
-import Riverdragon.Dragon.Breath (microtask)
-import Riverdragon.River (Stream, createStreamBurst, instantiate, limitTo, makeStream, mapCb, subscribe)
-import Riverdragon.River.Bed (Allocar(..), breaker, eventListener, ordSet, storeLast, whenMM)
-import Safe.Coerce (coerce)
-import Web.DOM (Element)
-import Web.DOM.Element as Element
-import Web.DOM.ElementId (ElementId(..))
-import Web.DOM.Node (Node, parentNode, removeChild)
+import Riverdragon.Dragon.Bones as D
+import Riverdragon.River (Lake, Stream, instantiate, limitTo, makeStream)
+import Riverdragon.River.Bed (Allocar, accumulator, eventListener)
+import Riverdragon.River.Beyond (delay)
+import Web.DOM.ElementId (ElementId)
 import Web.DOM.NonElementParentNode (getElementById)
 import Web.Event.Event (EventType(..))
 import Web.Event.EventPhase (EventPhase(..))
 import Web.HTML (window)
 import Web.HTML.HTMLDocument as HTMLDocument
 import Web.HTML.HTMLInputElement as InputElement
-import Web.HTML.Window (cancelAnimationFrame, document, requestAnimationFrame)
+import Web.HTML.Window (document)
+
+eggy ::
+  ( { track :: forall r.
+        Allocar { destroy :: Allocar Unit | r } ->
+        Allocar { destroy :: Allocar Unit | r }
+    , inst :: forall flow a. Lake a -> Allocar (Stream flow a)
+    , destructor :: Allocar Unit -> Allocar Unit
+    } -> Allocar Dragon
+  ) -> Dragon
+eggy cont = Egg do
+  destructors <- accumulator
+  let
+    track :: forall r.
+      Allocar { destroy :: Allocar Unit | r } ->
+      Allocar { destroy :: Allocar Unit | r }
+    track act = act >>= \r -> r <$ destructors.put r.destroy
+    inst :: forall flow a. Lake a -> Allocar (Stream flow a)
+    inst = _.stream ==< track <<< instantiate
+    release dragon = destructors.read <#> { destroy: _, dragon }
+  release =<< cont { track, inst, destructor: destructors.put }
+
+
 
 listenInput :: Boolean -> ElementId -> Stream False String
 listenInput includeFirst id = makeStream \cb -> do
@@ -45,60 +60,28 @@ listenInput includeFirst id = makeStream \cb -> do
 instantiateListenInput :: Boolean -> ElementId -> Allocar (Stream True String)
 instantiateListenInput includeFirst id = _.stream <$> instantiate (listenInput includeFirst id)
 
--- delay :: Milliseconds -> Stream False ~> Stream False
--- delay (Milliseconds ms) stream = makeStream \cb -> do
---   subscribe stream do void <<< setTimeout (Int.round ms) <<< cb
-
-
-delay :: forall flow. Milliseconds -> Stream flow ~> Stream flow
-delay (Milliseconds ms) = mapCb \upstream -> do
-  -- TODO: arena
-  inflight <- ordSet
-  let
-    receive value = do
-      idStore <- storeLast
-      id <- setTimeout (Int.round ms) do
-        idStore.get >>= traverse_ inflight.remove
-        upstream.receive value
-      _ <- inflight.set id
-      _ <- idStore.set id
-      pure unit
-  for_ upstream.burst receive
-  pure
-    { receive: receive
-    , unsubscribe: mempty $ inflight.reset >>= traverse_ clearTimeout
-    , burst: []
-    , destroyed: void do
-        -- We do not care about canceling this
-        setTimeout (Int.round ms) upstream.destroyed
-    }
-
--- delayMicro :: forall flow. Stream flow ~> Stream flow
--- delayMicro = overCb \cb -> do
---   -- Microtasks have no canceler, so we have to drop events ourselves
---   brk <- breaker cb
---   pure
---     { receive: microtask <<< brk.run
---     , unsubscribe: brk.trip
---     }
-
--- delayAnim :: forall flow. Stream flow ~> Stream flow
--- delayAnim = overCb \cb -> do
---   -- TODO: arena
---   inflight <- ordSet
---   w <- window
---   pure
---     { receive: \value -> do
---         idStore <- storeLast
---         id <- flip requestAnimationFrame w do
---           idStore.get >>= traverse_ inflight.remove
---           cb value
---         _ <- inflight.set id
---         _ <- idStore.set id
---         pure unit
---     , unsubscribe: inflight.reset >>= traverse_ (cancelAnimationFrame <@> w)
---     }
-
 vanishing :: Milliseconds -> Stream False Dragon -> Stream False Dragon
 vanishing ms stream = stream <#> \element -> Replacing do
   pure element <|> limitTo 1 (delay ms (pure mempty))
+
+inputValidated ::
+  String ->
+  String ->
+  String ->
+  String ->
+  Lake String ->
+  (String -> Effect Unit) ->
+  Dragon
+inputValidated cls label placeholder initialValue valid onInput =
+  D.label'
+    [ D.className $ (append "input-wrapper text" <<< (eq "" >>> if _ then "" else " invalid")) <$> (pure "" <|> valid) ]
+    $ Fragment
+    [ D.span (D.text label)
+    , D.input'
+        [ D.attr "placeholder" <$> if placeholder == "" then empty else pure placeholder
+        , D.attr "value" <$> if initialValue == "" then empty else pure initialValue
+        , D.onValueInput onInput
+        , D.className $ pure cls
+        ]
+    , D.span' [ D.className $ pure "error" ] (Text valid)
+    ]

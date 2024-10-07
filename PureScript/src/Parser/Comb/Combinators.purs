@@ -16,7 +16,7 @@ import Idiolect ((>==))
 import Parser.Comb.Syntax (Syntax(..))
 import Parser.Comb.Types (Associativity(..), Comb(..), Options(..), Resultant(..), component, components, matchRule, withCST', withCST_)
 import Parser.Lexing (class ToString, class Token, type (~), Rawr, Similar(..), rawr, rerecognize, toString)
-import Parser.Types (Grammar(..), ICST(..), Part(..), sourceCST, sourceICST)
+import Parser.Types (Grammar(..), ICST(..), Part(..), sourceICST)
 
 setPrecA :: forall rec err prec space air nt cat o. cat -> Associativity -> prec -> Comb rec err prec space air nt cat o Unit
 setPrecA cat assoc prec = case pure unit of
