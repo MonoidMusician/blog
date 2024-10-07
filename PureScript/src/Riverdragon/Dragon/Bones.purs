@@ -30,8 +30,6 @@ input' :: Array (Lake AttrProp) -> Dragon
 input' = _el' "input" <@> mempty
 textarea' :: Array (Lake AttrProp) -> Dragon
 textarea' = _el' "textarea" <@> mempty
-label' :: Array (Lake AttrProp) -> Dragon -> Dragon
-label' = _el' "label"
 code :: Dragon -> Dragon
 code = _el "code"
 code' :: Array (Lake AttrProp) -> Dragon -> Dragon
@@ -50,18 +48,17 @@ pre :: Dragon -> Dragon
 pre = _el "pre"
 br' :: Array (Lake AttrProp) -> Dragon
 br' = _el' "br" <@> mempty
+br :: Dragon
+br = _el "br" mempty
 ul :: Dragon -> Dragon
 ul = _el "ul"
 ol :: Dragon -> Dragon
 ol = _el "ol"
 li :: Dragon -> Dragon
 li = _el "li"
-ul' :: Dragon -> Dragon
-ul' = _el "ul'"
-ol' :: Dragon -> Dragon
-ol' = _el "ol'"
-li' :: Dragon -> Dragon
-li' = _el "li'"
+ul' = _el' "ul"
+ol' = _el' "ol"
+li' = _el' "li"
 dl = _el "dl"
 dt = _el "dt"
 dd = _el "dd"
@@ -72,6 +69,13 @@ b :: Dragon -> Dragon
 b = _el "b"
 i :: Dragon -> Dragon
 i = _el "i"
+em = _el "em"
+p = _el "p"
+p' = _el' "p"
+sub = _el "sub"
+sup = _el "sup"
+label = _el "label"
+label' = _el' "label"
 
 table = _el "table"
 table' = _el' "table"
@@ -144,6 +148,12 @@ value = pure <<< Prop "value" <<< PropString
 value' :: Lake String -> Lake AttrProp
 value' = map $ Prop "value" <<< PropString
 
+placeholder :: String -> Lake AttrProp
+placeholder = pure <<< Prop "placeholder" <<< PropString
+
+placeholder' :: Lake String -> Lake AttrProp
+placeholder' = map $ Prop "placeholder" <<< PropString
+
 on_ :: String -> (Web.Event -> Effect Unit) -> Lake AttrProp
 on_ ty fn = pure $ Listener ty $ Just fn
 
@@ -171,6 +181,22 @@ onInputValue fn = pure $ Listener "input" $ Just \e -> do
         >>= HTMLTextArea.fromEventTarget
     )
     (HTMLTextArea.value >=> fn)
+
+onInputNumber :: (Number -> Effect Unit) -> Lake AttrProp
+onInputNumber fn = pure $ Listener "input" $ Just \e -> do
+  for_
+    ( Event.target e
+        >>= HTMLInput.fromEventTarget
+    )
+    (HTMLInput.valueAsNumber >=> fn)
+
+onInputNumber' :: Lake (Number -> Effect Unit) -> Lake AttrProp
+onInputNumber' = map \fn -> Listener "input" $ Just \e -> do
+  for_
+    ( Event.target e
+        >>= HTMLInput.fromEventTarget
+    )
+    (HTMLInput.valueAsNumber >=> fn)
 
 onChangeF :: (Web.Event -> Effect Unit) -> Lake AttrProp
 onChangeF e = pure $ Listener "change" $ Just e

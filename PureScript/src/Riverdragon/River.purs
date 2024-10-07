@@ -11,7 +11,7 @@ import Control.Plus (class Plus, empty)
 import Data.Array as Array
 import Data.Bifoldable (bifoldMap)
 import Data.Filterable (class Compactable, class Filterable, filterDefault, filterMap, partitionDefaultFilterMap, partitionMapDefault)
-import Data.Foldable (for_, traverse_)
+import Data.Foldable (fold, for_, traverse_)
 import Data.HeytingAlgebra (ff, tt)
 import Data.Maybe (Maybe(..))
 import Data.Monoid.Conj (Conj(..))
@@ -189,10 +189,13 @@ createStreamBurst burst = do
 createStreamStore :: forall flow a. Maybe a -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
 createStreamStore initialValue = do
   lastValue <- storeLast
-  for_ initialValue lastValue.set
-  createStreamBurst $ lastValue.get <#> case _ of
+  case initialValue of
+    Just a -> void $ lastValue.set a
+    Nothing -> pure unit
+  r <- createStreamBurst $ lastValue.get <#> case _ of
     Just a -> [a]
     Nothing -> []
+  pure r { send = \a -> lastValue.set a *> r.send a }
 
 
 createStream' :: forall flow a. Allocar (Array a) -> Allocar { send :: a -!> Unit, commit :: Id -!> Unit, stream :: Array Id -> Stream flow a, destroy :: Allocar Unit }
@@ -324,10 +327,13 @@ limitTo n (Stream flow setup) = Stream flow \cbs -> do
   setUnsub sub.unsubscribe
   pure sub
 
-selfGating :: forall flow a.
+selfGating :: forall flow a. (a -> Boolean) -> Stream flow a -> Stream flow a
+selfGating pred = selfGatingEf \stop -> pure \a -> when (pred a) stop
+
+selfGatingEf :: forall flow a.
   (Effect Unit -> Effect (a -> Effect Unit)) ->
   Stream flow a -> Stream flow a
-selfGating logic (Stream flow setup) = Stream flow \cbs -> do
+selfGatingEf logic (Stream flow setup) = Stream flow \cbs -> do
   setUnsub <- rolling
   receive <- breaker cbs.receive
   commit <- breaker cbs.commit
@@ -413,6 +419,27 @@ mapCb f (Stream t g) = Stream t \cbs -> do
     }
 
 
+mapLatest :: forall a b. (a -> Lake b) -> Lake a -> Lake b
+mapLatest mkStream source = makeStream \cb -> do
+  replace <- rolling
+  unsubscribe <- subscribe source \a -> do
+    replace mempty
+    let stream = mkStream a
+    replace =<< subscribe stream cb
+  pure $ replace mempty <> unsubscribe
+
+latestStream :: forall a b. Lake a -> (a -> Lake b) -> Lake b
+latestStream = flip mapLatest
+
+infixl 1 latestStream as >>~
+
+fix' :: forall flow1 o i. (Stream flow1 i -> Allocar { loop :: Lake i, output :: Lake o, destroy :: Allocar Unit }) -> Lake o
+fix' mkLoop = makeStream \cb -> do
+  { stream, send, destroy: destroy1 } <- createStream
+  { loop, output, destroy: destroy2 } <- mkLoop stream
+  unsub1 <- subscribe loop send
+  unsub2 <- subscribe output cb
+  pure $ unsub2 <> unsub1 <> destroy2 <> destroy1
 
 -- the reason i created allocar tbh
 mailbox :: forall flowIn flowOut k v. Ord k =>

@@ -22,10 +22,8 @@ import Data.Tuple.Nested ((/\))
 import Effect.Class.Console (log)
 import Riverdragon.Dragon.Bones (Dragon)
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Test (host)
 import Web.DOM.AttrName (AttrName(..))
 import Widget (Widget)
-import Widget.Types (SafeNut(..))
 
 type DatatypeWidget =
   { widget :: Widget
@@ -53,7 +51,7 @@ datatypes :: Map String DatatypeWidget
 datatypes = Map.fromFoldable
   [ "abbr" /\
     { recognize: isJust <<< unabbreviate
-    , widget: \{ text, content } -> host do
+    , widget: \{ text, content } -> do
         abbr <- text
         case unabbreviate abbr of
           Just meaning -> do
@@ -81,7 +79,7 @@ datatypes = Map.fromFoldable
     }
   , "color" /\
     { recognize: const false
-    , widget: \{ text, content } -> host do
+    , widget: \{ text, content } -> do
         color <- text
         -- FIXME
         embed <- mempty content
@@ -95,7 +93,7 @@ datatypes = Map.fromFoldable
     }
   , "unicode" /\
     { recognize: isJust <<< String.stripPrefix (String.Pattern "U+")
-    , widget: \{ text, content, rawAttr } -> host do
+    , widget: \{ text, content, rawAttr } -> do
         textValue <- text
         case parseUnicode textValue of
           Nothing -> do
@@ -189,6 +187,6 @@ widget interface@{ text, rawAttr } = do
   case Map.lookup datatype datatypes of
     Nothing -> do
       log $ "Unknown datatype " <> show datatype <> " (" <> show t <> ")"
-      pure (SafeNut mempty)
+      pure mempty
     Just datatypeWidget -> do
       datatypeWidget.widget interface

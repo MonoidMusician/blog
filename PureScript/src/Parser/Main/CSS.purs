@@ -25,7 +25,6 @@ import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy, inputValidated)
 import Riverdragon.River (Lake, createStream, foldStream)
 import Riverdragon.River.Beyond (affToLake)
-import Riverdragon.Test (event2Lake, host)
 import Widget (Widget, adaptInterface)
 
 type Parser = String -> Either String (Array Vert)
@@ -37,16 +36,16 @@ widgets = Object.fromFoldable $
   ]
 
 widgetCSS :: Widget
-widgetCSS { interface, attrs } = host do
+widgetCSS { interface, attrs } = do
   example <- attrs "example"
   let
     initial = hush $ CA.decode (CA.array CA.string) example
     resetting = oneOfMap pure initial <|> do
       (adaptInterface (CA.array CA.string) (interface "css-example")).receive
-  pure $ component $ event2Lake resetting
+  pure $ component resetting
 
 sendExample :: Widget
-sendExample { interface, attrs } = host do
+sendExample { interface, attrs } = do
   let push = (interface "css-example").send
   example <- attrs "example"
   pure $ D.buttonN "" (push example) "Try this example"

@@ -50,7 +50,6 @@ import Riverdragon.Dragon.Wings (eggy)
 import Riverdragon.River (Lake, createStreamStore, makeStream, subscribe)
 import Riverdragon.River.Bed (prealloc)
 import Riverdragon.River.Beyond (dedup)
-import Riverdragon.Test (host)
 import Tidy.Codegen as TC
 import Type.Proxy (Proxy(..))
 import Web.DOM.ElementId (ElementId(..))
@@ -278,7 +277,7 @@ embed incomingRaw = eggy \shell -> do
     ]
 
 widget :: Widget
-widget _ = host $ pure $ eggy \shell -> do
+widget _ = pure $ eggy \shell -> do
   let df = "D.text <$> string"
   { stream: valueSet, send: setValue } <- shell.track $ createStreamStore Nothing
   { stream: compiling, send: compileNow } <- shell.track $ createStreamStore Nothing

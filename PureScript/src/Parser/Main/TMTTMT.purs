@@ -30,7 +30,6 @@ import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy)
 import Riverdragon.River (Lake, createStream, createStreamStore, foldStream)
 import Riverdragon.River.Beyond (affToLake)
-import Riverdragon.Test (event2Lake, host)
 import Widget (Widget, adaptInterface)
 
 type Parser = String -> Either String (Array (Either (Tuple String Functional) Declaration))
@@ -135,13 +134,13 @@ widgetTMTTMT { interface, attrs } = do
       Right v -> v
     stringInterface = adaptInterface CA.string (interface "tmttmt-example")
     resetting = pure initial <|> stringInterface.receive
-  host $ pure $ component stringInterface.send $ event2Lake resetting
+  pure $ component stringInterface.send  resetting
 
 sendExample :: Widget
 sendExample { interface, attrs } = do
   let push = (interface "tmttmt-example").send
   example <- attrs "example"
-  host $ pure $ D.buttonN "" (push example) "Try this example"
+  pure $ D.buttonN "" (push example) "Try this example"
 
 result :: Parser -> String -> String
 result = (<<<) case _ of
@@ -217,7 +216,7 @@ component setGlobal resetting = eggy \shell -> do
     ]
 
 widgetTypeSplit :: Widget
-widgetTypeSplit _ = host $ pure $ eggy \shell -> do
+widgetTypeSplit _ = pure $ eggy \shell -> do
   { stream: pushedRaw, send: pushUpdate } <- shell.track $ createStreamStore $ Just dfTy
   { stream: pushedPat, send: pushPat } <- shell.track $ createStreamStore $ Just dfPat
   getParser <- shell.inst $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
@@ -255,7 +254,7 @@ widgetTypeSplit _ = host $ pure $ eggy \shell -> do
       testPatternsResult $ testPatterns pats ty
 
 widgetSubType :: Widget
-widgetSubType _ = host $ pure $ eggy \shell -> do
+widgetSubType _ = pure $ eggy \shell -> do
   { stream: pushedRaw, send: pushUpdate } <- shell.track $ createStreamStore $ Just dfTy
   { stream: pushedPat, send: pushPat } <- shell.track $ createStreamStore $ Just dfPat
   getParser <- shell.inst $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser

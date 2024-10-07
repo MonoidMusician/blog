@@ -11,8 +11,9 @@ import Data.Argonaut (Json)
 import Data.Argonaut as Json
 import Data.Array as Array
 import Data.Codec (Codec', decode, encode)
-import Data.Either (Either(..))
+import Data.Either (Either(..), hush)
 import Data.Enum (fromEnum)
+import Data.Filterable (filterMap)
 import Data.Foldable (class Foldable, foldMap, for_, oneOfMap, traverse_)
 import Data.Maybe (Maybe(..))
 import Data.Maybe.Last (Last(..))
@@ -20,21 +21,21 @@ import Data.Newtype (unwrap)
 import Data.Traversable (for)
 import Data.Tuple (snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import Deku.Toplevel (runInElement')
 import Effect (Effect)
 import Effect.Aff (Aff, Canceler(..), launchAff_, makeAff)
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
-import FRP.Event (Event, create, filterMap, keepLatest, makeEvent, subscribe, mailboxed)
 import Foreign.Object (Object)
 import Foreign.Object as Object
 import Foreign.Object.ST (STObject)
 import Foreign.Object.ST as STO
 import Idiolect ((>==))
-import Riverdragon.Dragon (Dragon)
+import Riverdragon.Dragon (Dragon, renderEl)
 import Riverdragon.Dragon.Bones as Dragon
+import Riverdragon.River (Lake, createStreamStore)
+import Riverdragon.River.Bed (storeLast)
 import Web.DOM (Element, ParentNode)
 import Web.DOM.AttrName (AttrName(..))
 import Web.DOM.Document as Document
@@ -48,13 +49,13 @@ import Web.DOM.ParentNode (QuerySelector(..), querySelectorAll)
 import Web.HTML (window)
 import Web.HTML.HTMLDocument as HTMLDocument
 import Web.HTML.Window (cancelAnimationFrame, document, requestAnimationFrame)
-import Widget.Types (SafeNut(..), snapshot)
+import Widget.Types (snapshot)
 
 type Interface a =
   { send :: a -> Effect Unit
-  , receive :: Event a
-  , loopback :: Event a
-  , mailbox :: Event (a -> Event Unit)
+  , receive :: Lake a
+  , loopback :: Lake a
+  -- , mailbox :: Lake (a -> Lake Unit)
   , current :: Effect (Maybe a)
   }
 disconnected :: forall a. Interface a
@@ -62,7 +63,7 @@ disconnected =
   { send: mempty
   , receive: empty
   , loopback: empty
-  , mailbox: pure (const empty)
+  -- , mailbox: pure (const empty)
   , current: pure Nothing
   }
 
@@ -87,19 +88,14 @@ makeKeyedInterface = do
 -- Each new subscription gets the latest value
 createBehavioral :: forall a. Ord a => Effect (Interface a)
 createBehavioral = do
-  ref <- liftST (STRef.new Nothing)
-  upstream <- create
-  let
-    write a = void $ liftST (STRef.write (Just a) ref)
-    downstream = makeEvent \k -> do
-      liftST (STRef.read ref) >>= traverse_ k
-      subscribe upstream.event k
+  upstream <- createStreamStore Nothing
+  lastValue <- storeLast
   pure
-    { send: write <> upstream.push
-    , receive: downstream
-    , loopback: downstream
-    , mailbox: mailboxed (map {payload: unit, address: _} downstream) identity
-    , current: liftST (STRef.read ref)
+    { send: compose void lastValue.set <> upstream.send
+    , receive: upstream.stream
+    , loopback: upstream.stream
+    -- , mailbox: mailboxed (map {payload: unit, address: _} upstream.stream) identity
+    , current: lastValue.get
     }
 
 getInterface :: DataShare -> String -> Effect KeyedInterface
@@ -119,16 +115,16 @@ getInterface share k = do
       { send: \v -> int.send (i /\ v)
       , receive: receive
       , loopback: int.receive <#> snd
-      , mailbox: mailboxed (map { payload: unit, address: _ } receive) identity
+      -- , mailbox: mailboxed (map { payload: unit, address: _ } receive) identity
       , current: int.current <#> map \(_ /\ v) -> v
       }
 
 adaptInterface :: forall f a b. Foldable f => Codec' f a b -> Interface a -> Interface b
 adaptInterface codec interface =
   { send: interface.send <<< encode codec
-  , mailbox: interface.mailbox <#> (_ <<< encode codec)
-  , receive: keepLatest $ oneOfMap pure <<< decode codec <$> interface.receive
-  , loopback: keepLatest $ oneOfMap pure <<< decode codec <$> interface.loopback
+  -- , mailbox: interface.mailbox <#> (_ <<< encode codec)
+  , receive: filterMap (last <<< decode codec) interface.receive
+  , loopback: filterMap (last <<< decode codec) interface.loopback
   , current: interface.current <#> bindFlipped
       (decode codec >>> last)
   }
@@ -143,7 +139,7 @@ type KeyedInterfaceWithAttrs =
   , content :: Effect Dragon
   }
 
-type Widget = KeyedInterfaceWithAttrs -> Effect SafeNut
+type Widget = KeyedInterfaceWithAttrs -> Effect Dragon
 type Widgets = Object Widget
 
 -- <div data-widget="Parser.Grammar" data-widget-datakey="default or lab1 or sandboxed" data-widget-data-grammar="add-sub-mul-exp"></div>
@@ -191,7 +187,7 @@ instantiateWidget widgets share target = do
       [] -> log $ "No elements found matching selector " <> search
       _ -> log $ "Multiple elements found matching selector " <> search
   -- call the widget code
-  safenut <- widget
+  dragon <- widget
     { interface
     , attrs
     , rawAttr: getAttribute <@> target
@@ -209,8 +205,7 @@ instantiateWidget widgets share target = do
         pure $ Array.fold $ Array.catMaybes snapshots
     }
   -- run the tree in the target
-  unsub <- runInElement' target case safenut of
-    SafeNut nut -> nut
+  unsub <- renderEl target dragon
 
   -- final stuff
   removeAttribute (AttrName "data-widget-loading") target

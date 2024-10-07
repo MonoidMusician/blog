@@ -44,7 +44,6 @@ import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy)
 import Riverdragon.River (Lake, createStreamStore)
 import Riverdragon.River.Beyond (affToLake, dedup)
-import Riverdragon.Test (event2Lake, host)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Type.Proxy (Proxy(..))
 import Web.Event.Event as Event
@@ -58,8 +57,8 @@ widget { interface, attrs } = do
     initial = hush $ CA.decode CA.string example
     stringInterface = adaptInterface CA.string (interface "unicode")
     resetting = oneOfMap pure initial <|> stringInterface.receive
-  host $ pure do
-    component stringInterface.send $ event2Lake resetting
+  pure do
+    component stringInterface.send resetting
 
 only :: Array ~> Maybe
 only [a] = Just a
@@ -378,7 +377,7 @@ fetchParser :: Aff String
 fetchParser = _.text =<< fetch "assets/json/show-parser-states.json" {}
 
 widgetShow :: Widget
-widgetShow _ = host $ pure $ eggy \shell -> do
+widgetShow _ = pure $ eggy \shell -> do
   reShow <- shell.instStore (mkReShow <$> affToLake fetchParser)
   { send: setValue, stream: valueSet } <- shell.track $ createStreamStore Nothing
   { send: set, stream: get } <- shell.track $ createStreamStore Nothing

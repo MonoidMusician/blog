@@ -15,12 +15,12 @@ import Data.Traversable (foldMap, for_, traverse)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Ref as Ref
-import FRP.Event (Event, makeEvent, subscribe)
 import Foreign (unsafeToForeign)
 import Foreign.Object (Object)
 import Foreign.Object as Object
 import Idiolect ((>==))
 import Parsing (runParser)
+import Riverdragon.River (Lake, makeStream, subscribe)
 import URI.Extra.QueryPairs as QueryPairs
 import URI.Query as Query
 import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
@@ -74,15 +74,15 @@ setQueryKeys overwriting = do
   h <- window >>= Window.history
   History.pushState (unsafeToForeign Json.jsonNull) (History.DocumentTitle "") (History.URL q) h
 
-queryChanges :: Event (Object Json)
-queryChanges = makeEvent \push -> do
+queryChanges :: Lake (Object Json)
+queryChanges = makeStream \push -> do
   w <- window
   e <- eventListener \_ -> push =<< getQueryKeys
   addEventListener popstate e false (Window.toEventTarget w)
   pure $ removeEventListener popstate e false (Window.toEventTarget w)
 
-sideInterface :: String -> Array { key :: String, io :: Interface Json } -> Event (Object Json)
-sideInterface prefix interfaces = makeEvent \k -> do
+sideInterface :: String -> Array { key :: String, io :: Interface Json } -> Lake (Object Json)
+sideInterface prefix interfaces = makeStream \k -> do
   initial <- map (map unwrap) $ getQueryKeys <#> \q -> interfaces # foldMap \{ key } ->
     Object.lookup (prefix <> key) q # foldMap (Last >>> Object.singleton key)
   ref <- Ref.new initial

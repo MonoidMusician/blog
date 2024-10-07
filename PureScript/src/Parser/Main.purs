@@ -2,12 +2,9 @@ module Parser.Main where
 
 import Prelude
 
-import Bolson.Core (Child(..))
-import Control.Alt ((<|>))
+import Control.Alt (alt, (<|>))
 import Control.Alternative (guard)
-import Control.Apply (lift2, lift3)
 import Control.Monad.Gen as Gen
-import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.State (StateT, get, put, runStateT)
 import Control.Monad.Trampoline (Trampoline, runTrampoline)
 import Control.Plus (empty)
@@ -18,14 +15,12 @@ import Data.Array.NonEmpty.Internal (NonEmptyArray)
 import Data.Bifunctor (bimap, lmap)
 import Data.Codec (decode)
 import Data.Codec.Argonaut as CA
-import Data.Compactable (compact)
-import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..), either, hush, note)
-import Data.Filterable (filter)
+import Data.Filterable (filterMap)
 import Data.Foldable (class Foldable, any, foldMap, oneOf, oneOfMap, sequence_, traverse_)
 import Data.Foldable (length) as Foldable
 import Data.FoldableWithIndex (foldMapWithIndex)
-import Data.Function (on)
+import Data.Functor (mapFlipped)
 import Data.Functor.Compose (Compose(..))
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int (floor)
@@ -36,41 +31,19 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust, fromMaybe, fromMaybe', isJust, maybe)
 import Data.Newtype (unwrap)
-import Data.Number (e, pi)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.String (CodePoint, codePointFromChar)
 import Data.String as String
 import Data.String.NonEmpty as NES
 import Data.String.NonEmpty.Internal (NonEmptyString)
-import Data.Time.Duration (Seconds(..))
+import Data.Time.Duration (Milliseconds(..))
 import Data.Traversable (mapAccumL, sequence, traverse)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import Deku.Attribute (class Attr, Attribute, cb, (!:=), (:=), (<:=>), (?:=))
-import Deku.Control (switcher, text, text_)
-import Deku.Core (Domable, Nut, bus, bussed, dyn, envy, fixed, insert_, vbussed)
-import Deku.Core as DC
-import Deku.DOM as D
-import Deku.Listeners (click, slider)
 import Effect (Effect)
 import Effect.Class.Console as Log
-import Effect.Now (now)
-import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
-import FRP.Behavior (step)
-import FRP.Deku (withValue)
-import FRP.Event (Event, filterMap, keepLatest, mailboxed, makeEvent, mapAccum, memoize, sampleOnRight, subscribe)
-import FRP.Event.AnimationFrame (animationFrame)
-import FRP.Event.Class ((<**>))
-import FRP.Event.Time (withTime)
-import FRP.Event.VBus (V)
-import FRP.Helpers (dedup, dedupOn, spotlight, spotlightChange, toggle)
-import FRP.Memoize (memoBeh, memoBehFold)
-import FRP.NotFrom (notFrom)
-import FRP.Rate (Beats(..), RateInfo, timeFromRate)
-import FRP.SampleJIT (readersT, sampleJITE)
-import FRP.SelfDestruct (selfDestruct)
 import Foreign.Object (Object)
 import Foreign.Object as Object
 import Parser.Algorithms (addEOF', calculateStates, fromSeed', fromString', gatherNonTerminals', gatherNonTerminals_, gatherTokens', gatherTokens_, getResultC, indexStates', longestFirst, numberStatesBy, parseDefinition, parseIntoGrammar, toAdvanceTo, toTable, withProducible)
@@ -81,72 +54,66 @@ import Parser.Samples (defaultEOF, defaultTopName, defaultTopRName)
 import Parser.Types (AST(..), CST(..), Grammar(..), Part(..), SAST, SAugmented, SCParseSteps, SCST, SCStack, SFragment, SGrammar, SProducible, SState, SStateInfo, SStateItem, SStates, SZipper, ShiftReduce(..), State(..), States(..), Zipper(..), prune, unNonTerminal, unSPart, unTerminal)
 import Partial.Unsafe (unsafePartial)
 import Random.LCG as LCG
+import Riverdragon.Dragon.Bones (AttrProp, Dragon)
+import Riverdragon.Dragon.Bones as D
+import Riverdragon.Dragon.Wings (eggy)
+import Riverdragon.River (Lake, chill, createStream, createStreamStore, fix', foldStream, instantiate, mapEf, sampleOnRight, selfGating, unsafeMarkHot, (<**>), (<?*>), (>>~))
+import Riverdragon.River.Beyond (dedup, dedupOn, interval, sequenceRecord)
 import Test.QuickCheck.Gen as QC
-import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Widget (Widget, adaptInterface)
-import Widget.Types (SafeNut(..))
 
 data StepAction = Initial | Toggle | Slider | Play
+derive instance Eq StepAction
 
-type Nuts =
-  forall lock payload
-   . Array (DC.Domable lock payload)
+type Dragons = Array Dragon
 
-type Nutss =
-  forall lock payload
-   . Array (Array (DC.Domable lock payload))
+type Dragonss = Array (Array Dragon)
 
-inputC :: String -> String -> String -> (String -> Effect Unit) -> Nut
+inputC :: String -> String -> String -> (String -> Effect Unit) -> Dragon
 inputC label placeholder initialValue onInput =
-  D.label (D.Class !:= "input-wrapper text")
-    [ D.span_ [ text_ label ]
-    , D.input
-        ( oneOf
-            [ D.Placeholder <:=> if placeholder == "" then empty else pure placeholder
-            , D.Value <:=> if initialValue == "" then empty else pure initialValue
-            , D.OnInput !:= withValue onInput
-            ]
-        )
-        []
+  D.label' [ D.className "input-wrapper text" ] $ D.Fragment
+    [ D.span $ D.text label
+    , D.input'
+        [ D.placeholder' if placeholder == "" then empty else pure placeholder
+        , D.value' if initialValue == "" then empty else pure initialValue
+        , D.onInputValue onInput
+        ]
     ]
 
-inputValidated
-  :: forall lock payload
-   . String
-  -> String
-  -> String
-  -> String
-  -> Event String
-  -> (String -> Effect Unit)
-  -> Domable lock payload
+inputValidated ::
+  String ->
+  String ->
+  String ->
+  String ->
+  Lake String ->
+  (String -> Effect Unit) ->
+  Dragon
 inputValidated cls label placeholder initialValue valid onInput =
-  D.label (D.Class <:=> (append "input-wrapper text" <<< (eq "" >>> if _ then "" else " invalid")) <$> (pure "" <|> valid))
-    [ D.span_ [ text_ label ]
-    , D.input
-        ( oneOf
-            [ D.Placeholder <:=> if placeholder == "" then empty else pure placeholder
-            , D.Value <:=> if initialValue == "" then empty else pure initialValue
-            , D.OnInput !:= withValue onInput
-            , D.Class !:= cls
-            ]
-        )
-        []
-    , D.span (D.Class !:= "error") [ text valid ]
+  D.label'
+    [ D.className' $
+        (append "input-wrapper text" <<< (eq "" >>> if _ then "" else " invalid"))
+        <$> (pure "" <|> valid)
+    ] $ D.Fragment
+    [ D.span $ D.text label
+    , D.input'
+        [ D.placeholder' if placeholder == "" then empty else pure placeholder
+        , D.value' if initialValue == "" then empty else pure initialValue
+        , D.onInputValue onInput
+        , D.className cls
+        ]
+    , D.span' [ D.className "error" ] (D.Text valid)
     ]
 
-inputC' :: forall lock payload. String -> String -> Event String -> (String -> Effect Unit) -> Domable lock payload
+inputC' :: String -> String -> Lake String -> (String -> Effect Unit) -> Dragon
 inputC' label placeholder initialValue onInput =
-  D.label (D.Class !:= "input-wrapper text")
-    [ D.span_ [ text_ label ]
-    , D.input
-        ( oneOf
-            [ D.Placeholder <:=> if placeholder == "" then empty else pure placeholder
-            , D.Value <:=> initialValue
-            , D.OnInput !:= withValue onInput
-            ]
-        )
-        []
+  D.label' [ D.className "input-wrapper text" ] $ D.Fragment
+    [ D.span (D.text label)
+    , D.input'
+        [ D.placeholder' if placeholder == "" then empty else pure placeholder
+        , D.value' initialValue
+        , D.onInputValue onInput
+        ]
     ]
 
 type Header nt tok = Array tok /\ Array nt
@@ -161,222 +128,205 @@ getHeader (States states) = bimap Array.nub Array.nub $
   fromPart (Terminal tok) = [ tok ] /\ []
   fromPart (InterTerminal _) = [] /\ []
 
-col :: forall a e. Eq a => Attr e D.Class String => a -> a -> Event (Attribute e)
+col :: forall a. Eq a => a -> a -> Lake AttrProp
 col j i =
-  if i == j then D.Class !:= "first" else empty
+  if i == j then D.className "first" else empty
 
-renderParseTable
-  :: forall lock payload r
-   . { getCurrentState :: Int -> Event Boolean | r }
-  -> SGrammar
-  -> SStates
-  -> Domable lock payload
-renderParseTable info (MkGrammar grammar) (States states) =
-  bussed \push event ->
-    let
-      stateHighlighted = pure Nothing <|> event
-      terminals /\ nonTerminals = getHeader (States states)
-      renderTerminals x = renderTok mempty x
-      gatherRules nt = grammar # filterMap \r ->
-        if r.pName == nt then Just r.rName else Nothing
-      renderNonTerminals x =
-        D.div (D.Class !:= "pileup") $
-          (map (\y -> renderRule mempty y) (gatherRules x)) <>
-            [ renderNT mempty x ]
-      renderStHere s =
-        D.span
-          ( oneOf
-              [ D.Class !:= "state hoverable"
-              , D.OnMouseenter !:= push (Just s)
-              , D.OnMouseleave !:= push Nothing
-              ]
-          )
-          [ text_ (show s) ]
-      renderShiftReduce Nothing = D.span_ []
-      renderShiftReduce (Just (Shift s)) = D.span_ [ renderCmd mempty "s", renderStHere s ]
-      renderShiftReduce (Just (Reduces rs)) =
-        D.span (if NEA.length rs > 1 then D.Class !:= "conflict" else empty) $
-          rs # foldMap \r -> [ renderCmd mempty "r", renderRule mempty r ]
-      renderShiftReduce (Just (ShiftReduces s rs)) =
-        D.span (D.Class !:= "conflict") $
-          [ renderCmd mempty "s", renderStHere s ] <> (rs # foldMap \r -> [ renderCmd mempty "r", renderRule mempty r ])
-      renderGoto Nothing = []
-      renderGoto (Just s) = [ renderCmd mempty "g", renderStHere s ]
-      cols state =
-        let
-          forTerminal tok = map (snd <<< snd) <<< snd <$> Map.lookup tok (unwrap state.advance)
-          forNonTerminal nt = Map.lookup nt state.receive
-        in
-          map (pure <<< renderShiftReduce <<< forTerminal) terminals <> map (renderGoto <<< forNonTerminal) nonTerminals
-
-      header = D.tr_ $ mapWithIndex (\i -> D.th (col (Array.length terminals + 1) i) <<< pure) $
-        [ text_ "" ] <> map renderTerminals terminals <> map renderNonTerminals nonTerminals
-      clsFor s =
-        (<**>)
-          ((if _ then " active " else "") <$> info.getCurrentState s)
-          $ stateHighlighted <#> \s' -> append $
-              if s' == Just s then " hover " else ""
-      rows = states <#> \state -> D.tr (D.Class <:=> clsFor state.sName)
-        $ Array.cons (D.th_ [ renderStHere state.sName ])
-        $
-          mapWithIndex (\i -> D.td (col (Array.length terminals) i)) (cols state)
-    in
-      D.table (D.Class !:= "data-table parse-table")
-        [ D.thead_ [ header ]
-        , D.tbody_ rows
+renderParseTable :: forall r.
+  { getCurrentState :: Int -> Lake Boolean | r } ->
+  SGrammar ->
+  SStates ->
+  Dragon
+renderParseTable info (MkGrammar grammar) (States states) = eggy \_ -> do
+  { stream: event, send: push } <- createStreamStore $ Just Nothing
+  let
+    stateHighlighted = pure Nothing <|> event
+    terminals /\ nonTerminals = getHeader (States states)
+    renderTerminals x = renderTok mempty x
+    gatherRules nt = grammar # filterMap \r ->
+      if r.pName == nt then Just r.rName else Nothing
+    renderNonTerminals x =
+      D.div' [ D.className "pileup" ] $ D.Fragment $
+        (map (\y -> renderRule mempty y) (gatherRules x)) <>
+          [ renderNT mempty x ]
+    renderStHere s =
+      D.span'
+        [ D.className "state hoverable"
+        , D.on_"mouseenter" $ const $ push (Just s)
+        , D.on_"mouseleave" $ const $ push Nothing
         ]
+        (D.text (show s))
+    renderShiftReduce Nothing = D.span mempty
+    renderShiftReduce (Just (Shift s)) = D.span $ D.Fragment [ renderCmd mempty "s", renderStHere s ]
+    renderShiftReduce (Just (Reduces rs)) =
+      D.span' [ if NEA.length rs > 1 then D.className "conflict" else empty ] $ D.Fragment $
+        rs # foldMap \r -> [ renderCmd mempty "r", renderRule mempty r ]
+    renderShiftReduce (Just (ShiftReduces s rs)) =
+      D.span' [ D.className "conflict" ] $ D.Fragment $
+        [ renderCmd mempty "s", renderStHere s ] <> (rs # foldMap \r -> [ renderCmd mempty "r", renderRule mempty r ])
+    renderGoto Nothing = []
+    renderGoto (Just s) = [ renderCmd mempty "g", renderStHere s ]
+    cols state =
+      let
+        forTerminal tok = map (snd <<< snd) <<< snd <$> Map.lookup tok (unwrap state.advance)
+        forNonTerminal nt = Map.lookup nt state.receive
+      in
+        map (pure <<< renderShiftReduce <<< forTerminal) terminals <> map (renderGoto <<< forNonTerminal) nonTerminals
+
+    header = D.tr $ D.Fragment $ mapWithIndex (\i -> D.th' [ col (Array.length terminals + 1) i ]) $
+      [ D.text "" ] <> map renderTerminals terminals <> map renderNonTerminals nonTerminals
+    clsFor s =
+      (<**>)
+        ((if _ then " active " else "") <$> info.getCurrentState s)
+        $ stateHighlighted <#> \s' -> append $
+            if s' == Just s then " hover " else ""
+    rows = states <#> \state ->
+      D.tr' [ D.className' $ clsFor state.sName] $ D.Fragment $
+        Array.cons (D.th $ renderStHere state.sName) $
+          cols state # mapWithIndex
+            \i -> D.td' [ col (Array.length terminals) i ] <<< D.Fragment
+  pure $ D.table' [ D.className "data-table parse-table" ] $ D.Fragment
+    [ D.thead header
+    , D.tbody $ D.Fragment rows
+    ]
 
 type StartingTick = Boolean
 
-type ParsedUIAction = V
-  ( toggleLeft :: Unit
-  , toggleRight :: Unit
-  , slider :: Number
-  , rate :: Number
-  , startState :: Maybe (Effect Unit)
-  , animationTick :: StartingTick /\ RateInfo
-  )
-
 data TodoAction = Prioritize | Delete
 
-showStack :: SCStack -> Nut
-showStack i = D.span (D.Class !:= "full stack") (go i)
+showStack :: SCStack -> Dragon
+showStack i = D.span' [ D.className "full stack" ] (go i)
   where
-  go (Zero state) = [ D.sub_ [ renderSt mempty state ] ]
+  go (Zero state) = D.sub (renderSt mempty state)
   go (Snoc stack tok state) = go stack
-    <> [ renderCSTTree tok ]
-    <> [ D.sub_ [ renderSt mempty state ] ]
+    <> renderCSTTree tok
+    <> D.sub (renderSt mempty state)
 
-renderStackItem :: Either CodePoint SAST -> Nut
+renderStackItem :: Either CodePoint SAST -> Dragon
 renderStackItem (Left x) = renderTok mempty x
 renderStackItem (Right x) = renderASTTree x
 
-renderAST :: SAST -> Nut
-renderAST (Layer (_ /\ r) []) = D.span (D.Class !:= "layer") [ renderRule mempty r ]
+renderAST :: SAST -> Dragon
+renderAST (Layer (_ /\ r) []) = D.span' [ D.className "layer" ] (renderRule mempty r)
 renderAST (Layer (_ /\ r) cs) =
-  D.span (D.Class !:= "layer") $ join
+  D.span' [ D.className "layer" ] $ D.Fragment $ join
     [ pure $ renderMeta mempty "("
     , pure $ renderRule mempty r
-    , cs # foldMap \c -> [ text_ " ", renderAST c ]
+    , cs # foldMap \c -> [ D.text " ", renderAST c ]
     , pure $ renderMeta mempty ")"
     ]
 
-renderASTTree :: SAST -> Nut
+renderASTTree :: SAST -> Dragon
 renderASTTree ast =
-  D.ol (D.Class !:= "AST")
-    [ D.li_ (renderASTChild ast) ]
+  D.ol' [ D.className "AST" ] $
+    D.li (renderASTChild ast)
 
-renderASTChild :: SAST -> Nuts
+renderASTChild :: SAST -> Dragon
 renderASTChild (Layer (_ /\ r) []) =
-  [ D.span (D.Class !:= "leaf node")
-      [ renderRule mempty r ]
-  ]
-renderASTChild (Layer (_ /\ r) cs) =
-  [ D.span (D.Class !:= "node")
-      [ renderRule mempty r ]
-  , D.ol (D.Class !:= "layer") $
-      cs <#> \c -> D.li_ (renderASTChild c)
+  D.span' [ D.className "leaf node" ]
+      (renderRule mempty r)
+renderASTChild (Layer (_ /\ r) cs) = D.Fragment
+  [ D.span' [ D.className "node" ]
+      (renderRule mempty r)
+  , D.ol' [ D.className "layer" ] $ D.Fragment $
+      cs <#> \c -> D.li (renderASTChild c)
   ]
 
-renderCSTTree :: SCST -> Nut
+renderCSTTree :: SCST -> Dragon
 renderCSTTree ast =
-  D.ol (D.Class !:= "AST CST")
-    [ D.li_ (renderCSTChild ast) ]
+  D.ol' [ D.className "AST CST" ]
+    (D.li (renderCSTChild ast))
 
-renderCSTChild :: SCST -> Nuts
+renderCSTChild :: SCST -> Dragon
 renderCSTChild (Leaf tok) =
-  [ D.span (D.Class !:= "leaf node")
-      [ renderTok mempty tok ]
-  ]
-renderCSTChild (Branch (_ /\ r) cs) =
-  [ D.span (D.Class !:= "node")
-      [ renderRule mempty r ]
-  , D.ol (D.Class !:= "layer") $
-      cs <#> \c -> D.li_ (renderCSTChild c)
+  D.span' [ D.className "leaf node" ]
+    (renderTok mempty tok)
+renderCSTChild (Branch (_ /\ r) cs) = D.Fragment
+  [ D.span' [ D.className "node" ]
+      (renderRule mempty r)
+  , D.ol' [ D.className "layer" ] $ D.Fragment $
+      cs <#> \c -> D.li (renderCSTChild c)
   ]
 
-showMaybeStack :: Maybe SCStack -> Nut
-showMaybeStack Nothing = text_ "Parse error"
+showMaybeStack :: Maybe SCStack -> Dragon
+showMaybeStack Nothing = D.text "Parse error"
 showMaybeStack (Just stack) = showStack stack
 
-showMaybeParseSteps :: forall lock payload. Maybe SCParseSteps -> SuperStack (Domable lock payload)
-showMaybeParseSteps Nothing = pure (pure (text_ "Parse error"))
+showMaybeParseSteps :: Maybe SCParseSteps -> SuperStack (Dragon)
+showMaybeParseSteps Nothing = pure (pure (D.text "Parse error"))
 showMaybeParseSteps (Just stack) = showParseSteps stack
 
-getVisibilityAndIncrement
-  :: forall element
-   . Attr element D.Class String
-  => SuperStack (Int /\ Event (Attribute element))
+getVisibilityAndIncrement :: SuperStack (Int /\ Lake AttrProp)
 getVisibilityAndIncrement = getVisibilityAndIncrement' ""
 
-getVisibilityAndIncrement'
-  :: forall element
-   . Attr element D.Class String
-  => String
-  -> SuperStack (Int /\ Event (Attribute element))
+getVisibilityAndIncrement' :: String -> SuperStack (Int /\ Lake AttrProp)
 getVisibilityAndIncrement' s = do
   n <- get
   put (n + 1)
   pure
     ( \f -> n /\
-        ( f n <#> \v ->
-            D.Class := (s <> if v then "" else " hidden")
+        ( D.className' $ f n <#> \v -> (s <> if v then "" else " hidden")
         )
     )
 
-getVisibility
-  :: forall element
-   . Attr element D.Class String
-  => SuperStack (Int /\ Event (Attribute element))
+getVisibility :: SuperStack (Int /\ Lake AttrProp)
 getVisibility = do
   n <- get
   pure
     ( \f -> n /\
-        ( f n <#> \v ->
-            D.Class := (if v then "" else " hidden")
+        ( D.className' $ f n <#> \v -> (if v then "" else " hidden")
         )
     )
 
-showParseStep
-  :: forall r lock payload
-   . Either (Maybe SCStack)
-       { inputs :: List CodePoint
-       , stack :: SCStack
-       | r
-       }
-  -> SuperStack (Domable lock payload)
+showParseStep :: forall r.
+  Either
+    (Maybe SCStack)
+    { inputs :: List CodePoint
+    , stack :: SCStack
+    | r
+    } ->
+  SuperStack Dragon
 showParseStep (Left Nothing) = do
   getVisibilityAndIncrement <#> map \(n /\ vi) ->
-    D.div vi [ (text_ $ ("Step " <> show n <> ": ") <> "Parse error") ]
+    D.div' [ vi ] $ D.text $ ("Step " <> show n <> ": ") <> "Parse error"
 showParseStep (Left (Just v)) = do
   getVisibilityAndIncrement <#> map \(_ /\ vi) ->
     case getResultC v of
       Just r | Right p <- map snd <$> prune r ->
-        D.div vi [ text_ $ ("Step the last: "), renderCSTTree r ]
+        D.div' [ vi ] $ D.text "Step the last: " <> renderCSTTree r
       _ ->
-        D.div vi [ text_ $ ("Step the last: ") <> "Something went wrong" ]
+        D.div' [ vi ] $ D.text $ "Step the last: " <> "Something went wrong"
 showParseStep (Right { stack, inputs }) = do
   getVisibilityAndIncrement' "flex justify-between" <#> map \(n /\ vi) ->
-    D.div vi [ D.div_ [ text_ ("Step " <> show n <> ": "), showStack stack ], D.div_ (foldMap (\x -> [ renderTok mempty x ]) inputs) ]
+    D.div' [ vi ] $ D.Fragment
+      [ D.div $ D.Fragment
+        [ D.text ("Step " <> show n <> ": ")
+        , showStack stack
+        ]
+      , D.div (foldMap (renderTok mempty) inputs)
+      ]
 
-showParseTransition
-  :: forall lock payload
-   . Int /\ Either CodePoint (NonEmptyString /\ String)
-  -> SuperStack (Domable lock payload)
+showParseTransition ::
+  Int /\ Either CodePoint (NonEmptyString /\ String) ->
+  SuperStack Dragon
 showParseTransition (s /\ Left tok) = do
   getVisibility <#> map \(_ /\ vi) ->
-    D.span vi [ {- renderTok mempty tok, text_ " ", -} renderCmd mempty "s", renderSt mempty s ]
+    D.span' [ vi ] $ D.Fragment
+      [ {- renderTok mempty tok, D.text " ", -} renderCmd mempty "s", renderSt mempty s ]
 showParseTransition (s /\ Right (_ /\ rule)) = do
   getVisibility <#> map \(_ /\ vi) ->
-    D.span vi [ renderCmd mempty "r", renderRule mempty rule, renderMeta mempty " —> ", renderCmd mempty "g", renderSt mempty s ]
+    D.span' [ vi ] $ D.Fragment
+      [ renderCmd mempty "r"
+      , renderRule mempty rule
+      , renderMeta mempty " —> "
+      , renderCmd mempty "g"
+      , renderSt mempty s
+      ]
 
-type SuperStack a = StateT Int Trampoline ((Int -> Event Boolean) -> a)
+type SuperStack a = StateT Int Trampoline ((Int -> Lake Boolean) -> a)
 
-showParseSteps
-  :: forall lock payload
-   . SCParseSteps
-  -> SuperStack (Domable lock payload)
-showParseSteps i = map (D.div (D.Class !:= "parse-steps")) <$> (go i)
+showParseSteps :: SCParseSteps -> SuperStack Dragon
+showParseSteps i = map (D.div' [ D.className "parse-steps" ]) <$> (go i)
   where
   go =
     let
@@ -385,127 +335,137 @@ showParseSteps i = map (D.div (D.Class !:= "parse-steps")) <$> (go i)
     in
       case _ of
         Error prev -> do
-          lift2 (\o u -> [ o, u ]) <$> s (Right prev) <*> s (Left Nothing)
+          s (Right prev) <> s (Left Nothing)
         Complete prev v -> do
-          lift2 (\o u -> [ o, u ]) <$> s (Right prev) <*> s (Left (Just v))
+          s (Right prev) <> s (Left (Just v))
         Step prev action more -> do
-          lift3 (\o v r -> [ o, v ] <> r) <$> s (Right prev) <*> t (firstState more /\ action) <*> go more
+          s (Right prev) <> t (firstState more /\ action) <> go more
 
-renderStateTable :: forall lock payload r. { getCurrentState :: Int -> Event Boolean | r } -> SStates -> Domable lock payload
+renderStateTable :: forall r. { getCurrentState :: Int -> Lake Boolean | r } -> SStates -> Dragon
 renderStateTable info (States states) = do
   let
-    mkTH n 0 0 = D.th (D.Rowspan !:= show n)
-    mkTH _ _ 0 = const (text_ "")
-    mkTH _ _ _ = D.td_
+    mkTH n 0 0 = D.th' [ D.attr "rowspan" (show n) ]
+    mkTH _ _ 0 = mempty
+    mkTH _ _ _ = D.td
     stateClass sName = (if _ then "active" else "") <$> info.getCurrentState sName
     renderStateHere items =
       let
         n = Array.length items
       in
-        items # mapWithIndex \j -> D.tr_ <<< mapWithIndex (\i -> mkTH n j i <<< pure)
-  D.table (D.Class !:= "data-table state-table")
-    $ states <#>
-        \s@{ sName, items } ->
-          D.tbody (D.Class <:=> stateClass sName)
-            $ renderStateHere
-            $ renderState s items
+        items # mapWithIndex \j -> D.tr <<< D.Fragment <<< mapWithIndex (\i -> mkTH n j i)
+  D.table' [ D.className "data-table state-table" ] $ D.Fragment $
+    states <#> \s@{ sName, items } ->
+      D.tbody' [ D.className' $ stateClass sName ] $ D.Fragment $
+        renderStateHere $ renderState s items
 
-renderState :: SStateInfo -> SState -> Nutss
+renderState :: SStateInfo -> SState -> Dragonss
 renderState s (State items) = (\j v -> renderItem s j v) `mapWithIndex` items
 
-renderItem :: SStateInfo -> Int -> SStateItem -> Nuts
+renderItem :: SStateInfo -> Int -> SStateItem -> Dragons
 renderItem s j { pName, rName, rule: rule@(Zipper _ after), lookahead } =
-  [ if j == 0 then renderSt mempty s.sName else text_ ""
+  [ if j == 0 then renderSt mempty s.sName else D.text ""
   , renderNT mempty pName
   , renderMeta mempty ": "
   , renderZipper rule
   , renderLookahead (if Array.null after then " reducible" else "") (map snd lookahead)
-  , D.span_ [ renderMeta mempty " #", renderRule mempty rName ]
-  , D.span_ case toAdvanceTo s rule of
+  , D.span $ D.Fragment [ renderMeta mempty " #", renderRule mempty rName ]
+  , D.span $ D.Fragment case toAdvanceTo s rule of
       Nothing -> []
       Just s' -> [ renderMeta mempty " —> ", renderSt mempty s' ]
   ]
 
-renderZipper :: SZipper -> Nut
+renderZipper :: SZipper -> Dragon
 renderZipper (Zipper before after) =
-  D.span (D.Class !:= ("zipper" <> if Array.null after then " reducible" else ""))
-    [ D.span (D.Class !:= "parsed") $ before <#> \x -> renderPart mempty x
-    , if Array.null after then text_ ""
+  D.span' [ D.className ("zipper" <> if Array.null after then " reducible" else "") ] $ D.Fragment
+    [ D.span' [ D.className "parsed" ] $ D.Fragment $ before <#> \x -> renderPart mempty x
+    , if Array.null after then D.text ""
       else
-        D.span empty $ after <#> \x -> renderPart mempty x
+        D.span $ D.Fragment $ after <#> \x -> renderPart mempty x
     ]
 
-renderLookahead :: String -> Array CodePoint -> Nut
-renderLookahead moreClass items = D.span (D.Class !:= append "lookahead" moreClass) $
-  [ renderMeta mempty "{ " ]
-    <> Array.intercalate [ renderMeta mempty ", " ] (items <#> \x -> [ renderTok mempty x ])
-    <> [ renderMeta mempty " }" ]
+renderLookahead :: String -> Array CodePoint -> Dragon
+renderLookahead moreClass items =
+  D.span' [ D.className $ append "lookahead" moreClass ] $
+    D.Fragment $
+      [ renderMeta mempty "{ " ]
+      <> Array.intercalate [ renderMeta mempty ", " ] (items <#> \x -> [ renderTok mempty x ])
+      <> [ renderMeta mempty " }" ]
 
 --------------------------------------------------------------------------------
 
-debug :: forall a. Show a => String -> Event a -> Event a
+debug :: forall a. Show a => String -> Lake a -> Lake a
 debug tag = map \a -> unsafePerformEffect (a <$ (Log.info (tag <> show a)))
 
-debugJson :: String -> Event Json.Json -> Event Json.Json
+debugJson :: String -> Lake Json.Json -> Lake Json.Json
 debugJson tag = map \a -> unsafePerformEffect (a <$ (Log.info (tag <> Json.stringify a)))
 
-unsafeDebug :: forall a. String -> Event a -> Event a
+unsafeDebug :: forall a. String -> Lake a -> Lake a
 unsafeDebug tag = map \a -> unsafePerformEffect (a <$ (Log.info tag <* Log.info (unsafeCoerce a)))
 
-silentDebug :: forall a. String -> Event a -> Event a
+silentDebug :: forall a. String -> Lake a -> Lake a
 silentDebug tag = map \a -> unsafePerformEffect (a <$ Log.info tag)
 
-renderAs :: String -> String -> Nut
-renderAs c t = D.span (D.Class !:= c) [ text_ t ]
+renderAs :: String -> String -> Dragon
+renderAs c t = D.span' [ D.className c ] (D.text t)
 
-renderTok :: Maybe (Effect Unit) -> CodePoint -> Nut
-renderTok c t = D.span (D.OnClick ?:= c <|> D.Class !:= "terminal" <> if isJust c then " clickable" else "") [ text_ (String.singleton t) ]
+renderTok :: Maybe (Effect Unit) -> CodePoint -> Dragon
+renderTok c t = D.span'
+  [ maybe empty D.onClickE c
+  , D.className $ "terminal" <> if isJust c then " clickable" else ""
+  ] (D.text (String.singleton t))
 
-renderTok' :: forall lock payload. Event String -> Event (Maybe (Effect Unit)) -> CodePoint -> Domable lock payload
-renderTok' cls c t = D.span (D.OnClick <:=> filterMap identity c <|> D.Class <:=> (pure "terminal" <|> (append "terminal " <$> cls))) [ text_ (String.singleton t) ]
+renderTok' :: Lake String -> Lake (Maybe (Effect Unit)) -> CodePoint -> Dragon
+renderTok' cls c t = D.span'
+  [ D.onClickE' (filterMap identity c)
+  , D.className' (pure "terminal" <|> (append "terminal " <$> cls))
+  ] (D.text (String.singleton t))
 
-renderNT :: Maybe (Effect Unit) -> NonEmptyString -> Nut
-renderNT c nt = D.span (D.OnClick ?:= c <|> D.Class !:= "non-terminal" <> if isJust c then " clickable" else "") [ text_ (NES.toString nt) ]
+renderNT :: Maybe (Effect Unit) -> NonEmptyString -> Dragon
+renderNT c nt = D.span'
+  [ maybe empty D.onClickE c
+  , D.className $ "non-terminal" <> if isJust c then " clickable" else ""
+  ] (D.text (NES.toString nt))
 
-renderNT' :: forall lock payload. Event String -> Event (Maybe (Effect Unit)) -> NonEmptyString -> Domable lock payload
-renderNT' cls c nt = D.span (D.OnClick <:=> filterMap identity c <|> D.Class <:=> (pure "non-terminal" <|> (append "non-terminal " <$> cls))) [ text_ (NES.toString nt) ]
+renderNT' :: Lake String -> Lake (Maybe (Effect Unit)) -> NonEmptyString -> Dragon
+renderNT' cls c nt = D.span'
+  [ D.onClickE' (filterMap identity c)
+  , D.className' (pure "non-terminal" <|> (append "non-terminal " <$> cls))
+  ] (D.text (NES.toString nt))
 
-renderRule :: Maybe (Effect Unit) -> String -> Nut
-renderRule c r = D.span (D.OnClick ?:= c <|> D.Class !:= "rule" <> if isJust c then " clickable" else "") [ text_ r ]
+renderRule :: Maybe (Effect Unit) -> String -> Dragon
+renderRule c r = D.span'
+  [ maybe empty D.onClickE c
+  , D.className $ "rule" <> if isJust c then " clickable" else ""
+  ] (D.text r)
 
-renderMeta :: Maybe (Effect Unit) -> String -> Nut
-renderMeta c x = D.span (D.OnClick ?:= c <|> D.Class !:= "meta" <> if isJust c then " clickable" else "") [ text_ x ]
+renderMeta :: Maybe (Effect Unit) -> String -> Dragon
+renderMeta c x = D.span'
+  [ maybe empty D.onClickE c
+  , D.className $ "meta" <> if isJust c then " clickable" else ""
+  ] (D.text x)
 
-renderSt :: Maybe (Effect Unit) -> Int -> Nut
-renderSt c x = D.span (D.OnClick ?:= c <|> D.Class !:= "state" <> if isJust c then " clickable" else "") [ text_ (show x) ]
+renderSt :: Maybe (Effect Unit) -> Int -> Dragon
+renderSt c x = D.span'
+  [ maybe empty D.onClickE c
+  , D.className $ "state" <> if isJust c then " clickable" else ""
+  ] (D.text (show x))
 
-renderSt' :: forall lock payload. Event String -> Maybe (Effect Unit) -> Int -> Domable lock payload
-renderSt' cls c x = D.span (D.OnClick ?:= c <|> D.Class <:=> (pure "state" <|> (append "state " <$> cls))) [ text_ (show x) ]
+renderSt' :: Lake String -> Maybe (Effect Unit) -> Int -> Dragon
+renderSt' cls c x = D.span'
+  [ maybe empty D.onClickE c
+  , D.className' (pure "state" <|> (append "state " <$> cls))
+  ] (D.text (show x))
 
-renderPart :: Maybe (Effect Unit) -> Part Unit NonEmptyString CodePoint -> Nut
+renderPart :: Maybe (Effect Unit) -> Part Unit NonEmptyString CodePoint -> Dragon
 renderPart c (NonTerminal nt) = renderNT c nt
 renderPart c (Terminal t) = renderTok c t
 renderPart _ (InterTerminal _) = mempty
 
-renderCmd :: Maybe (Effect Unit) -> String -> Nut
-renderCmd c x = D.span (D.OnClick ?:= c <|> D.Class !:= "cmd" <> if isJust c then " clickable" else "") [ text_ x ]
-
-type GrammarInputs =
-  ( pName :: V (value :: String, error :: String)
-  , rule :: V (value :: String, error :: String)
-  , rName :: V (value :: String, error :: String)
-  , top :: V (value :: String, error :: String)
-  , entry :: V (value :: String, error :: String)
-  , eof :: V (value :: String, error :: String)
-  , topName :: V (value :: String, error :: String)
-  )
-
-type GrammarAction =
-  ( errorMessage :: Maybe ParseGrammarError
-  , addRule :: Int /\ { pName :: NonEmptyString, rule :: String, rName :: String }
-  , removeRule :: Int
-  , troubleRules :: Array String
-  )
+renderCmd :: Maybe (Effect Unit) -> String -> Dragon
+renderCmd c x = D.span'
+  [ maybe empty D.onClickE c
+  , D.className $ "cmd" <> if isJust c then " clickable" else ""
+  ] (D.text x)
 
 only :: forall a. Array a -> Maybe a
 only [ a ] = Just a
@@ -518,14 +478,14 @@ findNext avoid pre n =
   in
     if pren `Set.member` avoid then findNext avoid pre (n + 1) else pren
 
-parseGrammar
-  :: { top :: NonEmptyString
-     , entry :: Maybe NonEmptyString
-     , eof :: CodePoint
-     , topName :: String
-     }
-  -> Array { pName :: NonEmptyString, rule :: String, rName :: String }
-  -> Either ParseGrammarError SAugmented
+parseGrammar ::
+  { top :: NonEmptyString
+  , entry :: Maybe NonEmptyString
+  , eof :: CodePoint
+  , topName :: String
+  } ->
+  Array { pName :: NonEmptyString, rule :: String, rName :: String } ->
+  Either ParseGrammarError SAugmented
 parseGrammar top rules = do
   firstRule <- note NoRules $ Array.head rules
   let
@@ -588,18 +548,17 @@ pl :: forall f a b. Foldable f => f a -> b -> b -> b
 pl as _ many | Foldable.length as > 1 = many
 pl _ single _ = single
 
-list
-  :: forall f lock payload
-   . Foldable f
-  => f (Domable lock payload)
-  -> Array (Domable lock payload)
+list ::
+  forall f.
+    Foldable f =>
+  f (Dragon) -> Array (Dragon)
 list = Array.fromFoldable >>> case _ of
   [ a ] -> [ a ]
-  [ a, b ] -> [ a, text_ " & ", b ]
+  [ a, b ] -> [ a, D.text " & ", b ]
   as -> case Array.unsnoc as of
     Nothing -> []
     Just { init: as', last: b } ->
-      Array.intercalate [ text_ ", " ] (map pure as') <> [ text_ " & ", b ]
+      Array.intercalate [ D.text ", " ] (map pure as') <> [ D.text " & ", b ]
 
 rulesAtFault :: ParseGrammarError -> Array String
 rulesAtFault = case _ of
@@ -611,231 +570,234 @@ rulesAtFault = case _ of
   TopClash -> []
   RuleNamesUnique rules -> NEA.toArray rules
 
-parseGrammarError :: ParseGrammarError -> Nuts
-parseGrammarError NoRules = [ text_ "Need at least one rule in the grammar." ]
+parseGrammarError :: ParseGrammarError -> Dragons
+parseGrammarError NoRules = [ D.text "Need at least one rule in the grammar." ]
 parseGrammarError (ReferencesEOF rules) =
-  [ text_ "The final token must only be referenced in the top rule, but it was also referenced in " ]
-    <> list (map (\x -> fixed [ renderMeta mempty "#", renderRule mempty x ]) rules)
+  [ D.text "The final token must only be referenced in the top rule, but it was also referenced in " ]
+    <> list (map (\x -> D.Fragment [ renderMeta mempty "#", renderRule mempty x ]) rules)
     <>
-      [ text_ "." ]
+      [ D.text "." ]
 parseGrammarError (EOFNonTerminal rules) =
-  [ text_ "The final token must not be a nonterminal, but it appeared in " ]
-    <> list (map (\x -> fixed [ renderMeta mempty "#", renderRule mempty x ]) rules)
+  [ D.text "The final token must not be a nonterminal, but it appeared in " ]
+    <> list (map (\x -> D.Fragment [ renderMeta mempty "#", renderRule mempty x ]) rules)
     <>
-      [ text_ "." ]
+      [ D.text "." ]
 parseGrammarError (ReferencesTop rules) =
-  [ text_ "The top nonterminal must not appear in the rest of the grammar, but it was also referenced in " ]
-    <> list (map (\x -> fixed [ renderMeta mempty "#", renderRule mempty x ]) rules)
+  [ D.text "The top nonterminal must not appear in the rest of the grammar, but it was also referenced in " ]
+    <> list (map (\x -> D.Fragment [ renderMeta mempty "#", renderRule mempty x ]) rules)
     <>
-      [ text_ "." ]
+      [ D.text "." ]
 parseGrammarError (MissingEntry nt) =
-  [ text_ "Entry point ", renderNT mempty nt, text_ " is not present as a nonterminal in the grammar." ]
-parseGrammarError TopClash = [ text_ "Entry point must be different from the top rule." ]
+  [ D.text "Entry point ", renderNT mempty nt, D.text " is not present as a nonterminal in the grammar." ]
+parseGrammarError TopClash = [ D.text "Entry point must be different from the top rule." ]
 parseGrammarError (RuleNamesUnique rules) =
-  [ text_ "Rule names must be unique, but " ] <> list (map (\x -> fixed [ renderMeta mempty "#", renderRule mempty x ]) rules) <> [ text_ " ", text_ (pl rules "was" "were"), text_ " duplicated" ]
+  [ D.text "Rule names must be unique, but " ] <> list (map (\x -> D.Fragment [ renderMeta mempty "#", renderRule mempty x ]) rules) <> [ D.text " ", D.text (pl rules "was" "were"), D.text " duplicated" ]
 
-grammarComponent
-  :: forall lock payload
-   . String
-  -> SAugmented
-  -> Event SAugmented
-  -> (SAugmented -> Effect Unit)
-  -> Domable lock payload
-grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
-  (pure reallyInitialGrammar <|> forceGrammar) `flip switcher` \initialGrammar ->
-    vbussed (Proxy :: Proxy (V GrammarInputs)) \putInput inputs ->
-      vbussed (Proxy :: Proxy (V GrammarAction)) \pushState changeState ->
-        let
-          changeRule =
-            ( \rules ->
-                case _ of
-                  Left new -> Array.snoc rules new
-                  Right remove -> Array.filter (fst >>> not eq remove) rules
-            )
-          ruleChanges = (Left <$> changeState.addRule <|> Right <$> changeState.removeRule)
-          initialRules = unwrap initialGrammar.augmented # Array.drop 1 # mapWithIndex \i rule ->
-            i /\ rule { rule = rule.rule # foldMap unSPart }
-          initialTop =
-            case Array.head (unwrap initialGrammar.augmented) of
-              Just { pName, rName, rule: [ NonTerminal entry, Terminal eof ] } ->
-                { top: NES.toString pName
-                , entry: NES.toString entry
-                , eof: String.singleton eof
-                , topName: rName
-                }
-              _ ->
-                { top: NES.toString defaultTopName
-                , entry: ""
-                , eof: String.singleton defaultEOF
-                , topName: defaultTopRName
-                }
-          currentText =
-            (<**>) (pure "" <|> inputs.pName.value)
-              $ (<**>) (pure "" <|> inputs.rule.value)
-              $
-                (pure "" <|> inputs.rName.value) <#> \rName rule pName ->
-                  { rName, rule, pName }
-          currentTop =
-            (<**>) (pure initialTop.top <|> inputs.top.value)
-              $ (<**>) (pure initialTop.entry <|> inputs.entry.value)
-              $ (<**>) (pure initialTop.eof <|> inputs.eof.value)
-              $ (<**>) (pure initialTop.topName <|> inputs.topName.value)
-              $ pure { topName: _, eof: _, entry: _, top: _ }
-          counted = add (Array.length initialRules) <$>
-            (pure 0 <|> (add 1 <$> fst <$> changeState.addRule))
-        in
-          envy $ memoBeh currentTop initialTop \currentTop -> do
-            envy $ memoBehFold changeRule initialRules ruleChanges \currentRules -> do
-              let
-                currentNTs = dedup $ map longestFirst $
-                  (<**>)
-                    (map (_.pName <<< snd) <$> currentRules)
-                    (append <<< pure <<< fromMaybe defaultTopName <<< NES.fromString <<< _.top <$> currentTop)
-                currentTopParsed = (<**>) currentRules $ currentTop <#> \r rules ->
-                  { top: fromMaybe defaultTopName $ NES.fromString r.top
-                  , entry: NES.fromString r.entry <|> (Array.head rules <#> snd >>> _.pName)
-                  , eof: fromMaybe defaultEOF $ only $ String.toCodePointArray r.eof
-                  , topName: r.topName
-                  }
-                currentGrammar = (<**>) (map snd <$> currentRules) (currentTopParsed <#> parseGrammar)
+grammarComponent ::
+  String ->
+  SAugmented ->
+  Lake SAugmented ->
+  (SAugmented -> Effect Unit) ->
+  Dragon
+grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar = D.Replacing $
+  (pure reallyInitialGrammar <|> forceGrammar) <#> \initialGrammar -> eggy \shell -> do
+    let
+      createInput = sequenceRecord
+        { value: createStreamStore $ Just ""
+        , error: createStreamStore $ Just ""
+        }
+    inputs <- sequenceRecord
+      { pName: createInput
+      , rule: createInput
+      , rName: createInput
+      , top: createInput
+      , entry: createInput
+      , eof: createInput
+      , topName: createInput
+      }
+    actions <- sequenceRecord
+      { errorMessage: createStream -- Maybe ParseGrammarError
+      , addRule: createStream -- Int /\ { pName :: NonEmptyString, rule :: String, rName :: String }
+      , removeRule: createStream -- Int
+      , troubleRules: createStreamStore $ Just []
+      }
+    let
+      changeRule =
+        ( \rules ->
+            case _ of
+              Left new -> Array.snoc rules new
+              Right remove -> Array.filter (fst >>> not eq remove) rules
+        )
+      ruleChanges = (Left <$> actions.addRule.stream <|> Right <$> actions.removeRule.stream)
+      initialRules = unwrap initialGrammar.augmented # Array.drop 1 # mapWithIndex \i rule ->
+        i /\ rule { rule = rule.rule # foldMap unSPart }
+      initialTop =
+        case Array.head (unwrap initialGrammar.augmented) of
+          Just { pName, rName, rule: [ NonTerminal entry, Terminal eof ] } ->
+            { top: NES.toString pName
+            , entry: NES.toString entry
+            , eof: String.singleton eof
+            , topName: rName
+            }
+          _ ->
+            { top: NES.toString defaultTopName
+            , entry: ""
+            , eof: String.singleton defaultEOF
+            , topName: defaultTopRName
+            }
+      currentText =
+        (<**>) (pure "" <|> inputs.pName.value.stream)
+          $ (<**>) (pure "" <|> inputs.rule.value.stream)
+          $
+            (pure "" <|> inputs.rName.value.stream) <#> \rName rule pName ->
+              { rName, rule, pName }
+      currentTop =
+        (<**>) (pure initialTop.top <|> inputs.top.value.stream)
+          $ (<**>) (pure initialTop.entry <|> inputs.entry.value.stream)
+          $ (<**>) (pure initialTop.eof <|> inputs.eof.value.stream)
+          $ (<**>) (pure initialTop.topName <|> inputs.topName.value.stream)
+          $ pure { topName: _, eof: _, entry: _, top: _ }
+      counted = add (Array.length initialRules) <$>
+        (pure 0 <|> (add 1 <$> fst <$> actions.addRule.stream))
+    getCurrentText <- shell.storeLast mempty currentText
+    getCounted <- shell.storeLast 12341 counted
+    currentTop <- shell.instStore currentTop
+    currentRules <- shell.inst $ foldStream initialRules ruleChanges changeRule
+    let
+      currentNTs = dedup $ map longestFirst $
+        (<**>)
+          (map (_.pName <<< snd) <$> currentRules)
+          (append <<< pure <<< fromMaybe defaultTopName <<< NES.fromString <<< _.top <$> currentTop)
+      currentTopParsed = (<**>) currentRules $ currentTop <#> \r rules ->
+        { top: fromMaybe defaultTopName $ NES.fromString r.top
+        , entry: NES.fromString r.entry <|> (Array.head rules <#> snd >>> _.pName)
+        , eof: fromMaybe defaultEOF $ only $ String.toCodePointArray r.eof
+        , topName: r.topName
+        }
+      currentGrammar = (<**>) (map snd <$> currentRules) (currentTopParsed <#> parseGrammar)
 
-                rulesInTrouble = pure [] <|> changeState.troubleRules
-
-                putEofError v = putInput.eof.error $
-                  if String.length v <= 1 then ""
-                  else
-                    "Must be a single character (Unicode code point)"
-              D.div_
-                [ D.div_
-                    [ join (inputValidated "non-terminal" "Top name") initialTop.top inputs.top.error (const (putInput.top.error "") <> putInput.top.value)
-                    , inputValidated "non-terminal" "Entry point" "" initialTop.entry inputs.entry.error (const (putInput.entry.error "") <> putInput.entry.value)
-                    , join (inputValidated "terminal" "Final token") initialTop.eof inputs.eof.error (putEofError <> putInput.eof.value)
-                    , join (inputValidated "rule" "Top rule name") initialTop.topName inputs.topName.error (const (putInput.topName.error "") <> putInput.topName.value)
-                    ]
-                , D.table (D.Class !:= "data-table grammar")
-                    [ D.tr_
-                        [ D.td_ $ pure $ switcher (\x -> renderNT mempty x) (currentTopParsed <#> _.top)
-                        , D.td_ [ renderMeta mempty " : " ]
-                        , D.td_
-                            [ switcher (maybe (text_ "—") (\x -> renderNT mempty x)) (currentTopParsed <#> _.entry)
-                            , switcher (\x -> renderTok mempty x) (currentTopParsed <#> _.eof)
-                            ]
-                        , D.td_
-                            [ renderMeta mempty " #"
-                            , switcher (\x -> renderRule mempty x) (currentTopParsed <#> _.topName)
-                            ]
-                        ]
-                    , D.tbody_ $ pure $ dyn $ map
-                        ( \(i /\ txt) -> keepLatest $ bus \p' e' ->
-                            ( pure $ insert_ $ D.tr (D.Class <:=> (rulesInTrouble <#> \rit -> if Array.elem txt.rName rit then "trouble" else "")) $ map (D.td_ <<< pure) $
-                                [ renderNT mempty txt.pName
-                                , renderMeta mempty " : "
-                                , switcher
-                                    ( \nts ->
-                                        D.span_ $ map (\x -> renderPart mempty x) (parseDefinition nts txt.rule)
-                                    )
-                                    currentNTs
-                                , D.span_
-                                    [ renderMeta mempty " #"
-                                    , renderRule mempty txt.rName
-                                    ]
-                                , D.span_
-                                    [ text_ " "
-                                    , D.button
-                                        ( oneOf
-                                            [ D.Class !:= "delete"
-                                            , D.OnClick !:= (p' Remove *> pushState.removeRule i *> pushState.troubleRules [])
-                                            ]
-                                        )
-                                        [ text_ "Delete" ]
-                                    ]
-                                ]
-                            ) <|> e'
-                        )
-                        (oneOfMap pure initialRules <|> changeState.addRule)
-                    ]
-                , D.div_
-                    [ inputValidated "non-terminal" "Nonterminal name" "" "" inputs.pName.error (const (putInput.pName.error "") <> putInput.pName.value)
-                    , renderMeta mempty " : "
-                    , inputValidated "terminal" "Value" "" "" inputs.rule.error (const (putInput.rule.error "") <> putInput.rule.value)
-                    , renderMeta mempty " #"
-                    , inputValidated "rule" "Rule name" "" "" inputs.rName.error (const (putInput.rName.error "") <> putInput.rName.value)
-                    , D.button
-                        ( oneOf
-                            [ D.Class !:= "big add"
-                            , D.OnClick <:=> do
-                                sampleJITE currentText $ sampleJITE counted
-                                  $ map readersT
-                                  $ pure \i text -> do
-                                      case NES.fromString text.pName of
-                                        Nothing -> do
-                                          putInput.pName.error "Name for non-terminal must be non-empty."
-                                        -- TODO: findNext ruleNames text.pName 1
-                                        Just pName -> do
-                                          pushState.errorMessage Nothing
-                                          putInput.pName.error ""
-                                          putInput.rule.error ""
-                                          putInput.rName.error ""
-                                          pushState.troubleRules []
-                                          pushState.addRule (i /\ text { pName = pName })
-                            ]
-                        )
-                        [ text_ "Add rule" ]
-                    ]
-                , D.br_ []
-                , if buttonText == "" then D.div_ []
-                  else
-                    D.div_ $ pure $ D.button
-                      ( oneOf
-                          [ D.Class !:= "big"
-                          , currentGrammar <#> \g -> D.OnClick := do
-                              pushState.errorMessage Nothing
-                              putInput.pName.error ""
-                              putInput.rule.error ""
-                              putInput.rName.error ""
-                              putInput.top.error ""
-                              putInput.entry.error ""
-                              putInput.eof.error ""
-                              putInput.topName.error ""
-                              pushState.troubleRules []
-                              case g of
-                                Left err -> do
-                                  pushState.errorMessage (Just err)
-                                  pushState.troubleRules (rulesAtFault err)
-                                  case err of
-                                    NoRules ->
-                                      pure unit
-                                    ReferencesEOF _ ->
-                                      putInput.eof.error "Must not appear in the rest of the grammar"
-                                    EOFNonTerminal _ ->
-                                      putInput.eof.error "Cannot appear as nonterminal"
-                                    ReferencesTop _ ->
-                                      putInput.top.error "Must not appear in the rest of the grammar"
-                                    MissingEntry _ ->
-                                      putInput.entry.error "Must name a nonterminal in the grammar"
-                                    TopClash ->
-                                      putInput.entry.error "Cannot be the top rule itself"
-                                    RuleNamesUnique _ ->
-                                      pure unit
-                                Right g' -> do
-                                  sendGrammar g'
+      putEofError v = inputs.eof.error.send
+        if String.length v <= 1 then "" else
+        "Must be a single character (Unicode code point)"
+    pure $ D.div $ D.Fragment
+      [ D.div $ D.Fragment
+          [ join (inputValidated "non-terminal" "Top name") initialTop.top inputs.top.error.stream (const (inputs.top.error.send "") <> inputs.top.value.send)
+          , inputValidated "non-terminal" "Entry point" "" initialTop.entry inputs.entry.error.stream (const (inputs.entry.error.send "") <> inputs.entry.value.send)
+          , join (inputValidated "terminal" "Final token") initialTop.eof inputs.eof.error.stream (putEofError <> inputs.eof.value.send)
+          , join (inputValidated "rule" "Top rule name") initialTop.topName inputs.topName.error.stream (const (inputs.topName.error.send "") <> inputs.topName.value.send)
+          ]
+      , D.table' [ D.className "data-table grammar" ] $ D.Fragment
+          [ D.tr $ D.Fragment
+              [ D.td $ switcher (\x -> renderNT mempty x) (currentTopParsed <#> _.top)
+              , D.td $ renderMeta mempty " : "
+              , D.td $ D.Fragment
+                  [ switcher (maybe (D.text "—") (\x -> renderNT mempty x)) (currentTopParsed <#> _.entry)
+                  , switcher (\x -> renderTok mempty x) (currentTopParsed <#> _.eof)
+                  ]
+              , D.td $ D.Fragment
+                  [ renderMeta mempty " #"
+                  , switcher (\x -> renderRule mempty x) (currentTopParsed <#> _.topName)
+                  ]
+              ]
+          , D.tbody $ D.Appending $ mapFlipped
+              (oneOfMap pure initialRules <|> actions.addRule.stream)
+              \(i /\ txt) -> eggy \shell -> do
+                this <- createStream
+                pure $ D.Replacing $
+                  ( pure $ D.tr'
+                      [ D.className' (actions.troubleRules.stream <#> \rit -> if Array.elem txt.rName rit then "trouble" else "") ]
+                      $ D.Fragment $ map D.td $
+                      [ renderNT mempty txt.pName
+                      , renderMeta mempty " : "
+                      , switcher
+                          ( \nts ->
+                              D.span $ D.Fragment $ renderPart mempty <$> parseDefinition nts txt.rule
+                          )
+                          currentNTs
+                      , D.span $ D.Fragment
+                          [ renderMeta mempty " #"
+                          , renderRule mempty txt.rName
                           ]
-                      )
-                      [ text_ buttonText ]
-                , changeState.errorMessage # switcher \et -> case et of
-                    Nothing -> D.div_ []
-                    Just e -> fixed
-                      [ D.br_ []
-                      , D.div (D.Class !:= "Error") (parseGrammarError e)
+                      , D.span $ D.Fragment
+                          [ D.text " "
+                          , D.buttonN
+                              "delete"
+                              (this.send mempty *> actions.removeRule.send i *> actions.troubleRules.send [])
+                              "Delete"
+                          ]
                       ]
-                ]
-
-type TopLevelUIAction = V
-  ( changeText :: Boolean /\ String
-  , errorMessage :: Maybe String
-  , grammar :: SAugmented
-  , focusMode :: Unit
-  )
+                  ) <|> this.stream
+          ]
+      , D.div $ D.Fragment
+          [ inputValidated "non-terminal" "Nonterminal name" "" "" inputs.pName.error.stream (const (inputs.pName.error.send "") <> inputs.pName.value.send)
+          , renderMeta mempty " : "
+          , inputValidated "terminal" "Value" "" "" inputs.rule.error.stream (const (inputs.rule.error.send "") <> inputs.rule.value.send)
+          , renderMeta mempty " #"
+          , inputValidated "rule" "Rule name" "" "" inputs.rName.error.stream (const (inputs.rName.error.send "") <> inputs.rName.value.send)
+          , D.button'
+              [ D.className "big add"
+              , D.onClickE do
+                  text <- getCurrentText
+                  i <- getCounted
+                  case NES.fromString text.pName of
+                    Nothing -> do
+                      inputs.pName.error.send "Name for non-terminal must be non-empty."
+                    -- TODO: findNext ruleNames text.pName 1
+                    Just pName -> do
+                      actions.errorMessage.send Nothing
+                      inputs.pName.error.send ""
+                      inputs.rule.error.send ""
+                      inputs.rName.error.send ""
+                      actions.troubleRules.send []
+                      actions.addRule.send (i /\ text { pName = pName })
+              ]
+              (D.text "Add rule")
+          ]
+      , D.br
+      , if buttonText == "" then D.div mempty
+        else
+          D.div $ D.button'
+            [ D.className "big"
+            , D.onClickE' $ currentGrammar <#> \g -> do
+                actions.errorMessage.send Nothing
+                inputs.pName.error.send ""
+                inputs.rule.error.send ""
+                inputs.rName.error.send ""
+                inputs.top.error.send ""
+                inputs.entry.error.send ""
+                inputs.eof.error.send ""
+                inputs.topName.error.send ""
+                actions.troubleRules.send []
+                case g of
+                  Left err -> do
+                    actions.errorMessage.send (Just err)
+                    actions.troubleRules.send (rulesAtFault err)
+                    case err of
+                      NoRules ->
+                        pure unit
+                      ReferencesEOF _ ->
+                        inputs.eof.error.send "Must not appear in the rest of the grammar"
+                      EOFNonTerminal _ ->
+                        inputs.eof.error.send "Cannot appear as nonterminal"
+                      ReferencesTop _ ->
+                        inputs.top.error.send "Must not appear in the rest of the grammar"
+                      MissingEntry _ ->
+                        inputs.entry.error.send "Must name a nonterminal in the grammar"
+                      TopClash ->
+                        inputs.entry.error.send "Cannot be the top rule itself"
+                      RuleNamesUnique _ ->
+                        pure unit
+                  Right g' -> do
+                    sendGrammar g'
+            ]
+            (D.text buttonText)
+      , actions.errorMessage.stream # switcher \et -> case et of
+          Nothing -> D.div mempty
+          Just e -> D.Fragment
+            [ D.br
+            , D.div' [ D.className "Error" ] $ D.Fragment $ parseGrammarError e
+            ]
+      ]
 
 sampleGrammar :: SAugmented
 sampleGrammar = fromSeed' defaultTopName defaultTopRName defaultEOF
@@ -878,81 +840,79 @@ type ExplorerAction =
   , select :: SFragment
   )
 
-explorerComponent
-  :: forall lock payload
-   . SProducible
-  -> (Array CodePoint -> Effect Unit)
-  -> Domable lock payload
-explorerComponent { produced: producedRules, grammar: { augmented: MkGrammar rules, start: { pName: entry } } } sendUp =
-  vbussed (Proxy :: Proxy (V ExplorerAction)) \push event -> do
-    envy $ memoBeh event.select [ NonTerminal entry ] \currentParts -> do
-      let
-        firstNonTerminal = Array.head <<< foldMapWithIndex
-          \i v -> maybe [] (\r -> [ i /\ r ]) (unNonTerminal v)
-      envy $ memoBeh (event.focus <|> map firstNonTerminal currentParts) (Just (0 /\ entry)) \currentFocused -> do
-        let
-          activity here = here <#> if _ then "active" else "inactive"
-          renderPartHere i (NonTerminal nt) =
-            D.span
-              (D.Class <:=> (currentFocused <#> any (fst >>> eq i) >>> if _ then "selected" else ""))
-              [ renderNT (Just (push.focus (Just (i /\ nt)))) nt ]
-          renderPartHere _ (Terminal tok) = renderTok mempty tok
-          renderPartHere _ (InterTerminal _) = mempty
-          send = currentParts <#> \parts ->
-            case traverse unTerminal parts of
-              Nothing -> Nothing
-              Just toks -> Just (sendUp toks)
-        D.div_
-          [ switcher (fixed <<< mapWithIndex renderPartHere) currentParts
-          , D.button
-              ( D.Class <:=> maybe "disabled" mempty <$> send
-                  <|> D.OnClick <:=> sequence_ <$> send
-              )
-              [ text_ "Send" ]
-          , D.button
-              ( D.Class !:= "delete"
-                  <|> D.OnClick !:= push.select [ NonTerminal entry ]
-              )
-              [ text_ "Reset" ]
-          , D.table (D.Class !:= "data-table explorer-table")
-              [ D.tbody_ $ rules <#> \rule -> do
-                  let
-                    focusHere = currentFocused # map (any (snd >>> eq rule.pName))
-                    replacement = sampleOnRight currentParts $ currentFocused <#> \mfoc parts -> do
-                      focused /\ nt <- mfoc
-                      guard $ nt == rule.pName
-                      guard $ focused <= Array.length parts
-                      pure $ Array.take focused parts <> rule.rule <> Array.drop (focused + 1) parts
-                  D.tr (D.Class <:=> activity focusHere) $ map (D.td_ <<< pure) $
-                    [ renderNT mempty rule.pName
-                    , renderMeta mempty " : "
-                    , fixed $ map (\x -> renderPart mempty x) rule.rule
-                    , D.span_
-                        [ renderMeta mempty " #"
-                        , renderRule mempty rule.rName
-                        ]
-                    , D.span_
-                        [ text_ " "
-                        , D.button
-                            ( oneOf
-                                [ D.Class <:=> (append "select")
-                                    <$> (if _ then mempty else " disabled")
-                                    <$> focusHere
-                                , D.OnClick <:=> traverse_ push.select <$> replacement
-                                ]
-                            )
-                            [ text_ "Choose" ]
-                        ]
-                    , case Array.find (_.production >>> eq rule) producedRules of
-                        Nothing -> text_ "Unproducible"
-                        Just { produced } ->
-                          D.span_ $ join
-                            [ pure $ D.em_ [ text_ "e.g. " ]
-                            , map (\x -> renderTok mempty x) produced
-                            ]
-                    ]
+explorerComponent ::
+  SProducible ->
+  (Array CodePoint -> Effect Unit) ->
+  Dragon
+explorerComponent grammar sendUp = eggy \shell -> do
+  let { produced: producedRules, grammar: { augmented: MkGrammar rules, start: { pName: entry } } } = grammar
+  actions <- sequenceRecord
+    { focus: createStream
+    , select: createStreamStore $ Just [ NonTerminal entry ]
+    }
+  let
+    currentParts = actions.select.stream
+    firstNonTerminal = Array.head <<< foldMapWithIndex
+      \i v -> maybe [] (\r -> [ i /\ r ]) (unNonTerminal v)
+  currentFocused <- shell.instStore
+    (pure (Just (0 /\ entry)) <|> actions.focus.stream <|> map firstNonTerminal currentParts)
+  let
+    activity here = here <#> if _ then "active" else "inactive"
+    renderPartHere i (NonTerminal nt) =
+      D.span'
+        [ D.className' (currentFocused <#> any (fst >>> eq i) >>> if _ then "selected" else "") ]
+        (renderNT (Just (actions.focus.send (Just (i /\ nt)))) nt)
+    renderPartHere _ (Terminal tok) = renderTok mempty tok
+    renderPartHere _ (InterTerminal _) = mempty
+    send = currentParts <#> \parts ->
+      case traverse unTerminal parts of
+        Nothing -> Nothing
+        Just toks -> Just (sendUp toks)
+  pure $ D.div $ D.Fragment
+    [ switcher (D.Fragment <<< mapWithIndex renderPartHere) currentParts
+    , D.button'
+        [ D.className' $ maybe "disabled" mempty <$> send
+        , D.onClickE' $ sequence_ <$> send
+        ]
+        (D.text "Send")
+    , D.buttonN "delete" (actions.select.send [ NonTerminal entry ]) "Reset"
+    , D.table' [ D.className "data-table explorer-table" ] $ D.Fragment
+        [ D.tbody $ D.Fragment $ rules <#> \rule -> do
+            let
+              focusHere = currentFocused # map (any (snd >>> eq rule.pName))
+              replacement = sampleOnRight currentParts $ currentFocused <#> \mfoc parts -> do
+                focused /\ nt <- mfoc
+                guard $ nt == rule.pName
+                guard $ focused <= Array.length parts
+                pure $ Array.take focused parts <> rule.rule <> Array.drop (focused + 1) parts
+            D.tr' [ D.className' $ activity focusHere ] $ D.Fragment $ map D.td
+              [ renderNT mempty rule.pName
+              , renderMeta mempty " : "
+              , D.Fragment $ map (\x -> renderPart mempty x) rule.rule
+              , D.span $ D.Fragment
+                  [ renderMeta mempty " #"
+                  , renderRule mempty rule.rName
+                  ]
+              , D.span $ D.Fragment
+                  [ D.text " "
+                  , D.button'
+                      [ D.className' $ (append "select")
+                          <$> (if _ then mempty else " disabled")
+                          <$> focusHere
+                      , D.onClickE' $ traverse_ actions.select.send <$> replacement
+                      ]
+                      (D.text "Choose")
+                  ]
+              , case Array.find (_.production >>> eq rule) producedRules of
+                  Nothing -> D.text "Unproducible"
+                  Just { produced } ->
+                    D.span $ D.Fragment $ join
+                      [ pure $ D.em $ D.text "e.g. "
+                      , map (\x -> renderTok mempty x) produced
+                      ]
               ]
-          ]
+        ]
+    ]
 
 type RandomAction =
   ( size :: Int
@@ -960,65 +920,66 @@ type RandomAction =
   , randomMany :: Array (Array CodePoint)
   )
 
-randomComponent
-  :: forall lock payload
-   . SProducible
-  -> (Array CodePoint -> Effect Unit)
-  -> Domable lock payload
-randomComponent { produced: producedRules, grammar: { start: { pName: entry } } } sendUp =
-  vbussed (Proxy :: Proxy (V RandomAction)) \push event -> do
-    let
-      initialSize = 50
-      initialAmt = 15
-      randomProductions nt sz amt =
-        genNT producedRules nt # traverse (Gen.resize (const sz) >>> QC.randomSample' amt)
-      initial = genNT producedRules entry # maybe [] (QC.sample (LCG.mkSeed 1234) initialAmt)
-    D.div_
-      [ D.div_
-          [ D.label (D.Class !:= "input-wrapper range")
-              [ D.span_ [ text_ "Simple" ]
-              , D.input
-                  ( oneOf
-                      [ D.Xtype !:= "range"
-                      , D.Min !:= "0"
-                      , D.Max !:= "100"
-                      , slider $ pure $ push.size <<< Int.round
-                      ]
-                  )
-                  []
-              , D.span_ [ text_ "Complex" ]
+randomComponent ::
+  SProducible ->
+  (Array CodePoint -> Effect Unit) ->
+  Dragon
+randomComponent grammar sendUp = eggy \_ -> do
+  let { produced: producedRules, grammar: { start: { pName: entry } } } = grammar
+  let
+    initialSize = 50
+    initialAmt = 15
+    randomProductions nt sz amt =
+      genNT producedRules nt # traverse (Gen.resize (const sz) >>> QC.randomSample' amt)
+    initial = genNT producedRules entry # maybe [] (QC.sample (LCG.mkSeed 1234) initialAmt)
+  actions <- sequenceRecord
+    { size: createStreamStore $ Just initialSize
+    , amt: createStreamStore $ Just initialAmt
+    , randomMany: createStreamStore $ Just initial
+    }
+  pure $ D.div $ D.Fragment
+      [ D.div $ D.Fragment
+          [ D.label' [ D.className "input-wrapper range" ] $ D.Fragment
+              [ D.span (D.text "Simple")
+              , D.input'
+                  [ D.attr "type" "range"
+                  , D.attr "min" "0"
+                  , D.attr "max" "100"
+                  , D.onInputNumber $ actions.size.send <<< Int.round
+                  ]
+              , D.span (D.text "Complex")
               ]
-          , D.label (D.Class !:= "input-wrapper range")
-              [ D.span_ [ text_ "Few" ]
-              , D.input
-                  ( oneOf
-                      [ D.Xtype !:= "range"
-                      , D.Min !:= "1"
-                      , D.Max !:= "30"
-                      , D.Value !:= "15"
-                      , slider $ pure $ push.amt <<< Int.round
-                      ]
-                  )
-                  []
-              , D.span_ [ text_ "Many" ]
+          , D.label' [ D.className "input-wrapper range" ] $ D.Fragment
+              [ D.span (D.text "Few")
+              , D.input'
+                  [ D.attr "type" "range"
+                  , D.attr "min" "1"
+                  , D.attr "max" "30"
+                  , D.value "15"
+                  , D.onInputNumber $ actions.amt.send <<< Int.round
+                  ]
+              , D.span (D.text "Many")
               ]
-          , D.button
-              ( D.Class !:= ""
-                  <|> D.OnClick <:=>
-                    ( (<**>) (pure initialAmt <|> event.amt) $
-                        ( (pure initialSize <|> event.size) <#> \sz amt ->
-                            (traverse_ (push.randomMany) =<< randomProductions entry sz amt)
-                        )
+          , D.button'
+              [ D.className ""
+              , D.onClickE' $
+                ( (<**>) (pure initialAmt <|> actions.amt.stream) $
+                    ( (pure initialSize <|> actions.size.stream) <#> \sz amt ->
+                        (traverse_ (actions.randomMany.send) =<< randomProductions entry sz amt)
                     )
-              )
-              [ text_ "Random" ]
+                )
+              ]
+              (D.text "Random")
           ]
-      , switcher (D.ul (D.Class !:= "compact") <<< map (\xs -> D.li (D.Class !:= "clickable" <|> D.OnClick !:= sendUp xs) <<< map (\x -> renderTok mempty x) $ xs))
-          (pure initial <|> event.randomMany)
+      , D.Replacing $ (pure initial <|> actions.randomMany.stream) <#>
+          (D.ul' [ D.className "compact" ] <<< D.Fragment
+          <<< map (\xs -> D.li' [ D.className "clickable", D.onClickE (sendUp xs) ] <<< D.Fragment
+          <<< map (\x -> renderTok mempty x) $ xs)
+          )
       ]
 
-peas :: Array String -> Nut
-peas x = fixed (map (D.p_ <<< pure <<< text_) x)
+peas :: Array String -> Dragon
+peas = D.Fragment <<< map (D.p <<< D.text)
 
 computeGrammar
   :: SAugmented
@@ -1114,20 +1075,10 @@ widgetGrammar { interface, attrs } = do
   -- received a grammar from the query)
   sendOthers initialGrammar
   buttonName <- fromMaybe "Use grammar" <<< Json.toString <$> attrs "action"
-  pure $ SafeNut do
-    grammarComponent buttonName initialGrammar upstream.receive upstream.send
+  pure $ grammarComponent buttonName initialGrammar upstream.receive upstream.send
 
-sideKick :: forall a. (a -> Effect Unit) -> Event a -> Effect (Event a)
-sideKick eff e = do
-  current <- Ref.new 0
-  pure $ makeEvent \k -> do
-    this <- add 1 <$> Ref.read current
-    u <- subscribe e \v -> do
-      active <- Ref.read current
-      when (active == this) (eff v)
-      k v
-    Ref.modify_ (add 1) current
-    pure u
+sideKick :: forall a. (a -> Effect Unit) -> Lake a -> Effect (Lake a)
+sideKick eff = pure <<< chill <<< unsafeMarkHot >>> mapEf \a -> a <$ eff a
 
 widgetInput :: Widget
 widgetInput { interface, attrs } = do
@@ -1187,7 +1138,7 @@ widgetInput { interface, attrs } = do
   -- For all of the other data, it might not be updated (e.g. because we only
   -- received a grammar from the query)
   sendOthers initialInput
-  pure $ SafeNut do
+  pure $
     inputComponent initialInput upstream.receive upstream.send
       { grammar: grammarStream
       , states: io.states.receive
@@ -1213,247 +1164,237 @@ widgets = Object.fromFoldable $ map (lmap (append "Parser."))
   , "ParseTable" /\ widgetParseTable
   ]
 
-withGrammar :: (forall lock payload. SAugmented -> Domable lock payload) -> Widget
+withGrammar :: (SAugmented -> Dragon) -> Widget
 withGrammar component { interface } = do
   let
-    grammarEvent = filterMap (hush <<< decode grammarCodec) (interface "grammar").receive
-  pure $ SafeNut (switcher component (pure sampleGrammar <|> grammarEvent))
+    grammarLake = filterMap (hush <<< decode grammarCodec) (interface "grammar").receive
+  pure $ D.Replacing $ map component $ pure sampleGrammar <|> grammarLake
 
-withProducibleSendTokens :: (forall lock payload. SProducible -> (Array CodePoint -> Effect Unit) -> Domable lock payload) -> Widget
+withProducibleSendTokens :: (SProducible -> (Array CodePoint -> Effect Unit) -> Dragon) -> Widget
 withProducibleSendTokens component { interface } = do
   let
-    grammarEvent = filterMap (hush <<< decode producibleCodec) (interface "producible").receive
+    grammarLake = filterMap (hush <<< decode producibleCodec) (interface "producible").receive
     sendTokens = (interface "input").send <<< Json.fromString <<< String.fromCodePointArray
-  pure $ SafeNut (switcher (flip component sendTokens) (pure (withProducible sampleGrammar) <|> grammarEvent))
+  pure $ D.Replacing $ map (flip component sendTokens) $ pure (withProducible sampleGrammar) <|> grammarLake
 
-spotlightBeh :: forall a b. Ord a => Event a -> ((a -> Event Boolean) -> b) -> Event b
-spotlightBeh e f = mailboxed (map { address: _, payload: unit } (spotlightChange e)) \g -> f \a ->
-  toggle false $ keepLatest $
-    -- query the behavioral event for its current value
-    -- before only listening to sweeps
-    pure (unit <$ filter (eq a) e) <|> pure (g a)
+-- TODO optimize with mailboxed
+spotlightBeh :: forall a f. Applicative f => Ord a => Lake a -> f (a -> Lake Boolean)
+spotlightBeh e = pure \k -> eq k <$> e
 
 widgetStateTable :: Widget
 widgetStateTable { interface } = do
   let
     stateIdI = adaptInterface CA.int (interface "stateId")
-    currentGetCurrentState = spotlightBeh stateIdI.receive identity
+    currentGetCurrentState = spotlightBeh stateIdI.receive
     currentStates = filterMap (hush <<< decode statesCodec) (interface "states").receive
     currentStatesAndGetState = (sampleOnRight currentGetCurrentState (map (/\) currentStates))
-  pure $ SafeNut (switcher (\(x /\ getCurrentState) -> renderStateTable { getCurrentState } x) (currentStatesAndGetState))
+  pure $ D.Replacing $ currentStatesAndGetState <#>
+    \(x /\ getCurrentState) -> renderStateTable { getCurrentState } x
 
 widgetParseTable :: Widget
 widgetParseTable { interface } = do
   let
     stateIdI = adaptInterface CA.int (interface "stateId")
-    currentGetCurrentState = spotlightBeh stateIdI.receive identity
+    currentGetCurrentState = spotlightBeh stateIdI.receive
     currentStates = filterMap (hush <<< decode statesCodec) (interface "states").receive
     currentStatesAndGetState = (sampleOnRight currentGetCurrentState (map (/\) currentStates))
     currentGrammar = filterMap (hush <<< decode grammarCodec) (interface "grammar").receive
   initialGrammar <- fromMaybe sampleGrammar <<< join <<< map (hush <<< decode grammarCodec) <$> (interface "grammar").current
-  pure $ SafeNut (switcher (\(grammar /\ x /\ getCurrentState) -> renderParseTable { getCurrentState: getCurrentState } grammar x) (flip sampleOnRight ((/\) <<< _.augmented <$> (pure initialGrammar <|> currentGrammar)) (currentStatesAndGetState)))
+  pure $ D.Replacing $ map
+    (\(grammar /\ x /\ getCurrentState) -> renderParseTable { getCurrentState: getCurrentState } grammar x)
+    (flip sampleOnRight ((/\) <<< _.augmented <$> (pure initialGrammar <|> currentGrammar)) (currentStatesAndGetState))
 
-inputComponent
-  :: forall r lock payload
-   . String
-  -> Event String
-  -> (String -> Effect Unit)
-  -> { grammar :: Event SAugmented
-     , states :: Event SStates
-     , tokens :: Event (Maybe (List CodePoint))
-     , tokens' :: Event (Maybe (List CodePoint))
-     , parseSteps :: Event (Maybe SCParseSteps)
-     , stateId :: Event Int
-     , state :: Event Int
-     , allTokens :: Event (Array CodePoint)
-     , allNTs :: Event (Array NonEmptyString)
-     , validTokens :: Event (Set CodePoint)
-     , validNTs :: Event (Set NonEmptyString)
-     , producible :: Event SProducible
-     | r
-     }
-  -> Domable lock payload
-inputComponent initialInput inputStream sendInput current =
-  bussed \pushInput localInput ->
-    envy $ memoBeh (inputStream <|> localInput) initialInput \currentValue -> do
+switcher f s = D.Replacing $ f <$> s
+
+inputComponent :: forall r.
+  String ->
+  Lake String ->
+  (String -> Effect Unit) ->
+  { grammar :: Lake SAugmented
+  , states :: Lake SStates
+  , tokens :: Lake (Maybe (List CodePoint))
+  , tokens' :: Lake (Maybe (List CodePoint))
+  , parseSteps :: Lake (Maybe SCParseSteps)
+  , stateId :: Lake Int
+  , state :: Lake Int
+  , allTokens :: Lake (Array CodePoint)
+  , allNTs :: Lake (Array NonEmptyString)
+  , validTokens :: Lake (Set CodePoint)
+  , validNTs :: Lake (Set NonEmptyString)
+  , producible :: Lake SProducible
+  | r
+  } ->
+  Dragon
+inputComponent initialInput inputStream sendInput current = eggy \shell -> do
+  { send: pushInput, stream: localInput } <- shell.track $ createStreamStore Nothing
+  currentValue <- shell.instStore (pure initialInput <|> inputStream <|> localInput)
+  getCurrentValue <- shell.storeLast initialInput currentValue
+  getCurrentProducible <- shell.storeLast Nothing (Just <$> current.producible)
+  let
+    currentValue' = {- notFrom localInput -} currentValue
+    currentParseSteps = current.parseSteps
+    currentGrammarTokens = current.allTokens
+    currentGrammarNTs = current.allNTs
+    currentValidTokens = current.validTokens
+    currentValidNTs = current.validNTs
+
+    renderTokenHere mtok = do
       let
-        currentValue' = notFrom localInput currentValue
-        currentParseSteps = current.parseSteps
-        currentGrammarTokens = current.allTokens
-        currentGrammarNTs = current.allNTs
-        currentValidTokens = current.validTokens
-        currentValidNTs = current.validNTs
-        currentProducible = current.producible
+        onClick = do
+          v <- getCurrentValue
+          pushInput <> sendInput $ case mtok of
+            Just tok -> v <> String.singleton tok
+            Nothing -> String.take (String.length v - 1) v
+        valid = case mtok of
+          Just tok -> currentValidTokens <#> Set.member tok
+          Nothing -> currentValue <#> not String.null
+        toktext = case mtok of
+          Nothing -> codePointFromChar '⌫'
+          Just tok -> tok
+      renderTok' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (pure $ Just onClick) toktext
+    renderNTHere nt = do
+      let
+        onClick = do
+          v <- getCurrentValue
+          getCurrentProducible >>= traverse_ \prod -> do
+            genned <- map (maybe "" String.fromCodePointArray) $ sequence $
+              QC.randomSampleOne <$> genNT prod.produced nt
+            pushInput <> sendInput $ (v <> genned)
+        valid = currentValidNTs <#> Set.member nt
+      renderNT' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (pure $ Just onClick) nt
+  pure $
+    D.div $ D.Fragment
+      [ D.div $ D.Fragment
+          [ D.span $
+              switcher (\x -> D.Fragment $ ([ Nothing ] <> map Just x) <#> renderTokenHere) currentGrammarTokens
+          , D.span $
+              switcher (\x -> D.Fragment $ x <#> renderNTHere) currentGrammarNTs
+          ]
+      , D.div $ D.span' [ D.className "terminal" ] $ inputC' "Source text" "" currentValue' (pushInput <> sendInput)
+      , currentParseSteps `flip switcher` \todaysSteps -> eggy \_ -> do
+          actions <- sequenceRecord
+            { toggleLeft: createStream -- Unit
+            , toggleRight: createStream -- Unit
+            , slider: createStream -- Int
+            , rate: createStreamStore $ Just 1.0 -- Number
+            , toggleAnimation: createStream
+            }
+          let
+            contentAsMonad = showMaybeParseSteps $ todaysSteps
+            -- Run the first layer of the monad, to get the number of items being rendered up-front
+            contentAsMonad2 /\ nEntities = runTrampoline (runStateT contentAsMonad 0)
 
-        renderTokenHere mtok = do
-          let
-            onClick = sampleJITE currentValue $ pure $ ReaderT \v ->
-              pushInput <> sendInput $ case mtok of
-                Just tok -> v <> String.singleton tok
-                Nothing -> String.take (String.length v - 1) v
-            valid = case mtok of
-              Just tok -> currentValidTokens <#> Set.member tok
-              Nothing -> currentValue <#> not String.null
-            toktext = case mtok of
-              Nothing -> codePointFromChar '⌫'
-              Just tok -> tok
-          renderTok' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (Just <$> onClick) toktext
-        renderNTHere nt = do
-          let
-            onClick = sampleJITE currentProducible $ sampleJITE currentValue $ pure $ ReaderT \v -> ReaderT \prod -> do
-              genned <- map (maybe "" String.fromCodePointArray) $ sequence $
-                QC.randomSampleOne <$> genNT prod.produced nt
-              pushInput <> sendInput $ (v <> genned)
-            valid = currentValidNTs <#> Set.member nt
-          renderNT' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (Just <$> onClick) nt
-      D.div_
-        [ D.div_
-            [ D.span_ $ pure $
-                switcher (\x -> fixed $ ([ Nothing ] <> map Just x) <#> renderTokenHere) currentGrammarTokens
-            , D.span_ $ pure $
-                switcher (\x -> fixed $ x <#> renderNTHere) currentGrammarNTs
-            ]
-        , D.div_
-            [ D.span (D.Class !:= "terminal") [ inputC' "Source text" "" currentValue' (pushInput <> sendInput) ] ]
-        , currentParseSteps `flip switcher` \todaysSteps ->
-            D.div_ $ pure $
-            let
-              contentAsMonad = showMaybeParseSteps $ todaysSteps
-              -- Run the first layer of the monad, to get the number of items being rendered up-front
-              contentAsMonad2 /\ nEntities = runTrampoline (runStateT contentAsMonad 0)
-            in
-              vbussed (Proxy :: _ ParsedUIAction) \pPush pEvent ->
-                let
-                  -- Maintain the current index, clamped between 0 and nEntitities
-                  -- (Note: it is automatically reset, since `switcher` resubscribes,
-                  -- creating new state for it)
-                  startState = pEvent.startState <|> pure Nothing
-                  rate = pEvent.rate <|> pure 1.0
-                  animationTick = compact $ mapAccum
-                    ( \{ target: Beats target' } i@(tf /\ { beats: Beats beats }) ->
-                        let
-                          target = if tf then 0.0 else target'
-                        in
-                          if target > beats then ({ target: Beats target } /\ Nothing)
-                          else ({ target: Beats (target + 1.0) } /\ Just i)
-                    )
-                    { target: Beats 0.0 }
-                    pEvent.animationTick
-                  currentIndex = dedupOn (eq `on` fst) $ pure ((nEntities - 1) /\ Initial) <|>
-                    mapAccum
-                      (\x (f /\ a) -> let fx = clamp 0 (nEntities - 1) (f x) in fx /\ fx /\ a)
-                      (nEntities - 1)
-                      ( oneOf
-                          [ ((_ - 1) /\ Toggle) <$ pEvent.toggleLeft
-                          , ((_ + 1) /\ Toggle) <$ pEvent.toggleRight
-                          -- if we're starting and at the end of a play, loop back to the beginning
-                          , (\(tf /\ _) -> if tf then ((\n -> if n == nEntities - 1 then 0 else n + 1) /\ Play) else ((_ + 1) /\ Play)) <$> animationTick
-                          , (floor >>> const >>> (_ /\ Slider)) <$> pEvent.slider
-                          ]
+            yes state = { state, emit: Just state }
+            adjust :: (Int -> Int) -> { idx :: Int | _ } -> Lake _
+            adjust fn = \state ->
+              pure $ state { idx = state.idx # fn }
+            actAs :: StepAction ->
+              ({ idx :: Int | _ } -> Lake _) ->
+              ({ idx :: Int | _ } -> Lake { state::_, emit::_ })
+            actAs actor fn = map yes <<< fn >>> map \state ->
+              state
+                { idx = clamp 0 (nEntities - 1) state.idx
+                , actor = actor
+                , running = state.running && actor == Play
+                }
+            playAt rate state@{ idx } =
+              let
+                { start, count } =
+                  if idx == nEntities - 1
+                    then { start: 0, count: nEntities }
+                    else { start: idx + 1, count: nEntities - idx - 1 }
+              in selfGating (not _.running) $
+                (pure 0 <|> add 1 <$> interval (1000.0 / rate # Milliseconds)) <#> \n ->
+                  state { idx = start + n, running = n < count - 1, rate = rate }
+            fullState = join animationLoop
+              { idx: nEntities - 1
+              , running: false
+              , actor: Initial
+              , rate: 1.0
+              }
+              [ actions.toggleLeft.stream  $> actAs Toggle (adjust (_ - 1))
+              , actions.toggleRight.stream $> actAs Toggle (adjust (_ + 1))
+              , actions.slider.stream <#> \n ->
+                  actAs Slider (adjust (const n))
+              , actions.rate.stream <#> \rate -> case _ of
+                  state@{ running: false } -> pure
+                    { state: state { rate = rate }, emit: Nothing }
+                  state -> actAs Play (playAt rate) state
+              , actions.toggleAnimation.stream $> actAs Play case _ of
+                  state@{ running: true } -> pure $ state { running = false }
+                  state@{ rate } -> state # playAt rate
+              ]
+
+            -- Maintain the current index, clamped between 0 and nEntitities
+            -- (Note: it is automatically reset, since `switcher` resubscribes,
+            -- creating new state for it)
+          currentState <- shell.instStore fullState
+          let stackIndex = dedupOn _.idx currentState
+          let isRunning = _.running <$> currentState
+          sweeper <- spotlightBeh (map _.idx stackIndex)
+          let content = contentAsMonad2 sweeper
+          pure $ D.div $ D.Fragment
+            [ D.div $ D.button'
+                [ D.onClickE $ actions.toggleAnimation.send unit ] $ D.Fragment
+                  [ D.Text
+                      ( isRunning <#> case _ of
+                          true -> "Pause"
+                          false -> "Play"
                       )
-                in
-                  -- Memoize it and run it through `spotlight` to toggle each
-                  -- item individually
-                  envy $ keepLatest $ memoize currentIndex \stackIndex ->
-                    spotlight false (map fst stackIndex) \sweeper ->
-                      let
-                        content = contentAsMonad2 sweeper
-                      in
-                        D.div_
-                          [ D.div_
-                              [ D.button
-                                  ( oneOf
-                                      [ (rate <**> ((/\) <$> startState)) <#> \(s /\ rt) -> D.OnClick := do
-                                          case s of
-                                            Just unsub -> do
-                                              unsub
-                                              pPush.startState Nothing
-                                            Nothing -> do
-                                              let toSeconds = unInstant >>> unwrap >>> (_ / 1000.0)
-                                              t <- toSeconds <$> now
-                                              sub <- subscribe
-                                                ( selfDestruct (\((isStart /\ _) /\ ci) -> (fst ci == (nEntities - 1) && not isStart)) (pPush.startState Nothing)
-                                                    ( sampleOnRight (currentIndex)
-                                                        ( (/\) <$> mapAccum (\tf i -> false /\ tf /\ i)
-                                                            true
-                                                            ( timeFromRate (step rt $ pEvent.rate)
-                                                                ( _.time
-                                                                    >>> toSeconds
-                                                                    >>> (_ - t)
-                                                                    >>> Seconds <$> withTime (animationFrame)
-                                                                )
-                                                            )
-                                                        )
-                                                    )
-                                                )
-                                                \(info /\ _) -> pPush.animationTick info
-                                              pPush.startState (Just sub)
-                                      ]
-                                  )
-                                  [ text
-                                      ( startState <#> case _ of
-                                          Just _ -> "Pause"
-                                          Nothing -> "Play"
-                                      )
-                                  ]
-                              ]
-                          , D.div_
-                              [ text_ "Speed"
-                              , D.span_ $ map
-                                  ( \(n /\ l) -> D.label_
-                                      [ D.input
-                                          ( oneOfMap pure
-                                              [ D.Xtype := "radio"
-                                              , D.Checked := show (l == "1x")
-                                              , D.Name := "speed"
-                                              , D.Value := show n
-                                              , D.OnClick := cb \_ -> pPush.rate n
-                                              ]
-                                          )
-                                          []
-                                      , text_ l
-                                      ]
-                                  )
-                                  [ 1.0 /\ "1x", (1.0 / e) /\ "ex", (1.0 / pi) /\ "pix" ]
-                              ]
-                          , D.div_
-                              [ D.input
-                                  ( oneOf
-                                      [ D.Xtype !:= "range"
-                                      , D.Min !:= "0"
-                                      , D.Max !:= show (nEntities - 1)
-                                      , D.Value !:= show (nEntities - 1)
-                                      , stackIndex
-                                          # filterMap case _ of
-                                              _ /\ Slider -> Nothing
-                                              x /\ _ -> Just x
-                                          <#> (\si -> D.Value := show si)
-                                      , slider $ startState <#> case _ of
-                                          Nothing -> pPush.slider
-                                          Just unsub -> \n -> pPush.slider n
-                                            *> unsub
-                                            *> pPush.startState Nothing
-                                      ]
-                                  )
-                                  []
-                              ]
-                          , let
-                              clickF f = click $
-                                startState <#>
-                                  ( case _ of
-                                      Nothing -> f unit
-                                      Just unsub -> f unit
-                                        *> unsub
-                                        *> pPush.startState Nothing
-                                  )
-                            in
-                              D.div_
-                                [ D.button
-                                    (oneOf [ clickF $ pPush.toggleLeft ])
-                                    [ text_ "<" ]
-                                , D.button (oneOf [ clickF $ pPush.toggleRight ])
-                                    [ text_ ">" ]
-                                ]
-                          , content
-                          ]
-        ]
+                  ]
+            , D.div $ D.Fragment
+                [ D.text "Speed"
+                , D.span $ D.Fragment $ map
+                    ( \(n /\ l) -> D.label $ D.Fragment
+                        [ D.input'
+                            [ D.attr "type" "radio"
+                            , D.prop "checked" (l == "1x")
+                            , D.attr "name" "speed"
+                            , D.value $ show n
+                            , D.onClickE $ actions.rate.send n
+                            ]
+                        , D.text l
+                        ]
+                    )
+                    [ 0.5 /\ "0.5x", 1.0 /\ "1x", 2.0 /\ "2x", 4.0 /\ "4x", 8.0 /\ "8x" ]
+                ]
+            , D.div $ D.Fragment
+                [ D.input'
+                    [ D.attr "type" "range"
+                    , D.attr "min" "0"
+                    , D.attr "max" $ show (nEntities - 1)
+                    , D.value $ show (nEntities - 1)
+                    , D.value' $ map show $ stackIndex
+                        # filterMap case _ of
+                            { actor: Slider } -> Nothing
+                            { idx: x } -> Just x
+                    , D.onInputNumber $ actions.slider.send <<< floor
+                    ]
+                ]
+            , D.div $ D.Fragment
+                [ D.button' [ D.onClickE $ actions.toggleLeft.send unit ]
+                    (D.text "<")
+                , D.button' [ D.onClickE $ actions.toggleRight.send unit ]
+                    (D.text ">")
+                ]
+            , content
+            ]
+      ]
+
+animationLoop :: forall state out.
+  state -> out ->
+  Array (Lake (state -> Lake { state :: state, emit :: Maybe out })) ->
+  Lake out
+animationLoop s0 out actions =
+  -- Add initial output and input to the streams
+  alt (pure out) $ fix' $ alt (pure s0) >>> \prevState -> do
+    { stream: running, destroy } <- instantiate $
+      -- Keep track of the last state every time an action comes in
+      (/\) <$> prevState <?*> oneOf actions
+        -- And follow that action, until a new one arrives
+        >>~ \(state /\ action) -> action state
+    pure
+      { loop: _.state <$> running
+      , output: filterMap _.emit running
+      , destroy
+      }

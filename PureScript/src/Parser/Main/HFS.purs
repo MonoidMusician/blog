@@ -26,7 +26,6 @@ import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy)
 import Riverdragon.River (createStream)
 import Riverdragon.River.Beyond (debounce, dedup)
-import Riverdragon.Test (host)
 import Web.DOM (Element)
 import Widget (Widget)
 
@@ -47,7 +46,7 @@ graphHFS hfs el = runEffectFn2 renderHFS (hfsToTree hfs) el
 data OpsGroup = All | Binaries | NAries
 
 widget_ops :: OpsGroup -> Widget
-widget_ops select _ = host do
+widget_ops select _ = do
   let
     ops dflt toks l r =
       Array.cons dflt toks <#> \s -> l <> s <> r
@@ -91,7 +90,7 @@ widget_ops select _ = host do
         ]
 
 widget_stdlib :: Widget
-widget_stdlib _ = host $ pure $
+widget_stdlib _ = pure $
   D.div'
     [ D.className "sourceCode unicode"
     , D.data_"lang" "HatStack"
@@ -110,7 +109,7 @@ half :: Dragon -> Dragon
 half = D.span' [ D.style "opacity:0.6" ]
 
 widget :: Widget
-widget _ = host $ pure $ eggy \shell -> do
+widget _ = pure $ eggy \shell -> do
   { stream: valueSet, send: setValue } <- shell.track createStream
   done <- shell.inst $ pure (false /\ Right emptyEnv) <|>
     map HFS.parseAndRun' <$> debounce (100.0 # Milliseconds) (dedup valueSet)

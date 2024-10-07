@@ -2,14 +2,12 @@ module Widget.Types where
 
 import Prelude
 
-import Control.Plus (empty)
 import Data.Foldable (oneOfMap)
 import Data.Traversable (traverse)
-import Deku.Core (Nut, envy, fixed)
 import Effect (Effect)
-import FRP.Event (Event)
 import Riverdragon.Dragon (Dragon)
 import Riverdragon.Dragon.Bones as D
+import Riverdragon.River (Lake)
 import Safe.Coerce (coerce)
 import Web.DOM as Web
 import Web.DOM.Attr (getValue)
@@ -23,15 +21,8 @@ import Web.DOM.NamedNodeMap (getAttributes)
 import Web.DOM.NamespaceURI (NamespaceURI(..))
 import Web.DOM.ParentNode (children)
 
-newtype SafeNut = SafeNut Nut
-
-instance Semigroup SafeNut where
-  append (SafeNut n1) (SafeNut n2) = SafeNut (n1 <> n2)
-instance Monoid SafeNut where
-  mempty = SafeNut mempty
-
-widgetFromEvent :: forall a. Event a -> SafeNut
-widgetFromEvent e = SafeNut (envy (fixed empty <$ e))
+widgetFromEvent :: forall a. Lake a -> Dragon
+widgetFromEvent e = D.Replacing $ mempty <$ e
 
 snapshot :: Web.Element -> Effect Dragon
 snapshot e = do
