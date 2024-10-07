@@ -60,6 +60,7 @@ data AttrProp
   = Attr (Maybe String) String String
   | Prop String PropVal
   | Listener String (Maybe (Web.Event -> Effect Unit))
+  | Self (Element -> Effect (Effect Unit))
 
 data PropVal
   = PropString String
@@ -70,8 +71,10 @@ data PropVal
 renderProps :: Element -> Lake AttrProp -> Effect (Effect Unit)
 renderProps el stream = do
   listeners <- ordMap
+  noLongerSelf <- accumulator
   let
     receive = case _ of
+      Self withSelf -> noLongerSelf.put =<< withSelf el
       -- important for xmlns at least on firefox apparently
       -- https://stackoverflow.com/questions/35057909/difference-between-setattribute-and-setattributensnull#comment135086722_45548128
       Attr Nothing name val -> setAttribute (AttrName name) val el
@@ -103,6 +106,7 @@ renderProps el stream = do
   pure do
     unsubscribe
     listeners.reset >>= traverse_ identity
+    join noLongerSelf.read
 
 type RndrMgr =
   { doc :: Document

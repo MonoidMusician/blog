@@ -3,17 +3,22 @@ module Riverdragon.River where
 import Prelude
 
 import Control.Alt (class Alt, (<|>))
+import Control.Alternative (guard)
+import Control.Apply (lift2)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Internal as STRef
 import Control.Plus (class Plus, empty)
 import Data.Array as Array
+import Data.Bifoldable (bifoldMap)
 import Data.Filterable (class Compactable, class Filterable, filterDefault, filterMap, partitionDefaultFilterMap, partitionMapDefault)
 import Data.Foldable (for_, traverse_)
+import Data.HeytingAlgebra (ff, tt)
 import Data.Maybe (Maybe(..))
 import Data.Monoid.Conj (Conj(..))
 import Data.Set as Set
-import Data.Traversable (traverse)
-import Data.Tuple (Tuple(..))
+import Data.These (These(..))
+import Data.Traversable (mapAccumL, traverse)
+import Data.Tuple (Tuple(..), fst, snd)
 import Effect (Effect)
 import Foreign.Object.ST as STO
 import Prim.Boolean (False, True)
@@ -55,41 +60,101 @@ instance plusStream :: Plus (Stream flow) where
     cbs.destroyed
     pure { burst: empty, sources: mempty, unsubscribe: mempty }
 instance applyStream :: Apply (Stream flow) where
-  apply (Stream t1 e1) (Stream t2 e2) = Stream (t1 <> t2) \cbs -> do
-    -- only run it once both have been destroyed
-    destroyed <- threshold 2 cbs.destroyed
-    lastValues <- prealloc2 Nothing Nothing
-    sourcesR <- prealloc Set.empty
-    let
-      cbL = \f -> do
-        _ <- lastValues.setL (Just f)
-        pure unit
-      commitL = \id -> do
-        srcsR <- sourcesR.get
-        when (not Set.member id srcsR) do
-          commitR id
-      cbR = \a -> do
-        _ <- lastValues.setR (Just a)
-        pure unit
-      commitR = \id -> do
-        Tuple f a <- lastValues.get
-        case f <*> a of
+  apply = combineStreams (Both tt tt) ($)
+
+combineStreams ::
+  forall flow a b c.
+  These (a -> Boolean) (b -> Boolean) ->
+  (a -> b -> c) ->
+  Stream flow a -> Stream flow b -> Stream flow c
+combineStreams logic comb (Stream t1 e1) (Stream t2 e2) = Stream (t1 <> t2) \cbs -> do
+  -- only run the upstream destroyer once both have been destroyed
+  destroyed <- threshold 2 cbs.destroyed
+  lastValues <- prealloc2 Nothing Nothing
+  needsPush <- prealloc false
+  sourcesR <- prealloc Set.empty
+  let
+    cbL a = do
+      _ <- lastValues.setL (Just a)
+      _ <- needsPush.set true
+      pure unit
+    commitL id = do
+      l <- lift2 (*>) (guard <$> needsPush.get) (fst <$> lastValues.get)
+      Tuple shouldCommit shouldPush <- case logic of
+        -- It is always our responsibility to commit
+        This p -> pure $ Tuple true $ map p l == Just true
+        -- Never commit
+        That _ -> pure ff
+        -- Only commit if this source is unique to us
+        Both p _ -> do
+          shouldCommit <- not Set.member id <$> sourcesR.get
+          pure $ Tuple shouldCommit $ map p l == Just true
+      when shouldCommit do
+        commit id shouldPush
+    cbR b = do
+      _ <- lastValues.setR (Just b)
+      _ <- needsPush.set true
+      pure unit
+    commitR id = do
+      r <- lift2 (*>) (guard <$> needsPush.get) (snd <$> lastValues.get)
+      Tuple shouldCommit shouldPush <- case logic of
+        -- Never commit
+        This _ -> pure ff
+        -- Always commit
+        That p -> pure $ Tuple true $ map p r == Just true
+        Both _ p -> pure $ Tuple true $ map p r == Just true
+      when shouldCommit do
+        commit id shouldPush
+
+    commit id shouldPush = do
+      when shouldPush do
+        Tuple a b <- lastValues.get
+        case lift2 comb a b of
+          -- Have not received a value on both sides
           Nothing -> pure unit
-          Just b -> cbs.receive b
-        cbs.commit id
-    -- and only count each once (just in case)
-    cbs1 <- cbs { receive = cbL, commit = commitL, destroyed = _ } <$> cleanup destroyed
-    cbs2 <- cbs { receive = cbR, commit = commitR, destroyed = _ } <$> cleanup destroyed
-    r1 <- e1 cbs1
-    r2 <- e2 cbs2
-    _ <- lastValues.setL (Array.last r1.burst)
-    _ <- lastValues.setR (Array.last r2.burst)
-    _ <- sourcesR.set (Set.fromFoldable r2.sources)
-    pure
-      { burst: r1.burst <*> r2.burst
-      , sources: r1.sources <> r2.sources
-      , unsubscribe: r1.unsubscribe <> r2.unsubscribe
-      }
+          Just c -> cbs.receive c
+      cbs.commit id
+  -- and only count each destructor once (just in case)
+  cbs1 <- cbs { receive = cbL, commit = commitL, destroyed = _ } <$> cleanup destroyed
+  cbs2 <- cbs { receive = cbR, commit = commitR, destroyed = _ } <$> cleanup destroyed
+  -- subscribe to upstream
+  r1 <- e1 cbs1
+  r2 <- e2 cbs2
+  _ <- sourcesR.set (Set.fromFoldable r2.sources)
+  -- initialize from the burst
+  _ <- lastValues.setL (Array.last r1.burst)
+  _ <- lastValues.setR (Array.last r2.burst)
+  pure
+    -- TODO: burst logic?
+    { burst: lift2 comb r1.burst r2.burst
+    , sources: bifoldMap (const r1.sources) (const r2.sources) logic
+    , unsubscribe: r1.unsubscribe <> r2.unsubscribe
+    }
+
+sampleOnRight :: forall flow a b. Stream flow a -> Stream flow (a -> b) -> Stream flow b
+sampleOnRight = combineStreams (That tt) (#)
+
+sampleOnLeft :: forall flow a b. Stream flow a -> Stream flow (a -> b) -> Stream flow b
+sampleOnLeft = combineStreams (This tt) (#)
+
+infixl 4 sampleOnRight as <?**>
+infixl 4 sampleOnLeft as <**?>
+
+sampleOnRightOp :: forall flow a b. Stream flow (a -> b) -> Stream flow a -> Stream flow b
+sampleOnRightOp = combineStreams (That tt) ($)
+
+infixl 4 sampleOnRightOp as <?*>
+
+sampleOnLeftOp :: forall flow a b. Stream flow (a -> b) -> Stream flow a -> Stream flow b
+sampleOnLeftOp = combineStreams (This tt) ($)
+
+infixl 4 sampleOnLeftOp as <*?>
+
+applyOp :: forall f a b. Applicative f => f a -> f (a -> b) -> f b
+applyOp ea ef = apply ((#) <$> ea) ef
+
+infixl 4 applyOp as <**>
+
 instance applicativeStream :: Applicative (Stream flow) where
   pure a = Stream mempty \{ destroyed } -> do
     destroyed
@@ -99,22 +164,11 @@ instance applicativeStream :: Applicative (Stream flow) where
       , unsubscribe: mempty
       }
 
+
 -- | Create a (hot) stream as a message channel, that sends any message to all of
 -- | its subscribers (and then commits).
 createStream :: forall flow a. Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
-createStream = do
-  id <- globalId
-  { push, notify, destroy } <- subscriptions
-  pure
-    { send: \a -> do
-        notify do
-          \{ receive } -> receive a
-        notify do
-          \{ commit } -> commit id
-    , stream: Stream mempty \cbs -> do
-        push cbs <#> { burst: [], sources: [id], unsubscribe: _ }
-    , destroy: destroy _.destroyed
-    }
+createStream = createStreamBurst mempty
 
 createStreamBurst :: forall flow a. Allocar (Array a) -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
 createStreamBurst burst = do
@@ -131,6 +185,14 @@ createStreamBurst burst = do
         push cbs <#> { burst: bursted, sources: [id], unsubscribe: _ }
     , destroy: destroy _.destroyed
     }
+
+createStreamStore :: forall flow a. Maybe a -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
+createStreamStore initialValue = do
+  lastValue <- storeLast
+  for_ initialValue lastValue.set
+  createStreamBurst $ lastValue.get <#> case _ of
+    Just a -> [a]
+    Nothing -> []
 
 
 createStream' :: forall flow a. Allocar (Array a) -> Allocar { send :: a -!> Unit, commit :: Id -!> Unit, stream :: Array Id -> Stream flow a, destroy :: Allocar Unit }
@@ -197,18 +259,33 @@ instantiate strm@(Stream _ stream) = do
     stream { receive: send, commit, destroyed: destroy }
   pure { stream: streamDependingOn sources, destroy: unsubscribe <> destroy }
 
-foldStream :: forall flow a b. b -> Stream flow a -> (b -> a -> b) -> Stream False b
+instantiateStore :: forall flowIn flowOut a. Stream flowIn a -> Allocar { stream :: Stream flowOut a, destroy :: Allocar Unit }
+instantiateStore (Stream _ stream) = do
+  lastValue <- storeLast
+  { send, commit, stream: streamDependingOn, destroy } <- createStream' (Array.fromFoldable <$> lastValue.get)
+  { burst, sources, unsubscribe } <-
+    stream { receive: send, commit, destroyed: destroy }
+  for_ (Array.last burst) lastValue.set
+  pure { stream: streamDependingOn sources, destroy: unsubscribe <> destroy }
+
+foldStream :: forall flow a b. b -> Stream flow a -> (b -> a -> b) -> Stream flow b
 foldStream b upstream folder = pure b <|> statefulStream b upstream
   \b' a -> join { state: _, emit: _ } $ folder b' a
 
-statefulStream :: forall flow a b c. b -> Stream flow a -> (b -> a -> { state :: b, emit :: c }) -> Stream False c
-statefulStream b upstream folder = makeStream \cb -> do
-  current <- prealloc b
-  unsubscribe <- subscribe upstream \a -> do
-    { state: b', emit: c } <- folder <$> current.get <@> a
-    _ <- current.set b'
-    cb c
-  pure unsubscribe
+statefulStream :: forall flow a b c. b -> Stream flow a -> (b -> a -> { state :: b, emit :: c }) -> Stream flow c
+statefulStream b0 (Stream t stream) folder = Stream t \cbs -> do
+  current <- prealloc b0
+  upstream <- stream $ cbs { receive = _ } \a -> do
+    { state: b, emit: c } <- folder <$> current.get <@> a
+    _ <- current.set b
+    cbs.receive c
+  let
+    folder' b a =
+      let r = folder b a in
+      { accum: r.state, value: r.emit }
+  let { value: burst, accum: b1 } = mapAccumL folder' b0 upstream.burst
+  _ <- current.set b1
+  pure upstream { burst = burst }
 
 instance compactableStream :: Compactable (Stream flow) where
   compact s = filterMap identity s
@@ -218,8 +295,6 @@ instance filterableStream :: Filterable (Stream flow) where
   partition f s = partitionDefaultFilterMap f s
   partitionMap f s = partitionMapDefault f s
   -- TODO memoize
-    -- { receive :: a -!> Unit, commit :: Id -!> Unit, destroyed :: Allocar Unit } -&>
-    -- { burst :: Array a, sources :: Array Id, unsubscribe :: Allocar Unit }
   filterMap f (Stream flow stream) = Stream flow \cbs -> do
     r <- stream
       { receive: \a -> case f a of

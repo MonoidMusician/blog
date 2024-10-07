@@ -19,11 +19,10 @@ import Data.String (CodePoint)
 import Data.String as String
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested ((/\))
-import Deku.Attribute (Attribute, prop', unsafeAttribute, (!:=), (?:=))
-import Deku.Control (text_)
-import Deku.Core (Domable)
-import Deku.DOM as D
 import Effect.Class.Console (log)
+import Riverdragon.Dragon.Bones (Dragon)
+import Riverdragon.Dragon.Bones as D
+import Riverdragon.Test (host)
 import Web.DOM.AttrName (AttrName(..))
 import Widget (Widget)
 import Widget.Types (SafeNut(..))
@@ -34,22 +33,13 @@ type DatatypeWidget =
   -- , parser :: ?help
   }
 
-linkify :: forall lock payload. Boolean -> Maybe String -> Domable lock payload -> Domable lock payload
+linkify :: Boolean -> Maybe String -> Dragon -> Dragon
 linkify _ Nothing = identity
 linkify external (Just href) =
-  let
-    attrs = oneOf
-      [ D.Href !:= href
-      , D.Target ?:= ("_blank" <$ guard external)
-      ]
-  in D.a attrs <<< pure
+  D.aN href [ maybe empty (D.attr "target") ("_blank" <$ guard external) ]
 
 nobreak :: String -> String
 nobreak = String.replaceAll (String.Pattern " ") (String.Replacement "\xA0")
-
-aria :: forall t65 e67. Applicative t65 => String -> String -> t65 (Attribute e67)
-aria attr value = pure $ unsafeAttribute
-  { key: "aria-" <> attr, value: prop' value }
 
 unabbreviate :: String -> Maybe Abbreviation
 unabbreviate abbr =
@@ -63,50 +53,49 @@ datatypes :: Map String DatatypeWidget
 datatypes = Map.fromFoldable
   [ "abbr" /\
     { recognize: isJust <<< unabbreviate
-    , widget: \{ text, content } -> do
+    , widget: \{ text, content } -> host do
         abbr <- text
         case unabbreviate abbr of
           Just meaning -> do
-            self <- content
-            pure $ SafeNut case meaning of
-              Acronym expanded -> do
-                let SafeNut embed = self
-                D.span (D.Class !:= "tooltipped abbreviated")
-                  [ D.span (oneOf [ D.Class !:= "abbreviation", aria "hidden" "true" ]) [ embed ]
-                  , D.span (oneOf [ D.Class !:= "tooltip abbreviation" ]) [ text_ (nobreak expanded) ]
+            -- FIXME
+            embed <- mempty content
+            pure case meaning of
+              Acronym expanded ->
+                D.span' [ D.className "tooltipped abbreviated" ] $ D.Fragment
+                  [ D.span' [ D.className "abbreviation", D.aria_"hidden" "true" ] embed
+                  , D.span' [ D.className "tooltip abbreviation" ] $ D.text $ nobreak expanded
                   ]
-              Foreign lang value link meanings -> do
-                let SafeNut embed = self
-                D.span (D.Class !:= "tooltipped abbreviated")
-                  [ D.span (oneOf [ D.Class !:= "foreign", D.Lang !:= lang ]) [ embed ]
-                  , D.span (oneOf [ D.Class !:= "tooltip abbreviation", aria "hidden" "true" ])
+              Foreign lang value link meanings ->
+                D.span' [ D.className "tooltipped abbreviated" ] $ D.Fragment
+                  [ D.span' [ D.className "foreign", D.attr "lang" lang ] embed
+                  , D.span' [ D.className "tooltip abbreviation", D.aria_"hidden" "true" ] $ D.Fragment
                     [ linkify true link $
-                        D.span (oneOf [ D.Class !:= "foreign", D.Lang !:= lang ]) [ text_ (nobreak value) ]
-                    , text_ $ Array.intercalate "," $ meanings <#>
+                        D.span' [ D.className "foreign", D.attr "lang" lang ] $ D.text $ nobreak value
+                    , D.text $ Array.intercalate "," $ meanings <#>
                         \m -> " “" <> nobreak m <> "”"
                     ]
                   ]
           Nothing -> do
             log $ "Unknown abbrevation " <> show abbr
-            pure $ SafeNut mempty
+            pure mempty
     }
   , "color" /\
     { recognize: const false
-    , widget: \{ text, content } -> do
+    , widget: \{ text, content } -> host do
         color <- text
-        self <- content
-        pure $ SafeNut
+        -- FIXME
+        embed <- mempty content
+        pure
           let
-            SafeNut embed = self
-            attrs = oneOf
-              [ D.Class !:= "color-sample sample-after sample"
-              , D.Style !:= ("background-color:" <> color)
+            attrs =
+              [ D.className "color-sample sample-after sample"
+              , D.style ("background-color:" <> color)
               ]
-          in embed <> D.span attrs []
+          in embed <> D.span' attrs mempty
     }
   , "unicode" /\
     { recognize: isJust <<< String.stripPrefix (String.Pattern "U+")
-    , widget: \{ text, content, rawAttr } -> do
+    , widget: \{ text, content, rawAttr } -> host do
         textValue <- text
         case parseUnicode textValue of
           Nothing -> do
@@ -115,17 +104,17 @@ datatypes = Map.fromFoldable
           Just cp -> do
             hide <- maybe false (String.contains (String.Pattern "no-preview")) <$> rawAttr (AttrName "data-c")
             _self <- content
-            pure $ SafeNut
+            pure
               let
-                attrs = oneOf
-                  [ D.Class !:= "unicode-sample sample-after sample"
+                attrs =
+                  [ D.className "unicode-sample sample-after sample"
                   ]
               in fold
-                [ D.span empty
-                  [ D.span (D.Class !:= "meta-code") [text_ "U+"]
-                  , D.span (D.Class !:= "code numeric") [text_ (printUnicodeHex cp)]
+                [ D.span $ D.Fragment
+                  [ D.span' [ D.className "meta-code" ] $ D.text "U+"
+                  , D.span' [ D.className "code numeric" ] $ D.text $ printUnicodeHex cp
                   ]
-                , M.guard (not hide) $ D.span attrs [text_ (String.singleton cp)]
+                , M.guard (not hide) $ D.span' attrs $ D.text $ String.singleton cp
                 ]
     }
   ]

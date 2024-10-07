@@ -7,37 +7,31 @@ import Data.Array (fold, intercalate)
 import Data.Codec.Argonaut as CA
 import Data.Either (Either(..), hush)
 import Data.Filterable (filterMap)
-import Data.Foldable (oneOf)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..), snd)
 import Data.Tuple.Nested ((/\))
-import Deku.Attribute (cb, xdata, (!:=), (<:=>))
-import Deku.Control (text_)
-import Deku.Control as DC
-import Deku.Core (Domable, bussed, envy)
-import Deku.DOM as D
 import Effect (Effect)
 import Effect.Aff (Aff)
-import FRP.Aff (affToEvent)
-import FRP.Event (Event)
-import FRP.Memoize (memoBeh, memoBehFold, memoLast)
 import Fetch (fetch)
 import Foreign.Object (Object)
 import Foreign.Object as Object
-import Idiolect ((>==>))
-import Parser.Comb.Comber (lift2, many, parse, ws)
+import Idiolect ((/|\))
+import Parser.Comb.Comber (many, parse, ws)
 import Parser.Languages.TMTTMT (mkTMTTMTParser, mkTMTTMTTypeParser)
 import Parser.Languages.TMTTMT.Eval (evalExpr, fromDeclarations, limit, printEvalError)
 import Parser.Languages.TMTTMT.Parser (patternP, printExpr)
 import Parser.Languages.TMTTMT.TypeCheck.Structural (Functional, isSubtype, printFunctional, run, synExpr, testExprs, testPatterns, testPatternsResult)
 import Parser.Languages.TMTTMT.Types (Declaration(..))
-import Web.Event.Event as Event
-import Web.HTML.HTMLTextAreaElement as HTMLTextArea
+import Riverdragon.Dragon (Dragon(..))
+import Riverdragon.Dragon.Bones as D
+import Riverdragon.Dragon.Wings (eggy)
+import Riverdragon.River (Lake, createStream, createStreamStore, foldStream)
+import Riverdragon.River.Beyond (affToLake)
+import Riverdragon.Test (event2Lake, host)
 import Widget (Widget, adaptInterface)
-import Widget.Types (SafeNut(..))
 
 type Parser = String -> Either String (Array (Either (Tuple String Functional) Declaration))
 
@@ -141,21 +135,13 @@ widgetTMTTMT { interface, attrs } = do
       Right v -> v
     stringInterface = adaptInterface CA.string (interface "tmttmt-example")
     resetting = pure initial <|> stringInterface.receive
-  pure $ SafeNut do
-    component stringInterface.send resetting
+  host $ pure $ component stringInterface.send $ event2Lake resetting
 
 sendExample :: Widget
 sendExample { interface, attrs } = do
   let push = (interface "tmttmt-example").send
   example <- attrs "example"
-  pure $ SafeNut do
-    D.button
-      ( oneOf
-          [ D.Class !:= ""
-          , D.OnClick !:= push example
-          ]
-      )
-      [ text_ "Try this example" ]
+  host $ pure $ D.buttonN "" (push example) "Try this example"
 
 result :: Parser -> String -> String
 result = (<<<) case _ of
@@ -209,64 +195,48 @@ fetchParser = _.text =<< fetch "assets/json/tmttmt-parser-states.json" {}
 fetchTypeParser :: Aff String
 fetchTypeParser = _.text =<< fetch "assets/json/tmttmt-types-parser-states.json" {}
 
-component :: forall lock payload. (String -> Effect Unit) -> Event String -> Domable lock payload
-component setGlobal resetting =
-  bussed \pushUpdate pushedRaw -> do
-    envy $ memoLast (mkTMTTMTParser <$> affToEvent fetchParser) \getParser -> do
-      let
-        upd _ = case _ of
-          Update v -> false /\ v
-          Reset v -> true /\ v
-      envy $ memoBehFold upd (true /\ "") (Reset <$> resetting <|> pushedRaw) \currentRaw -> do
-        fold
-          [ D.div (D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "Text")) $
-            pure $ D.pre_ $ pure $ D.code_ $ pure $
-              flip D.textarea [] $ oneOf
-                [ D.OnInput !:= updateTA (pushUpdate <<< Update)
-                , D.OnChange !:= updateTA setGlobal
-                , D.Value <:=> resetting
-                , D.Style !:= "height: 50vh"
-                ]
-          , D.pre (D.Class !:= "css" <|> D.Style !:= "white-space: break-spaces;")
-              [ DC.text $ result <$> getParser <*> map snd currentRaw ]
-          ]
-  where
-  updateTA upd = cb $ compose void $
-    (Event.target >=> HTMLTextArea.fromEventTarget) >==>
-      (HTMLTextArea.value >=> upd)
+component :: (String -> Effect Unit) -> Lake String -> Dragon
+component setGlobal resetting = eggy \shell -> do
+  { stream: pushedRaw, send: pushUpdate } <- shell.track createStream
+  getParser <- shell.inst $ mkTMTTMTParser <$> affToLake fetchParser
+  currentRaw <- shell.inst $
+    foldStream (true /\ "") (Reset <$> resetting <|> pushedRaw)
+      \_ -> case _ of
+        Update v -> false /\ v
+        Reset v -> true /\ v
+  pure $ Fragment
+    [ D.div' [ D.className "sourceCode unicode", D.data_"lang" "Text" ]
+        $ D.pre $ D.code $ D.textarea'
+            [ D.onInputValue (pushUpdate <<< Update)
+            , D.onChangeValue setGlobal
+            , D.value' resetting
+            , D.style "height: 50vh"
+            ]
+    , D.pre' [ D.className "css", D.style "white-space: break-spaces;" ]
+        $ Text $ result <$> getParser <*> map snd currentRaw
+    ]
 
 widgetTypeSplit :: Widget
-widgetTypeSplit _ = do
-  pure $ SafeNut do
-    bussed \pushUpdate pushedRaw -> do
-      bussed \pushPat pushedPat -> do
-        envy $ memoLast (mkTMTTMTTypeParser <$> affToEvent fetchTypeParser) \getParser -> do
-          envy $ memoBeh pushedRaw dfTy \currentRaw -> do
-            envy $ memoBeh pushedPat dfPat \currentPat -> do
-              fold
-                [ D.div (D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "tmTTmt")) $
-                  pure $ D.pre_ $ pure $ D.code_ $ pure $
-                    flip D.textarea [] $ oneOf
-                      [ D.OnInput !:= do
-                          cb $ compose void $
-                            (Event.target >=> HTMLTextArea.fromEventTarget) >==>
-                              (HTMLTextArea.value >=> pushUpdate)
-                      , D.Value !:= dfTy
-                      , D.Style !:= "height: 100px"
-                      ]
-                , D.div (D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "tmTTmt")) $
-                  pure $ D.pre_ $ pure $ D.code_ $ pure $
-                    flip D.textarea [] $ oneOf
-                      [ D.OnInput !:= do
-                          cb $ compose void $
-                            (Event.target >=> HTMLTextArea.fromEventTarget) >==>
-                              (HTMLTextArea.value >=> pushPat)
-                      , D.Value !:= dfPat
-                      , D.Style !:= "height: 100px"
-                      ]
-                , D.pre (D.Class !:= "css" <|> D.Style !:= "white-space: break-spaces;; min-height: 150px")
-                    [ DC.text $ result <$> getParser <*> currentRaw <*> currentPat ]
-                ]
+widgetTypeSplit _ = host $ pure $ eggy \shell -> do
+  { stream: pushedRaw, send: pushUpdate } <- shell.track $ createStreamStore $ Just dfTy
+  { stream: pushedPat, send: pushPat } <- shell.track $ createStreamStore $ Just dfPat
+  getParser <- shell.inst $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
+  pure $ Fragment
+    [ D.div' [ D.className "sourceCode unicode", D.data_"lang" "tmTTmt" ] $
+        D.pre $ D.code $ D.textarea'
+          [ D.onInputValue pushUpdate
+          , D.value dfTy
+          , D.style "height: 100px"
+          ]
+    , D.div' [ D.className "sourceCode unicode", D.data_"lang" "tmTTmt" ] $
+        D.pre $ D.code $ D.textarea'
+          [ D.onInputValue pushPat
+          , D.value dfPat
+          , D.style "height: 100px"
+          ]
+    , D.pre' [ D.className "css", D.style "white-space: break-spaces; min-height: 150px" ] $
+        Text $ typeResult <$> getParser <*> pushedRaw <*> pushedPat
+    ]
   where
   dfTy = """"A" | ["" $ $$] | "B" | *[]"""
   dfPat = """[]
@@ -279,47 +249,36 @@ widgetTypeSplit _ = do
 [a b c]
 [[] [] [] []]"""
   parsePats = parse $ ws *> many "patterns" patternP
-  result parser tyS patsS = case parser tyS `lift2 Tuple` parsePats patsS of
+  typeResult parser tyS patsS = case parser tyS /|\ parsePats patsS of
     Left r -> "Parse error: " <> r
     Right (Tuple ty pats) -> do
       testPatternsResult $ testPatterns pats ty
 
 widgetSubType :: Widget
-widgetSubType _ = do
-  pure $ SafeNut do
-    bussed \pushUpdate pushedRaw -> do
-      bussed \pushPat pushedPat -> do
-        envy $ memoLast (mkTMTTMTTypeParser <$> affToEvent fetchTypeParser) \getParser -> do
-          envy $ memoBeh pushedRaw dfTy \currentRaw -> do
-            envy $ memoBeh pushedPat dfPat \currentPat -> do
-              fold
-                [ D.div (D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "tmTTmt")) $
-                  pure $ D.pre_ $ pure $ D.code_ $ pure $
-                    flip D.textarea [] $ oneOf
-                      [ D.OnInput !:= do
-                          cb $ compose void $
-                            (Event.target >=> HTMLTextArea.fromEventTarget) >==>
-                              (HTMLTextArea.value >=> pushUpdate)
-                      , D.Value !:= dfTy
-                      , D.Style !:= "height: 100px"
-                      ]
-                , D.div (D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "tmTTmt")) $
-                  pure $ D.pre_ $ pure $ D.code_ $ pure $
-                    flip D.textarea [] $ oneOf
-                      [ D.OnInput !:= do
-                          cb $ compose void $
-                            (Event.target >=> HTMLTextArea.fromEventTarget) >==>
-                              (HTMLTextArea.value >=> pushPat)
-                      , D.Value !:= dfPat
-                      , D.Style !:= "height: 100px"
-                      ]
-                , D.pre (D.Class !:= "css" <|> D.Style !:= "white-space: break-spaces;; min-height: 150px")
-                    [ DC.text $ result <$> getParser <*> currentRaw <*> currentPat ]
-                ]
+widgetSubType _ = host $ pure $ eggy \shell -> do
+  { stream: pushedRaw, send: pushUpdate } <- shell.track $ createStreamStore $ Just dfTy
+  { stream: pushedPat, send: pushPat } <- shell.track $ createStreamStore $ Just dfPat
+  getParser <- shell.inst $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
+  pure $ Fragment
+    [ D.div' [ D.className "sourceCode unicode", D.data_"lang" "tmTTmt" ] $
+        D.pre $ D.code $ D.textarea'
+          [ D.onInputValue pushUpdate
+          , D.value dfTy
+          , D.style "height: 100px"
+          ]
+    , D.div' [ D.className "sourceCode unicode", D.data_"lang" "tmTTmt" ] $
+        D.pre $ D.code $ D.textarea'
+          [ D.onInputValue pushPat
+          , D.value dfPat
+          , D.style "height: 100px"
+          ]
+    , D.pre' [ D.className "css", D.style "white-space: break-spaces; min-height: 150px" ] $
+        Text $ typeResult <$> getParser <*> pushedRaw <*> pushedPat
+    ]
   where
   dfTy = """["x" "y"] | ["x" "x"] | ["y" "y"]"""
   dfPat = """[("x" | "y") ("x" | "y")]"""
-  result parser tyS patsS = case parser tyS `lift2 Tuple` parser patsS of
+  typeResult parser tyS patsS = case parser tyS /|\ parser patsS of
     Left r -> "Parse error: " <> r
     Right (Tuple ty1 ty2) -> do
       case isSubtype ty1 ty2, isSubtype ty2 ty1 of

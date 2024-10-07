@@ -49,11 +49,7 @@ sendExample :: Widget
 sendExample { interface, attrs } = host do
   let push = (interface "css-example").send
   example <- attrs "example"
-  pure $
-    D.button'
-      [ D.onClickE do push example
-      ]
-      (D.text "Try this example")
+  pure $ D.buttonN "" (push example) "Try this example"
 
 result :: Parser -> Array String -> String
 result parser =
@@ -90,17 +86,9 @@ component resetting = eggy \shell -> do
             [ inputValidated "terminal" "CSS selector" "" value
                 ((\parser val -> if val == "" then "" else fold (blush (parser val))) <$> getParser <*> filterMap (_ !! i) (map snd currentRaw))
                 \newValue -> pushUpdate $ Update i newValue
-            , D.button'
-                [ D.className $ pure "big delete"
-                , D.onClickE $ pushUpdate (Delete i)
-                ]
-                (D.text "Delete")
+            , D.buttonN "big delete" (pushUpdate (Delete i)) "Delete"
             ]
-    , D.button'
-        [ D.className $ pure "big add"
-        , D.onClickE $ pushUpdate Add
-        ]
-        (D.text "Add selector to conjunction")
-    , D.pre' [ D.className $ pure "css", D.style $ pure "white-space: break-spaces;" ]
+    , D.buttonN "big add" (pushUpdate Add) "Add selector to conjunction"
+    , D.pre' [ D.className "css", D.style "white-space: break-spaces;" ]
         $ Text $ result <$> getParser <*> map snd currentRaw
     ]

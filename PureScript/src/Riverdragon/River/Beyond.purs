@@ -4,16 +4,19 @@ import Prelude
 
 import Control.Alt ((<|>))
 import Data.Either (hush)
+import Data.Filterable (compact)
 import Data.Foldable (for_, traverse_)
 import Data.Int as Int
-import Data.Maybe (Maybe)
+import Data.Maybe (Maybe(..))
 import Data.Time.Duration (Milliseconds(..))
+import Data.Tuple (snd)
+import Data.Tuple.Nested (type (/\), (/\))
 import Effect.Aff (Aff)
 import Effect.Aff as Aff
 import Effect.Timer (clearTimeout, setTimeout)
 import Prim.Boolean (False)
 import Riverdragon.Dragon (Dragon(..))
-import Riverdragon.River (Stream, Lake, limitTo, makeStream, mapCb)
+import Riverdragon.River (Lake, Stream, limitTo, makeStream, mapCb, statefulStream, (<?*>))
 import Riverdragon.River.Bed (ordSet, storeLast)
 
 -- delay :: Milliseconds -> Stream False ~> Stream False
@@ -73,6 +76,28 @@ delay (Milliseconds ms) = mapCb \upstream -> do
 vanishing :: Milliseconds -> Stream False Dragon -> Stream False Dragon
 vanishing ms stream = stream <#> \element -> Replacing do
   pure element <|> limitTo 1 (delay ms (pure mempty))
+
+counter :: forall flow a. Stream flow a -> Stream flow (a /\ Int)
+counter = statefulStream 0 <@> \b a ->
+  { state: (b + 1), emit: (a /\ b) }
+
+debounce :: forall flow. Milliseconds -> Stream flow ~> Stream flow
+debounce timing input =
+  let
+    tagged = counter input
+    tags = map snd tagged
+    delayLine = delay timing tagged
+    gateLatest requested (datum /\ arriving) =
+      if requested > arriving then Nothing else Just datum
+  in compact $ gateLatest <$> tags <?*> delayLine
+
+dedupBy :: forall flow a. (a -> a -> Boolean) -> Stream flow a -> Stream flow a
+dedupBy method = compose compact $ statefulStream Nothing <@> case _, _ of
+  Just last, next | not method last next -> { state: Just next, emit: Nothing }
+  _, next -> { state: Just next, emit: Just next }
+
+dedup :: forall flow a. Eq a => Stream flow a -> Stream flow a
+dedup = dedupBy eq
 
 affToLake :: forall a. Aff a -> Lake (Maybe a)
 affToLake aff = makeStream \cb -> do

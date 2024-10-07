@@ -20,8 +20,6 @@ import Data.Newtype (unwrap)
 import Data.Traversable (for)
 import Data.Tuple (snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import Deku.Control (text_)
-import Deku.Core (fixed)
 import Deku.Toplevel (runInElement')
 import Effect (Effect)
 import Effect.Aff (Aff, Canceler(..), launchAff_, makeAff)
@@ -35,6 +33,8 @@ import Foreign.Object as Object
 import Foreign.Object.ST (STObject)
 import Foreign.Object.ST as STO
 import Idiolect ((>==))
+import Riverdragon.Dragon (Dragon)
+import Riverdragon.Dragon.Bones as Dragon
 import Web.DOM (Element, ParentNode)
 import Web.DOM.AttrName (AttrName(..))
 import Web.DOM.Document as Document
@@ -140,7 +140,7 @@ type KeyedInterfaceWithAttrs =
   , attrs :: String -> Effect Json
   , rawAttr :: AttrName -> Effect (Maybe String)
   , text :: Effect String
-  , content :: Effect SafeNut
+  , content :: Effect Dragon
   }
 
 type Widget = KeyedInterfaceWithAttrs -> Effect SafeNut
@@ -158,7 +158,7 @@ lookupWidget widgets target = do
       case mname of
         Nothing -> log $ "Missing widget (no name)"
         Just name -> log $ "Missing widget " <> show name
-      pure $ pure $ pure $ SafeNut (fixed empty)
+      pure $ pure $ pure mempty
     Just widget -> pure widget
 
 lookupInterface :: DataShare -> Element -> Effect KeyedInterface
@@ -203,7 +203,7 @@ instantiateWidget widgets share target = do
             Nothing
               | nodeTypeIndex node == fromEnum TextNode -> do
                 t <- Node.textContent node
-                pure $ Just $ SafeNut do text_ t
+                pure $ Just $ Dragon.text t
               | otherwise -> pure Nothing
         removeChildNodes target
         pure $ Array.fold $ Array.catMaybes snapshots

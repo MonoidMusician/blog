@@ -2,7 +2,7 @@ module Widget.Unicode where
 
 import Prelude
 
-import Control.Alternative (alt, empty, guard)
+import Control.Alternative (alt, guard)
 import Control.Apply (lift2)
 import Control.Monad.Gen (class MonadGen, chooseBool, chooseInt, sized)
 import Control.Plus ((<|>))
@@ -13,7 +13,7 @@ import Data.CodePoint.Unicode as Unicode
 import Data.Codec.Argonaut as CA
 import Data.Either (hush)
 import Data.Enum (fromEnum, toEnum)
-import Data.Foldable (fold, foldMap, intercalate, oneOf, oneOfMap, traverse_)
+import Data.Foldable (foldMap, intercalate, oneOfMap, traverse_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int as Int
 import Data.Int as Radix
@@ -29,16 +29,8 @@ import Data.String.CodeUnits as CU
 import Data.Symbol (class IsSymbol, reflectSymbol)
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
-import Deku.Attribute (cb, xdata, (!:=), (<:=>))
-import Deku.Control (switcher, text, text_)
-import Deku.Core (Domable, bussed, envy)
-import Deku.DOM as D
 import Effect (Effect)
 import Effect.Aff (Aff)
-import FRP.Aff (affToEvent)
-import FRP.Event (Event)
-import FRP.Helpers (dedup)
-import FRP.Memoize (memoBeh, memoLast)
 import Fetch (fetch)
 import Idiolect ((>==))
 import Parser.Languages.Show (mkReShow)
@@ -47,14 +39,17 @@ import Prim.Row as Row
 import Prim.RowList (class RowToList)
 import Prim.RowList as RL
 import Record as Record
-import Safe.Coerce (coerce)
+import Riverdragon.Dragon (AttrProp, Dragon)
+import Riverdragon.Dragon.Bones as D
+import Riverdragon.Dragon.Wings (eggy)
+import Riverdragon.River (Lake, createStreamStore)
+import Riverdragon.River.Beyond (affToLake, dedup)
+import Riverdragon.Test (event2Lake, host)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Type.Proxy (Proxy(..))
-import Unsafe.Reference (unsafeRefEq)
 import Web.Event.Event as Event
 import Web.HTML.HTMLTextAreaElement as HTMLTextArea
 import Widget (Widget, adaptInterface)
-import Widget.Types (SafeNut(..))
 
 widget :: Widget
 widget { interface, attrs } = do
@@ -63,8 +58,8 @@ widget { interface, attrs } = do
     initial = hush $ CA.decode CA.string example
     stringInterface = adaptInterface CA.string (interface "unicode")
     resetting = oneOfMap pure initial <|> stringInterface.receive
-  pure $ SafeNut do
-    component stringInterface.send resetting
+  host $ pure do
+    component stringInterface.send $ event2Lake resetting
 
 only :: Array ~> Maybe
 only [a] = Just a
@@ -126,16 +121,16 @@ instance Semigroup Display where
 instance Monoid Display where
   mempty = Many []
 
-display :: forall lock payload. Display -> Domable lock payload
+display :: Display -> Dragon
 display (Unicode cp) = display $ Meta "U+" <> Numeric do
   cp # fromEnum >>> Int.toStringAs Radix.hexadecimal >>> String.toUpper
-display (Text txt) = text_ txt
-display (Code c) = D.span (D.Class !:= "code") <<< pure <<< text_ $ c
-display (Numeric n) = D.span (D.Class !:= "code numeric") <<< pure <<< text_ $ n
+display (Text txt) = D.text txt
+display (Code c) = D.span' [ D.className "code" ] <<< D.text $ c
+display (Numeric n) = D.span' [ D.className "code numeric" ] <<< D.text $ n
 display (Number mr i) = display $ Many [ Meta $ printBase mr, Numeric $ printRadix mr i ]
 display (Byte b) = display $ Many [ Meta "0b", Numeric $ printByte b ]
 display (Bytes n b) = display $ Many [ Meta "0b", intercalate (Meta "_") (Numeric <<< printByte <$> bytesOf n b) ]
-display (Meta x) = D.span (D.Class !:= "meta-code") <<< pure <<< text_ $ x
+display (Meta x) = D.span' [ D.className "meta-code" ] <<< D.text $ x
 display (Many ds) = foldMap display ds
 display (ManySep sep ds) = foldMap (intercalateMap (display sep) display) (NEA.fromArray ds)
 
@@ -164,109 +159,106 @@ allsomenone p as bs = tallyComp tallier as bs
     l | l == Array.length xs -> Text "All"
     _ -> Text "Some"
 
-st = D.Style !:= "font-variant-numeric: lining-nums tabular-nums"
+st :: Lake AttrProp
+st = D.style "font-variant-numeric: lining-nums tabular-nums"
 
-component :: forall lock payload. (String -> Effect Unit) -> Event String -> Domable lock payload
-component setGlobal resetting =
-  bussed \genNew genned -> do
-    bussed \taCb taState' -> fold do
-      let
-        taState = dedup ({ value: _, start: 0, end: 0 } <$> (pure "" <|> resetting) <|> taState')
-        taValue = taState <#> _.value
-        taSelected = taState <#> \ta ->
-          let r = CU.drop ta.start (CU.take ta.end ta.value)
-          in if r == "" then ta.value else r
-        taAllCPs = taValue <#> CP.toCodePointArray
-        taCP = taState <#> \ta ->
-          let r = CU.drop ta.start (CU.take ta.end ta.value)
-          in if r == ""
-            then maybe (only (CP.toCodePointArray ta.value)) Just $
-                Array.head $ CP.toCodePointArray $ CU.take 2 (CU.drop ta.start ta.value)
-            else only (CP.toCodePointArray r)
-        taCPs = taState <#> \ta ->
-          let r = CU.drop ta.start (CU.take ta.end ta.value)
-          in
-            if ta.end >= CU.length ta.value
-            then CP.toCodePointArray ta.value
-            else if r == ""
-              then Array.take 1 $ CP.toCodePointArray $ CU.take 2 (CU.drop ta.start ta.value)
-              else CP.toCodePointArray r
-      [ D.button (D.OnClick <:=> (setGlobal <$> taValue) <|> D.Class !:= "add") [ text_ "Save text to URL" ]
-      , D.a (D.Href !:= "") [ text_ "Shareable URL" ]
-      , D.div (st <|> D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "Text")) $
-          pure $ D.pre_ $ pure $ D.code_ $ pure $
-            flip D.textarea [] $ oneOf
-              [ D.OnInput !:= updateTA taCb
-              , D.OnMousedown !:= updateTA taCb
-              , D.OnMouseup !:= updateTA taCb
-              , D.OnClick !:= updateTA taCb
-              , D.OnKeydown !:= updateTA taCb
-              , D.OnKeyup !:= updateTA taCb
-              -- D.OnKeypress will lag arrow key repetitions
-              , D.OnSelect !:= updateTA taCb
-              , D.OnSelectionchange !:= updateTA taCb
-              , D.Value <:=> resetting
-              ]
-      , D.div (D.Class !:= "full-width h-scroll") $ pure $ D.div (st <|> D.Class !:= "code-points unicode") $ pure $ flip switcher taAllCPs $ foldMap \cp ->
-          D.span (D.Class !:= "code-point") [ text_ (disp cp) ]
-      , D.div (D.Class !:= "table-wrapper") $ pure $ D.table (st <|> D.Class !:= "data-table properties-table")
-        [ renderInfos tallyComp taSelected taValue
-          [ Tuple "Code Point(s)" $ CP.length >>> Number (Just Dec)
-          , Tuple "UTF-16 Code Unit(s)" $ CU.length >>> Number (Just Dec)
-          , Tuple "UTF-8 Bytes" $ utf8Str >>> Array.length >>> Number (Just Dec)
-          , Tuple "UTF-16 Bytes" $ CU.length >>> mul 2 >>> Number (Just Dec)
-          , Tuple "UTF-32 Bytes" $ CU.length >>> mul 4 >>> Number (Just Dec)
+component :: (String -> Effect Unit) -> Lake String -> Dragon
+component setGlobal resetting = eggy \shell -> do
+  { stream: genned, send: genNew } <- shell.track $ createStreamStore Nothing
+  { stream: taState', send: taCb } <- shell.track $ createStreamStore Nothing
+  let
+    taState = dedup ({ value: _, start: 0, end: 0 } <$> (pure "" <|> resetting) <|> taState')
+    taValue = taState <#> _.value
+    taSelected = taState <#> \ta ->
+      let r = CU.drop ta.start (CU.take ta.end ta.value)
+      in if r == "" then ta.value else r
+    taAllCPs = taValue <#> CP.toCodePointArray
+    taCP = taState <#> \ta ->
+      let r = CU.drop ta.start (CU.take ta.end ta.value)
+      in if r == ""
+        then maybe (only (CP.toCodePointArray ta.value)) Just $
+            Array.head $ CP.toCodePointArray $ CU.take 2 (CU.drop ta.start ta.value)
+        else only (CP.toCodePointArray r)
+    taCPs = taState <#> \ta ->
+      let r = CU.drop ta.start (CU.take ta.end ta.value)
+      in
+        if ta.end >= CU.length ta.value
+        then CP.toCodePointArray ta.value
+        else if r == ""
+          then Array.take 1 $ CP.toCodePointArray $ CU.take 2 (CU.drop ta.start ta.value)
+          else CP.toCodePointArray r
+  pure $ D.Fragment
+    [ D.button' [ D.className "add", D.onClickE' (setGlobal <$> taValue) ] (D.text "Save text to URL")
+    , D.aN "" [] (D.text "Shareable URL")
+    , D.div' [ st, D.className "sourceCode unicode", D.data_"lang" "Text" ] $
+        D.pre $ D.code $ D.textarea'
+          [ D.on_"input" $ updateTA taCb
+          , D.on_"mousedown" $ updateTA taCb
+          , D.on_"mouseup" $ updateTA taCb
+          , D.on_"click" $ updateTA taCb
+          , D.on_"keydown" $ updateTA taCb
+          , D.on_"keyup" $ updateTA taCb
+          -- onkeypress will lag arrow key repetitions
+          , D.on_"select" $ updateTA taCb
+          , D.on_"selectionchange" $ updateTA taCb
+          , D.value' resetting
           ]
-        , renderInfos tallyComp taCP taCP $
-          [ Tuple "Code Point" $ foldMap $ Unicode
-          , Tuple "Decimal" $ foldMap $ fromEnum >>> Number (Just Dec)
-          , Tuple "Binary" $ foldMap $ fromEnum >>> Number (Just Bin)
-          , Tuple "General Category" $ foldMap $ Unicode.generalCategory >>> foldMap \cat ->
-              Text (show cat) <> Text " (" <> Code (show (generalCatToUnicodeCat cat)) <> Text ")"
-          , Tuple "UTF-8" $ foldMap $ ManySep (Text " ") <<< (fromEnum >>> utf8 >== Byte)
-          , Tuple "UTF-16" $ foldMap $ ManySep (Text " ") <<< (String.singleton >>> CU.toCharArray >== fromEnum >>> Bytes 2)
-          , Tuple "UTF-32" $ foldMap $ fromEnum >>> Bytes 4
-          ]
-        , renderInfos allsomenone taCPs taAllCPs
-          [ uniprop { isPrint }
-          , uniprop { isAlphaNum }
-          , uniprop { isAlpha }
-          -- , uniprop { isUpper }
-          -- , uniprop { isLower }
-          , uniprop { isPunctuation }
-          , uniprop { isSymbol }
-          , uniprop { isSpace }
-          , uniprop { isControl }
-          , uniprop { isMark }
-          ]
+    , D.div' [ D.className "full-width h-scroll" ] $ D.div' [ st, D.className "code-points unicode" ] $
+        D.Replacing $ taAllCPs <#> foldMap \cp ->
+          D.span' [ D.className "code-point" ] $ D.text $ disp cp
+    , D.div' [ D.className "table-wrapper" ] $ D.table' [ st, D.className "data-table properties-table" ] $ D.Fragment
+      [ renderInfos tallyComp taSelected taValue
+        [ Tuple "Code Point(s)" $ CP.length >>> Number (Just Dec)
+        , Tuple "UTF-16 Code Unit(s)" $ CU.length >>> Number (Just Dec)
+        , Tuple "UTF-8 Bytes" $ utf8Str >>> Array.length >>> Number (Just Dec)
+        , Tuple "UTF-16 Bytes" $ CU.length >>> mul 2 >>> Number (Just Dec)
+        , Tuple "UTF-32 Bytes" $ CU.length >>> mul 4 >>> Number (Just Dec)
         ]
-      , D.div_
-        [ D.button
-          ( empty
-          <|> D.OnClick !:= do genNew =<< gen (Tuple <$> randomUnicode <*> randomUnicode)
-          )
-          [ text_ "Test"
-          ]
-        , text $ alt (pure "") $ map show $ genned <#> \(Tuple a b) -> Tuple
-            (compare (String.fromCodePointArray a) (String.fromCodePointArray b))
-            (compareUTF16 a b)
+      , renderInfos tallyComp taCP taCP $
+        [ Tuple "Code Point" $ foldMap $ Unicode
+        , Tuple "Decimal" $ foldMap $ fromEnum >>> Number (Just Dec)
+        , Tuple "Binary" $ foldMap $ fromEnum >>> Number (Just Bin)
+        , Tuple "General Category" $ foldMap $ Unicode.generalCategory >>> foldMap \cat ->
+            Text (show cat) <> Text " (" <> Code (show (generalCatToUnicodeCat cat)) <> Text ")"
+        , Tuple "UTF-8" $ foldMap $ ManySep (Text " ") <<< (fromEnum >>> utf8 >== Byte)
+        , Tuple "UTF-16" $ foldMap $ ManySep (Text " ") <<< (String.singleton >>> CU.toCharArray >== fromEnum >>> Bytes 2)
+        , Tuple "UTF-32" $ foldMap $ fromEnum >>> Bytes 4
+        ]
+      , renderInfos allsomenone taCPs taAllCPs
+        [ uniprop { isPrint }
+        , uniprop { isAlphaNum }
+        , uniprop { isAlpha }
+        -- , uniprop { isUpper }
+        -- , uniprop { isLower }
+        , uniprop { isPunctuation }
+        , uniprop { isSymbol }
+        , uniprop { isSpace }
+        , uniprop { isControl }
+        , uniprop { isMark }
         ]
       ]
+    , D.div $ D.Fragment
+      [ D.buttonN "" (genNew =<< gen (Tuple <$> randomUnicode <*> randomUnicode)) "Test"
+      , D.Text $ alt (pure "") $ map show $ genned <#> \(Tuple a b) -> Tuple
+          (compare (String.fromCodePointArray a) (String.fromCodePointArray b))
+          (compareUTF16 a b)
+      ]
+    ]
   where
-  updateTA upd = cb $
+  updateTA upd =
     (Event.target >=> HTMLTextArea.fromEventTarget) >>>
       traverse_ \ta -> do
         value <- HTMLTextArea.value ta
         start <- HTMLTextArea.selectionStart ta
         end <- HTMLTextArea.selectionEnd ta
         upd { value, start, end }
-  renderInfos :: forall a b. (b -> a -> a -> Display) -> Event a -> Event a -> Array (Tuple String b) -> _
-  renderInfos tally x y infos = D.tbody_ $ infos <#> \(Tuple name calc) -> do
+  renderInfos :: forall a b. (b -> a -> a -> Display) -> Lake a -> Lake a -> Array (Tuple String b) -> _
+  renderInfos tally x y infos = D.tbody $ D.Fragment $ infos <#> \(Tuple name calc) -> do
     let
       uv = lift2 Tuple x y
-    D.tr_ $
-      [ D.td_ $ pure $ text_ name <> text_ " "
-      , D.td_ $ pure $ flip switcher uv \(Tuple u v) -> display $ tally calc u v
+    D.tr $ D.Fragment
+      [ D.td $ D.text name <> D.text " "
+      , D.td $ D.Replacing $ uv <#> \(Tuple u v) -> display $ tally calc u v
       ]
 
 gen :: forall a. Gen a -> Effect a
@@ -386,30 +378,22 @@ fetchParser :: Aff String
 fetchParser = _.text =<< fetch "assets/json/show-parser-states.json" {}
 
 widgetShow :: Widget
-widgetShow _ = do
-  pure $ SafeNut do
-    envy $ memoLast (mkReShow <$> affToEvent fetchParser) \reShow -> do
-      bussed \setValue valueSet -> do
-        bussed \set get -> do
-          envy $ memoBeh (reShow <*> get) mempty \formatted -> fold do
-            [ D.div (st <|> D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "Haskell")) $
-                pure $ D.pre_ $ pure $ D.code_ $ pure $
-                  flip D.textarea [] $ oneOf
-                    [ D.OnInput !:= updateTA set
-                    , D.Value <:=> valueSet
-                    , D.Style !:= "height: 40vh"
-                    ]
-            , D.div_ $ pure $ D.button
-                (D.OnClick <:=> (setValue <$> map (_ <> "\n") formatted))
-                [ text_ "Use formatted" ]
-            , D.div (st <|> D.Class !:= "sourceCode unicode" <|> pure (xdata "lang" "Haskell")) $
-                pure $ D.pre_ $ pure $ D.code_ $ pure $ text $ formatted
-            ]
-  where
-  updateTA upd = cb $
-    (Event.target >=> HTMLTextArea.fromEventTarget) >>>
-      traverse_ \ta -> do
-        value <- HTMLTextArea.value ta
-        upd value
+widgetShow _ = host $ pure $ eggy \shell -> do
+  reShow <- shell.instStore (mkReShow <$> affToLake fetchParser)
+  { send: setValue, stream: valueSet } <- shell.track $ createStreamStore Nothing
+  { send: set, stream: get } <- shell.track $ createStreamStore Nothing
+  formatted <- shell.instStore $ reShow <*> get
+  lastValue <- shell.storeLast mempty formatted
+  pure $ D.Fragment
+    [ D.div' [ st, D.className "sourceCode unicode", D.data_"lang" "Haskell" ] $
+        D.pre $ D.code $ D.textarea'
+          [ D.onInputValue set
+          , D.value' valueSet
+          , D.style "height: 40vh"
+          ]
+    , D.div $ D.buttonN "" (setValue <<< (_ <> "\n") =<< lastValue) "Use formatted"
+    , D.div' [ st, D.className "sourceCode unicode", D.data_"lang" "Haskell" ] $
+        D.pre $ D.code $ D.Text formatted
+    ]
 
 
