@@ -16,7 +16,7 @@ import Data.BooleanAlgebra.NormalForm (NormalForm, free)
 import Data.Either (Either(..), either, hush, isRight)
 import Data.Either.Nested (type (\/))
 import Data.Enum (toEnum)
-import Data.Foldable (all, and, any, fold, foldMap, oneOf, sum)
+import Data.Foldable (all, and, any, fold, foldMap, sum)
 import Data.FoldableWithIndex (allWithIndex, forWithIndex_)
 import Data.HeytingAlgebra (tt)
 import Data.Int (hexadecimal)
@@ -31,7 +31,7 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Console (log)
 import Idiolect ((/\\/), (/|\), (<#?>), (>==))
-import Parser.Comb.Comber (Comber, Parsing, delim, many, many1, many1SepBy, parse', printConflicts, printGrammarWsn, rawr, sourceOf, thaw, toAnsi, token, withReparserFor, ws, wss, wsws, wsws', (#->), (#:))
+import Parser.Comb.Comber (Comber, Parsing, choices, delim, many, many1, many1SepBy, parse', printConflicts, printGrammarWsn, rawr, sourceOf, thaw, toAnsi, token, withReparserFor, ws, wss, wsws, wsws', (#->), (#:))
 import Parser.Debug (thingy)
 import Parser.Languages (colorful, result)
 import Parser.Types (States(..))
@@ -91,14 +91,14 @@ comment = "comment"#: delim "/*" "*/" do rawr "."
 newline :: Comber String
 newline = "newline"#: rawr "\\r\\n|[\\n\\r\\f]"
 escape :: Comber String
-escape = "escape"#: token "\\" *> oneOf
+escape = "escape"#: token "\\" *> choices
   [ rawr "[^0-9a-fA-F\\r\\n\\f]"
   , rawr "[0-9a-fA-F]{1,6}\\s?" <#?> do
       String.trim >>> Int.fromStringAs hexadecimal >=> toEnum >== String.singleton
   ]
 ident :: Comber String
 ident = "ident"#:
-  oneOf
+  choices
     [ token "--"
     , (map fold <<< optional) (token "-") <>
       (rawr "[a-zA-Z_]" <|> const empty escape)
@@ -114,7 +114,7 @@ at_keyword = token "@" *> ident
 hash :: Comber String
 hash = token "#" *> ident_continue
 string :: Comber String
-string = "string"#: oneOf
+string = "string"#: choices
   [ join delim "\"" $ fold <$> many "double-string-contents" do
       rawr "[^\\\\\"\\n\\r\\f]+" <|> escape <|> token "\\" *> newline
   , join delim "\'" $ fold <$> many "single-string-contents" do
@@ -129,7 +129,7 @@ url = "url"#: token "url" *> delim "(" ")" do
 any_value :: Comber String
 any_value = sourceOf $ "any-value" #-> \rec ->
   pure unit <|>
-    oneOf
+    choices
       [ void do rawr "."
       -- Needs to be 2+ chars to not overlap with "."
       -- Since there is no mechanism to disambiguate that
@@ -238,9 +238,9 @@ compound_selector = "compound-selector"#:
 simple_selector :: Comber (Maybe Select)
 simple_selector = type_selector <|> Just <$> subclass_selector
 combinator :: Comber Relation
-combinator = "combinator"#: oneOf
+combinator = "combinator"#: choices
   [ Descendant <$ wss
-  , wsws $ oneOf
+  , wsws $ choices
     [ Child <$ token ">"
     , Next <$ token "+"
     , Later <$ token "~"
@@ -248,14 +248,14 @@ combinator = "combinator"#: oneOf
   ]
 -- Inline wq_name to avoid a shift-reduce conflict?
 type_selector :: Comber (Maybe Select)
-type_selector = "type-selector"#: oneOf
+type_selector = "type-selector"#: choices
   [ optional ns_prefix <> (Just <$> ident <|> Nothing <$ token "*")
   ] <#> map Element
 ns_prefix = "ns-prefix"#: (map fold <<< optional) (ident <|> token "*") <> token "|" :: Comber String
 -- Inline wq_name to avoid a shift-reduce conflict?
 wq_name = (map fold <<< optional) ns_prefix <> ident :: Comber String
 subclass_selector :: Comber Select
-subclass_selector = "subclass-selector"#: oneOf
+subclass_selector = "subclass-selector"#: choices
   [ id_selector
   , class_selector
   , Attribute <$> attribute_selector
@@ -276,7 +276,7 @@ attribute_selector = "attribute-selector"#: delim "[" "]" ado
     in MatchValue { matchType, value, insensitive }
   in AttrMatch { attr, match }
 attr_matcher :: Comber MatchValueType
-attr_matcher = "attr-matcher"#: oneOf
+attr_matcher = "attr-matcher"#: choices
   [ pure Exact
   , ListContains <$ token "~"
   , Contains <$ token "*"

@@ -203,6 +203,8 @@ _[Overflow](knowlish_overflow.html)_
 ## Misc
 
 - https://www.keycaps.info/
+<!-- https://www.codetinkerer.com/is-shell-portable/ -->
+  <!-- ^ ugh ai generated images -->
 
 ### MacOS nonsense
 

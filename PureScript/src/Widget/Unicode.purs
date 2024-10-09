@@ -3,7 +3,6 @@ module Widget.Unicode where
 import Prelude
 
 import Control.Alternative (alt, guard)
-import Control.Apply (lift2)
 import Control.Monad.Gen (class MonadGen, chooseBool, chooseInt, sized)
 import Control.Plus ((<|>))
 import Data.Array as Array
@@ -32,7 +31,7 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Fetch (fetch)
-import Idiolect ((>==))
+import Idiolect ((/|\), (>==))
 import Parser.Languages.Show (mkReShow)
 import Partial.Unsafe (unsafeCrashWith)
 import Prim.Row as Row
@@ -40,9 +39,10 @@ import Prim.RowList (class RowToList)
 import Prim.RowList as RL
 import Record as Record
 import Riverdragon.Dragon (AttrProp, Dragon)
+import Riverdragon.Dragon.Bones ((>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy)
-import Riverdragon.River (Lake, createStreamStore)
+import Riverdragon.River (Lake, createRiverStore)
 import Riverdragon.River.Beyond (affToLake, dedup)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Type.Proxy (Proxy(..))
@@ -163,8 +163,8 @@ st = D.style "font-variant-numeric: lining-nums tabular-nums"
 
 component :: (String -> Effect Unit) -> Lake String -> Dragon
 component setGlobal resetting = eggy \shell -> do
-  { stream: genned, send: genNew } <- shell.track $ createStreamStore Nothing
-  { stream: taState', send: taCb } <- shell.track $ createStreamStore Nothing
+  { stream: genned, send: genNew } <- shell.track $ createRiverStore Nothing
+  { stream: taState', send: taCb } <- shell.track $ createRiverStore Nothing
   let
     taState = dedup ({ value: _, start: 0, end: 0 } <$> (pure "" <|> resetting) <|> taState')
     taValue = taState <#> _.value
@@ -203,7 +203,7 @@ component setGlobal resetting = eggy \shell -> do
           , D.value' resetting
           ]
     , D.div' [ D.className "full-width h-scroll" ] $ D.div' [ st, D.className "code-points unicode" ] $
-        D.Replacing $ taAllCPs <#> foldMap \cp ->
+        taAllCPs >@ foldMap \cp ->
           D.span' [ D.className "code-point" ] $ D.text $ disp cp
     , D.div' [ D.className "table-wrapper" ] $ D.table' [ st, D.className "data-table properties-table" ] $ D.Fragment
       [ renderInfos tallyComp taSelected taValue
@@ -253,11 +253,9 @@ component setGlobal resetting = eggy \shell -> do
         upd { value, start, end }
   renderInfos :: forall a b. (b -> a -> a -> Display) -> Lake a -> Lake a -> Array (Tuple String b) -> _
   renderInfos tally x y infos = D.tbody $ D.Fragment $ infos <#> \(Tuple name calc) -> do
-    let
-      uv = lift2 Tuple x y
     D.tr $ D.Fragment
       [ D.td $ D.text name <> D.text " "
-      , D.td $ D.Replacing $ uv <#> \(Tuple u v) -> display $ tally calc u v
+      , D.td $ x /|\ y >@ \(Tuple u v) -> display $ tally calc u v
       ]
 
 gen :: forall a. Gen a -> Effect a
@@ -379,19 +377,19 @@ fetchParser = _.text =<< fetch "assets/json/show-parser-states.json" {}
 widgetShow :: Widget
 widgetShow _ = pure $ eggy \shell -> do
   reShow <- shell.instStore (mkReShow <$> affToLake fetchParser)
-  { send: setValue, stream: valueSet } <- shell.track $ createStreamStore Nothing
-  { send: set, stream: get } <- shell.track $ createStreamStore Nothing
+  { send: setValue, stream: valueSet } <- shell.track $ createRiverStore Nothing
+  { send: set, stream: get } <- shell.track $ createRiverStore Nothing
   formatted <- shell.instStore $ reShow <*> get
   lastValue <- shell.storeLast mempty formatted
   pure $ D.Fragment
-    [ D.div' [ st, D.className "sourceCode unicode", D.data_"lang" "Haskell" ] $
+    [ D.div' [ st, D.className "sourceCode haskell", D.data_"lang" "Haskell" ] $
         D.pre $ D.code $ D.textarea'
           [ D.onInputValue set
           , D.value' valueSet
           , D.style "height: 40vh"
           ]
     , D.div $ D.buttonN "" (setValue <<< (_ <> "\n") =<< lastValue) "Use formatted"
-    , D.div' [ st, D.className "sourceCode unicode", D.data_"lang" "Haskell" ] $
+    , D.div' [ st, D.className "sourceCode haskell", D.data_"lang" "Haskell" ] $
         D.pre $ D.code $ D.Text formatted
     ]
 

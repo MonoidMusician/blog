@@ -26,7 +26,7 @@ import Data.Codec.Argonaut as CA
 import Data.Compactable (class Compactable)
 import Data.Compactable (class Compactable, compact) as ReExports
 import Data.Either (Either(..), either)
-import Data.Foldable (fold, foldMap, oneOf, traverse_)
+import Data.Foldable (fold, foldMap, traverse_)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.List (List(..))
 import Data.List.NonEmpty as NEL
@@ -123,6 +123,9 @@ named name = Comber <<< Comb.named name <<< coerce
 
 infixr 2 named as #:
 infixr 5 namedRec as #->
+
+choices :: forall a. Array (Comber a) -> Comber a
+choices = Comber <<< Comb.choices <<< coerce
 
 rulePrec :: forall a. Rational -> Comber a -> Comber a
 rulePrec = over Comber <<< Comb.rulePrec
@@ -478,7 +481,7 @@ wsws a = ws *> a <* ws
 -- | Surround a non-empty parser with whitespace or allow it to match just
 -- | whitespace and return `Nothing`.
 wsws' :: forall a. Comber a -> Comber (Maybe a)
-wsws' a = oneOf
+wsws' a = choices
   [ Nothing <$ wss
   , Just <$> wsws a
   ]

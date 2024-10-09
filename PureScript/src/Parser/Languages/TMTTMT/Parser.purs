@@ -3,12 +3,11 @@ module Parser.Languages.TMTTMT.Parser where
 import Prelude
 
 import Control.Alt ((<|>))
-import Control.Plus (empty)
 import Data.Array as A
 import Data.Array.NonEmpty as NEA
 import Data.Either (Either(..))
 import Data.Enum (toEnum)
-import Data.Foldable (fold, oneOf)
+import Data.Foldable (fold)
 import Data.Int (hexadecimal)
 import Data.Int as Int
 import Data.Monoid (power)
@@ -16,7 +15,7 @@ import Data.String as String
 import Data.String.CodeUnits as CU
 import Data.Tuple (Tuple(..))
 import Idiolect ((<#?>), (>==))
-import Parser.Comb.Comber (Comber, delim, many, many1, many1SepBy, mutual, opt, rawr, token, ws, wsws, (#->), (#:))
+import Parser.Comb.Comber (Comber, choices, delim, many, many1, many1SepBy, mutual, opt, rawr, token, ws, wsws, (#->), (#:))
 import Parser.Languages.CSS (newline)
 import Parser.Languages.TMTTMT.TypeCheck.Structural (BasicSubsetF(..), Functional(..))
 import Parser.Languages.TMTTMT.Types (Calling(..), Case(..), Condition(..), Declaration(..), Expr(..), Matching(..), Pattern(..))
@@ -35,7 +34,7 @@ typePG ::
   , typeUnionP :: Comber Functional
   }
 typePG = mutual \{ typeAtomP, typePrefixP, typeUnionP, typeFunctionP } ->
-  { typeAtomP: oneOf
+  { typeAtomP: choices
       [ TyVar <$> nameP
       , tyString <$ token "$"
       , Concrete AnyScalar <$ token "$$"
@@ -44,7 +43,7 @@ typePG = mutual \{ typeAtomP, typePrefixP, typeUnionP, typeFunctionP } ->
       , Concrete <<< Tupled <$> delim "[" "]" (many "typeAtoms" typeAtomP)
       , Concrete <<< Singleton <$> stringP
       ] <* ws
-  , typePrefixP: oneOf
+  , typePrefixP: choices
       [ (tyList <$ token "*" <* ws) <*> typePrefixP
       , (tyNEList <$ token "+" <* ws) <*> typePrefixP
       , typeAtomP
@@ -53,7 +52,7 @@ typePG = mutual \{ typeAtomP, typePrefixP, typeUnionP, typeFunctionP } ->
       Union <<< NEA.toArray <$> do
         opt (token "|" *> ws) *> many1SepBy "typeUnion" (token "|" *> ws) do
           {- many1 "typeApps" -} typePrefixP
-  , typeFunctionP: oneOf
+  , typeFunctionP: choices
       [ typeUnionP
       , Function <$> typeUnionP <* token "->" <* ws <*> typeFunctionP
       ]
@@ -64,7 +63,7 @@ typeP = typePG.typeFunctionP
 -- typeP = typePG.typeAtomP *> typePG.typePrefixP *> delim "{" "}" typePG.typeUnionP *> typePG.typeFunctionP
 
 stringP :: Comber String
-stringP = "string"#: oneOf
+stringP = "string"#: choices
   [ join delim "\"" $ fold <$> many "double-string-contents" do
       rawr "[^\\\\\"\\n\\r\\f]+" <|> escapeP <|> token "\\" *> newline
   , join delim "\'" $ fold <$> many "single-string-contents" do
@@ -100,7 +99,7 @@ data Token
 -- type Toker = Comb (Rec String (OrEOF String) String) String (String ~ Rawr) String
 
 escapeP :: Comber String
-escapeP = "escape"#: token "\\" *> oneOf
+escapeP = "escape"#: token "\\" *> choices
   [ rawr "[^0-9a-fA-F\\r\\n\\f]"
   , rawr "[0-9a-fA-F]{1,6}\\s?" <#?> do
       String.trim >>> Int.fromStringAs hexadecimal >=> toEnum >== String.singleton
@@ -114,7 +113,7 @@ arrowedP c name aP bP = ado
   in c a b
 
 patternP :: Comber Pattern
-patternP = "pattern"#-> \pat -> oneOf
+patternP = "pattern"#-> \pat -> choices
   [ Var <$> nameP
   , Scalar <$> stringP
   , "vector"#: Vector <$> delim "[" "]" do
@@ -140,7 +139,7 @@ exprPG ::
   }
 exprPG =
   mutual \{ exprP, lambdaCaseP, matchingP, conditionP, thenConditionsP, callingP } ->
-    { exprP: oneOf
+    { exprP: choices
         [ Pattern <$> patternP
         , Lambda <$> ado
             token "?" *> ws
@@ -152,7 +151,7 @@ exprPG =
         Case <$> matchingP <*> thenConditionsP
     , matchingP: "matching"#: arrowedP Matching "patterns" patternP exprP
     , conditionP: "condition"#: Condition <$> exprP <*> callingP
-    , thenConditionsP: oneOf
+    , thenConditionsP: choices
         [ NEA.toArray <$> do token ":" *> ws *> many1 "conditions1" conditionP
         , [] <$ do token ";" *> ws
         ]
@@ -176,13 +175,13 @@ topCaseP :: Comber Case
 topCaseP = "topCase"#: Case <$> matchingP <*> thenConditionsP
 
 declarationsP :: Comber (Array (Either (Tuple String Functional) Declaration))
-declarationsP = many "declarations" $ "declaration"#: oneOf
+declarationsP = many "declarations" $ "declaration"#: choices
   [ Left <$> ado
       fnName <- nameWithTypeP
       ws
       ty <- typeP
       in Tuple fnName ty
-  , Right <$> oneOf
+  , Right <$> choices
     [ ado
       fnName <- pathP
       caseName <- many "paths" pathP

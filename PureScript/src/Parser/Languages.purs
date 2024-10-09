@@ -8,7 +8,7 @@ import Data.Argonaut (Json)
 import Data.Argonaut as J
 import Data.Either (Either(..))
 import Data.Enum (toEnum)
-import Data.Foldable (fold, oneOf, traverse_)
+import Data.Foldable (fold, traverse_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int (hexadecimal)
 import Data.Int as Int
@@ -20,11 +20,11 @@ import Effect (Effect)
 import Effect.Console (log)
 import Foreign.Object as Object
 import Idiolect ((<#?>), (<$?>), (>==))
-import Parser.Comb.Comber (Comber, arrayOf, delim, many, named, namedRec, objectOf, parse', piggyback, printGrammarWsn, printStateTable, rawr, toAnsi, token, tokenPrecL, tokenPrecR, ws, wsws)
+import Parser.Comb.Comber (Comber, arrayOf, choices, delim, many, named, namedRec, objectOf, parse', piggyback, printGrammarWsn, printStateTable, rawr, toAnsi, token, tokenPrecL, tokenPrecR, ws, wsws)
 import Parser.Debug (thingy)
 
 digit :: Comber Int
-digit = named "digit" $ oneOf $ mapWithIndex (<$) $
+digit = named "digit" $ choices $ mapWithIndex (<$) $
   token <$> String.toCodePointArray "0123456789"
 
 int :: Comber Int
@@ -97,12 +97,12 @@ main = do
 
 stringParser :: Comber String
 stringParser = join delim "\"" $
-  map fold $ many "string_contents" $ oneOf
+  map fold $ many "string_contents" $ choices
     -- `rawr "[\\u0020-\\u10FFFF]"` also works
     -- the only reason we need to exclude \ U+005C and " U+0022 is because of
     -- the repetition operator, which is good for efficiency
     [ rawr "[\\u0020-\\u0021\\u0023-\\u005B\\u005D-\\u{10FFFF}]+"
-    , token "\\" *> oneOf
+    , token "\\" *> choices
       [ token "\"" $> "\""
       , token "\\" $> "\\"
       , token "/" $> "/"
@@ -127,7 +127,7 @@ infixr 2 named as #:
 infixr 5 namedRec as #->
 
 json :: Comber Json
-json = namedRec "value" \value -> wsws $ oneOf
+json = namedRec "value" \value -> wsws $ choices
   [ string <#> J.fromString
   , number <#> J.fromNumber
   , token "true" $> J.fromBoolean true
@@ -138,12 +138,12 @@ json = namedRec "value" \value -> wsws $ oneOf
   ]
 
 arithmetic :: Comber Number
-arithmetic = ws *> namedRec "arithmetic" \expr -> oneOf
+arithmetic = ws *> namedRec "arithmetic" \expr -> choices
   [ number <* ws
   , token '(' *> ws *> expr <* token ')' <* ws
   , ado
       x <- expr
-      op <- oneOf
+      op <- choices
         [ (+) <$ tokenPrecL '+' zero
         , (-) <$ tokenPrecL '-' zero
         , (*) <$ tokenPrecL '*' one

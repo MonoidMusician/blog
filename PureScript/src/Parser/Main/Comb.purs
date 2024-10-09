@@ -6,23 +6,17 @@ import Ansi.Codes as Ansi
 import Control.Monad.Except (runExcept)
 import Control.Plus ((<|>))
 import Data.Array (intercalate)
-import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
-import Data.Array.NonEmpty as NEA
 import Data.Either (Either(..), either)
 import Data.Foldable (fold, foldMap, traverse_)
 import Data.Lens (traversed)
 import Data.Lens.Iso.Newtype (_Newtype)
 import Data.Lens.Record (prop)
-import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Newtype (unwrap)
 import Data.String as String
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags as RegexFlags
 import Data.Traversable (traverse)
-import Data.Tuple (Tuple(..), snd, uncurry)
-import Data.Tuple.Nested ((/\))
 import Dodo as Dodo
 import Effect (Effect)
 import Effect.Aff (Aff, error, launchAff_, message, runAff, throwError)
@@ -34,21 +28,18 @@ import Foreign (readArray, readString)
 import Foreign.Index (readProp)
 import Idiolect (intercalateMap, (<#?>), (>==))
 import JSURI (encodeURIComponent)
-import Parser.Comb.Comber (Comber, Printer, FullParseError, parse, printGrammarWsn, toAnsi)
-import Parser.Lexing (FailReason(..), FailedStack(..), Similar(..), errorName, len, userErrors)
+import Parser.Comb.Comber (Comber, Printer, parse, printGrammarWsn, toAnsi)
 import Parser.Template (template)
-import Parser.Types (ShiftReduce(..), unShift)
-import Parser.Types as P
 import Partial.Unsafe (unsafeCrashWith)
 import PureScript.CST as CST
 import PureScript.CST.Errors (printParseError)
 import PureScript.CST.Parser.Monad as CST.M
 import PureScript.CST.Types as CST.T
 import Riverdragon.Dragon (Dragon, renderEl)
+import Riverdragon.Dragon.Bones ((>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy)
-import Riverdragon.River (Lake, createStreamStore, makeStream, subscribe)
-import Riverdragon.River.Bed (prealloc)
+import Riverdragon.River (Lake, createRiverStore, makeLake, subscribe)
 import Riverdragon.River.Beyond (dedup)
 import Tidy.Codegen as TC
 import Type.Proxy (Proxy(..))
@@ -109,7 +100,7 @@ foreign import messageInBottle :: SideChannel -> Effect Unit
 foreign import installSideChannel :: (SideChannel -> Effect Unit) -> Effect Unit
 
 sideChannel :: Lake SideChannel
-sideChannel = makeStream \cb -> mempty <$ installSideChannel cb
+sideChannel = makeLake \cb -> mempty <$ installSideChannel cb
 
 fake :: CST.T.SourceRange
 fake =
@@ -213,7 +204,7 @@ data Status
 
 pipeline ::
   Lake String -> Lake Status
-pipeline incoming = makeStream \sub -> do
+pipeline incoming = makeLake \sub -> do
   cancel <- Ref.new mempty
   unsub <- subscribe incoming \parserCombinator -> do
     log "Hi"
@@ -253,10 +244,10 @@ embed incomingRaw = eggy \shell -> do
         Compiled _ -> D.text "Loading ..."
   pure $ D.Fragment
     [ D.div' [ D.style "white-space: pre" ] $ D.Replacing status
-    , D.Replacing $ bundled <#> \latestBundle -> fold
+    , bundled >@ \latestBundle -> fold
       [ D.div' [ D.id "grammar" ] mempty
-      , D.Replacing $ gotParser <#> \parser -> D.Egg do
-          { send: setValue, stream: getValue } <- createStreamStore Nothing
+      , gotParser >@ \parser -> D.Egg do
+          { send: setValue, stream: getValue } <- createRiverStore Nothing
           pure $ { destroy: mempty, dragon: _ } $ D.Fragment
             [ D.div' [ D.className "sourceCode unicode", D.data_"lang" "In" ] $
                 D.pre $ D.code $ D.textarea'
@@ -279,11 +270,11 @@ embed incomingRaw = eggy \shell -> do
 widget :: Widget
 widget _ = pure $ eggy \shell -> do
   let df = "D.text <$> string"
-  { stream: valueSet, send: setValue } <- shell.track $ createStreamStore Nothing
-  { stream: compiling, send: compileNow } <- shell.track $ createStreamStore Nothing
+  { stream: valueSet, send: setValue } <- shell.track $ createRiverStore Nothing
+  { stream: compiling, send: compileNow } <- shell.track $ createRiverStore Nothing
   lastValue <- shell.storeLast df valueSet
   pure $ D.Fragment
-    [ D.div' [ D.className "sourceCode unicode", D.data_"lang" "PureScript" ] $
+    [ D.div' [ D.className "sourceCode", D.data_"lang" "PureScript" ] $
         D.pre $ D.code $ D.textarea'
           [ D.onInputValue setValue
           , D.value df
@@ -292,120 +283,4 @@ widget _ = pure $ eggy \shell -> do
     , D.div $ D.buttonN "" (compileNow =<< lastValue) "Compile!"
     , embed compiling
     ]
-
-
-renderParseError :: FullParseError -> Dragon
-renderParseError theError = case theError of
-  CrashedStack s -> D.div $ D.text "Internal parser error: " <> D.text s
-  FailedStack info@{ lookupState, initialInput, currentInput, failedStack } ->
-    D.div $ D.Fragment
-      [ case info.failReason of
-          StackInvariantFailed -> D.text $ "Internal parser error: Stack invariant failed"
-          UnknownState { state } -> D.text $ "Internal parser error: Unknown state " <> show state
-          Uhhhh { token: cat } -> D.text $ "Internal parser error: Uhhhh " <> show cat
-          UnknownReduction { reduction: nt /\ r } -> D.text $ "Internal parser error: UnknownReduction " <> show nt <> "#" <> show r
-          MetaFailed {} -> D.text $ "Interal parser error: Meta failed"
-
-          UserRejection { userErr } -> fold
-            [ D.text "Parse error: User rejection"
-            , listing userErr D.text
-            ]
-          NoTokenMatches { advance } -> fold
-            [ D.text "Parse error: No token matches"
-            , D.text ", expected"
-            , D.text case Map.size advance of
-                0 -> " nothing??"
-                1 -> ""
-                _ -> " one of"
-            , listing (Map.toUnfoldable advance) \(Tuple cat _) ->
-                showCat cat
-            ]
-          UnexpectedToken { advance, matched }
-            | [ _meta /\ _air /\ cat0 /\ o /\ _i ] <- NEA.toArray matched -> fold
-            [ D.text "Parse error: Unexpected token "
-            , showCatTok cat0 o
-            , D.text ", expected"
-            , D.text case Map.size advance of
-                0 -> " nothing??"
-                1 -> ""
-                _ -> " one of"
-            , listing (Map.toUnfoldable advance) \(Tuple cat _) ->
-                showCat cat
-            ]
-          UnexpectedToken { advance, matched: matched } -> fold
-            [ D.text "Parse error: Unexpected+ambiguous token "
-            , listing (NEA.toArray matched) \(_meta /\ _air /\ cat0 /\ o /\ _i) ->
-                showCatTok cat0 o
-            , D.text "\nExpected"
-            , D.text case Map.size advance of
-                0 -> " nothing??"
-                1 -> ""
-                _ -> " one of"
-            , listing (Map.toUnfoldable advance) \(Tuple cat _) ->
-                showCat cat
-            ]
-          AllActionsRejected { possibilities } -> fold
-            [ D.text "Parse error: All actions rejected"
-            , listing (NEA.toArray possibilities) \(poss /\ errs) -> fold
-                [ D.text (show poss)
-                , listing errs \err -> fold
-                    [ D.text $ errorName err
-                    , listing (userErrors err) D.text
-                    ]
-                ]
-            ]
-          Ambiguity { filtered, userErr } -> fold
-            [ D.text "Parse error: LR(1) ambiguity"
-            , listing (NEA.toArray filtered) \(Tuple sr _) -> fold
-                [ case sr of
-                    Shift s -> D.text $ "Shift to " <> show s
-                    ShiftReduces s rs -> D.text ("Shift to " <> show s <> ", or reduce ") <>
-                      intercalateMap (D.text " or ") (uncurry showNTR <<< snd) rs
-                    Reduces rs -> D.text "Reduce " <>
-                      intercalateMap (D.text " or ") (uncurry showNTR <<< snd) rs
-                , listing (Array.fromFoldable (unShift sr >>= lookupState)) \state ->
-                    unwrap state.items # foldMap \item -> fold
-                      [ showNTR item.pName item.rName
-                      , D.text " = "
-                      , case item.rule of
-                          P.Zipper parsed toParse -> fold
-                            [ intercalateMap (D.text " ") part parsed
-                            , D.text " • "
-                            , intercalateMap (D.text " ") part toParse
-                            ]
-                      ]
-                ]
-            , listing userErr D.text
-            ]
-      , D.text $ "\nat character " <> show (1 + len initialInput - len currentInput)
-      , D.text case initialInput of
-          P.Continue s -> "\n  " <> show (String.drop (len initialInput - len currentInput) s)
-          P.EOF -> ""
-      -- , "\n"
-      -- , show info.failedState
-      -- , "\n"
-      -- , "Stack: " <> show (stackSize failedStack)
-      ]
-  where
-  listing :: forall a. Array a -> (a -> Dragon) -> Dragon
-  listing items f = D.ul $ D.Fragment $ items <#> f >>> D.li
-
-  showNTR (Left x) Nothing = D.text (x <> "#")
-  showNTR (Right x) (Just r) = D.text (x <> "#" <> show r)
-  showNTR _ _ = D.text "???"
-
-  showCat = part <<< P.Terminal
-  showCatTok = case _, _ of
-    P.EOF, P.EOF -> D.text "$ (EOF)"
-    P.Continue (Similar (Left s)), P.Continue s' | s == s' -> D.text (show s)
-    P.Continue (Similar (Right r)), P.Continue s -> D.text (show s <> " (" <> show r <> ")")
-    _, _ -> D.text "??"
-
-  part = case _ of
-    P.NonTerminal (Right v) -> D.text v
-    P.NonTerminal (Left v) -> D.text (v <> "#")
-    P.Terminal P.EOF -> D.text "$"
-    P.Terminal (P.Continue (Similar (Left s))) -> D.text (show s)
-    P.Terminal (P.Continue (Similar (Right r))) -> D.text (show r)
-    P.InterTerminal _ -> unsafeCrashWith "Comb.part"
 

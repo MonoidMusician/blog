@@ -4,8 +4,8 @@ import Parser.Parserlude
 
 import Data.Array as A
 import Data.Array.NonEmpty as NEA
-import Data.Map as Map
 import Data.Int as Int
+import Data.Map as Map
 import Data.Set as Set
 import Data.String as String
 import Data.String.CodePoints as CP
@@ -13,13 +13,13 @@ import Data.String.CodeUnits as CU
 import Data.String.Regex (regex, source, flags, test, match, replace, replace', search, split) as Re
 import Data.String.Regex.Flags (dotAll, global, ignoreCase, multiline, noFlags, sticky, unicode) as Re
 import Data.String.Regex.Unsafe (unsafeRegex) as Re
-import Dodo as D
-import Dodo.Common as DC
-
 import Dodo (Doc)
+import Dodo as D
 import Dodo as Dodo
+import Dodo.Common as DC
 import Effect.Aff (Aff)
 import Effect.Aff as Aff
+import Parser.Comb.Comber (choices)
 
 -- X Y :: BinOp (i -> Monoid)
 -- X / Y :: BinOp (i -> Maybe o)
@@ -141,9 +141,9 @@ operators extension =
   opPostfix sep v' v = v <|> v' <* sep
 
 iJSON_or :: Comber Unit -> Comber Unit
-iJSON_or extension = "iJSON" #-> \iJSON -> oneOf
+iJSON_or extension = "iJSON" #-> \iJSON -> choices
   [ "iJSON_array" #: delim "[|" "|]" do
-      oneOf
+      choices
         [ token "..." *> iJSON
         , token "*" *> iJSON
         ]
@@ -151,13 +151,13 @@ iJSON_or extension = "iJSON" #-> \iJSON -> oneOf
   ]
 
 oJSON_or :: Comber Unit -> Comber Unit
-oJSON_or extension = "oJSON" #-> \oJSON -> oneOf
+oJSON_or extension = "oJSON" #-> \oJSON -> choices
   [ delim "[" "]" $ void $ manyBaseSepBy "oJSON_array" ws (token ",") oJSON
   , extension
   ]
 
 oHTML_or :: Comber Unit -> Comber Unit
-oHTML_or extension = "oHTML" #-> \oHTML -> oneOf
+oHTML_or extension = "oHTML" #-> \oHTML -> choices
   [ "oHTML_open_close" #: ado
       token "<"
       name <- rawr "\\w+"
@@ -181,7 +181,7 @@ oHTML_or extension = "oHTML" #-> \oHTML -> oneOf
   ]
 
 iParser :: Comber Unit -> Comber Unit
-iParser extension = oneOf
+iParser extension = choices
   [ delim "/" "/" $ empty
   , delim "`" "`" $ empty
   , extension

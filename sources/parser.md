@@ -153,7 +153,7 @@ Click “Use grammar” to see the current set of rules in action! It may take a
 
 ### Generate random matching inputs
 
-This will randomly generate some inputs that conform to the grammar. Click on one to send it to be tested down below!
+This will randomly generate some inputs that conform to the grammar. Click on one to send it to be tester down below!
 
 :::: widget-group
 ::: {widget="Widget.Control" widget-datakey="main"}

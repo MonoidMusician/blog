@@ -29,6 +29,7 @@ import Control.Plus (class Plus, empty)
 import Control.Plus (class Plus, empty) as ReExports
 import Data.Argonaut (Json)
 import Data.Argonaut (Json) as ReExports
+import Data.Argonaut as Json
 import Data.Array as A
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty (NonEmptyArray) as ReExports

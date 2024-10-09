@@ -9,15 +9,21 @@ import Data.Compactable (class Compactable, compact)
 import Data.Either (Either(..))
 import Data.Either.Nested (type (\/))
 import Data.Foldable (class Foldable, intercalate, oneOfMap)
-import Data.Maybe (Maybe)
+import Data.Maybe (Maybe(..))
+import Data.Symbol (class IsSymbol)
 import Data.These (These(..))
 import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (Tuple(..))
-import Data.Tuple.Nested (type (/\))
-import Effect.Uncurried (EffectFn1)
+import Data.Tuple.Nested (type (/\), (/\))
+import Effect (Effect)
+import Prim.Row as Row
+import Prim.RowList as RL
+import Record as Record
+import Type.Proxy (Proxy(..))
 
+type EffectArrow a b = a -> Effect b
 -- | it's an arrow! that does! stuff!
-infixr 1 type EffectFn1 as -!>
+infixr 1 type EffectArrow as -!>
 
 
 morph :: forall f g b. Foldable f => Plus g => Applicative g => f b -> g b
@@ -66,3 +72,26 @@ infixr 6 type These as /\/
 
 -- tripleQuoted
 
+filterFst :: forall a b. (a -> Boolean) -> Tuple a b -> Maybe b
+filterFst p (a /\ b) | p a = Just b
+filterFst _ _ = Nothing
+
+filterSnd :: forall a b. (b -> Boolean) -> Tuple a b -> Maybe a
+filterSnd p (a /\ b) | p b = Just a
+filterSnd _ _ = Nothing
+
+filterKey ::
+  forall k t r' r k' t' r''.
+    IsSymbol k =>
+    Row.Cons k t r' r =>
+    RL.RowToList r' (RL.Cons k' t' RL.Nil) =>
+    IsSymbol k' =>
+    Row.Cons k' t' r'' r =>
+  Proxy k ->
+  (t -> Boolean) ->
+  Record r ->
+  Maybe t'
+filterKey _ p r
+  | p (Record.get (Proxy :: Proxy k) r)
+  = Just (Record.get (Proxy :: Proxy k') r)
+filterKey _ _ _ = Nothing

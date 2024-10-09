@@ -2,7 +2,7 @@ module Parser.Main where
 
 import Prelude
 
-import Control.Alt (alt, (<|>))
+import Control.Alt ((<|>))
 import Control.Alternative (guard)
 import Control.Monad.Gen as Gen
 import Control.Monad.State (StateT, get, put, runStateT)
@@ -17,7 +17,7 @@ import Data.Codec (decode)
 import Data.Codec.Argonaut as CA
 import Data.Either (Either(..), either, hush, note)
 import Data.Filterable (filterMap)
-import Data.Foldable (class Foldable, any, foldMap, oneOf, oneOfMap, sequence_, traverse_)
+import Data.Foldable (class Foldable, any, foldMap, oneOfMap, sequence_, traverse_)
 import Data.Foldable (length) as Foldable
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Functor (mapFlipped)
@@ -31,6 +31,7 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust, fromMaybe, fromMaybe', isJust, maybe)
 import Data.Newtype (unwrap)
+import Data.SequenceRecord (sequenceRecord)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.String (CodePoint, codePointFromChar)
@@ -42,6 +43,7 @@ import Data.Traversable (mapAccumL, sequence, traverse)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
+import Effect.Class.Console (log)
 import Effect.Class.Console as Log
 import Effect.Unsafe (unsafePerformEffect)
 import Foreign.Object (Object)
@@ -54,11 +56,11 @@ import Parser.Samples (defaultEOF, defaultTopName, defaultTopRName)
 import Parser.Types (AST(..), CST(..), Grammar(..), Part(..), SAST, SAugmented, SCParseSteps, SCST, SCStack, SFragment, SGrammar, SProducible, SState, SStateInfo, SStateItem, SStates, SZipper, ShiftReduce(..), State(..), States(..), Zipper(..), prune, unNonTerminal, unSPart, unTerminal)
 import Partial.Unsafe (unsafePartial)
 import Random.LCG as LCG
-import Riverdragon.Dragon.Bones (AttrProp, Dragon)
+import Riverdragon.Dragon.Bones (AttrProp, Dragon, (>@), (@<))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy)
-import Riverdragon.River (Lake, chill, createStream, createStreamStore, fix', foldStream, instantiate, mapEf, sampleOnRight, selfGating, unsafeMarkHot, (<**>), (<?*>), (>>~))
-import Riverdragon.River.Beyond (dedup, dedupOn, interval, sequenceRecord)
+import Riverdragon.River (Lake, createRiver, createRiverStore, foldStream, sampleOnRight, selfGating, subscribe, (<**>))
+import Riverdragon.River.Beyond (dedup, dedupOn, interval, animationLoop)
 import Test.QuickCheck.Gen as QC
 import Unsafe.Coerce (unsafeCoerce)
 import Widget (Widget, adaptInterface)
@@ -138,7 +140,7 @@ renderParseTable :: forall r.
   SStates ->
   Dragon
 renderParseTable info (MkGrammar grammar) (States states) = eggy \_ -> do
-  { stream: event, send: push } <- createStreamStore $ Just Nothing
+  { stream: event, send: push } <- createRiverStore $ Just Nothing
   let
     stateHighlighted = pure Nothing <|> event
     terminals /\ nonTerminals = getHeader (States states)
@@ -599,12 +601,12 @@ grammarComponent ::
   Lake SAugmented ->
   (SAugmented -> Effect Unit) ->
   Dragon
-grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar = D.Replacing $
-  (pure reallyInitialGrammar <|> forceGrammar) <#> \initialGrammar -> eggy \shell -> do
+grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
+  (pure reallyInitialGrammar <|> forceGrammar) >@ \initialGrammar -> eggy \shell -> do
     let
       createInput = sequenceRecord
-        { value: createStreamStore $ Just ""
-        , error: createStreamStore $ Just ""
+        { value: createRiverStore $ Just ""
+        , error: createRiverStore $ Just ""
         }
     inputs <- sequenceRecord
       { pName: createInput
@@ -616,10 +618,10 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar = D.Re
       , topName: createInput
       }
     actions <- sequenceRecord
-      { errorMessage: createStream -- Maybe ParseGrammarError
-      , addRule: createStream -- Int /\ { pName :: NonEmptyString, rule :: String, rName :: String }
-      , removeRule: createStream -- Int
-      , troubleRules: createStreamStore $ Just []
+      { errorMessage: createRiver -- Maybe ParseGrammarError
+      , addRule: createRiver -- Int /\ { pName :: NonEmptyString, rule :: String, rName :: String }
+      , removeRule: createRiver -- Int
+      , troubleRules: createRiverStore $ Just []
       }
     let
       changeRule =
@@ -688,32 +690,30 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar = D.Re
           ]
       , D.table' [ D.className "data-table grammar" ] $ D.Fragment
           [ D.tr $ D.Fragment
-              [ D.td $ switcher (\x -> renderNT mempty x) (currentTopParsed <#> _.top)
+              [ D.td $ currentTopParsed <#> _.top >@ renderNT mempty
               , D.td $ renderMeta mempty " : "
               , D.td $ D.Fragment
-                  [ switcher (maybe (D.text "—") (\x -> renderNT mempty x)) (currentTopParsed <#> _.entry)
-                  , switcher (\x -> renderTok mempty x) (currentTopParsed <#> _.eof)
+                  [ currentTopParsed <#> _.entry >@ (maybe (D.text "—") (renderNT mempty))
+                  , currentTopParsed <#> _.eof >@ renderTok mempty
                   ]
               , D.td $ D.Fragment
                   [ renderMeta mempty " #"
-                  , switcher (\x -> renderRule mempty x) (currentTopParsed <#> _.topName)
+                  , currentTopParsed <#> _.topName >@ renderRule mempty
                   ]
               ]
           , D.tbody $ D.Appending $ mapFlipped
               (oneOfMap pure initialRules <|> actions.addRule.stream)
-              \(i /\ txt) -> eggy \shell -> do
-                this <- createStream
+              \(i /\ txt) -> eggy \_ -> do
+                this <- createRiver
                 pure $ D.Replacing $
                   ( pure $ D.tr'
                       [ D.className' (actions.troubleRules.stream <#> \rit -> if Array.elem txt.rName rit then "trouble" else "") ]
                       $ D.Fragment $ map D.td $
                       [ renderNT mempty txt.pName
                       , renderMeta mempty " : "
-                      , switcher
-                          ( \nts ->
-                              D.span $ D.Fragment $ renderPart mempty <$> parseDefinition nts txt.rule
-                          )
-                          currentNTs
+                      , currentNTs >@ \nts ->
+                          D.span $ D.Fragment $
+                            renderPart mempty <$> parseDefinition nts txt.rule
                       , D.span $ D.Fragment
                           [ renderMeta mempty " #"
                           , renderRule mempty txt.rName
@@ -791,7 +791,7 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar = D.Re
                     sendGrammar g'
             ]
             (D.text buttonText)
-      , actions.errorMessage.stream # switcher \et -> case et of
+      , actions.errorMessage.stream >@ case _ of
           Nothing -> D.div mempty
           Just e -> D.Fragment
             [ D.br
@@ -847,8 +847,8 @@ explorerComponent ::
 explorerComponent grammar sendUp = eggy \shell -> do
   let { produced: producedRules, grammar: { augmented: MkGrammar rules, start: { pName: entry } } } = grammar
   actions <- sequenceRecord
-    { focus: createStream
-    , select: createStreamStore $ Just [ NonTerminal entry ]
+    { focus: createRiver
+    , select: createRiverStore $ Just [ NonTerminal entry ]
     }
   let
     currentParts = actions.select.stream
@@ -869,7 +869,7 @@ explorerComponent grammar sendUp = eggy \shell -> do
         Nothing -> Nothing
         Just toks -> Just (sendUp toks)
   pure $ D.div $ D.Fragment
-    [ switcher (D.Fragment <<< mapWithIndex renderPartHere) currentParts
+    [ (D.Fragment <<< mapWithIndex renderPartHere) @< currentParts
     , D.button'
         [ D.className' $ maybe "disabled" mempty <$> send
         , D.onClickE' $ sequence_ <$> send
@@ -933,9 +933,9 @@ randomComponent grammar sendUp = eggy \_ -> do
       genNT producedRules nt # traverse (Gen.resize (const sz) >>> QC.randomSample' amt)
     initial = genNT producedRules entry # maybe [] (QC.sample (LCG.mkSeed 1234) initialAmt)
   actions <- sequenceRecord
-    { size: createStreamStore $ Just initialSize
-    , amt: createStreamStore $ Just initialAmt
-    , randomMany: createStreamStore $ Just initial
+    { size: createRiverStore $ Just initialSize
+    , amt: createRiverStore $ Just initialAmt
+    , randomMany: createRiverStore $ Just initial
     }
   pure $ D.div $ D.Fragment
       [ D.div $ D.Fragment
@@ -971,7 +971,7 @@ randomComponent grammar sendUp = eggy \_ -> do
               ]
               (D.text "Random")
           ]
-      , D.Replacing $ (pure initial <|> actions.randomMany.stream) <#>
+      , (pure initial <|> actions.randomMany.stream) >@
           (D.ul' [ D.className "compact" ] <<< D.Fragment
           <<< map (\xs -> D.li' [ D.className "clickable", D.onClickE (sendUp xs) ] <<< D.Fragment
           <<< map (\x -> renderTok mempty x) $ xs)
@@ -1077,9 +1077,6 @@ widgetGrammar { interface, attrs } = do
   buttonName <- fromMaybe "Use grammar" <<< Json.toString <$> attrs "action"
   pure $ grammarComponent buttonName initialGrammar upstream.receive upstream.send
 
-sideKick :: forall a. (a -> Effect Unit) -> Lake a -> Effect (Lake a)
-sideKick eff = pure <<< chill <<< unsafeMarkHot >>> mapEf \a -> a <$ eff a
-
 widgetInput :: Widget
 widgetInput { interface, attrs } = do
   let
@@ -1121,18 +1118,19 @@ widgetInput { interface, attrs } = do
       io.state.send c.state
       io.validTokens.send c.validTokens
       io.validNTs.send c.validNTs
-  receiver <- sideKick sendOthers io.input.receive
+  void $ subscribe io.input.receive \x -> do
+    log $ "LOCAL RECEIVE INPUT " <> show x
+    sendOthers x
   initialGrammar <- fromMaybe sampleGrammar <$> io.grammar.current
   fallbackInput <- fromMaybe' (\_ -> sampleS (withProducible initialGrammar)) <<< Json.toString <$> attrs "input"
   initialInput <- fromMaybe fallbackInput <$> io.input.current
-  grammarStream <- sideKick (\_ -> io.input.current >>= fromMaybe initialInput >>> sendOthers) io.grammar.receive
+  void $ subscribe io.grammar.receive \_ ->
+    io.input.current >>= fromMaybe initialInput >>> sendOthers
   let
     sendInput = sendOthers <> io.input.send
     upstream =
       { send: sendInput
-      -- it turns out that inputComponent never actually subscribes to
-      -- grammar, so we need to force `sideKick` to happen
-      , receive: sampleOnRight grammarStream (const <$> receiver)
+      , receive: io.input.receive
       , current: io.input.current
       }
   -- For all of the other data, it might not be updated (e.g. because we only
@@ -1140,7 +1138,7 @@ widgetInput { interface, attrs } = do
   sendOthers initialInput
   pure $
     inputComponent initialInput upstream.receive upstream.send
-      { grammar: grammarStream
+      { grammar: io.grammar.receive
       , states: io.states.receive
       , tokens: io.tokens.loopback
       , tokens': io.tokens'.loopback
@@ -1168,14 +1166,14 @@ withGrammar :: (SAugmented -> Dragon) -> Widget
 withGrammar component { interface } = do
   let
     grammarLake = filterMap (hush <<< decode grammarCodec) (interface "grammar").receive
-  pure $ D.Replacing $ map component $ pure sampleGrammar <|> grammarLake
+  pure $ component @< pure sampleGrammar <|> grammarLake
 
 withProducibleSendTokens :: (SProducible -> (Array CodePoint -> Effect Unit) -> Dragon) -> Widget
 withProducibleSendTokens component { interface } = do
   let
     grammarLake = filterMap (hush <<< decode producibleCodec) (interface "producible").receive
     sendTokens = (interface "input").send <<< Json.fromString <<< String.fromCodePointArray
-  pure $ D.Replacing $ map (flip component sendTokens) $ pure (withProducible sampleGrammar) <|> grammarLake
+  pure $ (flip component sendTokens) @< pure (withProducible sampleGrammar) <|> grammarLake
 
 -- TODO optimize with mailboxed
 spotlightBeh :: forall a f. Applicative f => Ord a => Lake a -> f (a -> Lake Boolean)
@@ -1188,7 +1186,7 @@ widgetStateTable { interface } = do
     currentGetCurrentState = spotlightBeh stateIdI.receive
     currentStates = filterMap (hush <<< decode statesCodec) (interface "states").receive
     currentStatesAndGetState = (sampleOnRight currentGetCurrentState (map (/\) currentStates))
-  pure $ D.Replacing $ currentStatesAndGetState <#>
+  pure $ currentStatesAndGetState >@
     \(x /\ getCurrentState) -> renderStateTable { getCurrentState } x
 
 widgetParseTable :: Widget
@@ -1203,8 +1201,6 @@ widgetParseTable { interface } = do
   pure $ D.Replacing $ map
     (\(grammar /\ x /\ getCurrentState) -> renderParseTable { getCurrentState: getCurrentState } grammar x)
     (flip sampleOnRight ((/\) <<< _.augmented <$> (pure initialGrammar <|> currentGrammar)) (currentStatesAndGetState))
-
-switcher f s = D.Replacing $ f <$> s
 
 inputComponent :: forall r.
   String ->
@@ -1226,7 +1222,7 @@ inputComponent :: forall r.
   } ->
   Dragon
 inputComponent initialInput inputStream sendInput current = eggy \shell -> do
-  { send: pushInput, stream: localInput } <- shell.track $ createStreamStore Nothing
+  { send: pushInput, stream: localInput } <- shell.track $ createRiverStore Nothing
   currentValue <- shell.instStore (pure initialInput <|> inputStream <|> localInput)
   getCurrentValue <- shell.storeLast initialInput currentValue
   getCurrentProducible <- shell.storeLast Nothing (Just <$> current.producible)
@@ -1265,19 +1261,21 @@ inputComponent initialInput inputStream sendInput current = eggy \shell -> do
   pure $
     D.div $ D.Fragment
       [ D.div $ D.Fragment
-          [ D.span $
-              switcher (\x -> D.Fragment $ ([ Nothing ] <> map Just x) <#> renderTokenHere) currentGrammarTokens
-          , D.span $
-              switcher (\x -> D.Fragment $ x <#> renderNTHere) currentGrammarNTs
+          [ D.span $ currentGrammarTokens >@
+              \x -> D.Fragment $
+                ([ Nothing ] <> map Just x) <#> renderTokenHere
+          , D.span $ currentGrammarNTs >@
+              \x -> D.Fragment $
+                x <#> renderNTHere
           ]
       , D.div $ D.span' [ D.className "terminal" ] $ inputC' "Source text" "" currentValue' (pushInput <> sendInput)
-      , currentParseSteps `flip switcher` \todaysSteps -> eggy \_ -> do
+      , currentParseSteps >@ \todaysSteps -> eggy \_ -> do
           actions <- sequenceRecord
-            { toggleLeft: createStream -- Unit
-            , toggleRight: createStream -- Unit
-            , slider: createStream -- Int
-            , rate: createStreamStore $ Just 1.0 -- Number
-            , toggleAnimation: createStream
+            { toggleLeft: createRiver -- Unit
+            , toggleRight: createRiver -- Unit
+            , slider: createRiver -- Int
+            , rate: createRiverStore $ Just 1.0 -- Number
+            , toggleAnimation: createRiver
             }
           let
             contentAsMonad = showMaybeParseSteps $ todaysSteps
@@ -1288,6 +1286,7 @@ inputComponent initialInput inputStream sendInput current = eggy \shell -> do
             adjust :: (Int -> Int) -> { idx :: Int | _ } -> Lake _
             adjust fn = \state ->
               pure $ state { idx = state.idx # fn }
+
             actAs :: StepAction ->
               ({ idx :: Int | _ } -> Lake _) ->
               ({ idx :: Int | _ } -> Lake { state::_, emit::_ })
@@ -1297,6 +1296,7 @@ inputComponent initialInput inputStream sendInput current = eggy \shell -> do
                 , actor = actor
                 , running = state.running && actor == Play
                 }
+
             playAt rate state@{ idx } =
               let
                 { start, count } =
@@ -1306,6 +1306,7 @@ inputComponent initialInput inputStream sendInput current = eggy \shell -> do
               in selfGating (not _.running) $
                 (pure 0 <|> add 1 <$> interval (1000.0 / rate # Milliseconds)) <#> \n ->
                   state { idx = start + n, running = n < count - 1, rate = rate }
+
             fullState = join animationLoop
               { idx: nEntities - 1
               , running: false
@@ -1380,21 +1381,3 @@ inputComponent initialInput inputStream sendInput current = eggy \shell -> do
             , content
             ]
       ]
-
-animationLoop :: forall state out.
-  state -> out ->
-  Array (Lake (state -> Lake { state :: state, emit :: Maybe out })) ->
-  Lake out
-animationLoop s0 out actions =
-  -- Add initial output and input to the streams
-  alt (pure out) $ fix' $ alt (pure s0) >>> \prevState -> do
-    { stream: running, destroy } <- instantiate $
-      -- Keep track of the last state every time an action comes in
-      (/\) <$> prevState <?*> oneOf actions
-        -- And follow that action, until a new one arrives
-        >>~ \(state /\ action) -> action state
-    pure
-      { loop: _.state <$> running
-      , output: filterMap _.emit running
-      , destroy
-      }

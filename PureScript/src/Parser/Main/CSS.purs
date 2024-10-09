@@ -21,9 +21,10 @@ import Foreign.Object (Object)
 import Foreign.Object as Object
 import Parser.Languages.CSS (mkCSSParser)
 import Riverdragon.Dragon (Dragon(..))
+import Riverdragon.Dragon.Bones ((>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy, inputValidated)
-import Riverdragon.River (Lake, createStream, foldStream)
+import Riverdragon.River (Lake, createRiver, foldStream)
 import Riverdragon.River.Beyond (affToLake)
 import Widget (Widget, adaptInterface)
 
@@ -68,7 +69,7 @@ fetchParser = _.text =<< fetch "assets/json/css-parser-states.json" {}
 
 component :: Lake (Array String) -> Dragon
 component resetting = eggy \shell -> do
-  { stream: pushedRaw, send: pushUpdate } <- shell.track createStream
+  { stream: pushedRaw, send: pushUpdate } <- shell.track createRiver
   getParser <- shell.inst $ mkCSSParser <$> affToLake fetchParser
   currentRaw <- shell.inst $
     foldStream (true /\ ["",""]) (Reset <$> resetting <|> pushedRaw)
@@ -79,7 +80,7 @@ component resetting = eggy \shell -> do
         Reset vs -> true /\ vs
 
   pure $ D.div $ Fragment
-    [ Replacing $ filter fst currentRaw <#> \(_ /\ values) ->
+    [ filter fst currentRaw >@ \(_ /\ values) ->
         Fragment $ values # mapWithIndex \i value ->
           D.div $ Fragment
             [ inputValidated "terminal" "CSS selector" "" value

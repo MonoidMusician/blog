@@ -6,7 +6,7 @@ import Control.Alternative (guard)
 import Data.Array as Array
 import Data.Bifunctor (bimap)
 import Data.Either (Either(..))
-import Data.Foldable (foldMap, oneOf)
+import Data.Foldable (foldMap)
 import Data.Maybe (Maybe)
 import Data.Number as Number
 import Data.Traversable (sequence)
@@ -14,7 +14,7 @@ import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Idiolect ((/|\), (<#?>))
-import Parser.Comb.Comber (Comber, many, manyL, namedRec, rawr, (#:))
+import Parser.Comb.Comber (Comber, choices, many, manyL, namedRec, rawr, (#:))
 import Parser.Comb.Comber as Comber
 import Parser.Languages.CSS (test)
 import Parser.Types (CST(..))
@@ -71,11 +71,11 @@ strats = ([Explicit,ManyL,ManyR] :: Array Strat)
 polish :: Strat -> Comber (CST String Number)
 polish strat =
   namedRec "polish" \rec ->
-    oneOf
+    choices
       [ "num"#: Leaf <$> num
       , case strat of
           Explicit ->
-            oneOf $ arities <#> \i -> ado
+            choices $ arities <#> \i -> ado
               b <- "op"#: op <#?> arityEq i
               cs <- sequence $ Array.replicate i $ wss *> rec
               in Branch b cs
@@ -89,7 +89,7 @@ polish strat =
             in Branch b cs
       ]
     -- namedRec "arguments" \args ->
-    --   oneOf
+    --   choices
     --     [ Leaf <$> num
     --     , ado
     --         b <- op <#?> arityEq 0

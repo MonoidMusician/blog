@@ -9,10 +9,20 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
 async function resolve(path) {
-  for (let resolved of [path, __dirname + '/' + path]) {
+  for (let resolved of ['static/' + path, __dirname + '/' + path]) {
     try {
-      if (await fs.stat(resolved)) return resolved;
-    } catch {}
+      let stat;
+      if (stat = await fs.stat(resolved)) {
+        if (stat.isDirectory()) {
+          resolved = resolved+'/index.html';
+          if (stat = await fs.stat(resolved))
+            return resolved;
+        }
+        return resolved;
+      }
+    } catch {
+      console.log("Not", resolved);
+    }
   }
 };
 
@@ -25,12 +35,13 @@ app.get('*', async function(req, res, next) {
 
 app.get('*', async function(req, res, next) {
   if (!('watch' in req.query)) return next();
+  const path = await resolve(req.path.substring(1));
+  if (!path) return res.sendStatus(404);
   res.writeHead(200, {
     'Connection': 'keep-alive',
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache'
   });
-  const path = await resolve(req.path.substring(1));
   let last = null;
   const push = msg => {
     const ev = JSON.stringify(msg);

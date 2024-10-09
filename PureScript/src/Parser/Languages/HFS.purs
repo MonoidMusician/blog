@@ -580,7 +580,7 @@ withStdenv instrs =
 
 -- | Parse a literal.
 lit :: Comber HFS
-lit = "lit" #-> \litRec -> oneOf
+lit = "lit" #-> \litRec -> choices
   [ rawr "\\d+" <#> mkBigNat >>> NumLike Dec
   , rawr "0b[01]+" <#> mkBigNat >>> NumLike Bin
   , rawr "0x[\\da-fA-F]+" <#> mkBigNat >>> NumLike Hex
@@ -750,7 +750,7 @@ op = "op"#: do
     { errors: []
     , name: "op_reparse"
     , pattern: rawr bigRegex
-    } $ oneOf do
+    } $ choices do
       opMeta >>= case _ of
         Symm r dflt toks bigops _doc -> (Array.cons dflt toks) >>= \tok ->
           [ Right r <$ token tok
@@ -813,7 +813,7 @@ data Fn
 
 -- | Parse for these builtins.
 fn :: Comber Fn
-fn = "fn"#: oneOf
+fn = "fn"#: choices
   [ Count <$ token "count"
   , Width <$ token "width"
   , Single <$ token "{.}"
@@ -842,7 +842,7 @@ data Braces
   | NEndSet
 
 braces :: Comber Braces
-braces = "braces"#: oneOf
+braces = "braces"#: choices
   [ StartStack <$ token "["
   , NStartStack <$ token "#["
   , EndStack <$ token "]"
@@ -890,7 +890,7 @@ instance showCtrl :: Show Ctrl where
 
 ctrl :: Comber Ctrl
 ctrl = "ctrl"#: do
-  oneOf $ (identity :: Array ~> Array) $
+  choices $ (identity :: Array ~> Array) $
     enumFromTo bottom top <#> \v ->
       v <$ token (String.toLower (show v))
 
@@ -910,7 +910,7 @@ data Instr
 parser :: Comber (Array Instr)
 parser = pure [] <|> do
   map NEA.toArray $
-    many1SepBy "actions" ws $ oneOf
+    many1SepBy "actions" ws $ choices
       [ either OpFold Op <$> op
       , Fn <$> fn
       , Lit <$> lit

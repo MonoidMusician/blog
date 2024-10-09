@@ -57,13 +57,13 @@ any_label_or_some = "any_label_or_some"#: any_label <|> token "Some"
 
 with_component = any_label_or_some <|> token "?"
 
-double_quote_chunk expr = "double_quote_chunk"#: oneOf
+double_quote_chunk expr = "double_quote_chunk"#: choices
   [ Left <$> interpolation expr
   , Right <$> do token "\\" *> double_quote_escaped
   , Right <$> do ascii <|> valid_non_ascii
   ]
   where
-  double_quote_escaped = oneOf
+  double_quote_escaped = choices
     [ token "\"" $> "\""
     , token "$" $> "$"
     , token "\\" $> "\\"
@@ -83,7 +83,7 @@ double_quote_chunk expr = "double_quote_chunk"#: oneOf
 double_quote_literal expr = "double_quote_literal"#: do
   join delim "\"" $ many "double_quote_chunks" $ double_quote_chunk expr
 
-single_quote_chunk expr = "single_quote_chunk"#: oneOf
+single_quote_chunk expr = "single_quote_chunk"#: choices
   [ Left <$> interpolation expr
   , Right <$> do token "'''" $> "''"
   , Right <$> do token "''${" $> "${"
@@ -171,14 +171,14 @@ builtin = "builtin"#: oneOfMap token builtins
 numeric_double_literal =
   rawr "[-+]?[0-9]+(\\.[0-9]+([eE][-+]?[0-9]+)?|[eE][-+]?[0-9]+)" <#?>
     Number.fromString -- TODO
-double_literal = "double_literal"#: oneOf
+double_literal = "double_literal"#: choices
   [ (-Math.infinity) <$ (token "-" *> token "Infinity")
   , Math.infinity <$ token "Infinity"
   , Math.nan <$ token "NaN"
   , numeric_double_literal
   ]
 -- TODO
-natural_literal = "natural_literal"#: oneOf
+natural_literal = "natural_literal"#: choices
   [ token "0b" *> do
       rawr "[0-1]+" <#?> Int.fromStringAs binary
   , token "0x" *> do
@@ -188,7 +188,7 @@ natural_literal = "natural_literal"#: oneOf
   ]
 
 integer_literal = "integer_literal"#: do
-  oneOf
+  choices
     [ token "+" $> identity
     , token "-" $> negate
     ] <*> natural_literal
@@ -217,7 +217,7 @@ http_raw = empty
   -- sourceOf $ sequence_
   --   [ token "http://" <|> token "https://" -- TODO
   --   , opt (foldMany "userinfo" <> token "@")
-  --   , oneOf
+  --   , choices
   --     [
   --     ]
   --   ]
@@ -232,7 +232,7 @@ import_ = empty
 arrow = token "->" <|> token "\x2192"
 
 grammar = mutual \grammar@{ expression, import_expression } ->
-  { expression: oneOf
+  { expression: choices
       [ ado
           token "\\" <|> token "\x3BB"
           whsp
@@ -376,7 +376,7 @@ grammar = mutual \grammar@{ expression, import_expression } ->
           if w then whsp1 else whsp
           grammar.operator_expression
           in unit
-      in oneOf $ Array.takeEnd 1
+      in choices $ Array.takeEnd 1
         [ op 0 ["===", "\x2261"] false
         , op 1 ["?"] true
         , op 2 ["||"] false
@@ -393,7 +393,7 @@ grammar = mutual \grammar@{ expression, import_expression } ->
         , grammar.application_expression
         ]
   , application_expression: ado
-      oneOf
+      choices
         [ token "merge" *> whsp1 *> import_expression *> whsp1 *> import_expression
         , token "toMap" *> whsp1 *> import_expression
         , token "Some" *> whsp1 *> import_expression
@@ -418,7 +418,7 @@ grammar = mutual \grammar@{ expression, import_expression } ->
         whsp
         token "."
         whsp
-        oneOf
+        choices
           [ void any_label
           , void $ delim "{" "}" ado
               whsp *> optional (token "," <* whsp)
@@ -437,7 +437,7 @@ grammar = mutual \grammar@{ expression, import_expression } ->
           ]
         in unit
       in unit
-  , primitive_expression: oneOf $ Array.takeEnd 2
+  , primitive_expression: choices $ Array.takeEnd 2
       [ void temporal_literal
       , void double_literal
       , void natural_literal
@@ -446,7 +446,7 @@ grammar = mutual \grammar@{ expression, import_expression } ->
       , void bytes_literal
       , delim "{" "}" ado
           whsp *> optional (token "," <* whsp)
-          oneOf
+          choices
             let
               rec name entry = ado
                 many1SepBy name (whsp *> token "," <* whsp) entry

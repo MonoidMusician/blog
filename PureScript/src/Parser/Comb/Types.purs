@@ -6,13 +6,15 @@ import Control.Alternative (class Alternative)
 import Control.Apply (lift2)
 import Control.Plus (class Alt, class Plus, empty, (<|>))
 import Data.Array (head, length, splitAt, zipWith, (!!))
+import Data.Array as Array
+import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (class Bifunctor, bimap, lmap)
 import Data.Compactable (class Compactable, compact, separateDefault)
 import Data.Either (Either(..), blush, hush, note)
 import Data.Functor.Contravariant (class Contravariant, cmap)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Lazy (Lazy)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
 import Data.Maybe.Last (Last)
 import Data.Newtype (class Newtype, over)
 import Data.Profunctor (class Profunctor, dimap, lcmap)
@@ -22,7 +24,7 @@ import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\))
 import Parser.Comb.Syntax (Syntax(..))
 import Parser.Selective (class Casing, class Select, casingOn)
-import Parser.Types (Fragment, Grammar, GrammarRule, ICST(..))
+import Parser.Types (Fragment, Grammar(..), GrammarRule, ICST(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Reference (unsafeRefEq)
 import Util (memoizeEq)
@@ -259,6 +261,20 @@ instance altComb :: Alt (Comb rec err prec space air nt cat o) where
     , tokenPrecedence: l.tokenPrecedence <|> r.tokenPrecedence
     , rules: l.rules <|> r.rules
     }
+choices ::
+  forall rec err prec space air nt cat o a.
+  Array (Comb rec err prec space air nt cat o a) ->
+  Comb rec err prec space air nt cat o a
+choices alternatives = Comb
+  { grammar: MkGrammar $ alternatives >>= \(Comb { grammar: MkGrammar grammar }) -> grammar
+  , entrypoints: alternatives >>= \(Comb c) -> c.entrypoints
+  , pretty:
+      maybe Nothing (Just <<< NEA.foldr1 Disj) $ NEA.fromArray $
+        Array.mapMaybe (\(Comb c) -> c.pretty) alternatives
+  , prettyGrammar: alternatives >>= \(Comb c) -> c.prettyGrammar
+  , tokenPrecedence: alternatives >>= \(Comb c) -> c.tokenPrecedence
+  , rules: alternatives >>= \(Comb c) -> c.rules
+  }
 instance plusComb :: Plus (Comb rec err prec space air nt cat o) where
   empty = Comb
     { grammar: mempty

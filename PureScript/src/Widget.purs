@@ -5,16 +5,15 @@ import Prelude
 import Control.Bind (bindFlipped)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
-import Control.Monad.ST.Internal as STRef
 import Control.Plus (empty)
 import Data.Argonaut (Json)
 import Data.Argonaut as Json
 import Data.Array as Array
 import Data.Codec (Codec', decode, encode)
-import Data.Either (Either(..), hush)
+import Data.Either (Either(..))
 import Data.Enum (fromEnum)
 import Data.Filterable (filterMap)
-import Data.Foldable (class Foldable, foldMap, for_, oneOfMap, traverse_)
+import Data.Foldable (class Foldable, foldMap, for_, traverse_)
 import Data.Maybe (Maybe(..))
 import Data.Maybe.Last (Last(..))
 import Data.Newtype (unwrap)
@@ -26,16 +25,15 @@ import Effect.Aff (Aff, Canceler(..), launchAff_, makeAff)
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
 import Effect.Ref as Ref
-import Effect.Unsafe (unsafePerformEffect)
 import Foreign.Object (Object)
 import Foreign.Object as Object
 import Foreign.Object.ST (STObject)
 import Foreign.Object.ST as STO
-import Idiolect ((>==))
+import Idiolect (filterFst, (>==))
 import Riverdragon.Dragon (Dragon, renderEl)
 import Riverdragon.Dragon.Bones as Dragon
-import Riverdragon.River (Lake, createStreamStore)
-import Riverdragon.River.Bed (storeLast)
+import Riverdragon.River (Allocar, River, Stream, createRiverStore, mailbox, mailboxRiver, stillRiver)
+import Riverdragon.River.Bed (allocLazy)
 import Web.DOM (Element, ParentNode)
 import Web.DOM.AttrName (AttrName(..))
 import Web.DOM.Document as Document
@@ -51,82 +49,112 @@ import Web.HTML.HTMLDocument as HTMLDocument
 import Web.HTML.Window (cancelAnimationFrame, document, requestAnimationFrame)
 import Widget.Types (snapshot)
 
+-- | An interface to a mutable value, stored in one location. It may not have
+-- | a value at first, or ever.
 type Interface a =
   { send :: a -> Effect Unit
-  , receive :: Lake a
-  , loopback :: Lake a
-  -- , mailbox :: Lake (a -> Lake Unit)
+  , receive :: forall flow. Stream flow a
+  , loopback :: forall flow. Stream flow a
+  , mailbox :: a -> forall flow. Stream flow Unit
   , current :: Effect (Maybe a)
+  , destroy :: Allocar Unit
   }
 disconnected :: forall a. Interface a
 disconnected =
   { send: mempty
   , receive: empty
   , loopback: empty
-  -- , mailbox: pure (const empty)
+  , mailbox: \_ -> empty
   , current: pure Nothing
+  , destroy: mempty
   }
 
-type KeyedInterface = String -> Interface Json
--- We adjoint integers for tracking sources so we do not send to the source
--- it came from
-type DataShare = STObject Global (Int /\ (String -> Interface (Int /\ Json)))
+stillInterface :: forall a.
+  { send :: a -> Effect Unit
+  , receive :: River a
+  , loopback :: River a
+  , mailbox :: a -> River Unit
+  , current :: Effect (Maybe a)
+  , destroy :: Allocar Unit
+  } -> Interface a
+stillInterface i =
+  { send: i.send
+  , receive: stillRiver i.receive
+  , loopback: stillRiver i.loopback
+  , mailbox: \k -> stillRiver (i.mailbox k)
+  , current: i.current
+  , destroy: i.destroy
+  }
 
-makeKeyedInterface :: forall a. Ord a => Effect (String -> Interface a)
-makeKeyedInterface = do
-  interfaces <- liftST $ STO.new
-  -- This is possible to do purely, by creating a shared event bus in the
-  -- original effect execution, but this way is more efficient
-  pure \k -> unsafePerformEffect do
+storeInterface :: forall a. Ord a => Allocar (Interface a)
+storeInterface = do
+  stream <- createRiverStore Nothing
+  -- destroyed by upstream.destroy
+  { byKey } <- mailbox (map { key: _, value: unit } stream.stream)
+  pure $ stillInterface
+    { send: stream.send
+    -- Here we don't have a notion of actors, so receive = loopback,
+    -- but downstream interfaces are able to adapt it to their needs
+    , receive: stream.stream
+    , loopback: stream.stream
+    , mailbox: byKey
+    , current: stream.current
+    , destroy: stream.destroy
+    }
+
+makeKeyedInterface :: forall a. Ord a => Allocar (String -> Interface a)
+makeKeyedInterface = allocLazy do
+  interfaces <- liftST STO.new
+  pure \k -> do
+    -- This is possible to do purely, by creating a shared event bus in the
+    -- original effect execution, but this way is more efficient
     existing <- liftST (STO.peek k interfaces)
     case existing of
       Just r -> pure r
       Nothing -> do
-        io <- createBehavioral
+        log $ "Make interface " <> show k
+        io <- storeInterface
         io <$ liftST (STO.poke k io interfaces)
 
--- Each new subscription gets the latest value
-createBehavioral :: forall a. Ord a => Effect (Interface a)
-createBehavioral = do
-  upstream <- createStreamStore Nothing
-  lastValue <- storeLast
-  pure
-    { send: compose void lastValue.set <> upstream.send
-    , receive: upstream.stream
-    , loopback: upstream.stream
-    -- , mailbox: mailboxed (map {payload: unit, address: _} upstream.stream) identity
-    , current: lastValue.get
-    }
+type KeyedInterface = String -> Interface Json
+-- We adjoin integers for tracking sources so we do not send to the source
+-- it came from
+type DataShare = STObject Global (Int /\ (String -> Interface (Int /\ Json)))
 
-getInterface :: DataShare -> String -> Effect KeyedInterface
-getInterface share k = do
+
+obtainInterface :: DataShare -> String -> Effect KeyedInterface
+obtainInterface share k = do
   existing <- liftST (STO.peek k share)
   i /\ r <- case existing of
     Just (i /\ r) -> do
       (i /\ r) <$ liftST (STO.poke k ((i+1) /\ r) share)
     Nothing -> do
+      log $ "Make keyed interface " <> show k
       r <- makeKeyedInterface
       (0 /\ r) <$ liftST (STO.poke k (1 /\ r) share)
   pure \k1 ->
     let
       int = r k1
-      receive = filterMap (\(j /\ v) -> if i /= j then Just v else Nothing) int.receive
-    in
-      { send: \v -> int.send (i /\ v)
+      receive = filterMap (filterFst (notEq i)) int.receive
+    in stillInterface
+      { send: \v -> log ("Send "<>show k<>"."<>show i<>" "<>show k1) *> int.send (i /\ v)
       , receive: receive
       , loopback: int.receive <#> snd
-      -- , mailbox: mailboxed (map { payload: unit, address: _ } receive) identity
+      , mailbox: mailboxRiver (map { value: unit, key: _ } receive)
       , current: int.current <#> map \(_ /\ v) -> v
+      -- We are not allowed to destroy from a datashare
+      , destroy: mempty
       }
 
 adaptInterface :: forall f a b. Foldable f => Codec' f a b -> Interface a -> Interface b
 adaptInterface codec interface =
   { send: interface.send <<< encode codec
-  -- , mailbox: interface.mailbox <#> (_ <<< encode codec)
+  , mailbox: interface.mailbox <<< encode codec
   , receive: filterMap (last <<< decode codec) interface.receive
   , loopback: filterMap (last <<< decode codec) interface.loopback
   , current: interface.current <#> bindFlipped
       (decode codec >>> last)
+  , destroy: interface.destroy
   }
   where
   last = unwrap <<< foldMap (Last <<< Just)
@@ -163,7 +191,7 @@ lookupInterface share target =
     case _ of
       Nothing -> pure (const disconnected)
       Just name -> do
-        getInterface share name
+        obtainInterface share name
 
 collectAttrs :: Element -> Effect (String -> Effect Json)
 collectAttrs target = pure \name ->

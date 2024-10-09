@@ -12,6 +12,7 @@ output-es/
 /PureScript/dist/
 /PureScript/src/scratch/
 /PureScript/src/Parser/Template.purs
+/generated-docs/
 /cache/
 /static/
 /rendered/

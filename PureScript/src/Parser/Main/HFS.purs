@@ -20,11 +20,12 @@ import Foreign.Object as FO
 import Idiolect (intercalateMap)
 import Parser.Languages.HFS (HFList, HFS, IsPointed(..), OpMeta(..), RuntimeError(..), emptyEnv, hfsCount, hfsFromInt, hfsToTree, opMeta, showHFS, stacksInfo, stdlib)
 import Parser.Languages.HFS as HFS
-import Parser.Main.Comb (renderParseError)
+import Parser.Comb.Dragon (renderParseError)
 import Riverdragon.Dragon (Dragon(..))
+import Riverdragon.Dragon.Bones ((>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy)
-import Riverdragon.River (createStream)
+import Riverdragon.River (createRiver)
 import Riverdragon.River.Beyond (debounce, dedup)
 import Web.DOM (Element)
 import Widget (Widget)
@@ -92,7 +93,7 @@ widget_ops select _ = do
 widget_stdlib :: Widget
 widget_stdlib _ = pure $
   D.div'
-    [ D.className "sourceCode unicode"
+    [ D.className "sourceCode hatstack"
     , D.data_"lang" "HatStack"
     ] $ D.pre $ D.code $ D.text $ String.trim stdlib
 
@@ -110,7 +111,7 @@ half = D.span' [ D.style "opacity:0.6" ]
 
 widget :: Widget
 widget _ = pure $ eggy \shell -> do
-  { stream: valueSet, send: setValue } <- shell.track createStream
+  { stream: valueSet, send: setValue } <- shell.track createRiver
   done <- shell.inst $ pure (false /\ Right emptyEnv) <|>
     map HFS.parseAndRun' <$> debounce (100.0 # Milliseconds) (dedup valueSet)
   let
@@ -135,20 +136,20 @@ widget _ = pure $ eggy \shell -> do
               Right n -> show n <> "#["
         ]
   pure $ D.div $ Fragment
-    [ D.div $ Replacing $ (pure (hfsFromInt 157842) <|> dedup (filterMap topOfStack done)) <#>
+    [ D.div $ (pure (hfsFromInt 157842) <|> dedup (filterMap topOfStack done)) >@
         \hfs -> D.div' [ pure $ D.Self $ map mempty <<< graphHFS hfs ] mempty
     , D.div' [ D.style "display: flex; width: 100%" ] $ Fragment
       [ D.div'
           [ D.style "flex: 0 0 50%; padding-right: 10px; box-sizing: border-box;"
-          , D.className' $ done <#> snd >>> isLeft >>> if _ then "sourceCode unicode invalid" else "sourceCode unicode"
+          , D.className' $ done <#> snd >>> isLeft >>> if _ then "sourceCode hatstack invalid" else "sourceCode hatstack"
           , D.data_"lang" "HatStack"
           ] $ D.pre $ D.code $ D.textarea'
               [ D.onInputValue $ setValue <<< Tuple false
               , D.onChangeValue $ setValue <<< Tuple true
               , D.style "height: 20vh"
               ]
-      , D.div' [ D.style "flex: 0 0 50%; overflow: auto; font-size: 70%" ] $ Replacing $
-          gateSuccess identity done <#>
+      , D.div' [ D.style "flex: 0 0 50%; overflow: auto; font-size: 70%" ] $
+          gateSuccess identity done >@
             either
               (either renderParseError \(RuntimeError _ s) -> D.text $ "Runtime error: " <> s)
               (renderOutput <<< stacksInfo)

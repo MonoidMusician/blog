@@ -55,8 +55,7 @@ datatypes = Map.fromFoldable
         abbr <- text
         case unabbreviate abbr of
           Just meaning -> do
-            -- FIXME
-            embed <- mempty content
+            embed <- content
             pure case meaning of
               Acronym expanded ->
                 D.span' [ D.className "tooltipped abbreviated" ] $ D.Fragment
@@ -81,8 +80,7 @@ datatypes = Map.fromFoldable
     { recognize: const false
     , widget: \{ text, content } -> do
         color <- text
-        -- FIXME
-        embed <- mempty content
+        embed <- content
         pure
           let
             attrs =
@@ -169,6 +167,10 @@ abbreviations = Map.fromFoldable
   , "GC" /\ Acronym "Garbage Collector"
   , "GCable" /\ Acronym "Garbage Collectable"
   , "N-ary" /\ Acronym "Arbitrary arity, in the sense of unary or binary operators"
+  , "CSS" /\ Acronym "Cascading Style Sheets"
+  , "JS" /\ Acronym "JavaScript"
+  , "PS" /\ Acronym "PureScript"
+  , "HS" /\ Acronym "Haskell"
   ]
 
 matching :: String -> Array String

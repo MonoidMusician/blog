@@ -28,7 +28,7 @@ import Parser.Languages.TMTTMT.Types (Declaration(..))
 import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy)
-import Riverdragon.River (Lake, createStream, createStreamStore, foldStream)
+import Riverdragon.River (Lake, createRiver, createRiverStore, foldStream)
 import Riverdragon.River.Beyond (affToLake)
 import Widget (Widget, adaptInterface)
 
@@ -134,7 +134,7 @@ widgetTMTTMT { interface, attrs } = do
       Right v -> v
     stringInterface = adaptInterface CA.string (interface "tmttmt-example")
     resetting = pure initial <|> stringInterface.receive
-  pure $ component stringInterface.send  resetting
+  pure $ component stringInterface.send resetting
 
 sendExample :: Widget
 sendExample { interface, attrs } = do
@@ -196,7 +196,7 @@ fetchTypeParser = _.text =<< fetch "assets/json/tmttmt-types-parser-states.json"
 
 component :: (String -> Effect Unit) -> Lake String -> Dragon
 component setGlobal resetting = eggy \shell -> do
-  { stream: pushedRaw, send: pushUpdate } <- shell.track createStream
+  { stream: pushedRaw, send: pushUpdate } <- shell.track createRiver
   getParser <- shell.inst $ mkTMTTMTParser <$> affToLake fetchParser
   currentRaw <- shell.inst $
     foldStream (true /\ "") (Reset <$> resetting <|> pushedRaw)
@@ -217,17 +217,17 @@ component setGlobal resetting = eggy \shell -> do
 
 widgetTypeSplit :: Widget
 widgetTypeSplit _ = pure $ eggy \shell -> do
-  { stream: pushedRaw, send: pushUpdate } <- shell.track $ createStreamStore $ Just dfTy
-  { stream: pushedPat, send: pushPat } <- shell.track $ createStreamStore $ Just dfPat
+  { stream: pushedRaw, send: pushUpdate } <- shell.track $ createRiverStore $ Just dfTy
+  { stream: pushedPat, send: pushPat } <- shell.track $ createRiverStore $ Just dfPat
   getParser <- shell.inst $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
   pure $ Fragment
-    [ D.div' [ D.className "sourceCode unicode", D.data_"lang" "tmTTmt" ] $
+    [ D.div' [ D.className "sourceCode tmttmt", D.data_"lang" "tmTTmt" ] $
         D.pre $ D.code $ D.textarea'
           [ D.onInputValue pushUpdate
           , D.value dfTy
           , D.style "height: 100px"
           ]
-    , D.div' [ D.className "sourceCode unicode", D.data_"lang" "tmTTmt" ] $
+    , D.div' [ D.className "sourceCode tmttmt", D.data_"lang" "tmTTmt" ] $
         D.pre $ D.code $ D.textarea'
           [ D.onInputValue pushPat
           , D.value dfPat
@@ -255,17 +255,17 @@ widgetTypeSplit _ = pure $ eggy \shell -> do
 
 widgetSubType :: Widget
 widgetSubType _ = pure $ eggy \shell -> do
-  { stream: pushedRaw, send: pushUpdate } <- shell.track $ createStreamStore $ Just dfTy
-  { stream: pushedPat, send: pushPat } <- shell.track $ createStreamStore $ Just dfPat
+  { stream: pushedRaw, send: pushUpdate } <- shell.track $ createRiverStore $ Just dfTy
+  { stream: pushedPat, send: pushPat } <- shell.track $ createRiverStore $ Just dfPat
   getParser <- shell.inst $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
   pure $ Fragment
-    [ D.div' [ D.className "sourceCode unicode", D.data_"lang" "tmTTmt" ] $
+    [ D.div' [ D.className "sourceCode tmttmt", D.data_"lang" "tmTTmt" ] $
         D.pre $ D.code $ D.textarea'
           [ D.onInputValue pushUpdate
           , D.value dfTy
           , D.style "height: 100px"
           ]
-    , D.div' [ D.className "sourceCode unicode", D.data_"lang" "tmTTmt" ] $
+    , D.div' [ D.className "sourceCode tmttmt", D.data_"lang" "tmTTmt" ] $
         D.pre $ D.code $ D.textarea'
           [ D.onInputValue pushPat
           , D.value dfPat

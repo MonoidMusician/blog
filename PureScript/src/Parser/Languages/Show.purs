@@ -9,13 +9,13 @@ import Data.Array (fold, intercalate)
 import Data.Array as A
 import Data.Array.NonEmpty as NEA
 import Data.Either (either)
-import Data.Foldable (foldMap, oneOf)
+import Data.Foldable (foldMap)
 import Data.List (List(..))
 import Data.List.NonEmpty as NEL
 import Data.Maybe (Maybe(..), fromMaybe)
 import Dodo (Doc)
 import Dodo as D
-import Parser.Comb.Comber (Comber, many1SepBy, rawr, thawWith, token, (#->))
+import Parser.Comb.Comber (Comber, choices, many1SepBy, rawr, thawWith, token, (#->))
 import Parser.Lexing as L
 
 string :: Comber String
@@ -32,7 +32,7 @@ sep = rawr """[,]\s*"""
 
 parseShown :: Comber (Doc Void)
 parseShown = "stuff" #-> \more -> do
-  oneOf
+  choices
     [ D.text <$> (string <|> char <|> boring)
     , matched "(" more ")"
     , matched "[" more "]"
@@ -43,7 +43,7 @@ parseShown = "stuff" #-> \more -> do
   matched o more c =
     D.flexGroup <<< D.alignCurrentColumn <$> fold
       [ D.text <$> token o
-      , oneOf
+      , choices
           [ fold
             [ pure D.space
             , layers more

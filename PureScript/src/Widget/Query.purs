@@ -20,7 +20,7 @@ import Foreign.Object (Object)
 import Foreign.Object as Object
 import Idiolect ((>==))
 import Parsing (runParser)
-import Riverdragon.River (Lake, makeStream, subscribe)
+import Riverdragon.River (Lake, makeLake, subscribe)
 import URI.Extra.QueryPairs as QueryPairs
 import URI.Query as Query
 import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
@@ -75,21 +75,21 @@ setQueryKeys overwriting = do
   History.pushState (unsafeToForeign Json.jsonNull) (History.DocumentTitle "") (History.URL q) h
 
 queryChanges :: Lake (Object Json)
-queryChanges = makeStream \push -> do
+queryChanges = makeLake \push -> do
   w <- window
   e <- eventListener \_ -> push =<< getQueryKeys
   addEventListener popstate e false (Window.toEventTarget w)
   pure $ removeEventListener popstate e false (Window.toEventTarget w)
 
 sideInterface :: String -> Array { key :: String, io :: Interface Json } -> Lake (Object Json)
-sideInterface prefix interfaces = makeStream \k -> do
+sideInterface prefix interfaces = makeLake \k -> do
   initial <- map (map unwrap) $ getQueryKeys <#> \q -> interfaces # foldMap \{ key } ->
     Object.lookup (prefix <> key) q # foldMap (Last >>> Object.singleton key)
   ref <- Ref.new initial
-  sub1 <- interfaces # foldMap \{ key, io } -> do
-    subscribe io.receive \value -> do
-      setQueryKeys (Object.singleton (prefix <> key) value)
-      Ref.modify_ (Object.insert key value) ref
+  sub1 <- interfaces # foldMap \(r :: { key :: String, io :: Interface Json }) -> do
+    subscribe r.io.receive \value -> do
+      setQueryKeys (Object.singleton (prefix <> r.key) value)
+      Ref.modify_ (Object.insert r.key value) ref
   sub2 <- subscribe (pure initial <|> queryChanges) \kvs -> do
     for_ interfaces \{ key, io } -> do
       for_ (Object.lookup (prefix <> key) kvs) \value -> do

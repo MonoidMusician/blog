@@ -12,7 +12,7 @@ import Riverdragon.Dragon (Dragon, renderId)
 import Riverdragon.Dragon as D
 import Riverdragon.Dragon.Bones as B
 import Riverdragon.Dragon.Wings (instantiateListenInput, listenInput, vanishing)
-import Riverdragon.River (Lake, Stream, chill, subscribe)
+import Riverdragon.River (Stream, subscribe)
 import Web.DOM.ElementId (ElementId(..))
 import Widget (Widget)
 
@@ -24,7 +24,7 @@ rendering = renderId (ElementId "render-target")
 
 main :: Effect Unit
 main = do
-  single <- chill <$> instantiateListenInput true (ElementId "test-input")
+  single <- instantiateListenInput true (ElementId "test-input")
   let doubled = single /|\ single
   logging doubled
   let tupled = listenInput false (ElementId "test-input1") /|\ listenInput false (ElementId "test-input2")

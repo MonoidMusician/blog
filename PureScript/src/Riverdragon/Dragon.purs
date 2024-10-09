@@ -100,13 +100,12 @@ renderProps el stream = do
                 , eventType: EventType ty
                 }
             r <- doIt cb
-            _ <- listeners.set ty r
-            pure unit
+            listeners.set ty r
   unsubscribe <- subscribe stream receive
   pure do
     unsubscribe
     listeners.reset >>= traverse_ identity
-    join noLongerSelf.read
+    join noLongerSelf.get
 
 type RndrMgr =
   { doc :: Document

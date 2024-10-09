@@ -3,21 +3,33 @@ module Riverdragon.Dragon.Bones ( module Riverdragon.Dragon.Bones, module ReExpo
 import Prelude
 
 import Control.Plus (empty)
-import Data.Foldable (for_, oneOf)
+import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
 import Riverdragon.Dragon (AttrProp(..), Dragon(..), PropVal(..))
 import Riverdragon.Dragon (AttrProp(..), Dragon(..), PropVal(..)) as ReExports
-import Riverdragon.River (Lake)
+import Riverdragon.River (Lake, oneStream)
 import Web.Event.Event as Event
 import Web.Event.Internal.Types as Web
 import Web.HTML.HTMLInputElement as HTMLInput
 import Web.HTML.HTMLTextAreaElement as HTMLTextArea
 
+replacingLeft f s = Replacing (f <$> s)
+infixr 3 replacingLeft as @<
+
+replacingRight s f = Replacing (f <$> s)
+infixl 1 replacingRight as >@
+
+appendingLeft f s = Appending (f <$> s)
+infixr 3 appendingLeft as ~~<
+appendingRight s f = Appending (f <$> s)
+infixl 1 appendingRight as >~~
+
+
 _el :: String -> Dragon -> Dragon
 _el name = Element Nothing name empty
 _el' :: String -> Array (Lake AttrProp) -> Dragon -> Dragon
-_el' name = Element Nothing name <<< oneOf
+_el' name = Element Nothing name <<< oneStream
 
 text :: String -> Dragon
 text = Text <<< pure
@@ -91,7 +103,7 @@ td = _el "td"
 td' = _el' "td"
 
 aN :: String -> Array (Lake AttrProp) -> Dragon -> Dragon
-aN href attrs = _el' "a" [ attr "href" href, oneOf attrs ]
+aN href attrs = _el' "a" [ attr "href" href, oneStream attrs ]
 
 script' :: Array (Lake AttrProp) -> Dragon
 script' = _el' "script" <@> mempty
