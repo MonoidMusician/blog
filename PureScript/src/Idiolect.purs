@@ -72,6 +72,14 @@ infixr 6 type These as /\/
 
 -- tripleQuoted
 
+only :: forall a. Array a -> Maybe a
+only [ a ] = Just a
+only _ = Nothing
+
+nonEmpty :: forall m. Monoid m => Eq m => m -> Maybe m
+nonEmpty m | m /= mempty = Just m
+nonEmpty _ = Nothing
+
 filterFst :: forall a b. (a -> Boolean) -> Tuple a b -> Maybe b
 filterFst p (a /\ b) | p a = Just b
 filterFst _ _ = Nothing

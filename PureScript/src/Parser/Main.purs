@@ -20,16 +20,14 @@ import Data.Filterable (filterMap)
 import Data.Foldable (class Foldable, any, foldMap, oneOfMap, sequence_, traverse_)
 import Data.Foldable (length) as Foldable
 import Data.FoldableWithIndex (foldMapWithIndex)
-import Data.Functor (mapFlipped)
 import Data.Functor.Compose (Compose(..))
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.Int (floor)
-import Data.Int as Int
+import Data.HeytingAlgebra (tt)
 import Data.Lazy (defer, force)
 import Data.List (List)
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromJust, fromMaybe, fromMaybe', isJust, maybe)
+import Data.Maybe (Maybe(..), fromJust, fromMaybe, fromMaybe', isJust, isNothing, maybe)
 import Data.Newtype (unwrap)
 import Data.SequenceRecord (sequenceRecord)
 import Data.Set (Set)
@@ -48,6 +46,7 @@ import Effect.Class.Console as Log
 import Effect.Unsafe (unsafePerformEffect)
 import Foreign.Object (Object)
 import Foreign.Object as Object
+import Idiolect (nonEmpty, only, (\|/))
 import Parser.Algorithms (addEOF', calculateStates, fromSeed', fromString', gatherNonTerminals', gatherNonTerminals_, gatherTokens', gatherTokens_, getResultC, indexStates', longestFirst, numberStatesBy, parseDefinition, parseIntoGrammar, toAdvanceTo, toTable, withProducible)
 import Parser.Codecs (grammarCodec, intStringCodec, listCodec, mappy, maybeCodec, nonEmptyStringCodec, parseStepsCodec, producibleCodec, setCodec, stateInfoCodec, statesCodec)
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps, topOf)
@@ -56,11 +55,13 @@ import Parser.Samples (defaultEOF, defaultTopName, defaultTopRName)
 import Parser.Types (AST(..), CST(..), Grammar(..), Part(..), SAST, SAugmented, SCParseSteps, SCST, SCStack, SFragment, SGrammar, SProducible, SState, SStateInfo, SStateItem, SStates, SZipper, ShiftReduce(..), State(..), States(..), Zipper(..), prune, unNonTerminal, unSPart, unTerminal)
 import Partial.Unsafe (unsafePartial)
 import Random.LCG as LCG
-import Riverdragon.Dragon.Bones (AttrProp, Dragon, (>@), (@<))
+import Riverdragon.Dragon.Bones (AttrProp, Dragon, ($$), ($<), ($~~), (.$), (.$$), (.$$~), (.$~~), (:!), (:.), (:~), (<!>), (<:>), (=!=), (=!?=), (=:=), (=?=), (>@), (>~~), (@<))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (eggy)
+import Riverdragon.Dragon.Wings (eggy, inputValidated)
 import Riverdragon.River (Lake, createRiver, createRiverStore, foldStream, sampleOnRight, selfGating, subscribe, (<**>))
 import Riverdragon.River.Beyond (dedup, dedupOn, interval, animationLoop)
+import Stylish.Record (attrsM)
+import Stylish.Types (Classy(..))
 import Test.QuickCheck.Gen as QC
 import Unsafe.Coerce (unsafeCoerce)
 import Widget (Widget, adaptInterface)
@@ -74,47 +75,23 @@ type Dragonss = Array (Array Dragon)
 
 inputC :: String -> String -> String -> (String -> Effect Unit) -> Dragon
 inputC label placeholder initialValue onInput =
-  D.label' [ D.className "input-wrapper text" ] $ D.Fragment
-    [ D.span $ D.text label
-    , D.input'
-        [ D.placeholder' if placeholder == "" then empty else pure placeholder
-        , D.value' if initialValue == "" then empty else pure initialValue
-        , D.onInputValue onInput
+  D.label :."input-wrapper text".$~~
+    [ D.span.$$ label
+    , D.input
+        [ D.placeholder =?= nonEmpty placeholder
+        , D.value =?= nonEmpty initialValue
+        , D.onInputValue =:= onInput
         ]
-    ]
-
-inputValidated ::
-  String ->
-  String ->
-  String ->
-  String ->
-  Lake String ->
-  (String -> Effect Unit) ->
-  Dragon
-inputValidated cls label placeholder initialValue valid onInput =
-  D.label'
-    [ D.className' $
-        (append "input-wrapper text" <<< (eq "" >>> if _ then "" else " invalid"))
-        <$> (pure "" <|> valid)
-    ] $ D.Fragment
-    [ D.span $ D.text label
-    , D.input'
-        [ D.placeholder' if placeholder == "" then empty else pure placeholder
-        , D.value' if initialValue == "" then empty else pure initialValue
-        , D.onInputValue onInput
-        , D.className cls
-        ]
-    , D.span' [ D.className "error" ] (D.Text valid)
     ]
 
 inputC' :: String -> String -> Lake String -> (String -> Effect Unit) -> Dragon
 inputC' label placeholder initialValue onInput =
-  D.label' [ D.className "input-wrapper text" ] $ D.Fragment
-    [ D.span (D.text label)
-    , D.input'
-        [ D.placeholder' if placeholder == "" then empty else pure placeholder
-        , D.value' initialValue
-        , D.onInputValue onInput
+  D.label :."input-wrapper text".$~~
+    [ D.span.$$ label
+    , D.input
+        [ D.placeholder =?= nonEmpty placeholder
+        , D.value <:> initialValue
+        , D.onInputValue =:= onInput
         ]
     ]
 
@@ -132,7 +109,7 @@ getHeader (States states) = bimap Array.nub Array.nub $
 
 col :: forall a. Eq a => a -> a -> Lake AttrProp
 col j i =
-  if i == j then D.className "first" else empty
+  if i == j then D.className =:= "first" else empty
 
 renderParseTable :: forall r.
   { getCurrentState :: Int -> Lake Boolean | r } ->
@@ -140,31 +117,28 @@ renderParseTable :: forall r.
   SStates ->
   Dragon
 renderParseTable info (MkGrammar grammar) (States states) = eggy \_ -> do
-  { stream: event, send: push } <- createRiverStore $ Just Nothing
+  { stream: stateHighlighted, send: push } <- createRiverStore $ Just Nothing
   let
-    stateHighlighted = pure Nothing <|> event
     terminals /\ nonTerminals = getHeader (States states)
     renderTerminals x = renderTok mempty x
     gatherRules nt = grammar # filterMap \r ->
       if r.pName == nt then Just r.rName else Nothing
     renderNonTerminals x =
-      D.div' [ D.className "pileup" ] $ D.Fragment $
+      D.div :."pileup".$~~
         (map (\y -> renderRule mempty y) (gatherRules x)) <>
           [ renderNT mempty x ]
     renderStHere s =
-      D.span'
-        [ D.className "state hoverable"
-        , D.on_"mouseenter" $ const $ push (Just s)
-        , D.on_"mouseleave" $ const $ push Nothing
-        ]
-        (D.text (show s))
-    renderShiftReduce Nothing = D.span mempty
-    renderShiftReduce (Just (Shift s)) = D.span $ D.Fragment [ renderCmd mempty "s", renderStHere s ]
+      D.span :."state hoverable" :~
+        [ D.on_"mouseenter" =!= push (Just s)
+        , D.on_"mouseleave" =!= push Nothing
+        ] $$ show s
+    renderShiftReduce Nothing = mempty
+    renderShiftReduce (Just (Shift s)) = D.span.$~~ [ renderCmd mempty "s", renderStHere s ]
     renderShiftReduce (Just (Reduces rs)) =
-      D.span' [ if NEA.length rs > 1 then D.className "conflict" else empty ] $ D.Fragment $
+      D.span [ if NEA.length rs > 1 then D.className =:= "conflict" else empty ] $~~
         rs # foldMap \r -> [ renderCmd mempty "r", renderRule mempty r ]
     renderShiftReduce (Just (ShiftReduces s rs)) =
-      D.span' [ D.className "conflict" ] $ D.Fragment $
+      D.span :."conflict".$~~
         [ renderCmd mempty "s", renderStHere s ] <> (rs # foldMap \r -> [ renderCmd mempty "r", renderRule mempty r ])
     renderGoto Nothing = []
     renderGoto (Just s) = [ renderCmd mempty "g", renderStHere s ]
@@ -175,21 +149,20 @@ renderParseTable info (MkGrammar grammar) (States states) = eggy \_ -> do
       in
         map (pure <<< renderShiftReduce <<< forTerminal) terminals <> map (renderGoto <<< forNonTerminal) nonTerminals
 
-    header = D.tr $ D.Fragment $ mapWithIndex (\i -> D.th' [ col (Array.length terminals + 1) i ]) $
+    header = D.tr.$~~ mapWithIndex (\i -> D.th [ col (Array.length terminals + 1) i ]) $
       [ D.text "" ] <> map renderTerminals terminals <> map renderNonTerminals nonTerminals
-    clsFor s =
-      (<**>)
-        ((if _ then " active " else "") <$> info.getCurrentState s)
-        $ stateHighlighted <#> \s' -> append $
-            if s' == Just s then " hover " else ""
+    clsFor s = D.attrsL
+      { "active": info.getCurrentState s
+      , "hover": stateHighlighted <#> eq (Just s) :: Lake Boolean
+      }
     rows = states <#> \state ->
-      D.tr' [ D.className' $ clsFor state.sName] $ D.Fragment $
-        Array.cons (D.th $ renderStHere state.sName) $
+      D.tr [ D.classy <:> clsFor state.sName] $~~
+        Array.cons (D.th[] $ renderStHere state.sName) $
           cols state # mapWithIndex
-            \i -> D.td' [ col (Array.length terminals) i ] <<< D.Fragment
-  pure $ D.table' [ D.className "data-table parse-table" ] $ D.Fragment
-    [ D.thead header
-    , D.tbody $ D.Fragment rows
+            \i -> D.td [ col (Array.length terminals) i ] <<< D.Fragment
+  pure $ D.table :."data-table parse-table".$~~
+    [ D.thead.$ header
+    , D.tbody.$~~ rows
     ]
 
 type StartingTick = Boolean
@@ -197,57 +170,53 @@ type StartingTick = Boolean
 data TodoAction = Prioritize | Delete
 
 showStack :: SCStack -> Dragon
-showStack i = D.span' [ D.className "full stack" ] (go i)
+showStack i = D.span :."full stack".$ go i
   where
-  go (Zero state) = D.sub (renderSt mempty state)
+  go (Zero state) = D.sub.$ renderSt mempty state
   go (Snoc stack tok state) = go stack
     <> renderCSTTree tok
-    <> D.sub (renderSt mempty state)
+    <> D.sub [] (renderSt mempty state)
 
 renderStackItem :: Either CodePoint SAST -> Dragon
 renderStackItem (Left x) = renderTok mempty x
 renderStackItem (Right x) = renderASTTree x
 
 renderAST :: SAST -> Dragon
-renderAST (Layer (_ /\ r) []) = D.span' [ D.className "layer" ] (renderRule mempty r)
+renderAST (Layer (_ /\ r) []) = D.span :."layer".$ renderRule mempty r
 renderAST (Layer (_ /\ r) cs) =
-  D.span' [ D.className "layer" ] $ D.Fragment $ join
-    [ pure $ renderMeta mempty "("
-    , pure $ renderRule mempty r
-    , cs # foldMap \c -> [ D.text " ", renderAST c ]
-    , pure $ renderMeta mempty ")"
+  D.span :."layer".$~~
+    [ renderMeta mempty "("
+    , renderRule mempty r
+    , cs # foldMap \c -> " " $< renderAST c
+    , renderMeta mempty ")"
     ]
 
 renderASTTree :: SAST -> Dragon
 renderASTTree ast =
-  D.ol' [ D.className "AST" ] $
-    D.li (renderASTChild ast)
+  D.ol :."AST".$
+    D.li.$ renderASTChild ast
 
 renderASTChild :: SAST -> Dragon
 renderASTChild (Layer (_ /\ r) []) =
-  D.span' [ D.className "leaf node" ]
-      (renderRule mempty r)
+  D.span :."leaf node".$ renderRule mempty r
 renderASTChild (Layer (_ /\ r) cs) = D.Fragment
-  [ D.span' [ D.className "node" ]
-      (renderRule mempty r)
-  , D.ol' [ D.className "layer" ] $ D.Fragment $
-      cs <#> \c -> D.li (renderASTChild c)
+  [ D.span :."node".$ renderRule mempty r
+  , D.ol :."layer".$~~
+      cs <#> \c -> D.li.$ renderASTChild c
   ]
 
 renderCSTTree :: SCST -> Dragon
 renderCSTTree ast =
-  D.ol' [ D.className "AST CST" ]
-    (D.li (renderCSTChild ast))
+  D.ol :."AST CST".$
+    D.li.$ renderCSTChild ast
 
 renderCSTChild :: SCST -> Dragon
 renderCSTChild (Leaf tok) =
-  D.span' [ D.className "leaf node" ]
-    (renderTok mempty tok)
+  D.span :."leaf node".$ renderTok mempty tok
 renderCSTChild (Branch (_ /\ r) cs) = D.Fragment
-  [ D.span' [ D.className "node" ]
-      (renderRule mempty r)
-  , D.ol' [ D.className "layer" ] $ D.Fragment $
-      cs <#> \c -> D.li (renderCSTChild c)
+  [ D.span :."node".$ renderRule mempty r
+  , D.ol :."layer".$~~
+      cs <#> \c -> D.li.$ renderCSTChild c
   ]
 
 showMaybeStack :: Maybe SCStack -> Dragon
@@ -267,7 +236,7 @@ getVisibilityAndIncrement' s = do
   put (n + 1)
   pure
     ( \f -> n /\
-        ( D.className' $ f n <#> \v -> (s <> if v then "" else " hidden")
+        ( D.classy <:> D.attrsL { "": s, "hidden": not f n }
         )
     )
 
@@ -276,7 +245,7 @@ getVisibility = do
   n <- get
   pure
     ( \f -> n /\
-        ( D.className' $ f n <#> \v -> (if v then "" else " hidden")
+        ( D.classy <:> D.attrsL { "hidden": not f n }
         )
     )
 
@@ -290,22 +259,20 @@ showParseStep :: forall r.
   SuperStack Dragon
 showParseStep (Left Nothing) = do
   getVisibilityAndIncrement <#> map \(n /\ vi) ->
-    D.div' [ vi ] $ D.text $ ("Step " <> show n <> ": ") <> "Parse error"
+    D.div [ vi ] $$ ("Step " <> show n <> ": ") <> "Parse error"
 showParseStep (Left (Just v)) = do
   getVisibilityAndIncrement <#> map \(_ /\ vi) ->
     case getResultC v of
       Just r | Right p <- map snd <$> prune r ->
-        D.div' [ vi ] $ D.text "Step the last: " <> renderCSTTree r
+        D.div [ vi ] $ "Step the last: " $< renderCSTTree r
       _ ->
-        D.div' [ vi ] $ D.text $ "Step the last: " <> "Something went wrong"
+        D.div [ vi ] $$ "Step the last: " <> "Something went wrong"
 showParseStep (Right { stack, inputs }) = do
   getVisibilityAndIncrement' "flex justify-between" <#> map \(n /\ vi) ->
-    D.div' [ vi ] $ D.Fragment
-      [ D.div $ D.Fragment
-        [ D.text ("Step " <> show n <> ": ")
-        , showStack stack
-        ]
-      , D.div (foldMap (renderTok mempty) inputs)
+    D.div [ vi ] $~~
+      [ D.div.$
+        ("Step " <> show n <> ": ") $< showStack stack
+      , D.div.$ foldMap (renderTok mempty) inputs
       ]
 
 showParseTransition ::
@@ -313,11 +280,11 @@ showParseTransition ::
   SuperStack Dragon
 showParseTransition (s /\ Left tok) = do
   getVisibility <#> map \(_ /\ vi) ->
-    D.span' [ vi ] $ D.Fragment
+    D.span [ vi ] $~~
       [ {- renderTok mempty tok, D.text " ", -} renderCmd mempty "s", renderSt mempty s ]
 showParseTransition (s /\ Right (_ /\ rule)) = do
   getVisibility <#> map \(_ /\ vi) ->
-    D.span' [ vi ] $ D.Fragment
+    D.span [ vi ] $~~
       [ renderCmd mempty "r"
       , renderRule mempty rule
       , renderMeta mempty " —> "
@@ -328,7 +295,7 @@ showParseTransition (s /\ Right (_ /\ rule)) = do
 type SuperStack a = StateT Int Trampoline ((Int -> Lake Boolean) -> a)
 
 showParseSteps :: SCParseSteps -> SuperStack Dragon
-showParseSteps i = map (D.div' [ D.className "parse-steps" ]) <$> (go i)
+showParseSteps i = map (D.div [ D.className =:= "parse-steps" ]) <$> (go i)
   where
   go =
     let
@@ -346,18 +313,18 @@ showParseSteps i = map (D.div' [ D.className "parse-steps" ]) <$> (go i)
 renderStateTable :: forall r. { getCurrentState :: Int -> Lake Boolean | r } -> SStates -> Dragon
 renderStateTable info (States states) = do
   let
-    mkTH n 0 0 = D.th' [ D.attr "rowspan" (show n) ]
+    mkTH n 0 0 = D.th [ D.attr "rowspan" =:= show n ]
     mkTH _ _ 0 = mempty
-    mkTH _ _ _ = D.td
-    stateClass sName = (if _ then "active" else "") <$> info.getCurrentState sName
+    mkTH _ _ _ = D.td []
+    stateClass sName = attrsM
+      { "active": info.getCurrentState sName
+      } :: Lake _
     renderStateHere items =
-      let
-        n = Array.length items
-      in
-        items # mapWithIndex \j -> D.tr <<< D.Fragment <<< mapWithIndex (\i -> mkTH n j i)
-  D.table' [ D.className "data-table state-table" ] $ D.Fragment $
+      let n = Array.length items in
+      items # mapWithIndex \j -> D.tr[] <<< D.Fragment <<< mapWithIndex (mkTH n j)
+  D.table :."data-table state-table".$~~
     states <#> \s@{ sName, items } ->
-      D.tbody' [ D.className' $ stateClass sName ] $ D.Fragment $
+      D.tbody [ D.classy <:> stateClass sName ] $~~
         renderStateHere $ renderState s items
 
 renderState :: SStateInfo -> SState -> Dragonss
@@ -369,29 +336,27 @@ renderItem s j { pName, rName, rule: rule@(Zipper _ after), lookahead } =
   , renderNT mempty pName
   , renderMeta mempty ": "
   , renderZipper rule
-  , renderLookahead (if Array.null after then " reducible" else "") (map snd lookahead)
-  , D.span $ D.Fragment [ renderMeta mempty " #", renderRule mempty rName ]
-  , D.span $ D.Fragment case toAdvanceTo s rule of
+  , renderLookahead (Classy if Array.null after then "reducible" else "") (map snd lookahead)
+  , D.span.$~~ [ renderMeta mempty " #", renderRule mempty rName ]
+  , D.span.$~~ case toAdvanceTo s rule of
       Nothing -> []
       Just s' -> [ renderMeta mempty " —> ", renderSt mempty s' ]
   ]
 
 renderZipper :: SZipper -> Dragon
 renderZipper (Zipper before after) =
-  D.span' [ D.className ("zipper" <> if Array.null after then " reducible" else "") ] $ D.Fragment
-    [ D.span' [ D.className "parsed" ] $ D.Fragment $ before <#> \x -> renderPart mempty x
-    , if Array.null after then D.text ""
-      else
-        D.span $ D.Fragment $ after <#> \x -> renderPart mempty x
+  D.span [ D.classy =:= D.attrsI { "zipper": true, "reducible": Array.null after } ] $~~
+    [ D.span:."parsed".$~~ before <#> renderPart mempty
+    , if Array.null after then D.text "" else
+        D.span.$~~ after <#> renderPart mempty
     ]
 
-renderLookahead :: String -> Array CodePoint -> Dragon
+renderLookahead :: Classy -> Array CodePoint -> Dragon
 renderLookahead moreClass items =
-  D.span' [ D.className $ append "lookahead" moreClass ] $
-    D.Fragment $
-      [ renderMeta mempty "{ " ]
-      <> Array.intercalate [ renderMeta mempty ", " ] (items <#> \x -> [ renderTok mempty x ])
-      <> [ renderMeta mempty " }" ]
+  D.span [ D.classy =:= Classy "lookahead" <> moreClass ] $ mempty
+    <> renderMeta mempty "{ "
+    <> Array.intercalate (renderMeta mempty ", ") (items <#> renderTok mempty)
+    <> renderMeta mempty " }"
 
 --------------------------------------------------------------------------------
 
@@ -408,55 +373,55 @@ silentDebug :: forall a. String -> Lake a -> Lake a
 silentDebug tag = map \a -> unsafePerformEffect (a <$ Log.info tag)
 
 renderAs :: String -> String -> Dragon
-renderAs c t = D.span' [ D.className c ] (D.text t)
+renderAs c t = D.span :. c .$$ t
 
 renderTok :: Maybe (Effect Unit) -> CodePoint -> Dragon
-renderTok c t = D.span'
-  [ maybe empty D.onClickE c
-  , D.className $ "terminal" <> if isJust c then " clickable" else ""
-  ] (D.text (String.singleton t))
+renderTok c t = D.span
+  [ D.onClick =!?= c
+  , D.classy =:= D.attrsI { "terminal": true, "clickable": isJust c }
+  ] $$ String.singleton t
 
-renderTok' :: Lake String -> Lake (Maybe (Effect Unit)) -> CodePoint -> Dragon
-renderTok' cls c t = D.span'
-  [ D.onClickE' (filterMap identity c)
-  , D.className' (pure "terminal" <|> (append "terminal " <$> cls))
-  ] (D.text (String.singleton t))
+renderTok' :: Lake Classy -> Lake (Maybe (Effect Unit)) -> CodePoint -> Dragon
+renderTok' cls c t = D.span
+  [ D.Listener "click" <:> map const <$> c
+  , D.classy <:> D.attrsL { "terminal": true, "": cls }
+  ] $$ String.singleton t
 
 renderNT :: Maybe (Effect Unit) -> NonEmptyString -> Dragon
-renderNT c nt = D.span'
-  [ maybe empty D.onClickE c
-  , D.className $ "non-terminal" <> if isJust c then " clickable" else ""
-  ] (D.text (NES.toString nt))
+renderNT c nt = D.span
+  [ D.onClick =!?= c
+  , D.classy =:= D.attrsI { "non-terminal": true, "clickable": isJust c }
+  ] $$ NES.toString nt
 
-renderNT' :: Lake String -> Lake (Maybe (Effect Unit)) -> NonEmptyString -> Dragon
-renderNT' cls c nt = D.span'
-  [ D.onClickE' (filterMap identity c)
-  , D.className' (pure "non-terminal" <|> (append "non-terminal " <$> cls))
-  ] (D.text (NES.toString nt))
+renderNT' :: Lake Classy -> Lake (Maybe (Effect Unit)) -> NonEmptyString -> Dragon
+renderNT' cls c nt = D.span
+  [ D.Listener "click" <:> map const <$> c
+  , D.classy <:> D.attrsL { "non-terminal": true, "": cls }
+  ] $$ NES.toString nt
 
 renderRule :: Maybe (Effect Unit) -> String -> Dragon
-renderRule c r = D.span'
-  [ maybe empty D.onClickE c
-  , D.className $ "rule" <> if isJust c then " clickable" else ""
-  ] (D.text r)
+renderRule c r = D.span
+  [ D.onClick =!?= c
+  , D.classy =:= D.attrsI { "rule": true, "clickable": isJust c }
+  ] $$ r
 
 renderMeta :: Maybe (Effect Unit) -> String -> Dragon
-renderMeta c x = D.span'
-  [ maybe empty D.onClickE c
-  , D.className $ "meta" <> if isJust c then " clickable" else ""
-  ] (D.text x)
+renderMeta c x = D.span
+  [ D.onClick =!?= c
+  , D.classy =:= D.attrsI { "meta": true, "clickable": isJust c }
+  ] $$ x
 
 renderSt :: Maybe (Effect Unit) -> Int -> Dragon
-renderSt c x = D.span'
-  [ maybe empty D.onClickE c
-  , D.className $ "state" <> if isJust c then " clickable" else ""
-  ] (D.text (show x))
+renderSt c x = D.span
+  [ D.onClick =!?= c
+  , D.classy =:= D.attrsI { "state": true, "clickable": isJust c }
+  ] $$ show x
 
 renderSt' :: Lake String -> Maybe (Effect Unit) -> Int -> Dragon
-renderSt' cls c x = D.span'
-  [ maybe empty D.onClickE c
-  , D.className' (pure "state" <|> (append "state " <$> cls))
-  ] (D.text (show x))
+renderSt' cls c x = D.span
+  [ D.onClick =!?= c
+  , D.classy <:> D.attrsL { "state": true, "": cls }
+  ] $$ show x
 
 renderPart :: Maybe (Effect Unit) -> Part Unit NonEmptyString CodePoint -> Dragon
 renderPart c (NonTerminal nt) = renderNT c nt
@@ -464,21 +429,15 @@ renderPart c (Terminal t) = renderTok c t
 renderPart _ (InterTerminal _) = mempty
 
 renderCmd :: Maybe (Effect Unit) -> String -> Dragon
-renderCmd c x = D.span'
-  [ maybe empty D.onClickE c
-  , D.className $ "cmd" <> if isJust c then " clickable" else ""
-  ] (D.text x)
-
-only :: forall a. Array a -> Maybe a
-only [ a ] = Just a
-only _ = Nothing
+renderCmd c x = D.span
+  [ D.onClick =!?= c
+  , D.classy =:= D.attrsI { "cmd": true, "clickable": isJust c }
+  ] $$ x
 
 findNext :: Set String -> String -> Int -> String
 findNext avoid pre n =
-  let
-    pren = pre <> show n
-  in
-    if pren `Set.member` avoid then findNext avoid pre (n + 1) else pren
+  let pren = pre <> show n in
+  if pren `Set.member` avoid then findNext avoid pre (n + 1) else pren
 
 parseGrammar ::
   { top :: NonEmptyString
@@ -498,9 +457,8 @@ parseGrammar top rules = do
       \ruleNames r ->
         let
           rName =
-            if r.rName /= "" then r.rName
-            else
-              findNext ruleNames (NES.toString r.pName) 1
+            if r.rName /= "" then r.rName else
+            findNext ruleNames (NES.toString r.pName) 1
         in
           { value: r { rule = parse r.rule, rName = rName }, accum: Set.insert rName ruleNames }
     topRule = { pName: top.top, rName: top.topName, rule: [ NonTerminal entry, Terminal top.eof ] }
@@ -604,35 +562,6 @@ grammarComponent ::
 grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
   (pure reallyInitialGrammar <|> forceGrammar) >@ \initialGrammar -> eggy \shell -> do
     let
-      createInput = sequenceRecord
-        { value: createRiverStore $ Just ""
-        , error: createRiverStore $ Just ""
-        }
-    inputs <- sequenceRecord
-      { pName: createInput
-      , rule: createInput
-      , rName: createInput
-      , top: createInput
-      , entry: createInput
-      , eof: createInput
-      , topName: createInput
-      }
-    actions <- sequenceRecord
-      { errorMessage: createRiver -- Maybe ParseGrammarError
-      , addRule: createRiver -- Int /\ { pName :: NonEmptyString, rule :: String, rName :: String }
-      , removeRule: createRiver -- Int
-      , troubleRules: createRiverStore $ Just []
-      }
-    let
-      changeRule =
-        ( \rules ->
-            case _ of
-              Left new -> Array.snoc rules new
-              Right remove -> Array.filter (fst >>> not eq remove) rules
-        )
-      ruleChanges = (Left <$> actions.addRule.stream <|> Right <$> actions.removeRule.stream)
-      initialRules = unwrap initialGrammar.augmented # Array.drop 1 # mapWithIndex \i rule ->
-        i /\ rule { rule = rule.rule # foldMap unSPart }
       initialTop =
         case Array.head (unwrap initialGrammar.augmented) of
           Just { pName, rName, rule: [ NonTerminal entry, Terminal eof ] } ->
@@ -647,23 +576,49 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
             , eof: String.singleton defaultEOF
             , topName: defaultTopRName
             }
+      createInput v = sequenceRecord
+        { value: createRiverStore $ Just v
+        , error: createRiverStore $ Just ""
+        }
+    inputs <- sequenceRecord
+      { pName: createInput "Digit"
+      , rule: createInput "3"
+      , rName: createInput "3"
+      , top: createInput initialTop.top
+      , entry: createInput initialTop.entry
+      , eof: createInput initialTop.eof
+      , topName: createInput initialTop.topName
+      }
+    actions <- sequenceRecord
+      { errorMessage: createRiver -- Maybe ParseGrammarError
+      , addRule: createRiver -- Int /\ { pName :: NonEmptyString, rule :: String, rName :: String }
+      , removeRule: createRiver -- Int
+      , troubleRules: createRiverStore $ Just []
+      }
+    let
+      changeRule rules = case _ of
+        Left new -> Array.snoc rules new
+        Right remove -> Array.filter (fst >>> not eq remove) rules
+      ruleChanges = actions.addRule.stream \|/ actions.removeRule.stream
+      initialRules = unwrap initialGrammar.augmented # Array.drop 1 # mapWithIndex \i rule ->
+        i /\ rule { rule = rule.rule # foldMap unSPart }
       currentText =
-        (<**>) (pure "" <|> inputs.pName.value.stream)
-          $ (<**>) (pure "" <|> inputs.rule.value.stream)
+        (<**>) (inputs.pName.value.stream)
+          $ (<**>) (inputs.rule.value.stream)
           $
-            (pure "" <|> inputs.rName.value.stream) <#> \rName rule pName ->
+            (inputs.rName.value.stream) <#> \rName rule pName ->
               { rName, rule, pName }
       currentTop =
-        (<**>) (pure initialTop.top <|> inputs.top.value.stream)
-          $ (<**>) (pure initialTop.entry <|> inputs.entry.value.stream)
-          $ (<**>) (pure initialTop.eof <|> inputs.eof.value.stream)
-          $ (<**>) (pure initialTop.topName <|> inputs.topName.value.stream)
+        (<**>) (inputs.top.value.stream)
+          $ (<**>) (inputs.entry.value.stream)
+          $ (<**>) (inputs.eof.value.stream)
+          $ (<**>) (inputs.topName.value.stream)
           $ pure { topName: _, eof: _, entry: _, top: _ }
       counted = add (Array.length initialRules) <$>
         (pure 0 <|> (add 1 <$> fst <$> actions.addRule.stream))
     getCurrentText <- shell.storeLast mempty currentText
-    getCounted <- shell.storeLast 12341 counted
-    currentTop <- shell.instStore currentTop
+    getCounted <- shell.storeLast (Array.length initialRules) counted
+    currentTop <- shell.instStore $ currentTop
     currentRules <- shell.inst $ foldStream initialRules ruleChanges changeRule
     let
       currentNTs = dedup $ map longestFirst $
@@ -681,84 +636,83 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
       putEofError v = inputs.eof.error.send
         if String.length v <= 1 then "" else
         "Must be a single character (Unicode code point)"
-    pure $ D.div $ D.Fragment
-      [ D.div $ D.Fragment
+    pure $ D.div.$~~
+      [ D.div.$~~
           [ join (inputValidated "non-terminal" "Top name") initialTop.top inputs.top.error.stream (const (inputs.top.error.send "") <> inputs.top.value.send)
           , inputValidated "non-terminal" "Entry point" "" initialTop.entry inputs.entry.error.stream (const (inputs.entry.error.send "") <> inputs.entry.value.send)
           , join (inputValidated "terminal" "Final token") initialTop.eof inputs.eof.error.stream (putEofError <> inputs.eof.value.send)
           , join (inputValidated "rule" "Top rule name") initialTop.topName inputs.topName.error.stream (const (inputs.topName.error.send "") <> inputs.topName.value.send)
           ]
-      , D.table' [ D.className "data-table grammar" ] $ D.Fragment
-          [ D.tr $ D.Fragment
-              [ D.td $ currentTopParsed <#> _.top >@ renderNT mempty
-              , D.td $ renderMeta mempty " : "
-              , D.td $ D.Fragment
+      , D.table :."data-table grammar".$~~
+          [ D.tr.$~~
+              [ D.td.$ currentTopParsed <#> _.top >@ renderNT mempty
+              , D.td.$ renderMeta mempty " : "
+              , D.td.$~~
                   [ currentTopParsed <#> _.entry >@ (maybe (D.text "—") (renderNT mempty))
                   , currentTopParsed <#> _.eof >@ renderTok mempty
                   ]
-              , D.td $ D.Fragment
+              , D.td.$~~
                   [ renderMeta mempty " #"
                   , currentTopParsed <#> _.topName >@ renderRule mempty
                   ]
               ]
-          , D.tbody $ D.Appending $ mapFlipped
-              (oneOfMap pure initialRules <|> actions.addRule.stream)
+          , D.tbody[] $
+              (oneOfMap pure initialRules <|> actions.addRule.stream) >~~
               \(i /\ txt) -> eggy \_ -> do
                 this <- createRiver
                 pure $ D.Replacing $
-                  ( pure $ D.tr'
-                      [ D.className' (actions.troubleRules.stream <#> \rit -> if Array.elem txt.rName rit then "trouble" else "") ]
-                      $ D.Fragment $ map D.td $
+                  ( pure $ D.tr
+                      [ D.classy <:> D.attrsL
+                        { "trouble": actions.troubleRules.stream <#>
+                            Array.elem txt.rName :: Lake _
+                        }
+                      ] $~~ map (D.td[]) $
                       [ renderNT mempty txt.pName
                       , renderMeta mempty " : "
                       , currentNTs >@ \nts ->
-                          D.span $ D.Fragment $
+                          D.span.$~~
                             renderPart mempty <$> parseDefinition nts txt.rule
-                      , D.span $ D.Fragment
+                      , D.span.$~~
                           [ renderMeta mempty " #"
                           , renderRule mempty txt.rName
                           ]
-                      , D.span $ D.Fragment
+                      , D.span.$~~
                           [ D.text " "
-                          , D.buttonN
-                              "delete"
-                              (this.send mempty *> actions.removeRule.send i *> actions.troubleRules.send [])
-                              "Delete"
+                          , D.buttonW "delete" "Delete" do
+                              this.send mempty
+                              actions.removeRule.send i
+                              actions.troubleRules.send []
                           ]
                       ]
-                  ) <|> this.stream
+                  ) <|> selfGating tt this.stream
           ]
-      , D.div $ D.Fragment
-          [ inputValidated "non-terminal" "Nonterminal name" "" "" inputs.pName.error.stream (const (inputs.pName.error.send "") <> inputs.pName.value.send)
+      , D.div.$~~
+          [ inputValidated "non-terminal" "Nonterminal name" "" "Digit" inputs.pName.error.stream (const (inputs.pName.error.send "") <> inputs.pName.value.send)
           , renderMeta mempty " : "
-          , inputValidated "terminal" "Value" "" "" inputs.rule.error.stream (const (inputs.rule.error.send "") <> inputs.rule.value.send)
+          , inputValidated "terminal" "Value" "" "3" inputs.rule.error.stream (const (inputs.rule.error.send "") <> inputs.rule.value.send)
           , renderMeta mempty " #"
-          , inputValidated "rule" "Rule name" "" "" inputs.rName.error.stream (const (inputs.rName.error.send "") <> inputs.rName.value.send)
-          , D.button'
-              [ D.className "big add"
-              , D.onClickE do
-                  text <- getCurrentText
-                  i <- getCounted
-                  case NES.fromString text.pName of
-                    Nothing -> do
-                      inputs.pName.error.send "Name for non-terminal must be non-empty."
-                    -- TODO: findNext ruleNames text.pName 1
-                    Just pName -> do
-                      actions.errorMessage.send Nothing
-                      inputs.pName.error.send ""
-                      inputs.rule.error.send ""
-                      inputs.rName.error.send ""
-                      actions.troubleRules.send []
-                      actions.addRule.send (i /\ text { pName = pName })
-              ]
-              (D.text "Add rule")
+          , inputValidated "rule" "Rule name" "" "3" inputs.rName.error.stream (const (inputs.rName.error.send "") <> inputs.rName.value.send)
+          , D.buttonW "big add" "Add rule" do
+              text <- getCurrentText
+              i <- getCounted
+              case NES.fromString text.pName of
+                Nothing -> do
+                  inputs.pName.error.send "Name for non-terminal must be non-empty."
+                -- TODO: findNext ruleNames text.pName 1
+                Just pName -> do
+                  actions.errorMessage.send Nothing
+                  inputs.pName.error.send ""
+                  inputs.rule.error.send ""
+                  inputs.rName.error.send ""
+                  actions.troubleRules.send []
+                  actions.addRule.send (i /\ text { pName = pName })
           ]
-      , D.br
-      , if buttonText == "" then D.div mempty
+      , D.br[]
+      , if buttonText == "" then D.div[] mempty
         else
-          D.div $ D.button'
-            [ D.className "big"
-            , D.onClickE' $ currentGrammar <#> \g -> do
+          D.div.$ D.button
+            [ D.className =:= "big"
+            , D.onClick <!> currentGrammar <#> \g -> do
                 actions.errorMessage.send Nothing
                 inputs.pName.error.send ""
                 inputs.rule.error.send ""
@@ -792,10 +746,10 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
             ]
             (D.text buttonText)
       , actions.errorMessage.stream >@ case _ of
-          Nothing -> D.div mempty
+          Nothing -> D.div[] mempty
           Just e -> D.Fragment
-            [ D.br
-            , D.div' [ D.className "Error" ] $ D.Fragment $ parseGrammarError e
+            [ D.br[]
+            , D.div :."Error".$~~ parseGrammarError e
             ]
       ]
 
@@ -859,8 +813,8 @@ explorerComponent grammar sendUp = eggy \shell -> do
   let
     activity here = here <#> if _ then "active" else "inactive"
     renderPartHere i (NonTerminal nt) =
-      D.span'
-        [ D.className' (currentFocused <#> any (fst >>> eq i) >>> if _ then "selected" else "") ]
+      D.span
+        [ D.classy <:> D.attrsL { "selected": currentFocused <#> any (fst >>> eq i) } ]
         (renderNT (Just (actions.focus.send (Just (i /\ nt)))) nt)
     renderPartHere _ (Terminal tok) = renderTok mempty tok
     renderPartHere _ (InterTerminal _) = mempty
@@ -868,16 +822,16 @@ explorerComponent grammar sendUp = eggy \shell -> do
       case traverse unTerminal parts of
         Nothing -> Nothing
         Just toks -> Just (sendUp toks)
-  pure $ D.div $ D.Fragment
+  pure $ D.div.$~~
     [ (D.Fragment <<< mapWithIndex renderPartHere) @< currentParts
-    , D.button'
-        [ D.className' $ maybe "disabled" mempty <$> send
-        , D.onClickE' $ sequence_ <$> send
+    , D.button
+        [ D.classy <:> D.attrsL { "disabled": isNothing <$> send }
+        , D.onClick <!> sequence_ <$> send
         ]
         (D.text "Send")
-    , D.buttonN "delete" (actions.select.send [ NonTerminal entry ]) "Reset"
-    , D.table' [ D.className "data-table explorer-table" ] $ D.Fragment
-        [ D.tbody $ D.Fragment $ rules <#> \rule -> do
+    , D.buttonW "delete" "Reset" (actions.select.send [ NonTerminal entry ])
+    , D.table :."data-table explorer-table".$~~
+        [ D.tbody.$~~ rules <#> \rule -> do
             let
               focusHere = currentFocused # map (any (snd >>> eq rule.pName))
               replacement = sampleOnRight currentParts $ currentFocused <#> \mfoc parts -> do
@@ -885,29 +839,30 @@ explorerComponent grammar sendUp = eggy \shell -> do
                 guard $ nt == rule.pName
                 guard $ focused <= Array.length parts
                 pure $ Array.take focused parts <> rule.rule <> Array.drop (focused + 1) parts
-            D.tr' [ D.className' $ activity focusHere ] $ D.Fragment $ map D.td
+            D.tr [ D.className <:> activity focusHere ] $~~ map (D.td[])
               [ renderNT mempty rule.pName
               , renderMeta mempty " : "
-              , D.Fragment $ map (\x -> renderPart mempty x) rule.rule
-              , D.span $ D.Fragment
+              , D.Fragment $ renderPart mempty <$> rule.rule
+              , D.span.$~~
                   [ renderMeta mempty " #"
                   , renderRule mempty rule.rName
                   ]
-              , D.span $ D.Fragment
+              , D.span.$~~
                   [ D.text " "
-                  , D.button'
-                      [ D.className' $ (append "select")
-                          <$> (if _ then mempty else " disabled")
-                          <$> focusHere
-                      , D.onClickE' $ traverse_ actions.select.send <$> replacement
+                  , D.button
+                      [ D.classy <:> D.attrsL
+                          { "select": true
+                          , "disabled": not focusHere
+                          }
+                      , D.onClick <!> traverse_ actions.select.send <$> replacement
                       ]
                       (D.text "Choose")
                   ]
               , case Array.find (_.production >>> eq rule) producedRules of
                   Nothing -> D.text "Unproducible"
                   Just { produced } ->
-                    D.span $ D.Fragment $ join
-                      [ pure $ D.em $ D.text "e.g. "
+                    D.span.$~~ join
+                      [ pure $ D.em.$$ "e.g. "
                       , map (\x -> renderTok mempty x) produced
                       ]
               ]
@@ -937,49 +892,49 @@ randomComponent grammar sendUp = eggy \_ -> do
     , amt: createRiverStore $ Just initialAmt
     , randomMany: createRiverStore $ Just initial
     }
-  pure $ D.div $ D.Fragment
-      [ D.div $ D.Fragment
-          [ D.label' [ D.className "input-wrapper range" ] $ D.Fragment
-              [ D.span (D.text "Simple")
-              , D.input'
-                  [ D.attr "type" "range"
-                  , D.attr "min" "0"
-                  , D.attr "max" "100"
-                  , D.onInputNumber $ actions.size.send <<< Int.round
+  pure $ D.div.$~~
+      [ D.div.$~~
+          [ D.label :."input-wrapper range".$~~
+              [ D.span.$$ "Simple"
+              , D.input
+                  [ D.attr "type" =:= "range"
+                  , D.attr "min" =:= "0"
+                  , D.attr "max" =:= "100"
+                  , D.onInputInt =:= actions.size.send
                   ]
-              , D.span (D.text "Complex")
+              , D.span.$$ "Complex"
               ]
-          , D.label' [ D.className "input-wrapper range" ] $ D.Fragment
-              [ D.span (D.text "Few")
-              , D.input'
-                  [ D.attr "type" "range"
-                  , D.attr "min" "1"
-                  , D.attr "max" "30"
-                  , D.value "15"
-                  , D.onInputNumber $ actions.amt.send <<< Int.round
+          , D.label :."input-wrapper range".$~~
+              [ D.span.$$ "Few"
+              , D.input
+                  [ D.attr "type" =:= "range"
+                  , D.attr "min" =:= "1"
+                  , D.attr "max" =:= "30"
+                  , D.value =:= "15"
+                  , D.onInputInt =:= actions.amt.send
                   ]
-              , D.span (D.text "Many")
+              , D.span.$$ "Many"
               ]
-          , D.button'
-              [ D.className ""
-              , D.onClickE' $
-                ( (<**>) (pure initialAmt <|> actions.amt.stream) $
-                    ( (pure initialSize <|> actions.size.stream) <#> \sz amt ->
+          , D.button
+              [ D.className =:= ""
+              , D.onClick <!>
+                ( (<**>) actions.amt.stream $
+                    ( actions.size.stream <#> \sz amt ->
                         (traverse_ (actions.randomMany.send) =<< randomProductions entry sz amt)
                     )
                 )
               ]
               (D.text "Random")
           ]
-      , (pure initial <|> actions.randomMany.stream) >@
-          (D.ul' [ D.className "compact" ] <<< D.Fragment
-          <<< map (\xs -> D.li' [ D.className "clickable", D.onClickE (sendUp xs) ] <<< D.Fragment
-          <<< map (\x -> renderTok mempty x) $ xs)
+      , actions.randomMany.stream >@
+          (D.ul [ D.className =:= "compact" ] <<< D.Fragment
+          <<< map (\xs -> D.li [ D.className =:= "clickable", D.onClick =!= (sendUp xs) ] <<< D.Fragment
+          <<< map (renderTok mempty) $ xs)
           )
       ]
 
 peas :: Array String -> Dragon
-peas = D.Fragment <<< map (D.p <<< D.text)
+peas = D.Fragment <<< map (D.p[] <<< D.text)
 
 computeGrammar
   :: SAugmented
@@ -1247,7 +1202,7 @@ inputComponent initialInput inputStream sendInput current = eggy \shell -> do
         toktext = case mtok of
           Nothing -> codePointFromChar '⌫'
           Just tok -> tok
-      renderTok' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (pure $ Just onClick) toktext
+      renderTok' (D.attrsL { "clickable": true, unusable: not valid }) (pure $ Just onClick) toktext
     renderNTHere nt = do
       let
         onClick = do
@@ -1257,22 +1212,22 @@ inputComponent initialInput inputStream sendInput current = eggy \shell -> do
               QC.randomSampleOne <$> genNT prod.produced nt
             pushInput <> sendInput $ (v <> genned)
         valid = currentValidNTs <#> Set.member nt
-      renderNT' (map (append "clickable") $ valid <#> if _ then "" else " unusable") (pure $ Just onClick) nt
+      renderNT' (D.attrsL { "clickable": true, unusable: not valid }) (pure $ Just onClick) nt
   pure $
-    D.div $ D.Fragment
-      [ D.div $ D.Fragment
-          [ D.span $ currentGrammarTokens >@
+    D.div.$~~
+      [ D.div.$~~
+          [ D.span.$ currentGrammarTokens >@
               \x -> D.Fragment $
                 ([ Nothing ] <> map Just x) <#> renderTokenHere
-          , D.span $ currentGrammarNTs >@
+          , D.span.$ currentGrammarNTs >@
               \x -> D.Fragment $
                 x <#> renderNTHere
           ]
-      , D.div $ D.span' [ D.className "terminal" ] $ inputC' "Source text" "" currentValue' (pushInput <> sendInput)
+      , D.div.$ D.span :."terminal".$ inputC' "Source text" "" currentValue' (pushInput <> sendInput)
       , currentParseSteps >@ \todaysSteps -> eggy \_ -> do
           actions <- sequenceRecord
-            { toggleLeft: createRiver -- Unit
-            , toggleRight: createRiver -- Unit
+            { toggleL: createRiver -- Unit
+            , toggleR: createRiver -- Unit
             , slider: createRiver -- Int
             , rate: createRiverStore $ Just 1.0 -- Number
             , toggleAnimation: createRiver
@@ -1313,8 +1268,8 @@ inputComponent initialInput inputStream sendInput current = eggy \shell -> do
               , actor: Initial
               , rate: 1.0
               }
-              [ actions.toggleLeft.stream  $> actAs Toggle (adjust (_ - 1))
-              , actions.toggleRight.stream $> actAs Toggle (adjust (_ + 1))
+              [ actions.toggleL.stream $> actAs Toggle (adjust (_ - 1))
+              , actions.toggleR.stream $> actAs Toggle (adjust (_ + 1))
               , actions.slider.stream <#> \n ->
                   actAs Slider (adjust (const n))
               , actions.rate.stream <#> \rate -> case _ of
@@ -1334,49 +1289,43 @@ inputComponent initialInput inputStream sendInput current = eggy \shell -> do
           let isRunning = _.running <$> currentState
           sweeper <- spotlightBeh (map _.idx stackIndex)
           let content = contentAsMonad2 sweeper
-          pure $ D.div $ D.Fragment
-            [ D.div $ D.button'
-                [ D.onClickE $ actions.toggleAnimation.send unit ] $ D.Fragment
-                  [ D.Text
-                      ( isRunning <#> case _ of
-                          true -> "Pause"
-                          false -> "Play"
-                      )
-                  ]
-            , D.div $ D.Fragment
+          pure $ D.div.$~~
+            [ D.div.$ D.button :! actions.toggleAnimation.send unit .$$~
+                isRunning <#> case _ of
+                  true -> "Pause"
+                  false -> "Play"
+            , D.div.$~~
                 [ D.text "Speed"
-                , D.span $ D.Fragment $ map
-                    ( \(n /\ l) -> D.label $ D.Fragment
-                        [ D.input'
-                            [ D.attr "type" "radio"
-                            , D.prop "checked" (l == "1x")
-                            , D.attr "name" "speed"
-                            , D.value $ show n
-                            , D.onClickE $ actions.rate.send n
+                , D.span.$~~ map
+                    ( \(n /\ l) -> D.label.$~~
+                        [ D.input
+                            [ D.attr "type" =:= "radio"
+                            , D.checked =:= (l == "1x")
+                            , D.attr "name" =:= "speed"
+                            , D.value =:= show n
+                            , D.onClick =!= actions.rate.send n
                             ]
                         , D.text l
                         ]
                     )
                     [ 0.5 /\ "0.5x", 1.0 /\ "1x", 2.0 /\ "2x", 4.0 /\ "4x", 8.0 /\ "8x" ]
                 ]
-            , D.div $ D.Fragment
-                [ D.input'
-                    [ D.attr "type" "range"
-                    , D.attr "min" "0"
-                    , D.attr "max" $ show (nEntities - 1)
-                    , D.value $ show (nEntities - 1)
-                    , D.value' $ map show $ stackIndex
+            , D.div.$~~
+                [ D.input
+                    [ D.attr "type" =:= "range"
+                    , D.attr "min" =:= "0"
+                    , D.attr "max" =:= show (nEntities - 1)
+                    , D.value =:= show (nEntities - 1)
+                    , D.value <:> map show $ stackIndex
                         # filterMap case _ of
                             { actor: Slider } -> Nothing
                             { idx: x } -> Just x
-                    , D.onInputNumber $ actions.slider.send <<< floor
+                    , D.onInputInt =:= actions.slider.send
                     ]
                 ]
-            , D.div $ D.Fragment
-                [ D.button' [ D.onClickE $ actions.toggleLeft.send unit ]
-                    (D.text "<")
-                , D.button' [ D.onClickE $ actions.toggleRight.send unit ]
-                    (D.text ">")
+            , D.div.$~~
+                [ D.button :!actions.toggleL.send unit .$$ "<"
+                , D.button :!actions.toggleR.send unit .$$ ">"
                 ]
             , content
             ]

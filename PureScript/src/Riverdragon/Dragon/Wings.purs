@@ -3,14 +3,15 @@ module Riverdragon.Dragon.Wings where
 import Prelude
 
 import Control.Alt ((<|>))
-import Control.Plus (empty)
 import Data.Foldable (foldMap)
+import Data.String as String
 import Data.Time.Duration (Milliseconds)
 import Effect (Effect)
-import Idiolect ((==<))
-import Riverdragon.Dragon (Dragon(..))
+import Idiolect (nonEmpty, (==<))
+import Riverdragon.Dragon (AttrProp, Dragon(..))
+import Riverdragon.Dragon.Bones ((.<>), ($~~), (.$), (.$$), (.$$~), (:.), (:~), (<:>), (=:=), (=?=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.River (Stream, Lake, instantiate, instantiateStore, limitTo, makeLake, subscribe)
+import Riverdragon.River (Lake, Stream, instantiate, instantiateStore, limitTo, makeLake, oneStream, subscribe)
 import Riverdragon.River.Bed (Allocar, accumulator, eventListener)
 import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (delay)
@@ -93,15 +94,24 @@ inputValidated ::
   (String -> Effect Unit) ->
   Dragon
 inputValidated cls label placeholder initialValue valid onInput =
-  D.label'
-    [ D.className' $ (append "input-wrapper text" <<< (eq "" >>> if _ then "" else " invalid")) <$> (pure "" <|> valid) ]
-    $ Fragment
-    [ D.span (D.text label)
-    , D.input'
-        [ D.attr' "placeholder" $ if placeholder == "" then empty else pure placeholder
-        , D.attr' "value" $ if initialValue == "" then empty else pure initialValue
-        , D.onInputValue onInput
-        , D.className cls
+  D.label
+    [ D.className <:> "input-wrapper text" .<>
+        (eq "" >>> if _ then "" else " invalid") <$> (pure "" <|> valid)
+    ] $~~
+    [ D.span.$$ label
+    , D.input
+        [ D.attr "placeholder" =?= nonEmpty placeholder
+        , D.attr "value" =?= nonEmpty initialValue
+        , D.onInputValue =:= onInput
+        , D.className =:= cls
         ]
-    , D.span' [ D.className "error" ] (Text valid)
+    , D.span :."error" .$$~ valid
     ]
+
+-- this is opinionated, so it does not live in Bones
+sourceCode :: forall flow. String -> Array (Stream flow AttrProp) -> Dragon -> Dragon
+sourceCode lang attrs content =
+  D.div :."sourceCode "<>String.toLower lang :~
+    [ D.data_"lang" =:= lang, oneStream attrs ] $
+      D.pre.$ D.code.$ content
+

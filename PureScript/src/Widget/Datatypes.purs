@@ -3,7 +3,6 @@ module Widget.Datatypes where
 import Prelude
 
 import Control.Alternative (guard)
-import Control.Plus (empty)
 import Data.Array (fold)
 import Data.Array as Array
 import Data.Enum (fromEnum, toEnum)
@@ -20,7 +19,7 @@ import Data.String as String
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested ((/\))
 import Effect.Class.Console (log)
-import Riverdragon.Dragon.Bones (Dragon)
+import Riverdragon.Dragon.Bones (Dragon, (.$~~), (=:=), (=?=))
 import Riverdragon.Dragon.Bones as D
 import Web.DOM.AttrName (AttrName(..))
 import Widget (Widget)
@@ -34,7 +33,7 @@ type DatatypeWidget =
 linkify :: Boolean -> Maybe String -> Dragon -> Dragon
 linkify _ Nothing = identity
 linkify external (Just href) =
-  D.aN href [ maybe empty (D.attr "target") ("_blank" <$ guard external) ]
+  D.aW href [ D.attr "target" =?= ("_blank" <$ guard external) ]
 
 nobreak :: String -> String
 nobreak = String.replaceAll (String.Pattern " ") (String.Replacement "\xA0")
@@ -58,16 +57,16 @@ datatypes = Map.fromFoldable
             embed <- content
             pure case meaning of
               Acronym expanded ->
-                D.span' [ D.className "tooltipped abbreviated" ] $ D.Fragment
-                  [ D.span' [ D.className "abbreviation", D.aria_"hidden" "true" ] embed
-                  , D.span' [ D.className "tooltip abbreviation" ] $ D.text $ nobreak expanded
+                D.span [ D.className =:= "tooltipped abbreviated" ] $ D.Fragment
+                  [ D.span [ D.className =:= "abbreviation", D.aria_"hidden" =:= "true" ] embed
+                  , D.span [ D.className =:= "tooltip abbreviation" ] $ D.text $ nobreak expanded
                   ]
               Foreign lang value link meanings ->
-                D.span' [ D.className "tooltipped abbreviated" ] $ D.Fragment
-                  [ D.span' [ D.className "foreign", D.attr "lang" lang ] embed
-                  , D.span' [ D.className "tooltip abbreviation", D.aria_"hidden" "true" ] $ D.Fragment
+                D.span [ D.className =:= "tooltipped abbreviated" ] $ D.Fragment
+                  [ D.span [ D.className =:= "foreign", D.attr "lang" =:= lang ] embed
+                  , D.span [ D.className =:= "tooltip abbreviation", D.aria_"hidden" =:= "true" ] $ D.Fragment
                     [ linkify true link $
-                        D.span' [ D.className "foreign", D.attr "lang" lang ] $ D.text $ nobreak value
+                        D.span [ D.className =:= "foreign", D.attr "lang" =:= lang ] $ D.text $ nobreak value
                     , D.text $ Array.intercalate "," $ meanings <#>
                         \m -> " “" <> nobreak m <> "”"
                     ]
@@ -84,10 +83,10 @@ datatypes = Map.fromFoldable
         pure
           let
             attrs =
-              [ D.className "color-sample sample-after sample"
-              , D.style ("background-color:" <> color)
+              [ D.className =:= "color-sample sample-after sample"
+              , D.style =:= ("background-color:" <> color)
               ]
-          in embed <> D.span' attrs mempty
+          in embed <> D.span attrs mempty
     }
   , "unicode" /\
     { recognize: isJust <<< String.stripPrefix (String.Pattern "U+")
@@ -103,14 +102,14 @@ datatypes = Map.fromFoldable
             pure
               let
                 attrs =
-                  [ D.className "unicode-sample sample-after sample"
+                  [ D.className =:= "unicode-sample sample-after sample"
                   ]
               in fold
-                [ D.span $ D.Fragment
-                  [ D.span' [ D.className "meta-code" ] $ D.text "U+"
-                  , D.span' [ D.className "code numeric" ] $ D.text $ printUnicodeHex cp
+                [ D.span.$~~
+                  [ D.span [ D.className =:= "meta-code" ] $ D.text "U+"
+                  , D.span [ D.className =:= "code numeric" ] $ D.text $ printUnicodeHex cp
                   ]
-                , M.guard (not hide) $ D.span' attrs $ D.text $ String.singleton cp
+                , M.guard (not hide) $ D.span attrs $ D.text $ String.singleton cp
                 ]
     }
   ]

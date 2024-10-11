@@ -32,10 +32,10 @@ main = do
   logging (doubled \|/ tupled)
   let shown = show <$> (doubled \|/ tupled)
   _ <- rendering $ D.Text shown
-  _ <- rendering $ B.div $ D.Text shown
-  _ <- rendering $ D.Appending $ vanishing (1000.0 # Milliseconds) $ B.li <<< B.text <$> shown
-  _ <- rendering $ D.Replacing $ either (B.i <<< B.text <<< show) (B.b <<< B.text <<< show) <$> (doubled \|/ tupled)
-  _ <- rendering $ D.Appending $ B.div<<<B.text <$> oneOfMap pure ["l", "r"]
+  _ <- rendering $ B.div[] $ D.Text shown
+  _ <- rendering $ D.Appending $ vanishing (1000.0 # Milliseconds) $ B.li[] <<< B.text <$> shown
+  _ <- rendering $ D.Replacing $ either (B.i[] <<< B.text <<< show) (B.b[] <<< B.text <<< show) <$> (doubled \|/ tupled)
+  _ <- rendering $ D.Appending $ B.div[]<<<B.text <$> oneOfMap pure ["l", "r"]
   pure unit
 
 widget :: Widget

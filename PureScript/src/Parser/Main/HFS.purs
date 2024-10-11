@@ -18,13 +18,13 @@ import Effect (Effect)
 import Effect.Uncurried (EffectFn2, runEffectFn2)
 import Foreign.Object as FO
 import Idiolect (intercalateMap)
+import Parser.Comb.Dragon (renderParseError)
 import Parser.Languages.HFS (HFList, HFS, IsPointed(..), OpMeta(..), RuntimeError(..), emptyEnv, hfsCount, hfsFromInt, hfsToTree, opMeta, showHFS, stacksInfo, stdlib)
 import Parser.Languages.HFS as HFS
-import Parser.Comb.Dragon (renderParseError)
-import Riverdragon.Dragon (Dragon(..))
-import Riverdragon.Dragon.Bones ((>@))
+import Riverdragon.Dragon (Dragon)
+import Riverdragon.Dragon.Bones (($$), ($~~), (.$), (.$$), (.$~~), (<:>), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (eggy)
+import Riverdragon.Dragon.Wings (eggy, sourceCode)
 import Riverdragon.River (createRiver)
 import Riverdragon.River.Beyond (debounce, dedup)
 import Web.DOM (Element)
@@ -83,31 +83,27 @@ widget_ops select _ = do
       All -> binaries <> naries
       Binaries -> binaries
       NAries -> naries
-  pure $ D.div $ D.dl' [ D.style style ] $ Fragment $
+  pure $ D.div.$ D.dl [ D.style =:= style ] $~~
     selected <#> \(Tuple op doc) ->
-      D.div' [ D.style "break-inside: avoid" ] $ Fragment
-        [ D.dt $ intercalateMap (D.text ", ") (code "op") (join op)
-        , D.dd doc
+      D.div [ D.style =:= "break-inside: avoid" ] $~~
+        [ D.dt.$ intercalateMap (D.text ", ") (code "op") (join op)
+        , D.dd.$ doc
         ]
 
 widget_stdlib :: Widget
-widget_stdlib _ = pure $
-  D.div'
-    [ D.className "sourceCode hatstack"
-    , D.data_"lang" "HatStack"
-    ] $ D.pre $ D.code $ D.text $ String.trim stdlib
+widget_stdlib _ = pure $ sourceCode "HatStack".$$ String.trim stdlib
 
 code :: String -> String -> Dragon
-code cls c = D.code' [ D.className cls ] $ D.text c
+code cls c = D.code [ D.className =:= cls ] $$ c
 
 span :: String -> String -> Dragon
-span cls c = D.span' [ D.className cls ] $ D.text c
+span cls c = D.span [ D.className =:= cls ] $$ c
 
 color :: String -> String -> Dragon
-color clr v = D.span' [ D.style ("color:"<>clr) ] $ D.text v
+color clr v = D.span [ D.style =:= ("color:"<>clr) ] $$ v
 
 half :: Dragon -> Dragon
-half = D.span' [ D.style "opacity:0.6" ]
+half = D.span [ D.style =:= "opacity:0.6" ]
 
 widget :: Widget
 widget _ = pure $ eggy \shell -> do
@@ -116,11 +112,11 @@ widget _ = pure $ eggy \shell -> do
     map HFS.parseAndRun' <$> debounce (100.0 # Milliseconds) (dedup valueSet)
   let
     wrapOutput content =
-      D.div' [ D.className "sourceCode", D.style "" ] $
-        D.pre $ D.code' [ D.style "margin: 0" ] $ content
+      D.div [ D.className =:= "sourceCode", D.style =:= "" ] $
+        D.pre.$ D.code [ D.style =:= "margin: 0" ] $ content
     renderOutput = wrapOutput <<< foldMap \{ building, pointed, values } ->
-      D.div $ Fragment
-        [ values # foldMapWithIndex \i { value, dequeued } -> D.div $ Fragment
+      D.div.$~~
+        [ values # foldMapWithIndex \i { value, dequeued } -> D.div.$~~
             [ case pointed of
                 NotPointed -> D.text "  "
                 Pointed -> color "#7f2db9" $ "." <> show i
@@ -128,27 +124,26 @@ widget _ = pure $ eggy \shell -> do
             , D.text " "
             , (if dequeued then color "#ff6565" else span "dv") $ showHFS value
             ]
-        , D.div $ building # foldMap \x ->
+        , D.div.$ building # foldMap \x ->
             (\y -> D.text "--- " <> span "dv" y <> D.text " ---") case x of
               Left hfs | hfs == mempty -> "{"
               Left hfs -> showHFS (hfsCount hfs) <> "#{"
               Right 0 -> "["
               Right n -> show n <> "#["
         ]
-  pure $ D.div $ Fragment
-    [ D.div $ (pure (hfsFromInt 157842) <|> dedup (filterMap topOfStack done)) >@
-        \hfs -> D.div' [ pure $ D.Self $ map mempty <<< graphHFS hfs ] mempty
-    , D.div' [ D.style "display: flex; width: 100%" ] $ Fragment
-      [ D.div'
-          [ D.style "flex: 0 0 50%; padding-right: 10px; box-sizing: border-box;"
-          , D.className' $ done <#> snd >>> isLeft >>> if _ then "sourceCode hatstack invalid" else "sourceCode hatstack"
-          , D.data_"lang" "HatStack"
-          ] $ D.pre $ D.code $ D.textarea'
-              [ D.onInputValue $ setValue <<< Tuple false
-              , D.onChangeValue $ setValue <<< Tuple true
-              , D.style "height: 20vh"
+  pure $ D.div.$~~
+    [ D.div.$ (pure (hfsFromInt 157842) <|> dedup (filterMap topOfStack done)) >@
+        \hfs -> D.div [ pure $ D.Self $ map mempty <<< graphHFS hfs ] mempty
+    , D.div [ D.style =:= "display: flex; width: 100%" ] $~~
+      [ sourceCode "HatStack"
+          [ D.style =:= "flex: 0 0 50%; padding-right: 10px; box-sizing: border-box;"
+          , D.className <:> done <#> snd >>> isLeft >>> if _ then "sourceCode hatstack invalid" else "sourceCode hatstack"
+          ] $ D.textarea
+              [ D.onInputValue =:= setValue <<< Tuple false
+              , D.onChangeValue =:= setValue <<< Tuple true
+              , D.style =:= "height: 20vh"
               ]
-      , D.div' [ D.style "flex: 0 0 50%; overflow: auto; font-size: 70%" ] $
+      , D.div [ D.style =:= "flex: 0 0 50%; overflow: auto; font-size: 70%" ] $
           gateSuccess identity done >@
             either
               (either renderParseError \(RuntimeError _ s) -> D.text $ "Runtime error: " <> s)

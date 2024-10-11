@@ -36,9 +36,9 @@ import PureScript.CST.Errors (printParseError)
 import PureScript.CST.Parser.Monad as CST.M
 import PureScript.CST.Types as CST.T
 import Riverdragon.Dragon (Dragon, renderEl)
-import Riverdragon.Dragon.Bones ((>@))
+import Riverdragon.Dragon.Bones ((.$), (.$$~), (:.), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (eggy)
+import Riverdragon.Dragon.Wings (eggy, sourceCode)
 import Riverdragon.River (Lake, createRiverStore, makeLake, subscribe)
 import Riverdragon.River.Beyond (dedup)
 import Tidy.Codegen as TC
@@ -56,8 +56,8 @@ color = case _ of
   x -> String.toLower (show x)
 
 colorful :: Ansi.Color -> String -> Dragon
-colorful x t = D.span'
-  [ D.style do "color:" <> color x ]
+colorful x t = D.span
+  [ D.style =:= "color:" <> color x ]
   (D.text t)
 
 toDragon :: Printer Dragon
@@ -67,7 +67,7 @@ toDragon =
   , regex: colorful Ansi.Green
   , rule: colorful Ansi.Cyan <<< show
   , meta: D.text
-  , lines: foldMap D.div
+  , lines: foldMap (D.div[])
   }
 
 mainForParser :: Comber (Dodo.Doc Void) -> Effect Unit
@@ -240,29 +240,29 @@ embed incomingRaw = eggy \shell -> do
     status = mempty <$ gotParser <|> do
       pipelined <#> case _ of
         Compiling -> D.text "Compiling ..."
-        Failed err -> D.pre' [ D.style "overflow-x: auto" ] (D.text err)
+        Failed err -> D.pre [ D.style =:= "overflow-x: auto" ] (D.text err)
         Compiled _ -> D.text "Loading ..."
   pure $ D.Fragment
-    [ D.div' [ D.style "white-space: pre" ] $ D.Replacing status
+    [ D.div [ D.style =:= "white-space: pre" ] $ D.Replacing status
     , bundled >@ \latestBundle -> fold
-      [ D.div' [ D.id "grammar" ] mempty
+      [ D.div [ D.id =:= "grammar" ] mempty
       , gotParser >@ \parser -> D.Egg do
           { send: setValue, stream: getValue } <- createRiverStore Nothing
           pure $ { destroy: mempty, dragon: _ } $ D.Fragment
-            [ D.div' [ D.className "sourceCode unicode", D.data_"lang" "In" ] $
-                D.pre $ D.code $ D.textarea'
-                  [ D.onInputValue setValue
-                  , D.value ""
-                  , D.style "height: 15vh"
+            [ sourceCode "In" :."sourceCode unicode".$
+                D.textarea
+                  [ D.onInputValue =:= setValue
+                  , D.value =:= ""
+                  , D.style =:= "height: 15vh"
                   ]
-            , D.div' [ D.className "sourceCode unicode", D.data_"lang" "Out" ] $
-                D.pre $ D.code $ D.Text $ _.result <<< parser.parser <$> getValue
+            , sourceCode "Out" :."sourceCode unicode".$$~
+                _.result <<< parser.parser <$> getValue
             ]
-      , D.script'
-          [ D.attr "src" do
+      , D.script
+          [ D.attr "src" =:= do
               fromMaybe "" $ encodeURIComponent latestBundle <#> \escaped ->
                 "data:text/javascript;utf8," <> escaped
-          , D.prop "type" "module"
+          , D.prop "type" =:= "module"
           ]
       ]
     ]
@@ -274,13 +274,12 @@ widget _ = pure $ eggy \shell -> do
   { stream: compiling, send: compileNow } <- shell.track $ createRiverStore Nothing
   lastValue <- shell.storeLast df valueSet
   pure $ D.Fragment
-    [ D.div' [ D.className "sourceCode", D.data_"lang" "PureScript" ] $
-        D.pre $ D.code $ D.textarea'
-          [ D.onInputValue setValue
-          , D.value df
-          , D.style "height: 40vh"
-          ]
-    , D.div $ D.buttonN "" (compileNow =<< lastValue) "Compile!"
+    [ sourceCode "PureScript" .$ D.textarea
+        [ D.onInputValue =:= setValue
+        , D.value =:= df
+        , D.style =:= "height: 40vh"
+        ]
+    , D.div.$ D.buttonW "" "Compile!" (compileNow =<< lastValue)
     , embed compiling
     ]
 

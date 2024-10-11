@@ -91,4 +91,21 @@ in  (upstream with web-dom.version = "326c125d2f9dd5c5c1e74ac17fb95d5ddd7b4450" 
     , repo = "https://github.com/natefaubion/purescript-tidy-codegen.git"
     , version = "main"
     }
+  , stylish =
+    { repo = "https://github.com/MonoidMusician/purescript-stylish.git"
+    , version = "main"
+    , dependencies =
+      [ "console"
+      , "effect"
+      , "foldable-traversable"
+      , "functors"
+      , "identity"
+      , "lists"
+      , "newtype"
+      , "node-process"
+      , "prelude"
+      , "record"
+      , "transformers"
+      ]
+    }
   }

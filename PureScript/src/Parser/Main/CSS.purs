@@ -21,7 +21,7 @@ import Foreign.Object (Object)
 import Foreign.Object as Object
 import Parser.Languages.CSS (mkCSSParser)
 import Riverdragon.Dragon (Dragon(..))
-import Riverdragon.Dragon.Bones ((>@))
+import Riverdragon.Dragon.Bones (($~~), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy, inputValidated)
 import Riverdragon.River (Lake, createRiver, foldStream)
@@ -49,7 +49,7 @@ sendExample :: Widget
 sendExample { interface, attrs } = do
   let push = (interface "css-example").send
   example <- attrs "example"
-  pure $ D.buttonN "" (push example) "Try this example"
+  pure $ D.buttonW "" "Try this example" (push example)
 
 result :: Parser -> Array String -> String
 result parser =
@@ -79,16 +79,16 @@ component resetting = eggy \shell -> do
         Update i v -> false /\ (last # mapWithIndex \j -> if i == j then v else _)
         Reset vs -> true /\ vs
 
-  pure $ D.div $ Fragment
+  pure $ D.div[] $~~
     [ filter fst currentRaw >@ \(_ /\ values) ->
         Fragment $ values # mapWithIndex \i value ->
-          D.div $ Fragment
+          D.div[] $~~
             [ inputValidated "terminal" "CSS selector" "" value
                 ((\parser val -> if val == "" then "" else fold (blush (parser val))) <$> getParser <*> filterMap (_ !! i) (map snd currentRaw))
                 \newValue -> pushUpdate $ Update i newValue
-            , D.buttonN "big delete" (pushUpdate (Delete i)) "Delete"
+            , D.buttonW "big delete" "Delete" (pushUpdate (Delete i))
             ]
-    , D.buttonN "big add" (pushUpdate Add) "Add selector to conjunction"
-    , D.pre' [ D.className "css", D.style "white-space: break-spaces;" ]
+    , D.buttonW "big add" "Add selector to conjunction" (pushUpdate Add)
+    , D.pre [ D.className =:= "css", D.style =:= "white-space: break-spaces;" ]
         $ Text $ result <$> getParser <*> map snd currentRaw
     ]

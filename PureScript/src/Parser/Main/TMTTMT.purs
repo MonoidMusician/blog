@@ -26,8 +26,9 @@ import Parser.Languages.TMTTMT.Parser (patternP, printExpr)
 import Parser.Languages.TMTTMT.TypeCheck.Structural (Functional, isSubtype, printFunctional, run, synExpr, testExprs, testPatterns, testPatternsResult)
 import Parser.Languages.TMTTMT.Types (Declaration(..))
 import Riverdragon.Dragon (Dragon(..))
+import Riverdragon.Dragon.Bones ((.$), (:.), (<:>), (=:=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (eggy)
+import Riverdragon.Dragon.Wings (eggy, sourceCode)
 import Riverdragon.River (Lake, createRiver, createRiverStore, foldStream)
 import Riverdragon.River.Beyond (affToLake)
 import Widget (Widget, adaptInterface)
@@ -140,7 +141,7 @@ sendExample :: Widget
 sendExample { interface, attrs } = do
   let push = (interface "tmttmt-example").send
   example <- attrs "example"
-  pure $ D.buttonN "" (push example) "Try this example"
+  pure $ D.buttonW "" "Try this example" (push example)
 
 result :: Parser -> String -> String
 result = (<<<) case _ of
@@ -204,14 +205,13 @@ component setGlobal resetting = eggy \shell -> do
         Update v -> false /\ v
         Reset v -> true /\ v
   pure $ Fragment
-    [ D.div' [ D.className "sourceCode unicode", D.data_"lang" "Text" ]
-        $ D.pre $ D.code $ D.textarea'
-            [ D.onInputValue (pushUpdate <<< Update)
-            , D.onChangeValue setGlobal
-            , D.value' resetting
-            , D.style "height: 50vh"
-            ]
-    , D.pre' [ D.className "css", D.style "white-space: break-spaces;" ]
+    [ sourceCode "Text" :."sourceCode unicode".$ D.textarea
+        [ D.onInputValue =:= (pushUpdate <<< Update)
+        , D.onChangeValue =:= setGlobal
+        , D.value <:> resetting
+        , D.style =:= "height: 50vh"
+        ]
+    , D.pre [ D.className =:= "css", D.style =:= "white-space: break-spaces;" ]
         $ Text $ result <$> getParser <*> map snd currentRaw
     ]
 
@@ -221,19 +221,17 @@ widgetTypeSplit _ = pure $ eggy \shell -> do
   { stream: pushedPat, send: pushPat } <- shell.track $ createRiverStore $ Just dfPat
   getParser <- shell.inst $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
   pure $ Fragment
-    [ D.div' [ D.className "sourceCode tmttmt", D.data_"lang" "tmTTmt" ] $
-        D.pre $ D.code $ D.textarea'
-          [ D.onInputValue pushUpdate
-          , D.value dfTy
-          , D.style "height: 100px"
+    [ sourceCode "tmTTmt" .$ D.textarea
+        [ D.onInputValue =:= pushUpdate
+        , D.value =:= dfTy
+        , D.style =:= "height: 100px"
+        ]
+    , sourceCode "tmTTmt" .$ D.textarea
+          [ D.onInputValue =:= pushPat
+          , D.value =:= dfPat
+          , D.style =:= "height: 100px"
           ]
-    , D.div' [ D.className "sourceCode tmttmt", D.data_"lang" "tmTTmt" ] $
-        D.pre $ D.code $ D.textarea'
-          [ D.onInputValue pushPat
-          , D.value dfPat
-          , D.style "height: 100px"
-          ]
-    , D.pre' [ D.className "css", D.style "white-space: break-spaces; min-height: 150px" ] $
+    , D.pre [ D.className =:= "css", D.style =:= "white-space: break-spaces; min-height: 150px" ] $
         Text $ typeResult <$> getParser <*> pushedRaw <*> pushedPat
     ]
   where
@@ -259,19 +257,17 @@ widgetSubType _ = pure $ eggy \shell -> do
   { stream: pushedPat, send: pushPat } <- shell.track $ createRiverStore $ Just dfPat
   getParser <- shell.inst $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
   pure $ Fragment
-    [ D.div' [ D.className "sourceCode tmttmt", D.data_"lang" "tmTTmt" ] $
-        D.pre $ D.code $ D.textarea'
-          [ D.onInputValue pushUpdate
-          , D.value dfTy
-          , D.style "height: 100px"
-          ]
-    , D.div' [ D.className "sourceCode tmttmt", D.data_"lang" "tmTTmt" ] $
-        D.pre $ D.code $ D.textarea'
-          [ D.onInputValue pushPat
-          , D.value dfPat
-          , D.style "height: 100px"
-          ]
-    , D.pre' [ D.className "css", D.style "white-space: break-spaces; min-height: 150px" ] $
+    [ sourceCode "tmTTmt" .$ D.textarea
+        [ D.onInputValue =:= pushUpdate
+        , D.value =:= dfTy
+        , D.style =:= "height: 100px"
+        ]
+    , sourceCode "tmTTmt" .$ D.textarea
+        [ D.onInputValue =:= pushPat
+        , D.value =:= dfPat
+        , D.style =:= "height: 100px"
+        ]
+    , D.pre [ D.className =:= "css", D.style =:= "white-space: break-spaces; min-height: 150px" ] $
         Text $ typeResult <$> getParser <*> pushedRaw <*> pushedPat
     ]
   where

@@ -31,7 +31,7 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Fetch (fetch)
-import Idiolect ((/|\), (>==))
+import Idiolect (only, (/|\), (>==))
 import Parser.Languages.Show (mkReShow)
 import Partial.Unsafe (unsafeCrashWith)
 import Prim.Row as Row
@@ -39,9 +39,9 @@ import Prim.RowList (class RowToList)
 import Prim.RowList as RL
 import Record as Record
 import Riverdragon.Dragon (AttrProp, Dragon)
-import Riverdragon.Dragon.Bones ((>@))
+import Riverdragon.Dragon.Bones (($~~), (.$), (.$$~), (.$~~), (:.), (<!>), (<:>), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (eggy)
+import Riverdragon.Dragon.Wings (eggy, sourceCode)
 import Riverdragon.River (Lake, createRiverStore)
 import Riverdragon.River.Beyond (affToLake, dedup)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
@@ -59,10 +59,6 @@ widget { interface, attrs } = do
     resetting = oneOfMap pure initial <|> stringInterface.receive
   pure do
     component stringInterface.send resetting
-
-only :: Array ~> Maybe
-only [a] = Just a
-only _ = Nothing
 
 uniprop ::
   forall s r.
@@ -124,12 +120,12 @@ display :: Display -> Dragon
 display (Unicode cp) = display $ Meta "U+" <> Numeric do
   cp # fromEnum >>> Int.toStringAs Radix.hexadecimal >>> String.toUpper
 display (Text txt) = D.text txt
-display (Code c) = D.span' [ D.className "code" ] <<< D.text $ c
-display (Numeric n) = D.span' [ D.className "code numeric" ] <<< D.text $ n
+display (Code c) = D.span [ D.className =:= "code" ] <<< D.text $ c
+display (Numeric n) = D.span [ D.className =:= "code numeric" ] <<< D.text $ n
 display (Number mr i) = display $ Many [ Meta $ printBase mr, Numeric $ printRadix mr i ]
 display (Byte b) = display $ Many [ Meta "0b", Numeric $ printByte b ]
 display (Bytes n b) = display $ Many [ Meta "0b", intercalate (Meta "_") (Numeric <<< printByte <$> bytesOf n b) ]
-display (Meta x) = D.span' [ D.className "meta-code" ] <<< D.text $ x
+display (Meta x) = D.span [ D.className =:= "meta-code" ] <<< D.text $ x
 display (Many ds) = foldMap display ds
 display (ManySep sep ds) = foldMap (intercalateMap (display sep) display) (NEA.fromArray ds)
 
@@ -159,7 +155,7 @@ allsomenone p as bs = tallyComp tallier as bs
     _ -> Text "Some"
 
 st :: Lake AttrProp
-st = D.style "font-variant-numeric: lining-nums tabular-nums"
+st = D.style =:= "font-variant-numeric: lining-nums tabular-nums"
 
 component :: (String -> Effect Unit) -> Lake String -> Dragon
 component setGlobal resetting = eggy \shell -> do
@@ -187,25 +183,24 @@ component setGlobal resetting = eggy \shell -> do
           then Array.take 1 $ CP.toCodePointArray $ CU.take 2 (CU.drop ta.start ta.value)
           else CP.toCodePointArray r
   pure $ D.Fragment
-    [ D.button' [ D.className "add", D.onClickE' (setGlobal <$> taValue) ] (D.text "Save text to URL")
-    , D.aN "" [] (D.text "Shareable URL")
-    , D.div' [ st, D.className "sourceCode unicode", D.data_"lang" "Text" ] $
-        D.pre $ D.code $ D.textarea'
-          [ D.on_"input" $ updateTA taCb
-          , D.on_"mousedown" $ updateTA taCb
-          , D.on_"mouseup" $ updateTA taCb
-          , D.on_"click" $ updateTA taCb
-          , D.on_"keydown" $ updateTA taCb
-          , D.on_"keyup" $ updateTA taCb
-          -- onkeypress will lag arrow key repetitions
-          , D.on_"select" $ updateTA taCb
-          , D.on_"selectionchange" $ updateTA taCb
-          , D.value' resetting
-          ]
-    , D.div' [ D.className "full-width h-scroll" ] $ D.div' [ st, D.className "code-points unicode" ] $
+    [ D.button [ D.className =:= "add", D.onClick <!> (setGlobal <$> taValue) ] (D.text "Save text to URL")
+    , D.aW "" [] (D.text "Shareable URL")
+    , sourceCode "Text" :."sourceCode unicode".$ D.textarea
+        [ D.on_"input" =:= updateTA taCb
+        , D.on_"mousedown" =:= updateTA taCb
+        , D.on_"mouseup" =:= updateTA taCb
+        , D.on_"click" =:= updateTA taCb
+        , D.on_"keydown" =:= updateTA taCb
+        , D.on_"keyup" =:= updateTA taCb
+        -- onkeypress will lag arrow key repetitions
+        , D.on_"select" =:= updateTA taCb
+        , D.on_"selectionchange" =:= updateTA taCb
+        , D.value <:> resetting
+        ]
+    , D.div [ D.className =:= "full-width h-scroll" ] $ D.div [ st, D.className =:= "code-points unicode" ] $
         taAllCPs >@ foldMap \cp ->
-          D.span' [ D.className "code-point" ] $ D.text $ disp cp
-    , D.div' [ D.className "table-wrapper" ] $ D.table' [ st, D.className "data-table properties-table" ] $ D.Fragment
+          D.span [ D.className =:= "code-point" ] $ D.text $ disp cp
+    , D.div [ D.className =:= "table-wrapper" ] $ D.table [ st, D.className =:= "data-table properties-table" ] $~~
       [ renderInfos tallyComp taSelected taValue
         [ Tuple "Code Point(s)" $ CP.length >>> Number (Just Dec)
         , Tuple "UTF-16 Code Unit(s)" $ CU.length >>> Number (Just Dec)
@@ -236,8 +231,9 @@ component setGlobal resetting = eggy \shell -> do
         , uniprop { isMark }
         ]
       ]
-    , D.div $ D.Fragment
-      [ D.buttonN "" (genNew =<< gen (Tuple <$> randomUnicode <*> randomUnicode)) "Test"
+    , D.div.$~~
+      [ D.buttonW "" "Test" do
+          genNew =<< gen (Tuple <$> randomUnicode <*> randomUnicode)
       , D.Text $ alt (pure "") $ map show $ genned <#> \(Tuple a b) -> Tuple
           (compare (String.fromCodePointArray a) (String.fromCodePointArray b))
           (compareUTF16 a b)
@@ -252,10 +248,10 @@ component setGlobal resetting = eggy \shell -> do
         end <- HTMLTextArea.selectionEnd ta
         upd { value, start, end }
   renderInfos :: forall a b. (b -> a -> a -> Display) -> Lake a -> Lake a -> Array (Tuple String b) -> _
-  renderInfos tally x y infos = D.tbody $ D.Fragment $ infos <#> \(Tuple name calc) -> do
-    D.tr $ D.Fragment
-      [ D.td $ D.text name <> D.text " "
-      , D.td $ x /|\ y >@ \(Tuple u v) -> display $ tally calc u v
+  renderInfos tally x y infos = D.tbody.$~~ infos <#> \(Tuple name calc) -> do
+    D.tr.$~~
+      [ D.td.$ D.text name <> D.text " "
+      , D.td.$ x /|\ y >@ \(Tuple u v) -> display $ tally calc u v
       ]
 
 gen :: forall a. Gen a -> Effect a
@@ -382,15 +378,13 @@ widgetShow _ = pure $ eggy \shell -> do
   formatted <- shell.instStore $ reShow <*> get
   lastValue <- shell.storeLast mempty formatted
   pure $ D.Fragment
-    [ D.div' [ st, D.className "sourceCode haskell", D.data_"lang" "Haskell" ] $
-        D.pre $ D.code $ D.textarea'
-          [ D.onInputValue set
-          , D.value' valueSet
-          , D.style "height: 40vh"
-          ]
-    , D.div $ D.buttonN "" (setValue <<< (_ <> "\n") =<< lastValue) "Use formatted"
-    , D.div' [ st, D.className "sourceCode haskell", D.data_"lang" "Haskell" ] $
-        D.pre $ D.code $ D.Text formatted
+    [ sourceCode "Haskell" .$ D.textarea
+        [ D.onInputValue =:= set
+        , D.value <:> valueSet
+        , D.style =:= "height: 40vh"
+        ]
+    , D.div.$ D.buttonW "" "Use formatted" (setValue <<< (_ <> "\n") =<< lastValue)
+    , sourceCode "Haskell" .$$~ formatted
     ]
 
 

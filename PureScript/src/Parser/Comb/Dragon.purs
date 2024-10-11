@@ -19,14 +19,15 @@ import Parser.Types (ShiftReduce(..), unShift)
 import Parser.Types as P
 import Partial.Unsafe (unsafeCrashWith)
 import Riverdragon.Dragon (Dragon)
+import Riverdragon.Dragon.Bones ((.$), (.$~~))
 import Riverdragon.Dragon.Bones as D
 
 
 renderParseError :: FullParseError -> Dragon
 renderParseError theError = case theError of
-  CrashedStack s -> D.div $ D.text "Internal parser error: " <> D.text s
+  CrashedStack s -> D.div .$ D.text "Internal parser error: " <> D.text s
   FailedStack info@{ lookupState, initialInput, currentInput, failedStack } ->
-    D.div $ D.Fragment
+    D.div.$~~
       [ case info.failReason of
           StackInvariantFailed -> D.text $ "Internal parser error: Stack invariant failed"
           UnknownState { state } -> D.text $ "Internal parser error: Unknown state " <> show state
@@ -116,7 +117,7 @@ renderParseError theError = case theError of
       ]
   where
   listing :: forall a. Array a -> (a -> Dragon) -> Dragon
-  listing items f = D.ul $ D.Fragment $ items <#> f >>> D.li
+  listing items f = D.ul.$~~ items <#> f >>> D.li[]
 
   showNTR (Left x) Nothing = D.text (x <> "#")
   showNTR (Right x) (Just r) = D.text (x <> "#" <> show r)

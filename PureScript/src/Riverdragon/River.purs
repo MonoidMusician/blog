@@ -69,7 +69,7 @@ import Data.Array as Array
 import Data.Bifoldable (bifoldMap)
 import Data.Filterable (class Compactable, class Filterable, filterDefault, filterMap, partitionDefaultFilterMap, partitionMapDefault)
 import Data.Foldable (foldMap, for_, traverse_)
-import Data.HeytingAlgebra (tt)
+import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Monoid.Conj (Conj(..))
 import Data.Set as Set
@@ -161,9 +161,31 @@ instance applicativeStream :: Applicative (Stream flow) where
       , unsubscribe: mempty
       }
 
+instance semigroupStream :: Semigroup a => Semigroup (Stream flow a) where
+  append = lift2 append
+instance monoidStream :: Monoid a => Monoid (Stream flow a) where
+  mempty = pure mempty
+instance semiringStream :: Semiring a => Semiring (Stream flow a) where
+  one = pure one
+  zero = pure zero
+  add = lift2 add
+  mul = lift2 mul
+instance ringStream :: Ring a => Ring (Stream flow a) where
+  sub = lift2 sub
+instance heytingAlgebraStream :: HeytingAlgebra a => HeytingAlgebra (Stream flow a) where
+  tt = pure tt
+  ff = pure ff
+  not = map not
+  conj = lift2 conj
+  disj = lift2 disj
+  implies = lift2 implies
+instance booleanAlgebraStream :: BooleanAlgebra a => BooleanAlgebra (Stream flow a)
+
 -- | Take events from every stream as they come in. This is an optimized version
 -- | of `oneOf`, which combines events with `<|>`, only two at a time.
 oneStream :: forall flow a. Array (Stream flow a) -> Stream flow a
+oneStream [] = empty
+oneStream [s] = s
 oneStream streams = Stream (streams # foldMap \(Stream t _) -> t) \cbs -> do
   destroyed <- threshold (Array.length streams) cbs.destroyed
   streams # foldMap \(Stream _ s) ->
