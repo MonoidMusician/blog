@@ -12,7 +12,7 @@ import Data.CodePoint.Unicode as Unicode
 import Data.Codec.Argonaut as CA
 import Data.Either (hush)
 import Data.Enum (fromEnum, toEnum)
-import Data.Foldable (foldMap, intercalate, oneOfMap, traverse_)
+import Data.Foldable (foldMap, intercalate, oneOfMap)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int as Int
 import Data.Int as Radix
@@ -39,15 +39,14 @@ import Prim.RowList (class RowToList)
 import Prim.RowList as RL
 import Record as Record
 import Riverdragon.Dragon (AttrProp, Dragon)
-import Riverdragon.Dragon.Bones (($~~), (.$), (.$$~), (.$~~), (:.), (<!>), (<:>), (=:=), (>@))
+import Riverdragon.Dragon.Bones (__textcursor, ($~~), (.$), (.$$~), (.$~~), (:.), (<!>), (<:>), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy, sourceCode)
 import Riverdragon.River (Lake, createRiverStore)
 import Riverdragon.River.Beyond (affToLake, dedup)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Type.Proxy (Proxy(..))
-import Web.Event.Event as Event
-import Web.HTML.HTMLTextAreaElement as HTMLTextArea
+import Web.Util.TextCursor as TC
 import Widget (Widget, adaptInterface)
 
 widget :: Widget
@@ -130,7 +129,7 @@ display (Many ds) = foldMap display ds
 display (ManySep sep ds) = foldMap (intercalateMap (display sep) display) (NEA.fromArray ds)
 
 disp :: CodePoint -> String
--- disp cp | isMark cp = "◌" <> String.singleton cp
+disp cp | isMark cp = "◌" <> String.singleton cp
 disp cp = String.singleton cp
 
 tallyComp :: forall a. (a -> Display) -> a -> a -> Display
@@ -162,26 +161,25 @@ component setGlobal resetting = eggy \shell -> do
   { stream: genned, send: genNew } <- shell.track $ createRiverStore Nothing
   { stream: taState', send: taCb } <- shell.track $ createRiverStore Nothing
   let
-    taState = dedup ({ value: _, start: 0, end: 0 } <$> (pure "" <|> resetting) <|> taState')
-    taValue = taState <#> _.value
-    taSelected = taState <#> \ta ->
-      let r = CU.drop ta.start (CU.take ta.end ta.value)
-      in if r == "" then ta.value else r
+    taState = dedup ((\s -> TC.mkTextCursor s "" "") <$> (pure "" <|> resetting) <|> taState')
+    taValue = taState <#> TC.content
+    taSelected = taState <#> \tc ->
+      let r = TC.selected tc in
+      if r == "" then TC.content tc else r
     taAllCPs = taValue <#> CP.toCodePointArray
-    taCP = taState <#> \ta ->
-      let r = CU.drop ta.start (CU.take ta.end ta.value)
-      in if r == ""
-        then maybe (only (CP.toCodePointArray ta.value)) Just $
-            Array.head $ CP.toCodePointArray $ CU.take 2 (CU.drop ta.start ta.value)
+    taCP = taState <#> \tc ->
+      let r = TC.selected tc in
+      if r == ""
+        then maybe (only (CP.toCodePointArray (TC.content tc))) Just $
+            Array.head $ CP.toCodePointArray $ CU.take 2 (TC.selected tc <> TC.after tc)
         else only (CP.toCodePointArray r)
-    taCPs = taState <#> \ta ->
-      let r = CU.drop ta.start (CU.take ta.end ta.value)
-      in
-        if ta.end >= CU.length ta.value
-        then CP.toCodePointArray ta.value
-        else if r == ""
-          then Array.take 1 $ CP.toCodePointArray $ CU.take 2 (CU.drop ta.start ta.value)
-          else CP.toCodePointArray r
+    taCPs = taState <#> \tc ->
+      let r = TC.selected tc in
+      if TC.cursorAtEnd tc
+      then CP.toCodePointArray (TC.content tc)
+      else if r == ""
+        then Array.take 1 $ CP.toCodePointArray $ CU.take 2 (TC.selected tc <> TC.after tc)
+        else CP.toCodePointArray r
   pure $ D.Fragment
     [ D.button [ D.className =:= "add", D.onClick <!> (setGlobal <$> taValue) ] (D.text "Save text to URL")
     , D.aW "" [] (D.text "Shareable URL")
@@ -240,13 +238,7 @@ component setGlobal resetting = eggy \shell -> do
       ]
     ]
   where
-  updateTA upd =
-    (Event.target >=> HTMLTextArea.fromEventTarget) >>>
-      traverse_ \ta -> do
-        value <- HTMLTextArea.value ta
-        start <- HTMLTextArea.selectionStart ta
-        end <- HTMLTextArea.selectionEnd ta
-        upd { value, start, end }
+  updateTA upd = __textcursor upd
   renderInfos :: forall a b. (b -> a -> a -> Display) -> Lake a -> Lake a -> Array (Tuple String b) -> _
   renderInfos tally x y infos = D.tbody.$~~ infos <#> \(Tuple name calc) -> do
     D.tr.$~~

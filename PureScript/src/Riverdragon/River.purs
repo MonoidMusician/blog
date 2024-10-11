@@ -71,13 +71,11 @@ import Data.Filterable (class Compactable, class Filterable, filterDefault, filt
 import Data.Foldable (foldMap, for_, traverse_)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Maybe (Maybe(..), maybe)
-import Data.Monoid.Conj (Conj(..))
 import Data.Set as Set
 import Data.These (These(..))
 import Data.Traversable (mapAccumL)
 import Data.Tuple (Tuple(..), fst, snd)
 import Effect (Effect)
-import Prim.Boolean (False, True)
 import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar) as ReExports
 import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar, accumulator, allocLazy, breaker, cleanup, globalId, iteM, lazyAlloc, loadingBurst, ordMap, prealloc, prealloc2, rolling, storeLast, storeUnsubscriber, subscriptions, threshold, unsafeAllocate)
 
@@ -97,7 +95,7 @@ import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar, accumulator, allo
 -- |
 -- | There are various combinators, in addition to the standard `Applicative`
 -- | and `Plus` interfaces.
-data Stream (flow :: Boolean) a = Stream (Conj Boolean)
+data Stream (flow :: IsFlowing) a = Stream IsFlowing
   -- FIXME: buffer released after burst?
   ( { receive :: a -!> Unit, commit :: Id -!> Unit, destroyed :: Allocar Unit } -&>
     { burst :: Array a, sources :: Array Id, unsubscribe :: Allocar Unit }
@@ -105,14 +103,24 @@ data Stream (flow :: Boolean) a = Stream (Conj Boolean)
 -- | A lake is (mostly) stagnant until you tap into it. Resources may be
 -- | allocated per-subscriber. A lake may also be obtained from a river.
 -- |
--- | `Lake = Stream False`
-type Lake = Stream False
+-- | `Lake = Stream NotFlowing`
+type Lake = Stream NotFlowing
 -- | A river keeps flowing regardless of whether anyone is listening. Events are
 -- | broadcast uniformly to all current listeners. (With the exception of the
 -- | initial burst.)
 -- |
--- | `River = Stream True`
-type River = Stream True
+-- | `River = Stream Flowing`
+type River = Stream Flowing
+
+data IsFlowing = Flowing | NotFlowing
+instance semigroupIsFlowing :: Semigroup IsFlowing where
+  append Flowing Flowing = Flowing
+  append Flowing r = r
+  append r _ = r
+instance monoidIsFlowing :: Monoid IsFlowing where
+  mempty = Flowing
+foreign import data Flowing :: IsFlowing
+foreign import data NotFlowing :: IsFlowing
 
 -- | Stream IDs are just integers. Used for tracking transactions via the
 -- | `commit` event.
@@ -365,8 +373,8 @@ createRiver' burst = do
 
 -- | Make a lake whose event stream gets allocated per subscriber, e.g. for
 -- | timeouts or the like.
-makeLake :: forall a. ((a -!> Unit) -> Allocar (Allocar Unit)) -> Stream False a
-makeLake streamTemplate = Stream (Conj false) \cbs -> do
+makeLake :: forall a. ((a -!> Unit) -> Allocar (Allocar Unit)) -> Stream NotFlowing a
+makeLake streamTemplate = Stream NotFlowing \cbs -> do
   id <- globalId
   loadingBurst \whenLoaded -> do
     unsubscribe <- streamTemplate do
@@ -397,14 +405,14 @@ subscribeIsh destroyed (Stream _ stream) receive = do
 
 -- | Dam.
 dam :: forall flowIn a. Stream flowIn a -> Lake a
-dam (Stream _ f) = Stream (Conj false) f
+dam (Stream _ f) = Stream NotFlowing f
 
 stillRiver :: forall flowOut a. River a -> Stream flowOut a
 stillRiver (Stream t s) = Stream t s
 
 -- | Unsafe.
 unsafeRiver :: forall flowIn flowOut a. Stream flowIn a -> Stream flowOut a
-unsafeRiver (Stream _ f) = Stream (Conj true) f
+unsafeRiver (Stream _ f) = Stream Flowing f
 
 -- | Hmm, ugly but kind of necessary
 burstOf :: forall flow a. Stream flow a -> Allocar (Array a)
@@ -466,18 +474,18 @@ instantiateStore (Stream _ stream) = do
 -- | memoize lakes.
 -- TODO: delay subscription, including capturing the first burst directly
 mayMemoize :: forall flow a. Stream flow a -> Stream flow a
-mayMemoize stream0@(Stream (Conj true) _) = unsafeAllocate do
+mayMemoize stream0@(Stream Flowing _) = unsafeAllocate do
   lazyCachedStream <- lazyAlloc do
     -- TODO: okay to drop the destroy?
     instantiate stream0 <#> \{ stream: Stream _ stream } -> stream
-  Stream (Conj true) <$> allocLazy do
+  Stream Flowing <$> allocLazy do
     pure \cbs -> lazyCachedStream <@> cbs
 mayMemoize stream = stream
 
 -- | This function is only pure for rivers. It returns any flow type simply for
 -- | the sake of polymorphism: morally it returns a `River`.
 memoize :: forall flow a. River a -> Stream flow a
-memoize (Stream _ stream) = mayMemoize (Stream (Conj true) stream)
+memoize (Stream _ stream) = mayMemoize (Stream Flowing stream)
 
 
 -- | Fold a function over a stream, giving it internal state.

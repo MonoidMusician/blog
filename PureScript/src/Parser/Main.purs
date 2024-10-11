@@ -55,12 +55,11 @@ import Parser.Samples (defaultEOF, defaultTopName, defaultTopRName)
 import Parser.Types (AST(..), CST(..), Grammar(..), Part(..), SAST, SAugmented, SCParseSteps, SCST, SCStack, SFragment, SGrammar, SProducible, SState, SStateInfo, SStateItem, SStates, SZipper, ShiftReduce(..), State(..), States(..), Zipper(..), prune, unNonTerminal, unSPart, unTerminal)
 import Partial.Unsafe (unsafePartial)
 import Random.LCG as LCG
-import Riverdragon.Dragon.Bones (AttrProp, Dragon, ($$), ($<), ($~~), (.$), (.$$), (.$$~), (.$~~), (:!), (:.), (:~), (<!>), (<:>), (=!=), (=!?=), (=:=), (=?=), (>@), (>~~), (@<))
+import Riverdragon.Dragon.Bones (AttrProp, Dragon, smarties, ($$), ($<), ($~~), (.$), (.$$), (.$$~), (.$~~), (:!), (:.), (:~), (<!>), (<:>), (=!=), (=!?=), (=:=), (=?=), (>@), (>~~), (@<))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy, inputValidated)
 import Riverdragon.River (Lake, createRiver, createRiverStore, foldStream, sampleOnRight, selfGating, subscribe, (<**>))
 import Riverdragon.River.Beyond (dedup, dedupOn, interval, animationLoop)
-import Stylish.Record (attrsM)
 import Stylish.Types (Classy(..))
 import Test.QuickCheck.Gen as QC
 import Unsafe.Coerce (unsafeCoerce)
@@ -151,9 +150,9 @@ renderParseTable info (MkGrammar grammar) (States states) = eggy \_ -> do
 
     header = D.tr.$~~ mapWithIndex (\i -> D.th [ col (Array.length terminals + 1) i ]) $
       [ D.text "" ] <> map renderTerminals terminals <> map renderNonTerminals nonTerminals
-    clsFor s = D.attrsL
+    clsFor s = D.smarties
       { "active": info.getCurrentState s
-      , "hover": stateHighlighted <#> eq (Just s) :: Lake Boolean
+      , "hover": stateHighlighted <#> eq (Just s)
       }
     rows = states <#> \state ->
       D.tr [ D.classy <:> clsFor state.sName] $~~
@@ -236,7 +235,7 @@ getVisibilityAndIncrement' s = do
   put (n + 1)
   pure
     ( \f -> n /\
-        ( D.classy <:> D.attrsL { "": s, "hidden": not f n }
+        ( D.classy <:> D.smarties { "": s, "hidden": not f n }
         )
     )
 
@@ -245,7 +244,7 @@ getVisibility = do
   n <- get
   pure
     ( \f -> n /\
-        ( D.classy <:> D.attrsL { "hidden": not f n }
+        ( D.classy <:> D.smarties { "hidden": not f n }
         )
     )
 
@@ -316,9 +315,7 @@ renderStateTable info (States states) = do
     mkTH n 0 0 = D.th [ D.attr "rowspan" =:= show n ]
     mkTH _ _ 0 = mempty
     mkTH _ _ _ = D.td []
-    stateClass sName = attrsM
-      { "active": info.getCurrentState sName
-      } :: Lake _
+    stateClass sName = smarties { "active": info.getCurrentState sName }
     renderStateHere items =
       let n = Array.length items in
       items # mapWithIndex \j -> D.tr[] <<< D.Fragment <<< mapWithIndex (mkTH n j)
@@ -345,7 +342,7 @@ renderItem s j { pName, rName, rule: rule@(Zipper _ after), lookahead } =
 
 renderZipper :: SZipper -> Dragon
 renderZipper (Zipper before after) =
-  D.span [ D.classy =:= D.attrsI { "zipper": true, "reducible": Array.null after } ] $~~
+  D.span [ D.classy =:= D.smarts { "zipper": true, "reducible": Array.null after } ] $~~
     [ D.span:."parsed".$~~ before <#> renderPart mempty
     , if Array.null after then D.text "" else
         D.span.$~~ after <#> renderPart mempty
@@ -378,49 +375,49 @@ renderAs c t = D.span :. c .$$ t
 renderTok :: Maybe (Effect Unit) -> CodePoint -> Dragon
 renderTok c t = D.span
   [ D.onClick =!?= c
-  , D.classy =:= D.attrsI { "terminal": true, "clickable": isJust c }
+  , D.classy =:= D.smarts { "terminal": true, "clickable": isJust c }
   ] $$ String.singleton t
 
 renderTok' :: Lake Classy -> Lake (Maybe (Effect Unit)) -> CodePoint -> Dragon
 renderTok' cls c t = D.span
   [ D.Listener "click" <:> map const <$> c
-  , D.classy <:> D.attrsL { "terminal": true, "": cls }
+  , D.classy <:> D.smarties { "terminal": true, "": cls }
   ] $$ String.singleton t
 
 renderNT :: Maybe (Effect Unit) -> NonEmptyString -> Dragon
 renderNT c nt = D.span
   [ D.onClick =!?= c
-  , D.classy =:= D.attrsI { "non-terminal": true, "clickable": isJust c }
+  , D.classy =:= D.smarts { "non-terminal": true, "clickable": isJust c }
   ] $$ NES.toString nt
 
 renderNT' :: Lake Classy -> Lake (Maybe (Effect Unit)) -> NonEmptyString -> Dragon
 renderNT' cls c nt = D.span
   [ D.Listener "click" <:> map const <$> c
-  , D.classy <:> D.attrsL { "non-terminal": true, "": cls }
+  , D.classy <:> D.smarties { "non-terminal": true, "": cls }
   ] $$ NES.toString nt
 
 renderRule :: Maybe (Effect Unit) -> String -> Dragon
 renderRule c r = D.span
   [ D.onClick =!?= c
-  , D.classy =:= D.attrsI { "rule": true, "clickable": isJust c }
+  , D.classy =:= D.smarts { "rule": true, "clickable": isJust c }
   ] $$ r
 
 renderMeta :: Maybe (Effect Unit) -> String -> Dragon
 renderMeta c x = D.span
   [ D.onClick =!?= c
-  , D.classy =:= D.attrsI { "meta": true, "clickable": isJust c }
+  , D.classy =:= D.smarts { "meta": true, "clickable": isJust c }
   ] $$ x
 
 renderSt :: Maybe (Effect Unit) -> Int -> Dragon
 renderSt c x = D.span
   [ D.onClick =!?= c
-  , D.classy =:= D.attrsI { "state": true, "clickable": isJust c }
+  , D.classy =:= D.smarts { "state": true, "clickable": isJust c }
   ] $$ show x
 
 renderSt' :: Lake String -> Maybe (Effect Unit) -> Int -> Dragon
 renderSt' cls c x = D.span
   [ D.onClick =!?= c
-  , D.classy <:> D.attrsL { "state": true, "": cls }
+  , D.classy <:> D.smarties { "state": true, "": cls }
   ] $$ show x
 
 renderPart :: Maybe (Effect Unit) -> Part Unit NonEmptyString CodePoint -> Dragon
@@ -431,7 +428,7 @@ renderPart _ (InterTerminal _) = mempty
 renderCmd :: Maybe (Effect Unit) -> String -> Dragon
 renderCmd c x = D.span
   [ D.onClick =!?= c
-  , D.classy =:= D.attrsI { "cmd": true, "clickable": isJust c }
+  , D.classy =:= D.smarts { "cmd": true, "clickable": isJust c }
   ] $$ x
 
 findNext :: Set String -> String -> Int -> String
@@ -662,9 +659,9 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
                 this <- createRiver
                 pure $ D.Replacing $
                   ( pure $ D.tr
-                      [ D.classy <:> D.attrsL
+                      [ D.classy <:> D.smarties
                         { "trouble": actions.troubleRules.stream <#>
-                            Array.elem txt.rName :: Lake _
+                            Array.elem txt.rName
                         }
                       ] $~~ map (D.td[]) $
                       [ renderNT mempty txt.pName
@@ -814,7 +811,7 @@ explorerComponent grammar sendUp = eggy \shell -> do
     activity here = here <#> if _ then "active" else "inactive"
     renderPartHere i (NonTerminal nt) =
       D.span
-        [ D.classy <:> D.attrsL { "selected": currentFocused <#> any (fst >>> eq i) } ]
+        [ D.classy <:> D.smarties { "selected": currentFocused <#> any (fst >>> eq i) } ]
         (renderNT (Just (actions.focus.send (Just (i /\ nt)))) nt)
     renderPartHere _ (Terminal tok) = renderTok mempty tok
     renderPartHere _ (InterTerminal _) = mempty
@@ -825,7 +822,7 @@ explorerComponent grammar sendUp = eggy \shell -> do
   pure $ D.div.$~~
     [ (D.Fragment <<< mapWithIndex renderPartHere) @< currentParts
     , D.button
-        [ D.classy <:> D.attrsL { "disabled": isNothing <$> send }
+        [ D.classy <:> D.smarties { "disabled": isNothing <$> send }
         , D.onClick <!> sequence_ <$> send
         ]
         (D.text "Send")
@@ -850,7 +847,7 @@ explorerComponent grammar sendUp = eggy \shell -> do
               , D.span.$~~
                   [ D.text " "
                   , D.button
-                      [ D.classy <:> D.attrsL
+                      [ D.classy <:> D.smarties
                           { "select": true
                           , "disabled": not focusHere
                           }
@@ -1202,7 +1199,7 @@ inputComponent initialInput inputStream sendInput current = eggy \shell -> do
         toktext = case mtok of
           Nothing -> codePointFromChar '⌫'
           Just tok -> tok
-      renderTok' (D.attrsL { "clickable": true, unusable: not valid }) (pure $ Just onClick) toktext
+      renderTok' (D.smarties { "clickable": true, unusable: not valid }) (pure $ Just onClick) toktext
     renderNTHere nt = do
       let
         onClick = do
@@ -1212,7 +1209,7 @@ inputComponent initialInput inputStream sendInput current = eggy \shell -> do
               QC.randomSampleOne <$> genNT prod.produced nt
             pushInput <> sendInput $ (v <> genned)
         valid = currentValidNTs <#> Set.member nt
-      renderNT' (D.attrsL { "clickable": true, unusable: not valid }) (pure $ Just onClick) nt
+      renderNT' (D.smarties { "clickable": true, unusable: not valid }) (pure $ Just onClick) nt
   pure $
     D.div.$~~
       [ D.div.$~~

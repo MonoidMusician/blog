@@ -14,6 +14,7 @@ import Data.Lazy (Lazy)
 import Data.Lens as Q
 import Data.Maybe (Maybe)
 import Data.Monoid.Additive (Additive(..))
+import Data.Monoid.Endo (Endo(..))
 import Data.Newtype (class Newtype, over, un, unwrap)
 import Data.Profunctor (class Profunctor, lcmap)
 import Data.Rational (Rational)
@@ -29,6 +30,7 @@ import Parser.Comb.Types (Associativity(..))
 import Parser.Printer.Juxt (class Awajuxt, class Conjuxt, class Disjuxt, class GuideFlow, CaseTree(..), _Array, _NEA, casesSplit, cleaveCases, summarizeCaseTree, (!!!), (!>), (/!\), (<!), (\!/))
 import Parser.Printer.Prec (Prec(..))
 import Parser.Selective (casingOn, cmapCaseTree, hoistCaseTree', secondCaseTree)
+import Riverdragon.Dragon (Dragon)
 import Whitespace (WS, WSDoc, _wsDoc, docWS)
 import Whitespace as WS
 
@@ -36,6 +38,7 @@ import Whitespace as WS
 newtype Ann = Ann
   { classes :: Array String
   , ansi :: Array GraphicsParam
+  , dragon :: Endo (->) Dragon
   }
 derive instance newtypeAnn :: Newtype Ann _
 derive newtype instance semigroupAnn :: Semigroup Ann
@@ -44,9 +47,11 @@ derive newtype instance monoidAnn :: Monoid Ann
 newAnn ::
   ( { ansi :: Array GraphicsParam
     , classes :: Array String
+    , dragon :: Endo (->) Dragon
     } ->
     { ansi :: Array GraphicsParam
     , classes :: Array String
+    , dragon :: Endo (->) Dragon
     }
   ) ->
   Ann

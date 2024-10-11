@@ -1,27 +1,18 @@
-module Web.Util.TextCursor
-  ( TextCursor(..), Direction(..)
-  , mkTextCursor, genTextCursor
-  , content, length, null, empty, single
-  , _before, _selected, _after, _all, _nonselected
-  , atStart, atEnd, allSelected
-  , isCursor, cursorAtStart, cursorAtEnd
-  , isSelection, selectionAtStart, selectionAtEnd
-  , selectAll, placeCursorAtStart, placeCursorAtEnd
-  , modifySelected, modifyAll
-  , appendl, appendr, insert
-  ) where
+module Web.Util.TextCursor where
 
 import Prelude
 
 import Control.Monad.Gen (class MonadGen)
 import Control.Monad.Rec.Class (class MonadRec)
-import Data.Lens (Lens', Traversal', over, wander, (.~), (^.))
+import Data.Lens (Lens', Traversal', lens', over, view, wander, (.~), (^.))
 import Data.Lens.Iso.Newtype (_Newtype)
 import Data.Lens.Record (prop)
 import Data.Lens.Types (Setter')
 import Data.Newtype (class Newtype)
 import Data.String (length, null) as S
+import Data.String as String
 import Data.String.Gen (genUnicodeString)
+import Data.Tuple.Nested ((/\))
 import Type.Proxy (Proxy(..))
 
 -- | Direction ADT. None is the default. See
@@ -134,14 +125,44 @@ single l v = l .~ v $ empty
 _before :: Lens' TextCursor String
 _before = _Newtype <<< prop (Proxy :: Proxy "before")
 
+before :: TextCursor -> String
+before = view _before
+
 -- | Lens for the text that is selected. Empty if nothing is selected.
 _selected :: Lens' TextCursor String
 _selected = _Newtype <<< prop (Proxy :: Proxy "selected")
+
+selected :: TextCursor -> String
+selected = view _selected
 
 -- | Lens for the text after the selection. Empty if the cursor or selection
 -- | reaches the end.
 _after :: Lens' TextCursor String
 _after = _Newtype <<< prop (Proxy :: Proxy "after")
+
+after :: TextCursor -> String
+after = view _after
+
+
+_start :: Lens' TextCursor Int
+_start = lens' \tc -> start tc /\
+  \start' ->
+    if start' >= end tc then
+      placeCursorAt start' tc
+    else placeSelection start' (end tc) tc
+
+start :: TextCursor -> Int
+start (TextCursor tc) = String.length tc.before
+
+_end :: Lens' TextCursor Int
+_end = lens' \tc -> end tc /\
+  \end' ->
+    if end' <= start tc then
+      placeCursorAt end' tc
+    else placeSelection (start tc) end' tc
+
+end :: TextCursor -> Int
+end (TextCursor tc) = String.length tc.before + String.length tc.selected
 
 -- | Lens for the direction of selection.
 _direction :: Lens' TextCursor Direction
@@ -225,6 +246,35 @@ placeCursorAtEnd tc = TextCursor
   , after: ""
   , direction: tc ^. _direction
   }
+
+placeCursorAt :: Int -> TextCursor -> TextCursor
+placeCursorAt i tc = TextCursor
+  { before: split.before
+  , selected: ""
+  , after: split.after
+  , direction: None
+  }
+  where
+  split = String.splitAt i (content tc)
+
+placeSelection :: Int -> Int -> TextCursor -> TextCursor
+placeSelection i j tc = TextCursor
+  { before: splitL.before
+  , selected: splitR.before
+  , after: splitR.after
+  , direction:
+      if i < j then
+        tc ^. _direction
+      else if i == j then
+        None
+      else
+        Backward
+  }
+  where
+  lower = min i j
+  upper = max i j
+  splitL = String.splitAt lower (content tc)
+  splitR = String.splitAt (upper - lower) splitL.after
 
 -- | Modify just the selected region with an endomorphism.
 modifySelected :: (String -> String) -> TextCursor -> TextCursor

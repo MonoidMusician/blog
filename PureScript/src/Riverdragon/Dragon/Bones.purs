@@ -2,24 +2,37 @@ module Riverdragon.Dragon.Bones ( module Riverdragon.Dragon.Bones, module ReExpo
 
 import Prelude
 
-import Control.Plus (class Plus, empty)
+import Control.Apply (lift2)
+import Control.Plus (class Plus, empty, (<|>))
 import Data.Array (fold)
 import Data.Array as Array
-import Data.Identity (Identity)
+import Data.Foldable (class Foldable, foldMap, traverse_)
+import Data.Functor.App (App(..))
+import Data.Identity (Identity(..))
 import Data.Int as Int
 import Data.JSDate (JSDate)
+import Data.List (List)
+import Data.List as List
 import Data.Maybe (Maybe(..), maybe)
+import Data.Newtype (un)
+import Data.Symbol (class IsSymbol, reflectSymbol)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
+import Heterogeneous.Folding (class FoldingWithIndex, class HFoldlWithIndex, hfoldlWithIndex)
 import Idiolect (type (-!>), (>==))
 import Prelude as Prelude
+import Prim.Row as Row
+import Prim.RowList (class RowToList, RowList)
+import Prim.RowList as RL
+import Record as Record
 import Riverdragon.Dragon (AttrProp(..), Dragon(..), PropVal(..))
 import Riverdragon.Dragon (AttrProp(..), Dragon(..), PropVal(..)) as ReExports
-import Riverdragon.River (Stream, Lake, dam, oneStream)
+import Riverdragon.River (Stream, dam, oneStream)
 import Safe.Coerce (coerce)
-import Stylish.Record as Stylish
+import Stylish.Record (class WithSep, withSep, withoutSep)
 import Stylish.Types (Classy(..), Stylish(..))
 import Type.Equality (class TypeEquals)
+import Type.Proxy (Proxy(..))
 import Web.DOM.AttrName (AttrName(..))
 import Web.DOM.ClassName (ClassName(..))
 import Web.DOM.Element as Element
@@ -31,6 +44,7 @@ import Web.Event.Internal.Types as Web
 import Web.HTML.HTMLInputElement as HTMLInput
 import Web.HTML.HTMLTextAreaElement as HTMLTextArea
 import Web.Util.TextCursor (TextCursor)
+import Web.Util.TextCursor.Element as TC
 import Web.Util.TextCursor.Element as TextCursorElement
 
 --------------------------------------------------------------------------------
@@ -109,7 +123,7 @@ _noAttrsFragment :: forall f a r. Plus f => (f a -> Dragon -> r) -> Array Dragon
 _noAttrsFragment fn children = fn empty $~~ children
 infixr 0 _noAttrsFragment as .$~~
 
--- | `D.span :."interestingClass" .$ "its text content"`
+-- | `D.span :."interestingClass" .$$ "its text content"`
 _classy :: forall f r. Applicative f => (Array (f AttrProp) -> r) -> String -> Array (f AttrProp) -> r
 _classy fn cls = fn <<< Array.cons (className =:= cls)
 infixl 4 _classy as :. -- over <>
@@ -240,11 +254,11 @@ script = html_"script" <@> mempty :: forall flow. Array (Stream flow AttrProp) -
 -- | ## Attributes, properties, and listeners                               | --
 --------------------------------------------------------------------------------
 
-attr :: String -> String -> AttrProp
-attr name val = Attr Nothing name val
+attr :: forall t. AttrType t => String -> t -> AttrProp
+attr name val = Attr Nothing name $ attrType val
 
-data_ :: String -> String -> AttrProp
-data_ name val = Attr Nothing ("data-"<>name) val
+data_ :: forall t. AttrType t => String -> t -> AttrProp
+data_ name val = Attr Nothing ("data-"<>name) $ attrType val
 
 aria_ :: String -> String -> AttrProp
 aria_ name val = Attr Nothing ("aria-"<>name) val
@@ -316,6 +330,13 @@ __checked = HTMLInput.fromEventTarget ?. HTMLInput.checked
 __open :: (Boolean -!> Unit) -> Web.Event -!> Unit
 __open = Element.fromEventTarget ?. Element.hasAttribute (AttrName "open")
 
+_listenTextCursor :: forall f a b. Applicative f => ((b -> Web.Event -!> Unit) -> a) -> (TextCursor -!> Unit) -> f a
+_listenTextCursor to it = to =!= __textcursor it
+infixr 0 _listenTextCursor as =?|=
+_listeningTextCursor :: forall f b t. Functor f => ((t -> Web.Event -!> Unit) -> b) -> f (TextCursor -!> Unit) -> f b
+_listeningTextCursor to it = to <!> __textcursor <$> it
+infixr 0 _listeningTextCursor as <?|>
+
 _listenValue :: forall f a b. Applicative f => ((b -> Web.Event -!> Unit) -> a) -> (String -!> Unit) -> f a
 _listenValue to it = to =!= __value it
 infixr 0 _listenValue as =?$=
@@ -337,6 +358,16 @@ _listeningChecked :: forall f b t. Functor f => ((t -> Web.Event -!> Unit) -> b)
 _listeningChecked to it = to <!> __checked <$> it
 infixr 0 _listeningChecked as <??>
 
+class AttrType t where
+  attrType :: t -> String
+instance AttrType String where attrType = identity
+instance AttrType Number where attrType = Prelude.show
+instance AttrType Int where attrType = Prelude.show
+instance AttrType Boolean where attrType = Prelude.show
+instance AttrType ClassName where attrType (ClassName cls) = cls
+instance AttrType Classy where attrType (Classy cls) = cls
+instance AttrType Stylish where attrType (Stylish styl) = styl
+
 class PropType t where
   propType :: t -> PropVal
 instance PropType String where propType = PropString
@@ -347,9 +378,6 @@ instance PropType Number where propType = PropNumber
 instance PropType Int where propType = PropInt
 instance PropType Boolean where propType = PropBoolean
 instance PropType PropVal where propType = identity
-
-attrsI = Stylish.attrs  :: forall i o. Stylish.Attrable i Identity o =>  i -> o
-attrsL = Stylish.attrsM :: forall i o. Stylish.Attrable i Lake o => i -> Lake o
 
 class AutoDOM t r | t -> r where
   auto :: t -> r
@@ -420,6 +448,11 @@ value = prop "value" :: forall t. PropType t => t -> AttrProp
 placeholder = prop "placeholder" <<< PropString :: String -> AttrProp
 checked = prop "checked" <<< PropBoolean :: Boolean -> AttrProp
 
+textCursor :: TextCursor -> AttrProp
+textCursor tc = Self \e -> do
+  traverse_ (TC.setTextCursor tc) (TextCursorElement.read e)
+  pure mempty
+
 --------------------------------------------------------------------------------
 -- | ## Standard listeners                                                  | --
 --------------------------------------------------------------------------------
@@ -486,16 +519,101 @@ pathW' pathD = path [ d <:> pathD ]
 
 circleW' :: forall flow1 flow2.
   Stream flow1
-    { cx :: String
-    , cy :: String
-    , r :: String
+    { cx :: Number
+    , cy :: Number
+    , r :: Number
     } ->
   Array (Stream flow2 AttrProp) ->
   Dragon -> Dragon
 circleW' measurements attrs = svg_"circle"
-  -- TODO flow
-  [ attr "cx" <:> _.cx <$> dam measurements
-  , attr "cy" <:> _.cy <$> dam measurements
-  , attr "r"  <:> _.r  <$> dam measurements
+  [ dam measurements <#> attrsM
   , dam (oneStream attrs)
   ]
+
+--------------------------------------------------------------------------------
+-- | ## More typeclasses                                                    | --
+--------------------------------------------------------------------------------
+
+attrsM :: forall i o. HFoldlWithIndex MultiAttrs AttrProp i o => i -> o
+attrsM = hfoldlWithIndex MultiAttrs (mempty :: AttrProp)
+
+data MultiAttrs = MultiAttrs
+instance multiAttrs :: (AttrType t, IsSymbol sym) =>
+  FoldingWithIndex MultiAttrs (Proxy sym) AttrProp t AttrProp where
+  foldingWithIndex MultiAttrs proxy acc val =
+    acc <> attr (reflectSymbol proxy) val
+
+propsM :: forall i o. HFoldlWithIndex MultiProps AttrProp i o => i -> o
+propsM = hfoldlWithIndex MultiProps (mempty :: AttrProp)
+
+data MultiProps = MultiProps
+instance multiProps :: (PropType t, IsSymbol sym) =>
+  FoldingWithIndex MultiProps (Proxy sym) AttrProp t AttrProp where
+  foldingWithIndex MultiProps proxy acc val =
+    acc <> prop (reflectSymbol proxy) val
+
+
+
+withSeps :: forall o. WithSep o => List String -> o -> o
+withSeps List.Nil = identity
+withSeps (List.Cons "" r) = withSeps r
+withSeps (List.Cons s r) = withSeps r <<< withSep s
+
+withSeps1 :: forall o. WithSep o => List String -> o
+withSeps1 List.Nil = withoutSep ""
+withSeps1 (List.Cons "" r) = withSeps1 r
+withSeps1 (List.Cons s r) = withoutSep s # withSeps r
+
+smarts :: forall i o. Attrable i Identity o => i -> o
+smarts = un Identity <<< smarties
+
+smarties :: forall i m o. Attrable i m o => i -> m o
+smarties = mkAttr List.Nil
+
+class Attrable i (m :: Type -> Type) o where
+  mkAttr :: List String -> i -> m o
+
+instance attrableUnit :: (WithSep o, Applicative m) => Attrable Unit m o where
+  mkAttr k (_ :: Unit) = pure (withSeps1 k)
+
+instance attrableBoolean :: (Monoid o, WithSep o, Applicative m) => Attrable Boolean m o where
+  mkAttr k = if _
+    then mkAttr k unit
+    else pure mempty
+
+instance attrableWithStep :: (WithSep o, Applicative m) => Attrable String m o where
+  mkAttr k v = pure (withSeps k (withoutSep v))
+
+instance attrableStylish :: (Applicative m) => Attrable Stylish m Stylish where
+  mkAttr k v = pure (withSeps k v)
+
+instance attrableClassy :: (Applicative m) => Attrable Classy m Classy where
+  mkAttr k v = pure (withSeps k v)
+
+instance attrableRecord :: (RowToList is irl, AttrableRecord is irl m o) => Attrable (Record is) m o where
+  mkAttr k = mkAttrRecord (Proxy :: Proxy irl) k
+
+else instance attrableStream :: (Monoid o, TypeEquals flow1 flow2, Attrable i Identity o) => Attrable (Stream flow1 i) (Stream flow2) o where
+  mkAttr k mi = pure mempty <|> do
+    (coerce mi :: Stream flow2 i) <#> un Identity <<< mkAttr k
+
+else instance attrableFunctor :: (Functor m, Attrable i Identity o) => Attrable (m i) m o where
+  mkAttr k mi = mi <#> un Identity <<< mkAttr k
+
+else instance attrableFoldable :: (Foldable f, Applicative m, Monoid o, Attrable i m o) => Attrable (f i) m o where
+  mkAttr k = un App <<< foldMap (App <<< mkAttr k)
+
+class AttrableRecord :: Row Type -> RowList Type -> (Type -> Type) -> Type -> Constraint
+class AttrableRecord is irl m o where
+  mkAttrRecord :: Proxy irl -> List String -> Record is -> m o
+
+instance attrableRecordNil :: (Applicative m, Monoid o) => AttrableRecord is RL.Nil m o where
+  mkAttrRecord _ _ _ = pure mempty
+
+instance attrableRecordCons :: (IsSymbol k, Row.Cons k i is' is, AttrableRecord is irl m o, Attrable i m o, Applicative m, Monoid o) => AttrableRecord is (RL.Cons k i irl) m o where
+  mkAttrRecord _ ks is = lift2 append
+    do
+      mkAttr (List.Cons (reflectSymbol (Proxy :: Proxy k)) ks) (Record.get (Proxy :: Proxy k) is :: i)
+    do
+      mkAttrRecord (Proxy :: Proxy irl) ks is
+

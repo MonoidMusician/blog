@@ -61,6 +61,14 @@ data AttrProp
   | Prop String PropVal
   | Listener String (Maybe (Web.Event -> Effect Unit))
   | Self (Element -> Effect (Effect Unit))
+  | MultiAttr (Array AttrProp)
+instance semigroupAttrProp :: Semigroup AttrProp where
+  append (MultiAttr []) r = r
+  append l (MultiAttr []) = l
+  append (MultiAttr l) (MultiAttr r) = MultiAttr (l <> r)
+  append l r = MultiAttr [l,r]
+instance monoidAttrProp :: Monoid AttrProp where
+  mempty = MultiAttr []
 
 data PropVal
   = PropString String
@@ -75,6 +83,7 @@ renderProps el stream = do
   let
     receive = case _ of
       Self withSelf -> noLongerSelf.put =<< withSelf el
+      MultiAttr nested -> traverse_ receive nested
       -- important for xmlns at least on firefox apparently
       -- https://stackoverflow.com/questions/35057909/difference-between-setattribute-and-setattributensnull#comment135086722_45548128
       Attr Nothing name val -> setAttribute (AttrName name) val el

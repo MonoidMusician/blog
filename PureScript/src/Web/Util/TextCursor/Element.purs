@@ -10,7 +10,7 @@ import Prelude
 
 import Control.Monad.State.Class (class MonadState, modify)
 import Data.Lens (Lens', (.~))
-import Data.String (length, splitAt)
+import Data.String.CodeUnits (length, splitAt)
 import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
 import Web.DOM.ElementId (ElementId)
