@@ -9,6 +9,7 @@ import Effect.Ref as Ref
 import Foreign.Object as Object
 import Parser.Main as Parser
 import Parser.Main.CSS as CSS
+import Parser.Main.Comb as Parser.Main.Comb
 import Parser.Main.HFS as Parser.Main.HFS
 import Parser.Main.TMTTMT as TMTTMT
 import Riverdragon.Test as Riverdragon.Test
@@ -36,6 +37,7 @@ widgets = foldl Object.union Object.empty
     , "Widget.Unicode" /\ Widget.Unicode.widget
     , "Widget.Show" /\ Widget.Unicode.widgetShow
     , "Parser.Main.HFS" /\ Parser.Main.HFS.widget
+    , "Parser.Main.Comb" /\ Parser.Main.Comb.widget
     , "Riverdragon.Test" /\ Riverdragon.Test.widget
     , "" /\ Widget.Datatypes.widget
     ]

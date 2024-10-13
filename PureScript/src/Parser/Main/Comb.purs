@@ -153,7 +153,7 @@ assemble = CST.parseExpr >>> case _ of
 
 compile :: String -> Aff (Either (Array String) String)
 compile moduleString = do
-  response <- fetch "http://127.0.0.1:6565/compile"
+  response <- fetch "https://tryps.veritates.love/compile"
     { method: POST
     , body: moduleString
     } >>= _.json
@@ -179,7 +179,7 @@ bundle js =
     importExportRegex :: Regex.Regex
     importExportRegex = either (\_ -> unsafeCrashWith "Invalid regex") identity
       $ Regex.regex """ from "../([^"]+)";$""" RegexFlags.noFlags
-    replacement = " from \"http://localhost:7933/assets/ps/$1\";"
+    replacement = " from \"https://tryps.veritates.love/assets/ps/$1\";"
     codeWithRemappedImports = js
       # String.split (String.Pattern "\n")
       # map (Regex.replace importExportRegex replacement)
@@ -259,17 +259,19 @@ embed incomingRaw = eggy \shell -> do
                 _.result <<< parser.parser <$> getValue
             ]
       , D.script
-          [ D.attr "src" =:= do
+          -- We need to set `type="module"` before `src` in Riverdragon, because
+          -- it applies attributes in order!
+          [ D.prop "type" =:= "module"
+          , D.attr "src" =:= do
               fromMaybe "" $ encodeURIComponent latestBundle <#> \escaped ->
                 "data:text/javascript;utf8," <> escaped
-          , D.prop "type" =:= "module"
           ]
       ]
     ]
 
 widget :: Widget
 widget _ = pure $ eggy \shell -> do
-  let df = "D.text <$> string"
+  let df = """D.lines <<< map D.text <$> manySepBy "strings" ws string"""
   { stream: valueSet, send: setValue } <- shell.track $ createRiverStore Nothing
   { stream: compiling, send: compileNow } <- shell.track $ createRiverStore Nothing
   lastValue <- shell.storeLast df valueSet
