@@ -14,7 +14,7 @@ import Data.Bitraversable (bifoldMap, ltraverse)
 import Data.Either (Either(..), either, isLeft, isRight, note)
 import Data.Either.Nested (type (\/))
 import Data.Filterable (partitionMap)
-import Data.Foldable (class Foldable, any, foldMap, foldr, oneOfMap, or, sum)
+import Data.Foldable (class Foldable, foldMap, foldr, oneOfMap, or, sum)
 import Data.Lazy (force)
 import Data.Lens (traverseOf)
 import Data.Lens.Iso.Newtype (_Newtype)
@@ -23,7 +23,7 @@ import Data.List (List)
 import Data.List as List
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe, isJust)
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (class Newtype, over2, unwrap)
 import Data.Semigroup.Foldable (maximum)
@@ -47,7 +47,7 @@ import Parser.Types (Fragment, ICST(..), OrEOF(..), Part(..), ShiftReduce(..), S
 import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
 import Type.Proxy (Proxy(..))
-import Whitespace (ParseWS(..), unParseWS)
+import Whitespace (ParseWS, unParseWS)
 
 data Scanning i = Scanning Int i
 derive instance functorScanning :: Functor Scanning

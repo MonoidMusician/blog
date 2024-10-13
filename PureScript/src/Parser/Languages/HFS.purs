@@ -24,11 +24,9 @@ import Data.String as String
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags (global)
 import Data.String.Regex.Unsafe (unsafeRegex)
-import Debug (spy)
 import Effect.Exception (message, try)
 import Effect.Unsafe (unsafePerformEffect)
 import Parser.Comb as Comb
-import Parser.Lexing (FailedStack(..))
 
 -- | `HFList`: an `Array`-based representation for FFI
 newtype HFList = HFList (Array HFList)

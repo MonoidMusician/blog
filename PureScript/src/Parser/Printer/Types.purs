@@ -14,7 +14,7 @@ import Data.Lazy (Lazy)
 import Data.Lens as Q
 import Data.Maybe (Maybe)
 import Data.Monoid.Additive (Additive(..))
-import Data.Monoid.Endo (Endo(..))
+import Data.Monoid.Endo (Endo)
 import Data.Newtype (class Newtype, over, un, unwrap)
 import Data.Profunctor (class Profunctor, lcmap)
 import Data.Rational (Rational)
@@ -24,7 +24,7 @@ import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.Tuple.Nested ((/\))
 import Dodo as Dodo
 import Parser.Comb as Comb
-import Parser.Comb.Comber (Comber, lift2, wsOf)
+import Parser.Comb.Comber (Comber, lift2)
 import Parser.Comb.Comber as Comber
 import Parser.Comb.Types (Associativity(..))
 import Parser.Printer.Juxt (class Awajuxt, class Conjuxt, class Disjuxt, class GuideFlow, CaseTree(..), _Array, _NEA, casesSplit, cleaveCases, summarizeCaseTree, (!!!), (!>), (/!\), (<!), (\!/))

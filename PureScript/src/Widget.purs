@@ -30,7 +30,7 @@ import Foreign.Object as Object
 import Foreign.Object.ST (STObject)
 import Foreign.Object.ST as STO
 import Idiolect (filterFst, (>==))
-import Riverdragon.Dragon (Dragon, renderEl)
+import Riverdragon.Dragon (Dragon, renderEl, snapshot)
 import Riverdragon.Dragon.Bones as Dragon
 import Riverdragon.River (Allocar, River, Stream, createRiverStore, mailbox, mailboxRiver, stillRiver)
 import Riverdragon.River.Bed (allocLazy)
@@ -47,7 +47,6 @@ import Web.DOM.ParentNode (QuerySelector(..), querySelectorAll)
 import Web.HTML (window)
 import Web.HTML.HTMLDocument as HTMLDocument
 import Web.HTML.Window (cancelAnimationFrame, document, requestAnimationFrame)
-import Widget.Types (snapshot)
 
 -- | An interface to a mutable value, stored in one location. It may not have
 -- | a value at first, or ever.
@@ -129,7 +128,6 @@ obtainInterface share k = do
     Just (i /\ r) -> do
       (i /\ r) <$ liftST (STO.poke k ((i+1) /\ r) share)
     Nothing -> do
-      log $ "Make keyed interface " <> show k
       r <- makeKeyedInterface
       (0 /\ r) <$ liftST (STO.poke k (1 /\ r) share)
   pure \k1 ->
@@ -137,7 +135,7 @@ obtainInterface share k = do
       int = r k1
       receive = filterMap (filterFst (notEq i)) int.receive
     in stillInterface
-      { send: \v -> log ("Send "<>show k<>"."<>show i<>" "<>show k1) *> int.send (i /\ v)
+      { send: \v -> int.send (i /\ v)
       , receive: receive
       , loopback: int.receive <#> snd
       , mailbox: mailboxRiver (map { value: unit, key: _ } receive)

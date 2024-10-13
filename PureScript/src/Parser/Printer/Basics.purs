@@ -41,7 +41,7 @@ haskellComma name pp = IO.manySepBy name sep pp
   sepI = void $ I.ws *> I.token "," <* I.ws
 
 ansi :: Ansi.GraphicsParam -> forall i o. PrinterParser i o -> PrinterParser i o
-ansi cmd = IO._doc $ O.annotate (newAnn _ { ansi = pure cmd })
+ansi cmd = IO._doc $ O.annotate $ newAnn _ { ansi = pure cmd }
 
 colorful :: Ansi.Color -> forall i o. PrinterParser i o -> PrinterParser i o
 colorful = ansi <<< Ansi.PForeground

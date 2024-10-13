@@ -77,7 +77,7 @@ import Data.Traversable (mapAccumL)
 import Data.Tuple (Tuple(..), fst, snd)
 import Effect (Effect)
 import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar) as ReExports
-import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar, accumulator, allocLazy, breaker, cleanup, globalId, iteM, lazyAlloc, loadingBurst, ordMap, prealloc, prealloc2, rolling, storeLast, storeUnsubscriber, subscriptions, threshold, unsafeAllocate)
+import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar, accumulator, allocLazy, breaker, cleanup, globalId, iteM, loadingBurst, ordMap, prealloc, prealloc2, rolling, storeLast, storeUnsubscriber, subscriptions, threshold, unsafeAllocate)
 
 -- | A notion of event streams that comes with a few more features in addition
 -- | to the usual subscribe and unsubscribe.
@@ -308,7 +308,7 @@ createRiver = createRiverBurst mempty
 createRiverBurst :: forall flow a. Allocar (Array a) -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
 createRiverBurst burst = do
   id <- globalId
-  { push, notify, destroy } <- subscriptions
+  { push, notify, destroy, running } <- subscriptions
   pure
     { send: \a -> do
         notify do
@@ -317,7 +317,8 @@ createRiverBurst burst = do
           \{ commit } -> commit id
     , stream: Stream mempty \cbs -> do
         bursted <- burst
-        push cbs <#> { burst: bursted, sources: [id], unsubscribe: _ }
+        { burst: bursted, sources: [id], unsubscribe: _ } <$>
+          iteM running (push cbs) (mempty <$ cbs.destroyed)
     , destroy: destroy _.destroyed
     }
 
@@ -348,8 +349,9 @@ createRiverStore initialValue = do
     , current: lastValue.get
     }
 
-
-createRiver' ::
+-- | Create a river that proxies another stream, including all receive and
+-- | commit events individually, as opposed to creating a new `id` for itself.
+createProxy' ::
   forall flow a.
   Allocar (Array a) ->
   Allocar
@@ -358,26 +360,30 @@ createRiver' ::
     , stream :: Array Id -> Stream flow a
     , destroy :: Allocar Unit
     }
-createRiver' burst = do
-  { push, notify, destroy } <- subscriptions
+createProxy' burst = do
+  { push, notify, destroy, running } <- subscriptions
   pure
     { send: \a -> do
         notify \{ receive } -> receive a
     , commit: \id -> do
         notify \{ commit } -> commit id
-    , stream: \sources -> Stream mempty \cbs -> do
+    , stream: \sources -> Stream Flowing \cbs -> do
         bursted <- burst
-        push cbs <#> { burst: bursted, sources, unsubscribe: _ }
-    , destroy: destroy $ _.destroyed
+        { burst: bursted, sources, unsubscribe: _ } <$>
+          iteM running (push cbs) (mempty <$ cbs.destroyed)
+    , destroy: destroy _.destroyed
     }
 
 -- | Make a lake whose event stream gets allocated per subscriber, e.g. for
 -- | timeouts or the like.
 makeLake :: forall a. ((a -!> Unit) -> Allocar (Allocar Unit)) -> Stream NotFlowing a
-makeLake streamTemplate = Stream NotFlowing \cbs -> do
+makeLake = makeLake' <<< const
+
+makeLake' :: forall a. (Allocar Unit -> (a -!> Unit) -> Allocar (Allocar Unit)) -> Stream NotFlowing a
+makeLake' streamTemplate = Stream NotFlowing \cbs -> do
   id <- globalId
   loadingBurst \whenLoaded -> do
-    unsubscribe <- streamTemplate do
+    unsubscribe <- streamTemplate cbs.destroyed do
       \a -> whenLoaded a do
         cbs.receive a
         cbs.commit id
@@ -396,12 +402,24 @@ subscribe = subscribeIsh mempty
 subscribeIsh :: forall flow a. Allocar Unit -> Stream flow a -> (a -!> Unit) -> Allocar (Allocar Unit)
 subscribeIsh destroyed (Stream _ stream) receive = do
   -- We delete the unsubscriber when the stream is destroyed, to avoid leaking
-  -- resources from the closure of it
-  unsubscriber <- storeUnsubscriber -- this handles immediately destroyed streams
-  r <- stream { receive, commit: mempty, destroyed: unsubscriber.wrapDestroy destroyed }
+  -- resources from the closure of it.
+  unsubscriber <- storeUnsubscriber
+  hasLoaded <- prealloc false
+  isDestroyed <- prealloc false
+  let
+    upstreamDestroyed = unsubscriber.wrapDestroy do
+      isDestroyed.set true
+      whenM hasLoaded.get destroyed
+  r <- stream { receive, commit: mempty, destroyed: upstreamDestroyed }
   unsubscriber.set r.unsubscribe
   for_ r.burst receive
+  hasLoaded.set true
+  whenM isDestroyed.get destroyed
+  -- this stages `destroyed`
   pure unsubscriber.unsub
+
+onDestroyed :: forall a. Effect Unit -> River a -> Effect Unit
+onDestroyed cb stream = void $ subscribeIsh cb stream mempty
 
 -- | Dam.
 dam :: forall flowIn a. Stream flowIn a -> Lake a
@@ -414,6 +432,10 @@ stillRiver (Stream t s) = Stream t s
 unsafeRiver :: forall flowIn flowOut a. Stream flowIn a -> Stream flowOut a
 unsafeRiver (Stream _ f) = Stream Flowing f
 
+unsafeCopyFlowing :: forall flow1 flow2 a b.
+  Stream flow1 a -> Stream flow2 b -> Stream flow1 b
+unsafeCopyFlowing (Stream f _) (Stream _ stream) = Stream f stream
+
 -- | Hmm, ugly but kind of necessary
 burstOf :: forall flow a. Stream flow a -> Allocar (Array a)
 burstOf (Stream _ stream) = do
@@ -423,6 +445,16 @@ burstOf (Stream _ stream) = do
 -- | Cancel out the burst behavior of any stream
 noBurst :: forall flow a. Stream flow a -> Stream flow a
 noBurst (Stream t stream) = Stream t \cbs -> stream cbs <#> _ { burst = [] }
+
+-- | Create a stream that is only a burst of elements. Like `oneOfMap pure`.
+bursting :: forall flow a. Array a -> Stream flow a
+bursting burst = Stream mempty \{ destroyed } -> do
+  destroyed
+  pure
+    { sources: []
+    , burst
+    , unsubscribe: mempty
+    }
 
 -- | If there is no burst, insert a `Nothing`.
 -- | Kind of like `pure Nothing <|> Just <$> stream`
@@ -447,7 +479,7 @@ instantiate ::
     , destroy :: Allocar Unit
     }
 instantiate strm@(Stream _ stream) = do
-  { send, commit, stream: streamDependingOn, destroy } <- createRiver' (burstOf strm)
+  { send, commit, stream: streamDependingOn, destroy } <- createProxy' (burstOf strm)
   { burst, sources, unsubscribe } <-
     stream { receive: send, commit, destroyed: destroy }
   pure { burst, stream: streamDependingOn sources, destroy: unsubscribe <> destroy }
@@ -464,7 +496,7 @@ instantiateStore ::
     }
 instantiateStore (Stream _ stream) = do
   lastValue <- storeLast
-  { send, commit, stream: streamDependingOn, destroy } <- createRiver' (Array.fromFoldable <$> lastValue.get)
+  { send, commit, stream: streamDependingOn, destroy } <- createProxy' (Array.fromFoldable <$> lastValue.get)
   { burst, sources, unsubscribe } <-
     stream { receive: send, commit, destroyed: destroy }
   for_ (Array.last burst) lastValue.set
@@ -472,14 +504,34 @@ instantiateStore (Stream _ stream) = do
 
 -- | This function memoizes rivers, because it is safe to do so. It does not
 -- | memoize lakes.
--- TODO: delay subscription, including capturing the first burst directly
 mayMemoize :: forall flow a. Stream flow a -> Stream flow a
-mayMemoize stream0@(Stream Flowing _) = unsafeAllocate do
-  lazyCachedStream <- lazyAlloc do
-    -- TODO: okay to drop the destroy?
-    instantiate stream0 <#> \{ stream: Stream _ stream } -> stream
-  Stream Flowing <$> allocLazy do
-    pure \cbs -> lazyCachedStream <@> cbs
+mayMemoize (Stream Flowing upstream) = unsafeAllocate do
+  -- the implementation is funny just to capture the initial burst, really.
+  -- otherwise it would just be a lazy instantiate.
+  { push, notify, destroy, size, running } <- subscriptions
+  cachedStream <- prealloc Nothing
+  let
+    receive = \a -> notify \sub -> sub.receive a
+    commit = \id -> notify \sub -> sub.commit id
+    destroyed = destroy _.destroyed *> down
+    upstreamCbs = { receive, commit, destroyed }
+    up = cachedStream.get >>= case _ of
+      Just { sources } -> do
+        { sources, burst: _ } <$> burstOf (Stream Flowing upstream)
+      Nothing -> do
+        { burst, sources, unsubscribe } <- upstream upstreamCbs
+        { burst, sources } <$ cachedStream.set (Just { sources, unsubscribe })
+    down = do
+      sz <- size
+      cs <- cachedStream.get
+      case sz, cs of
+        0, Just { unsubscribe } -> unsubscribe
+        _, _ -> pure unit
+  pure $ Stream Flowing \cbs ->
+    iteM (not <$> running) (mempty <$ cbs.destroyed) do
+      unsub <- push cbs
+      { sources, burst } <- up
+      pure { burst, sources, unsubscribe: unsub <> down }
 mayMemoize stream = stream
 
 -- | This function is only pure for rivers. It returns any flow type simply for
@@ -608,38 +660,38 @@ selfGatingEf logic (Stream flow setup) = Stream flow \cbs -> do
 --       , destroyed:
 --       }
 
-mapCb ::
-  forall flow a b.
-  ( { burst :: Array a
-    , receive :: b -> Effect Unit
-    , destroyed :: Allocar Unit
-    } -&>
-    { burst :: Array b
-    , receive :: a -> Effect Unit
-    , unsubscribe :: Allocar Unit
-    , destroyed :: Allocar Unit
-    }
-  ) ->
-  Stream flow a -> Stream flow b
-mapCb f (Stream t g) = Stream t \cbs -> do
-  lastValue <- storeLast
-  receiver <- accumulator
-  destroyer <- accumulator
-  r <- g cbs
-    { receive = lastValue.set
-    , commit = \_ -> lastValue.run \a ->
-        join do receiver.get <@> a
-    , destroyed = join destroyer.get
-    }
-  { burst, receive, unsubscribe, destroyed } <- f
-    { burst: r.burst, receive: cbs.receive, destroyed: cbs.destroyed }
-  receiver.put receive
-  destroyer.put destroyed
-  pure
-    { burst
-    , sources: r.sources
-    , unsubscribe: unsubscribe <> r.unsubscribe
-    }
+-- mapCb ::
+--   forall flow a b.
+--   ( { burst :: Array a
+--     , receive :: b -> Effect Unit
+--     , destroyed :: Allocar Unit
+--     } -&>
+--     { burst :: Array b
+--     , receive :: a -> Effect Unit
+--     , unsubscribe :: Allocar Unit
+--     , destroyed :: Allocar Unit
+--     }
+--   ) ->
+--   Stream flow a -> Stream flow b
+-- mapCb f (Stream t g) = Stream t \cbs -> do
+--   lastValue <- storeLast
+--   receiver <- accumulator
+--   destroyer <- accumulator
+--   r <- g cbs
+--     { receive = lastValue.set
+--     , commit = \_ -> lastValue.run \a ->
+--         join do receiver.get <@> a
+--     , destroyed = join destroyer.get
+--     }
+--   { burst, receive, unsubscribe, destroyed } <- f
+--     { burst: r.burst, receive: cbs.receive, destroyed: cbs.destroyed }
+--   receiver.put receive
+--   destroyer.put destroyed
+--   pure
+--     { burst
+--     , sources: r.sources
+--     , unsubscribe: unsubscribe <> r.unsubscribe
+--     }
 
 mapLatest :: forall flowInner flowIn a b. (a -> Stream flowInner b) -> Stream flowIn a -> Lake b
 mapLatest = flip latestStream

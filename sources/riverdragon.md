@@ -1,3 +1,10 @@
+:::{.centered}
+bones resting beneath\
+a lake, a stagnant stream.\
+of wings and flying we dream,\
+as flowing rivers yearn to drag on.\
+:::
+
 This input sends `\i -> Left (Tuple i i)`{.purescript}, which youʼll have to take my word for it that it is cool that it deduplicates events and does not send two events `Left (Tuple newValue oldValue), Left (Tuple newValue newValue)`{.purescript}.
 
 <input id="test-input" />

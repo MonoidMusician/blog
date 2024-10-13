@@ -216,6 +216,8 @@ subscriptions :: forall o. Allocar
   { push :: o -&> Allocar Unit
   , notify :: (o -!> Unit) -!> Unit
   , destroy :: (o -!> Unit) -&> Unit
+  , size :: Allocar Int
+  , running :: Allocar Boolean
   }
 subscriptions = do
   listenersST <- liftST STA.new
@@ -242,6 +244,8 @@ subscriptions = do
             Just i -> void do
               STA.splice i 1 [] listenersST
     , destroy
+    , size: liftST do STA.pushAll [] listenersST
+    , running
     }
 
 -- | Register an event listener on a target. Returns a cleanup procedure.

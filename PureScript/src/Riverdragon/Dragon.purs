@@ -9,16 +9,21 @@ import Data.Pair (Pair(..))
 import Data.Semigroup.First (First(..))
 import Data.Semigroup.Foldable (foldMap1)
 import Data.Semigroup.Last (Last(..))
-import Data.Traversable (for, for_, sequence_, traverse_)
+import Data.Traversable (for, for_, sequence_, traverse, traverse_)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Console as Console
 import Effect.Uncurried (runEffectFn3)
 import Idiolect ((>==))
 import Riverdragon.Dragon.Breath (removeSelf, setAttributeNS, unsafeSetProperty)
-import Riverdragon.River (Lake, subscribe, subscribeIsh)
+import Riverdragon.River (Lake, bursting, subscribe, subscribeIsh)
 import Riverdragon.River.Bed (Allocar, accumulator, eventListener, freshId, ordMap, rolling, unsafeAllocate)
+import Riverdragon.River.Beyond (mkAnimFrameBuffer)
+import Safe.Coerce (coerce)
 import Web.DOM (Comment, Document, Element, Node)
+import Web.DOM (Element) as Web
+import Web.DOM.Attr (getValue)
+import Web.DOM.Attr as Attr
 import Web.DOM.AttrName (AttrName(..))
 import Web.DOM.Comment as Comment
 import Web.DOM.Document (createComment, createElement, createElementNS, createTextNode)
@@ -26,12 +31,15 @@ import Web.DOM.Element (setAttribute)
 import Web.DOM.Element as Element
 import Web.DOM.ElementId (ElementId)
 import Web.DOM.ElementName (ElementName(..))
+import Web.DOM.HTMLCollection as HTMLCollection
+import Web.DOM.NamedNodeMap (getAttributes)
 import Web.DOM.NamespaceURI (NamespaceURI(..))
 import Web.DOM.Node (appendChild, insertBefore, parentNode, setTextContent)
 import Web.DOM.NonElementParentNode (getElementById)
+import Web.DOM.ParentNode (children)
 import Web.DOM.Text as Text
+import Web.Event.Event (Event) as Web
 import Web.Event.Event (EventType(..))
-import Web.Event.Event as Web
 import Web.Event.EventPhase (EventPhase(..))
 import Web.HTML (window)
 import Web.HTML.HTMLDocument as HTMLDocument
@@ -60,8 +68,8 @@ data AttrProp
   = Attr (Maybe String) String String
   | Prop String PropVal
   | Listener String (Maybe (Web.Event -> Effect Unit))
-  | Self (Element -> Effect (Effect Unit))
   | MultiAttr (Array AttrProp)
+  | Self (Element -> Effect (Effect Unit))
 instance semigroupAttrProp :: Semigroup AttrProp where
   append (MultiAttr []) r = r
   append l (MultiAttr []) = l
@@ -119,6 +127,8 @@ renderProps el stream = do
 type RndrMgr =
   { doc :: Document
   , domId :: Allocar String
+  , renderThread :: Lake ~> Lake
+  , renderNow :: Effect Unit
   }
 
 globalDomId :: Allocar Int
@@ -129,7 +139,13 @@ renderManager = do
   doc <- window >>= document >== HTMLDocument.toDocument
   prefix <- globalDomId <#> \i j -> show i <> "." <> show j
   domId <- map prefix <$> freshId
-  pure { doc, domId }
+  animFrameBuffer <- mkAnimFrameBuffer
+  pure
+    { doc
+    , domId
+    , renderThread: (animFrameBuffer.buffering :: Lake ~> Lake)
+    , renderNow: animFrameBuffer.drain
+    }
 
 mkBookmarks :: RndrMgr -> (Node -> Effect Unit) -> Effect (Tuple (Pair Comment) (Node -> Effect Unit))
 mkBookmarks mgr insert = do
@@ -181,17 +197,17 @@ renderTo mgr insert (Egg egg) = egg >>=
   \{ dragon, destroy } -> renderTo mgr insert dragon <#>
     \r -> r { destroy = r.destroy <> destroy }
 renderTo mgr insert (Text changingValue) = do
-  el <- createTextNode "" mgr.doc
-  unsubscribe <- subscribeIsh mempty changingValue \newValue -> do
-    setTextContent newValue (Text.toNode el)
-  insert (Text.toNode el)
-  pure $ only (Text.toNode el) do
+  el <- Text.toNode <$> createTextNode "" mgr.doc
+  unsubscribe <- subscribe (mgr.renderThread changingValue) \newValue -> do
+    setTextContent newValue el
+  insert el
+  pure $ only el do
     unsubscribe
-    removeSelf (Text.toNode el)
+    removeSelf el
 renderTo mgr insert (Element ns ty props children) = do
   let create = maybe createElement (createElementNS <<< Just <<< NamespaceURI)
   el <- create ns (ElementName ty) mgr.doc
-  unSubscribeProps <- renderProps el props
+  unSubscribeProps <- renderProps el (mgr.renderThread props)
   destroyChildren <- renderTo mgr (appendChild <@> Element.toNode el) children
   insert (Element.toNode el)
   pure $ only (Element.toNode el) do
@@ -209,7 +225,7 @@ renderTo mgr insert (Replacing revolving) = do
   Tuple bookmarks insert' <- mkBookmarks mgr insert
   unsubPrev <- rolling
   let inactive = for_ bookmarks (Comment.toNode >>> removeSelf)
-  unsubscribe <- subscribeIsh (mempty inactive) revolving \newValue -> do
+  unsubscribe <- subscribeIsh inactive (mgr.renderThread revolving) \newValue -> do
     unsubPrev mempty
     unsubPrev <<< _.destroy =<< renderTo mgr insert' newValue
   pure $ fromBookmarks bookmarks do
@@ -220,9 +236,23 @@ renderTo mgr insert (Appending items) = do
   Tuple bookmarks insert' <- mkBookmarks mgr insert
   unsubAll <- accumulator
   let inactive = for_ bookmarks (Comment.toNode >>> removeSelf)
-  unsubscribe <- subscribeIsh (mempty inactive) items \newChild -> do
+  unsubscribe <- subscribeIsh inactive (mgr.renderThread items) \newChild -> do
     unsubAll.put <<< _.destroy =<< renderTo mgr insert' newChild
   pure $ fromBookmarks bookmarks do
     unsubscribe
     join (unsubAll.reset)
     inactive
+
+-- | Take a snapshot of a DOM element as a static `Dragon`.
+snapshot :: Web.Element -> Effect Dragon
+snapshot e = do
+  attrs <- Element.attributes e >>= getAttributes >>= traverse \attr -> do
+    value <- getValue attr
+    pure $ Attr (coerce Attr.namespaceURI attr) (coerce Attr.localName attr) value
+  kids <- children (Element.toParentNode e) >>= HTMLCollection.toArray >>= traverse snapshot
+  pure $ Element
+    (coerce Element.namespaceURI e)
+    (coerce Element.tagName e)
+    (bursting attrs)
+    (Fragment kids)
+

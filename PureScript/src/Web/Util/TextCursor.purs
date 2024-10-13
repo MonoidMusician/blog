@@ -9,8 +9,8 @@ import Data.Lens.Iso.Newtype (_Newtype)
 import Data.Lens.Record (prop)
 import Data.Lens.Types (Setter')
 import Data.Newtype (class Newtype)
-import Data.String (length, null) as S
-import Data.String as String
+import Data.String (null) as S
+import Data.String.CodeUnits (length, splitAt) as CU
 import Data.String.Gen (genUnicodeString)
 import Data.Tuple.Nested ((/\))
 import Type.Proxy (Proxy(..))
@@ -93,7 +93,7 @@ content (TextCursor { before, selected, after }) = before <> selected <> after
 -- check: length textcursor == length (content textcursor)
 length :: TextCursor -> Int
 length (TextCursor { before, selected, after }) =
-  S.length before + S.length selected + S.length after
+  CU.length before + CU.length selected + CU.length after
 
 -- | Test whether there is no content.
 -- check: null textcursor == null (content textcursor)
@@ -152,7 +152,7 @@ _start = lens' \tc -> start tc /\
     else placeSelection start' (end tc) tc
 
 start :: TextCursor -> Int
-start (TextCursor tc) = String.length tc.before
+start (TextCursor tc) = CU.length tc.before
 
 _end :: Lens' TextCursor Int
 _end = lens' \tc -> end tc /\
@@ -162,7 +162,7 @@ _end = lens' \tc -> end tc /\
     else placeSelection (start tc) end' tc
 
 end :: TextCursor -> Int
-end (TextCursor tc) = String.length tc.before + String.length tc.selected
+end (TextCursor tc) = CU.length tc.before + CU.length tc.selected
 
 -- | Lens for the direction of selection.
 _direction :: Lens' TextCursor Direction
@@ -255,7 +255,7 @@ placeCursorAt i tc = TextCursor
   , direction: None
   }
   where
-  split = String.splitAt i (content tc)
+  split = CU.splitAt i (content tc)
 
 placeSelection :: Int -> Int -> TextCursor -> TextCursor
 placeSelection i j tc = TextCursor
@@ -273,8 +273,8 @@ placeSelection i j tc = TextCursor
   where
   lower = min i j
   upper = max i j
-  splitL = String.splitAt lower (content tc)
-  splitR = String.splitAt (upper - lower) splitL.after
+  splitL = CU.splitAt lower (content tc)
+  splitR = CU.splitAt (upper - lower) splitL.after
 
 -- | Modify just the selected region with an endomorphism.
 modifySelected :: (String -> String) -> TextCursor -> TextCursor

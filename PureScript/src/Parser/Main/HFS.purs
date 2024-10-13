@@ -22,7 +22,7 @@ import Parser.Comb.Dragon (renderParseError)
 import Parser.Languages.HFS (HFList, HFS, IsPointed(..), OpMeta(..), RuntimeError(..), emptyEnv, hfsCount, hfsFromInt, hfsToTree, opMeta, showHFS, stacksInfo, stdlib)
 import Parser.Languages.HFS as HFS
 import Riverdragon.Dragon (Dragon)
-import Riverdragon.Dragon.Bones (($$), ($~~), (.$), (.$$), (.$~~), (<:>), (=:=), (>@))
+import Riverdragon.Dragon.Bones (($$), ($<), ($<>), ($~~), (.$), (.$$), (.$~~), (<:>), (<>$), (=:=), (>$), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy, sourceCode)
 import Riverdragon.River (createRiver)
@@ -125,7 +125,7 @@ widget _ = pure $ eggy \shell -> do
             , (if dequeued then color "#ff6565" else span "dv") $ showHFS value
             ]
         , D.div.$ building # foldMap \x ->
-            (\y -> D.text "--- " <> span "dv" y <> D.text " ---") case x of
+            (\y -> "--- " $< span "dv" y >$ " ---") case x of
               Left hfs | hfs == mempty -> "{"
               Left hfs -> showHFS (hfsCount hfs) <> "#{"
               Right 0 -> "["

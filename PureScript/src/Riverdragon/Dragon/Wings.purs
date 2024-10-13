@@ -83,7 +83,7 @@ instantiateListenInput includeFirst id = _.stream <$> instantiate (listenInput i
 
 vanishing :: Milliseconds -> Lake Dragon -> Lake Dragon
 vanishing ms stream = stream <#> \element -> Replacing do
-  pure element <|> limitTo 1 (delay ms (pure mempty))
+  pure element <|> limitTo 1 (delay ms (pure (mempty :: Dragon)))
 
 inputValidated ::
   String ->

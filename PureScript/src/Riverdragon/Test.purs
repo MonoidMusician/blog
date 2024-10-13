@@ -12,7 +12,8 @@ import Riverdragon.Dragon (Dragon, renderId)
 import Riverdragon.Dragon as D
 import Riverdragon.Dragon.Bones as B
 import Riverdragon.Dragon.Wings (instantiateListenInput, listenInput, vanishing)
-import Riverdragon.River (Stream, subscribe)
+import Riverdragon.River (Stream, subscribe, subscribeIsh, (>>~))
+import Riverdragon.River.Beyond (delay)
 import Web.DOM.ElementId (ElementId(..))
 import Widget (Widget)
 

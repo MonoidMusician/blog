@@ -2,20 +2,20 @@ module Web.Util.TextCursor.Element
   ( module Web.Util.TextCursor.Element.Type
   , module Web.Util.TextCursor.Element.HTML
   , textCursor, setTextCursor
-  , modifyTextCursor, modifyTextCursorST
+  , modifyTextCursor, modifyTextCursorST, modifyTextCursorST_
   , focusTextCursor, focusTextCursorById
   ) where
 
 import Prelude
 
 import Control.Monad.State.Class (class MonadState, modify)
-import Data.Lens (Lens', (.~))
-import Data.String.CodeUnits (length, splitAt)
+import Data.Lens (Lens', (.~), (^.))
+import Data.String.CodeUnits (splitAt) as CU
 import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
 import Web.DOM.ElementId (ElementId)
 import Web.HTML.HTMLElement (focus)
-import Web.Util.TextCursor (TextCursor(..), content)
+import Web.Util.TextCursor (TextCursor(..), _direction, content, end, start)
 import Web.Util.TextCursor.Element.HTML (value, setValue, selectionStart, setSelectionStart, selectionEnd, setSelectionEnd, selectionDirection, setSelectionDirection)
 import Web.Util.TextCursor.Element.Type (TextCursorElement(..), toHTMLElement, read, readEventTarget, validate, validate', lookupAndValidate, lookupValidateAndDo)
 
@@ -26,8 +26,8 @@ textCursor element = do
   start <- selectionStart element
   end <- selectionEnd element
   direction <- selectionDirection element
-  let { before: prior, after } = splitAt end val
-  let { before, after: selected } = splitAt start prior
+  let { before: prior, after } = CU.splitAt end val
+  let { before, after: selected } = CU.splitAt start prior
   pure $ TextCursor
     { before
     , selected
@@ -39,13 +39,11 @@ textCursor element = do
 -- | `setSelectionStart`, `setSelectionEnd`, and `setSelectionDirection` to
 -- | ensure a consistent state for the field.
 setTextCursor :: TextCursor -> TextCursorElement -> Effect Unit
-setTextCursor tc@(TextCursor { before, selected, after, direction }) element = do
+setTextCursor tc element = do
   setValue (content tc) element
-  let start = length before
-  let end = start + length selected
-  setSelectionStart start element
-  setSelectionEnd end element
-  setSelectionDirection direction element
+  setSelectionStart (start tc) element
+  setSelectionEnd (end tc) element
+  setSelectionDirection (tc ^. _direction) element
 
 -- | Modifies the `TextCursor` on an element through the given endomorphism.
 modifyTextCursor :: (TextCursor -> TextCursor) -> TextCursorElement -> Effect Unit

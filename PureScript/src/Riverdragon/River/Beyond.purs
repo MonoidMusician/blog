@@ -4,69 +4,125 @@ import Prelude
 
 import Data.Either (hush)
 import Data.Filterable (compact)
-import Data.Foldable (for_, traverse_)
+import Data.Foldable (sequence_, traverse_)
 import Data.Int as Int
+import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Time.Duration (Milliseconds(..))
 import Data.Tuple (snd)
 import Data.Tuple.Nested (type (/\), (/\))
+import Effect (Effect, foreachE, whileE)
 import Effect.Aff (Aff)
 import Effect.Aff as Aff
 import Effect.Timer (clearInterval, clearTimeout, setInterval, setTimeout)
-import Riverdragon.River (Lake, Stream, fixPrjBurst, makeLake, mapCb, oneStream, statefulStream, (<?*>), (>>~))
-import Riverdragon.River.Bed (freshId, ordSet, storeLast)
+import Riverdragon.Dragon.Breath (microtask)
+import Riverdragon.River (Allocar, Lake, Stream(..), fixPrjBurst, makeLake, makeLake', oneStream, statefulStream, subscribeIsh, unsafeCopyFlowing, (<?*>), (>>~))
+import Riverdragon.River.Bed (breaker, freshId, ordMap, prealloc, pushArray)
+import Web.HTML (window)
+import Web.HTML.Window (RequestAnimationFrameId, cancelAnimationFrame, requestAnimationFrame)
 
--- delay :: Milliseconds -> Stream False ~> Stream False
--- delay (Milliseconds ms) stream = makeLake \cb -> do
---   subscribe stream do void <<< setTimeout (Int.round ms) <<< cb
-
+-- | Requires its delay function to be predictable, especially if the result
+-- | is used as a river.
+delayWith :: forall flow.
+  (Effect Unit -> Allocar (Allocar Unit)) ->
+  Stream flow ~> Stream flow
+delayWith delaying stream =
+  unsafeCopyFlowing stream $ makeLake' \selfDestruct cb -> do
+    isDestroyed <- prealloc false
+    ids <- freshId
+    inflight <- ordMap
+    let
+      upstreamDestroyed = do
+        isDestroyed.set true
+        -- if it is not destroyed, the last in flight callback will trigger it
+        whenM (Map.isEmpty <$> inflight.read) selfDestruct
+      receive value = whenM (not <$> isDestroyed.get) do
+        id <- ids
+        cancelIt <- delaying do
+          void $ inflight.remove id
+          cb value
+          whenM isDestroyed.get do
+            whenM (Map.isEmpty <$> inflight.read) do
+              selfDestruct
+        inflight.set id cancelIt
+    unsub <- subscribeIsh upstreamDestroyed stream receive
+    pure $ unsub <> inflight.traverse (const identity)
 
 delay :: forall flow. Milliseconds -> Stream flow ~> Stream flow
-delay (Milliseconds ms) = mapCb \upstream -> do
-  -- TODO: arena
-  inflight <- ordSet
-  let
-    receive value = do
-      idStore <- storeLast
-      id <- setTimeout (Int.round ms) do
-        idStore.get >>= traverse_ inflight.remove
-        upstream.receive value
-      inflight.set id
-      idStore.set id
-  for_ upstream.burst receive
-  pure
-    { receive: receive
-    , unsubscribe: mempty $ inflight.reset >>= traverse_ clearTimeout
-    , burst: []
-    , destroyed: void do
-        -- We do not care about canceling this
-        setTimeout (Int.round ms) upstream.destroyed
+delay (Milliseconds ms) = delayWith \cb -> do
+  clearTimeout <$> setTimeout (Int.round ms) cb
+
+delayMicro :: forall flow. Stream flow ~> Stream flow
+delayMicro = delayWith \cb -> do
+  -- Microtasks have no canceler, so we have to drop events ourselves
+  brk <- breaker $ const cb
+  brk.trip <$ microtask (brk.run unit)
+
+delayAnim :: forall flow. Stream flow ~> Stream flow
+delayAnim = delayWith \cb -> do
+  w <- window
+  cancelAnimationFrame <$> requestAnimationFrame cb w <@> w
+
+data AFBState
+  = Idle
+  | Requested RequestAnimationFrameId
+  | Draining
+  | Destroyed
+derive instance Eq AFBState
+derive instance Ord AFBState
+
+mkAnimFrameBuffer ::
+  Allocar
+    { buffering :: forall flow. Stream flow ~> Stream flow
+    , drain :: Effect Unit
+    , destroy :: Allocar Unit
     }
-
--- delayMicro :: forall flow. Stream flow ~> Stream flow
--- delayMicro = overCb \cb -> do
---   -- Microtasks have no canceler, so we have to drop events ourselves
---   brk <- breaker cb
---   pure
---     { receive: microtask <<< brk.run
---     , unsubscribe: brk.trip
---     }
-
--- delayAnim :: forall flow. Stream flow ~> Stream flow
--- delayAnim = overCb \cb -> do
---   -- TODO: arena
---   inflight <- ordSet
---   w <- window
---   pure
---     { receive: \value -> do
---         idStore <- storeLast
---         id <- flip requestAnimationFrame w do
---           idStore.get >>= traverse_ inflight.remove
---           cb value
---         inflight.set id
---         idStore.set id
---     , unsubscribe: inflight.reset >>= traverse_ (cancelAnimationFrame <@> w)
---     }
+mkAnimFrameBuffer = do
+  w <- window
+  pending <- pushArray
+  state <- prealloc Idle
+  drained <- prealloc true
+  let
+    drain :: Effect Unit
+    drain = whenM (notEq Destroyed <$> state.get) do
+      state.set Draining
+      whileE (not <$> drained.get) do
+        drained.set true
+        pending.reset >>= \items -> foreachE items identity
+      state.set Idle
+    animFrameBuffer :: forall flow. Stream flow ~> Stream flow
+    animFrameBuffer = delayWith \cb0 -> do
+      { trip, run } <- breaker \_ -> cb0
+      let cb = run unit
+      state.get >>= case _ of
+        Idle -> do
+          id <- requestAnimationFrame drain w
+          state.set (Requested id)
+          drained.set false
+          pending.push cb
+        Requested _ -> do
+          drained.set false
+          pending.push cb
+        Draining -> do
+          drained.set false
+          pending.push cb
+        Destroyed -> pure unit
+      pure trip
+    r ::
+      { buffering :: forall flow. Stream flow ~> Stream flow
+      , drain :: Effect Unit
+      , destroy :: Allocar Unit
+      }
+    r =
+      { buffering: animFrameBuffer
+      , drain
+      , destroy: do
+          state.get >>= case _ of
+            Requested id -> cancelAnimationFrame id w
+            _ -> pure unit
+          state.set Destroyed
+      }
+  pure r
 
 counter :: forall flow a. Stream flow a -> Lake (a /\ Int)
 counter = statefulStream 0 <@> \b a ->
