@@ -6,6 +6,7 @@ import Control.Plus ((<|>))
 import Data.Either (Either(..))
 import Data.Foldable (fold)
 import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Console (log)
 import Idiolect (intercalateMap, tripleQuoted, (<#?>))
@@ -17,7 +18,7 @@ import Riverdragon.Dragon.Bones (($$), (.$), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy, sourceCode)
 import Riverdragon.River (Lake, createRiverStore, makeLake)
-import Riverdragon.River.Beyond (dedup)
+import Riverdragon.River.Beyond (counter)
 import Runtime (aSideChannel)
 import Runtime.Live (Status(..))
 import Runtime.Live as Runtime.Live
@@ -57,14 +58,17 @@ pipeline = Runtime.Live.pipeline
 
 embed :: Lake String -> Dragon
 embed incomingRaw = eggy \shell -> do
-  incoming <- shell.instStore do dedup incomingRaw
+  incoming <- shell.instStore do incomingRaw
   pipelined <- shell.instStore do pipeline incoming
   gotRenderer <- shell.instStore $ makeLake \cb -> mempty <$ _sideChannel.installChannel cb
   let
     preScroll = D.pre [ D.style =:= "overflow-x: auto" ]
-    bundled = pipelined <#?> case _ of
-      Compiled result -> Just result
-      _ -> Nothing
+    -- the browser does not want to eval the same JavaScript script tag again,
+    -- so we prepend a unique int
+    bundled = map (\(code /\ i) -> "/*"<>show i<>"*/" <> code) $
+      counter $ pipelined <#?> case _ of
+        Compiled result -> Just result
+        _ -> Nothing
     status = mempty <$ gotRenderer <|> do
       pipelined <#> case _ of
         Fetching _ -> D.text "Fetching ..."
@@ -78,9 +82,7 @@ embed incomingRaw = eggy \shell -> do
   pure $ D.Fragment
     [ D.div [ D.style =:= "white-space: pre" ] $ D.Replacing status
     , bundled >@ \latestBundle -> fold
-      [ D.div [ D.id =:= "grammar" ] mempty
-      , D.div [ D.id =:= "target" ] mempty
-      , gotRenderer >@ \renderer -> D.div [ D.Self =:= renderer.renderToEl ] mempty
+      [ gotRenderer >@ \renderer -> D.div [ D.Self =:= renderer.renderToEl ] mempty
       , D.script
           -- We need to set `type="module"` before `src` in Riverdragon, because
           -- it applies attributes in order!

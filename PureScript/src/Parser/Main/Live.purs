@@ -6,8 +6,9 @@ import Ansi.Codes as Ansi
 import Control.Plus ((<|>))
 import Data.Either (Either(..))
 import Data.Foldable (fold, foldMap)
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.String as String
+import Data.Tuple.Nested ((/\))
 import Dodo as Dodo
 import Effect (Effect)
 import Idiolect (intercalateMap, tripleQuoted, (<#?>))
@@ -16,11 +17,11 @@ import Parser.Comb.Comber (Comber, Printer, parse, printGrammarWsn)
 import PureScript.CST.Parser as CST.Parser
 import PureScript.CST.Types as CST.T
 import Riverdragon.Dragon (Dragon, renderId)
-import Riverdragon.Dragon.Bones (($$), (.$), (.$$~), (:.), (=:=), (>@))
+import Riverdragon.Dragon.Bones (($$), (.$), (.$$), (.$$~), (:.), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy, sourceCode)
 import Riverdragon.River (Lake, createRiverStore, makeLake)
-import Riverdragon.River.Beyond (dedup)
+import Riverdragon.River.Beyond (counter)
 import Runtime (aSideChannel)
 import Runtime.Live (Status(..))
 import Runtime.Live as Runtime.Live
@@ -38,13 +39,20 @@ colorful x t = D.span
   [ D.style =:= "color:" <> color x ]
   (D.text t)
 
+cls :: String -> String -> Dragon
+cls c v = D.span:.c.$$v
+
 toDragon :: Printer Dragon
 toDragon =
-  { nonTerminal: colorful Ansi.Blue
-  , literal: colorful Ansi.Yellow <<< show
+  { nonTerminal: cls "non-terminal"
+  , literal: \v -> D.code.$$v
   , regex: colorful Ansi.Green
+      <<< (fromMaybe <*> String.stripPrefix (String.Pattern "/^(?:"))
+      <<< (fromMaybe <*> String.stripSuffix (String.Pattern ")/su"))
   , rule: colorful Ansi.Cyan <<< show
-  , meta: D.text
+  , meta: case _ of
+      " " -> D.text " "
+      t -> cls "meta" t
   , lines: foldMap (D.div[])
   }
 
@@ -93,14 +101,17 @@ pipeline = Runtime.Live.pipeline
 
 embed :: Lake String -> Dragon
 embed incomingRaw = eggy \shell -> do
-  incoming <- shell.instStore do dedup incomingRaw
+  incoming <- shell.instStore do incomingRaw
   pipelined <- shell.instStore do pipeline incoming
   gotParser <- shell.instStore $ makeLake \cb -> mempty <$ _sideChannel.installChannel cb
   let
     preScroll = D.pre [ D.style =:= "overflow-x: auto" ]
-    bundled = pipelined <#?> case _ of
-      Compiled result -> Just result
-      _ -> Nothing
+    -- the browser does not want to eval the same JavaScript script tag again,
+    -- so we prepend a unique int
+    bundled = map (\(code /\ i) -> "/*"<>show i<>"*/" <> code) $
+      counter $ pipelined <#?> case _ of
+        Compiled result -> Just result
+        _ -> Nothing
     status = mempty <$ gotParser <|> do
       pipelined <#> case _ of
         Fetching _ -> D.text "Fetching ..."
@@ -113,6 +124,10 @@ embed incomingRaw = eggy \shell -> do
         Crashed err -> preScroll $$ err
   pure $ D.Fragment
     [ D.div [ D.style =:= "white-space: pre" ] $ D.Replacing status
+    , D.html_"style".$$ tripleQuoted """
+        #grammar .meta { font-size: 0.85em; margin: 0 }
+        #grammar .non-terminal { font-size: 0.9em; margin: 0 }
+      """
     , bundled >@ \latestBundle -> fold
       [ D.div [ D.id =:= "grammar" ] mempty
       , gotParser >@ \parser -> D.Egg do
@@ -142,6 +157,7 @@ widget :: Widget
 widget _ = pure $ eggy \shell -> do
   let df = tripleQuoted """
     -- This parses JSON-style strings separated by whitespace
+    -- (the parser needs a name to assign to the `many` parser)
     manySepBy "strings" ws string
       -- And pretty prints their values separated by new lines
       <#> map D.text >>> D.lines

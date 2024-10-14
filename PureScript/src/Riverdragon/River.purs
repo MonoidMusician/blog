@@ -58,7 +58,67 @@
 -- | an input is typed as `Stream flow` (for `Lake`) or `River`, in the case
 -- | that it is required to be `River`. This is designed to make fitting types
 -- | together the easiest, to avoid inserting `dam` manually.
-module Riverdragon.River ( module Riverdragon.River, module ReExports ) where
+module Riverdragon.River
+  ( Stream(..)
+  , Lake
+  , River
+  , IsFlowing(..)
+  , Flowing
+  , NotFlowing
+  , Id
+  , oneStream
+  , combineStreams
+  , sampleOnLeft
+  , sampleOnRight
+  , (<*?>)
+  , (<?*>)
+  , sampleOnLeftOp
+  , sampleOnRightOp
+  , (<**?>)
+  , (<?**>)
+  , applyOp
+  , (<**>)
+  , createRiver
+  , createRiverBurst
+  , createRiverStore
+  , createProxy'
+  , makeLake
+  , makeLake'
+  , subscribe
+  , subscribeIsh
+  , onDestroyed
+  , dam
+  , stillRiver
+  , unsafeRiver
+  , unsafeCopyFlowing
+  , burstOf
+  , noBurst
+  , bursting
+  , alwaysBurst
+  , instantiate
+  , instantiateStore
+  , mayMemoize
+  , memoize
+  , foldStream
+  , emitState
+  , statefulStream
+  , limitTo
+  , selfGating
+  , selfGatingEf
+  , mapLatest
+  , latestStream
+  , (>>~)
+  , latestStreamEf
+  , allStreamsEf
+  , fix
+  , fixPrj
+  , fixPrjBurst
+  , fix'
+  , mailbox
+  , mailboxRiver
+  , module ReExports
+  )
+  where
 
 import Prelude
 
@@ -273,24 +333,23 @@ combineStreams logic comb (Stream t1 e1) (Stream t2 e2) = Stream (t1 <> t2) \cbs
     , unsubscribe: r1.unsubscribe <> r2.unsubscribe
     }
 
-sampleOnRight :: forall flow a b. Stream flow a -> Stream flow (a -> b) -> Stream flow b
-sampleOnRight = combineStreams (That tt) (#)
+sampleOnLeft :: forall flow a b. Stream flow (a -> b) -> Stream flow a -> Stream flow b
+sampleOnLeft = combineStreams (This tt) ($)
 
-sampleOnLeft :: forall flow a b. Stream flow a -> Stream flow (a -> b) -> Stream flow b
-sampleOnLeft = combineStreams (This tt) (#)
+sampleOnRight :: forall flow a b. Stream flow (a -> b) -> Stream flow a -> Stream flow b
+sampleOnRight = combineStreams (That tt) ($)
 
-infixl 4 sampleOnRight as <?**>
-infixl 4 sampleOnLeft as <**?>
+infixl 4 sampleOnLeft as <*?>
+infixl 4 sampleOnRight as <?*>
 
-sampleOnRightOp :: forall flow a b. Stream flow (a -> b) -> Stream flow a -> Stream flow b
-sampleOnRightOp = combineStreams (That tt) ($)
+sampleOnLeftOp :: forall flow a b. Stream flow a -> Stream flow (a -> b) -> Stream flow b
+sampleOnLeftOp = combineStreams (This tt) (#)
 
-infixl 4 sampleOnRightOp as <?*>
+sampleOnRightOp :: forall flow a b. Stream flow a -> Stream flow (a -> b) -> Stream flow b
+sampleOnRightOp = combineStreams (That tt) (#)
 
-sampleOnLeftOp :: forall flow a b. Stream flow (a -> b) -> Stream flow a -> Stream flow b
-sampleOnLeftOp = combineStreams (This tt) ($)
-
-infixl 4 sampleOnLeftOp as <*?>
+infixl 4 sampleOnLeftOp as <**?>
+infixl 4 sampleOnRightOp as <?**>
 
 applyOp :: forall f a b. Applicative f => f a -> f (a -> b) -> f b
 applyOp ea ef = apply ((#) <$> ea) ef

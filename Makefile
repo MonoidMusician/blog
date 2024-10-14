@@ -96,6 +96,7 @@ watch-ps : $(BUILDIR)
 .PHONY : docs-ps
 docs-ps :
 	spago docs -f markdown --no-search
+	spago docs -f html --no-search
 
 .PHONY : live
 live : live/node_modules

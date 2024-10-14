@@ -58,7 +58,7 @@ import Random.LCG as LCG
 import Riverdragon.Dragon.Bones (AttrProp, Dragon, smarties, ($$), ($<), ($~~), (.$), (.$$), (.$$~), (.$~~), (:!), (:.), (:~), (<!>), (<:>), (=!=), (=!?=), (=:=), (=?=), (>@), (>~~), (@<))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy, inputValidated)
-import Riverdragon.River (Lake, createRiver, createRiverStore, foldStream, sampleOnRight, selfGating, subscribe, (<**>))
+import Riverdragon.River (Lake, createRiver, createRiverStore, foldStream, sampleOnRightOp, selfGating, subscribe, (<**>))
 import Riverdragon.River.Beyond (dedup, dedupOn, interval, animationLoop)
 import Stylish.Types (Classy(..))
 import Test.QuickCheck.Gen as QC
@@ -831,7 +831,7 @@ explorerComponent grammar sendUp = eggy \shell -> do
         [ D.tbody.$~~ rules <#> \rule -> do
             let
               focusHere = currentFocused # map (any (snd >>> eq rule.pName))
-              replacement = sampleOnRight currentParts $ currentFocused <#> \mfoc parts -> do
+              replacement = sampleOnRightOp currentParts $ currentFocused <#> \mfoc parts -> do
                 focused /\ nt <- mfoc
                 guard $ nt == rule.pName
                 guard $ focused <= Array.length parts
@@ -1137,7 +1137,7 @@ widgetStateTable { interface } = do
     stateIdI = adaptInterface CA.int (interface "stateId")
     currentGetCurrentState = spotlightBeh stateIdI.receive
     currentStates = filterMap (hush <<< decode statesCodec) (interface "states").receive
-    currentStatesAndGetState = (sampleOnRight currentGetCurrentState (map (/\) currentStates))
+    currentStatesAndGetState = (sampleOnRightOp currentGetCurrentState (map (/\) currentStates))
   pure $ currentStatesAndGetState >@
     \(x /\ getCurrentState) -> renderStateTable { getCurrentState } x
 
@@ -1147,12 +1147,12 @@ widgetParseTable { interface } = do
     stateIdI = adaptInterface CA.int (interface "stateId")
     currentGetCurrentState = spotlightBeh stateIdI.receive
     currentStates = filterMap (hush <<< decode statesCodec) (interface "states").receive
-    currentStatesAndGetState = (sampleOnRight currentGetCurrentState (map (/\) currentStates))
+    currentStatesAndGetState = (sampleOnRightOp currentGetCurrentState (map (/\) currentStates))
     currentGrammar = filterMap (hush <<< decode grammarCodec) (interface "grammar").receive
   initialGrammar <- fromMaybe sampleGrammar <<< join <<< map (hush <<< decode grammarCodec) <$> (interface "grammar").current
   pure $ D.Replacing $ map
     (\(grammar /\ x /\ getCurrentState) -> renderParseTable { getCurrentState: getCurrentState } grammar x)
-    (flip sampleOnRight ((/\) <<< _.augmented <$> (pure initialGrammar <|> currentGrammar)) (currentStatesAndGetState))
+    (flip sampleOnRightOp ((/\) <<< _.augmented <$> (pure initialGrammar <|> currentGrammar)) (currentStatesAndGetState))
 
 inputComponent :: forall r.
   String ->

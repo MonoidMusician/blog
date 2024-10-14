@@ -7,6 +7,15 @@ import Data.Either (Either(..), either)
 import Data.List (List(..), (:))
 import Parser.Types (Part, Fragment)
 
+data Syntaxed space nt tok
+  = Opt (Syntaxed space nt tok)
+  | Conjs (Array (Syntaxed space nt tok))
+  | Disjs (Array (Syntaxed space nt tok))
+  | Atom (Part space nt tok)
+
+-- syntaxed :: Syntax space nt tok -> Syntaxed space nt tok
+-- syntaxed =
+
 data Syntax space nt tok
   = Conj (Syntax space nt tok) (Syntax space nt tok)
   | Disj (Syntax space nt tok) (Syntax space nt tok)
