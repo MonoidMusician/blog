@@ -1,12 +1,16 @@
 module Riverdragon.Dragon.Nest ( module ReExports ) where
 
 import Prelude
-import Prelude as ReExports
+-- import Prelude as ReExports
 
+import Riverdragon.Dragon.Bones (class AttrType, class Attrable, class AttrableRecord, class AutoDOM, class PropType, AttrProp(..), Dragon(..), MultiAttrs(..), MultiProps(..), PropVal(..), __checked, __date, __int, __number, __open, __textcursor, __value, ($$), ($$~), ($<), ($<>), ($~~), (&#), (&%), (&.), (&@), (&~), (.$), (.$$), (.$$~), (.$~~), (.<>), (:!), (:#), (:%), (:.), (:@), (:~), (<!>), (<&>), (<:>), (<>$), (<>.), (<?#>), (<?$>), (<??>), (<?|>), (=!=), (=!?=), (=&=), (=:=), (=?#=), (=?$=), (=?=), (=??=), (=?|=), (>$), (>@), (>~~), (?.), (?~>), (@<), (~~<))
+import Riverdragon.Dragon.Bones (class AttrType, class Attrable, class AttrableRecord, class AutoDOM, class PropType, AttrProp(..), Dragon(..), MultiAttrs(..), MultiProps(..), PropVal(..), __checked, __date, __int, __number, __open, __textcursor, __value, ($$), ($$~), ($<), ($<>), ($~~), (&#), (&%), (&.), (&@), (&~), (.$), (.$$), (.$$~), (.$~~), (.<>), (:!), (:#), (:%), (:.), (:@), (:~), (<!>), (<&>), (<:>), (<>$), (<>.), (<?#>), (<?$>), (<??>), (<?|>), (=!=), (=!?=), (=&=), (=:=), (=?#=), (=?$=), (=?=), (=??=), (=?|=), (>$), (>@), (>~~), (?.), (?~>), (@<), (~~<)) as ReExports
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon (Dragon(..), renderId, renderEl, snapshot)
 import Riverdragon.Dragon (Dragon(..), renderId, renderEl, snapshot) as ReExports
 import Riverdragon.Dragon as Dragon
+import Riverdragon.Dragon.Wings (eggy)
+import Riverdragon.Dragon.Wings (eggy) as ReExports
 import Riverdragon.Dragon.Wings as Wings
 import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, instantiateStore, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, statefulStream, stillRiver, subscribe, subscribeIsh, unsafeCopyFlowing, unsafeRiver, (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~))
 import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, instantiateStore, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, statefulStream, stillRiver, subscribe, subscribeIsh, unsafeCopyFlowing, unsafeRiver, (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~)) as ReExports
@@ -15,6 +19,7 @@ import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (affToLake, animationLoop, counter, debounce, dedup, dedupBy, dedupOn, delay, delayAnim, delayMicro, delayWith, interval, mkAnimFrameBuffer)
 import Riverdragon.River.Beyond (affToLake, animationLoop, counter, debounce, dedup, dedupBy, dedupOn, delay, delayAnim, delayMicro, delayWith, interval, mkAnimFrameBuffer) as ReExports
 import Riverdragon.River.Beyond as Beyond
+import Riverdragon.Main.Live as Riverdragon.Main.Live
 
 import Data.Array as A
 import Data.Array as Array
@@ -31,8 +36,6 @@ import Data.String.CodeUnits as CU
 import Data.String.Regex (regex, source, flags, test, match, replace, replace', search, split) as Re
 import Data.String.Regex.Flags (dotAll, global, ignoreCase, multiline, noFlags, sticky, unicode) as Re
 import Data.String.Regex.Unsafe (unsafeRegex) as Re
-import Dodo as D
-import Dodo.Common as DC
 
 import Control.Alt (class Alt, (<|>))
 import Control.Alt (class Alt, (<|>)) as ReExports
@@ -113,6 +116,8 @@ import Data.String.Regex.Flags (dotAll, global, ignoreCase, multiline, noFlags, 
 import Data.String.Regex.Unsafe (unsafeRegex) as Re
 import Data.Symbol (class IsSymbol, reflectSymbol, reifySymbol)
 import Data.Symbol (class IsSymbol, reflectSymbol, reifySymbol) as ReExports
+import Data.Time.Duration (Milliseconds(..))
+import Data.Time.Duration (Milliseconds(..)) as ReExports
 import Data.These (These(..), these)
 import Data.These (These(..), these) as ReExports
 import Data.Traversable (class Traversable, traverse, traverse_, for, for_, sequence, sequence_, scanl, scanr, mapAccumL, mapAccumR)
@@ -121,8 +126,6 @@ import Data.Tuple (Tuple(..), curry, uncurry, fst, snd, swap)
 import Data.Tuple (Tuple(..), curry, uncurry, fst, snd, swap) as ReExports
 import Data.Tuple.Nested ((/\), type (/\))
 import Data.Tuple.Nested ((/\), type (/\)) as ReExports
-import Dodo as D
-import Dodo.Common as DC
 import Effect (Effect)
 import Effect (Effect) as ReExports
 import Effect.Aff (Aff)
@@ -142,3 +145,9 @@ import Type.Equality (class TypeEquals, proof)
 import Type.Equality (class TypeEquals, proof) as ReExports
 import Type.Proxy (Proxy(..))
 import Type.Proxy (Proxy(..)) as ReExports
+
+main :: Effect Unit
+main = Riverdragon.Main.Live.mainForDragon dragon
+
+dragon :: Dragon
+dragon = mempty

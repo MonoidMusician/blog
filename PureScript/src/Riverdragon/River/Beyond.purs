@@ -4,7 +4,6 @@ import Prelude
 
 import Data.Either (hush)
 import Data.Filterable (compact)
-import Data.Foldable (sequence_, traverse_)
 import Data.Int as Int
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
@@ -16,7 +15,7 @@ import Effect.Aff (Aff)
 import Effect.Aff as Aff
 import Effect.Timer (clearInterval, clearTimeout, setInterval, setTimeout)
 import Riverdragon.Dragon.Breath (microtask)
-import Riverdragon.River (Allocar, Lake, Stream(..), fixPrjBurst, makeLake, makeLake', oneStream, statefulStream, subscribeIsh, unsafeCopyFlowing, (<?*>), (>>~))
+import Riverdragon.River (Allocar, Lake, Stream, fixPrjBurst, makeLake, makeLake', oneStream, statefulStream, subscribeIsh, unsafeCopyFlowing, (<?*>), (>>~))
 import Riverdragon.River.Bed (breaker, freshId, ordMap, prealloc, pushArray)
 import Web.HTML (window)
 import Web.HTML.Window (RequestAnimationFrameId, cancelAnimationFrame, requestAnimationFrame)

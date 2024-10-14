@@ -1,22 +1,19 @@
-module Parser.Main.Live where
+module Riverdragon.Main.Live where
 
 import Prelude
 
-import Ansi.Codes as Ansi
 import Control.Plus ((<|>))
 import Data.Either (Either(..))
-import Data.Foldable (fold, foldMap)
+import Data.Foldable (fold)
 import Data.Maybe (Maybe(..), fromMaybe)
-import Data.String as String
-import Dodo as Dodo
 import Effect (Effect)
+import Effect.Console (log)
 import Idiolect (intercalateMap, tripleQuoted, (<#?>))
 import JSURI (encodeURIComponent)
-import Parser.Comb.Comber (Comber, Printer, parse, printGrammarWsn)
 import PureScript.CST.Parser as CST.Parser
 import PureScript.CST.Types as CST.T
-import Riverdragon.Dragon (Dragon, renderId)
-import Riverdragon.Dragon.Bones (($$), (.$), (.$$~), (:.), (=:=), (>@))
+import Riverdragon.Dragon (Dragon, renderEl)
+import Riverdragon.Dragon.Bones (($$), (.$), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy, sourceCode)
 import Riverdragon.River (Lake, createRiverStore, makeLake)
@@ -25,68 +22,35 @@ import Runtime (aSideChannel)
 import Runtime.Live (Status(..))
 import Runtime.Live as Runtime.Live
 import Type.Proxy (Proxy(..))
-import Web.DOM.ElementId (ElementId(..))
+import Web.DOM (Element)
 import Widget (Widget)
 
-color :: Ansi.Color -> String
-color = case _ of
-  Ansi.Blue -> "cornflowerblue"
-  x -> String.toLower (show x)
-
-colorful :: Ansi.Color -> String -> Dragon
-colorful x t = D.span
-  [ D.style =:= "color:" <> color x ]
-  (D.text t)
-
-toDragon :: Printer Dragon
-toDragon =
-  { nonTerminal: colorful Ansi.Blue
-  , literal: colorful Ansi.Yellow <<< show
-  , regex: colorful Ansi.Green
-  , rule: colorful Ansi.Cyan <<< show
-  , meta: D.text
-  , lines: foldMap (D.div[])
-  }
-
-mainForParser :: Comber (Dodo.Doc Void) -> Effect Unit
-mainForParser parser = do
-  _ <- renderId (ElementId "grammar") (printGrammarWsn toDragon parser)
+mainForDragon :: Dragon -> Effect Unit
+mainForDragon dragon = do
+  log "Loading"
   _sideChannel.messageInABottle
-    { parser: parse parser >>> case _ of
-        Left err -> { success: false, result: err }
-        Right doc -> { success: true, result: Dodo.print Dodo.plainText Dodo.twoSpaces doc }
-    , grammar: \_ -> []
+    { renderToEl: renderEl <@> dragon
     }
 
-type IntoGrammar m =
-  { terminal :: String -> m
-  , nonTerminal :: String -> m
-  , regex :: String -> m
-  , meta :: String -> m
-  }
-
 type SideChannel =
-  { parser :: String -> { success :: Boolean, result :: String }
-  , grammar :: forall m. Monoid m =>
-    IntoGrammar m ->
-    Array { name :: String, syntax :: m }
+  { renderToEl :: Element -> Effect (Effect Unit)
   }
 
 _sideChannel ::
   { installChannel :: (SideChannel -> Effect Unit) -> Effect Unit
   , messageInABottle :: SideChannel -> Effect Unit
   }
-_sideChannel = aSideChannel (Proxy :: Proxy SideChannel) "Parser.Main.Live"
+_sideChannel = aSideChannel (Proxy :: Proxy SideChannel) "Riverdragon.Main.Live"
 
 
 pipeline :: Lake String -> Lake Status
 pipeline = Runtime.Live.pipeline
-  { templateURL: "/assets/ps/Parser.Parserlude/index.purs"
+  { templateURL: "/assets/ps/Riverdragon.Dragon.Nest/index.purs"
   , parseUser: Right CST.Parser.parseExpr
   , templating: \template parserExpr ->
-      Runtime.Live.renameModuleTo "Parser.Temp" $
+      Runtime.Live.renameModuleTo "Riverdragon.Temp" $
         Runtime.Live.overrideValue
-          { nameSearch: CST.T.Ident "parser"
+          { nameSearch: CST.T.Ident "dragon"
           , exprReplace: parserExpr
           } template
   }
@@ -95,13 +59,13 @@ embed :: Lake String -> Dragon
 embed incomingRaw = eggy \shell -> do
   incoming <- shell.instStore do dedup incomingRaw
   pipelined <- shell.instStore do pipeline incoming
-  gotParser <- shell.instStore $ makeLake \cb -> mempty <$ _sideChannel.installChannel cb
+  gotRenderer <- shell.instStore $ makeLake \cb -> mempty <$ _sideChannel.installChannel cb
   let
     preScroll = D.pre [ D.style =:= "overflow-x: auto" ]
     bundled = pipelined <#?> case _ of
       Compiled result -> Just result
       _ -> Nothing
-    status = mempty <$ gotParser <|> do
+    status = mempty <$ gotRenderer <|> do
       pipelined <#> case _ of
         Fetching _ -> D.text "Fetching ..."
         ParseErrors inTemplate errors -> preScroll $ errors #
@@ -115,18 +79,8 @@ embed incomingRaw = eggy \shell -> do
     [ D.div [ D.style =:= "white-space: pre" ] $ D.Replacing status
     , bundled >@ \latestBundle -> fold
       [ D.div [ D.id =:= "grammar" ] mempty
-      , gotParser >@ \parser -> D.Egg do
-          { send: setValue, stream: getValue } <- createRiverStore Nothing
-          pure $ { destroy: mempty, dragon: _ } $ D.Fragment
-            [ sourceCode "In" :."sourceCode unicode".$
-                D.textarea
-                  [ D.onInputValue =:= setValue
-                  , D.value =:= ""
-                  , D.style =:= "height: 15vh"
-                  ]
-            , sourceCode "Out" :."sourceCode unicode".$$~
-                _.result <<< parser.parser <$> getValue
-            ]
+      , D.div [ D.id =:= "target" ] mempty
+      , gotRenderer >@ \renderer -> D.div [ D.Self =:= renderer.renderToEl ] mempty
       , D.script
           -- We need to set `type="module"` before `src` in Riverdragon, because
           -- it applies attributes in order!
@@ -141,10 +95,24 @@ embed incomingRaw = eggy \shell -> do
 widget :: Widget
 widget _ = pure $ eggy \shell -> do
   let df = tripleQuoted """
-    -- This parses JSON-style strings separated by whitespace
-    manySepBy "strings" ws string
-      -- And pretty prints their values separated by new lines
-      <#> map D.text >>> D.lines
+    -- Center the output
+    D.div :."centered".$
+    -- A context where we can run some effects
+    eggy \shell -> do
+      -- Create a stream that we will destroy when unloaded
+      -- (not really necessary here, but good hygiene)
+      { stream: clicked, send: onClick } <- shell.track $ createRiver
+      -- Render a fixed list of items
+      pure $ D.Fragment
+        -- The first item is a button that triggers the above event
+        [ D.button [ D.onClick =!= onClick unit ] $$ "bap"
+        -- The second item is actually a list of items that disappear after 1 second
+        , D.Appending $ Wings.vanishing (1000.0 # Milliseconds) $
+            -- Each item appears after a click
+            Beyond.counter clicked <#> \(Tuple _ n) ->
+              -- And has this text, counting up
+              D.div.$$ "*baps u " <> show (n+1) <> "ce*"
+        ]
   """
   { stream: valueSet, send: setValue } <- shell.track $ createRiverStore Nothing
   { stream: compiling, send: compileNow } <- shell.track $ createRiverStore Nothing

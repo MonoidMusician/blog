@@ -9,9 +9,10 @@ import Effect.Ref as Ref
 import Foreign.Object as Object
 import Parser.Main as Parser
 import Parser.Main.CSS as CSS
-import Parser.Main.Live as Parser.Main.Live
 import Parser.Main.HFS as Parser.Main.HFS
+import Parser.Main.Live as Parser.Main.Live
 import Parser.Main.TMTTMT as TMTTMT
+import Riverdragon.Main.Live as Riverdragon.Main.Live
 import Riverdragon.Test as Riverdragon.Test
 import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
 import Web.HTML (window)
@@ -38,7 +39,7 @@ widgets = foldl Object.union Object.empty
     , "Widget.Show" /\ Widget.Unicode.widgetShow
     , "Parser.Main.HFS" /\ Parser.Main.HFS.widget
     , "Parser.Main.Live" /\ Parser.Main.Live.widget
-    -- , "Riverdragon.Main.Live" /\ Riverdragon.Main.Live.widget
+    , "Riverdragon.Main.Live" /\ Riverdragon.Main.Live.widget
     , "Riverdragon.Test" /\ Riverdragon.Test.widget
     , "" /\ Widget.Datatypes.widget
     ]

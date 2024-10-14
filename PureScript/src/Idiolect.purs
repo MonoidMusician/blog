@@ -5,15 +5,20 @@ import Prelude
 import Control.Alternative (class Alt, class Alternative, (<|>))
 import Control.Apply (lift2)
 import Control.Plus (class Plus)
+import Data.Array as Array
+import Data.CodePoint.Unicode as U
 import Data.Compactable (class Compactable, compact)
 import Data.Either (Either(..))
 import Data.Either.Nested (type (\/))
-import Data.Foldable (class Foldable, intercalate, oneOfMap)
+import Data.Foldable (class Foldable, fold, intercalate, oneOfMap)
+import Data.Function (on)
 import Data.Maybe (Maybe(..))
+import Data.Newtype (class Newtype)
+import Data.String as String
 import Data.Symbol (class IsSymbol)
 import Data.These (These(..))
 import Data.Traversable (class Traversable, traverse)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Prim.Row as Row
@@ -70,7 +75,36 @@ theseing a b = This <$> a <|> That <$> b <|> Both <$> a <*> b
 infixr 6 theseing as /\\/
 infixr 6 type These as /\/
 
--- tripleQuoted
+tripleQuoted :: String -> String
+tripleQuoted input =
+  let
+    lines = withPrefix <$> String.split (String.Pattern "\n") input
+    wsPrefix = String.takeWhile U.isSpace
+    withPrefix l = let p = wsPrefix l in
+      if p == l then Nothing else Just (Tuple (CommonPrefix p) l)
+    maxP = Array.foldMap (map fst) lines
+    trimmed = lines <#> fold <<< case maxP, _ of
+      Just (CommonPrefix p), Just (Tuple _ l) ->
+        String.stripPrefix (String.Pattern p) l
+      _, _ -> Nothing
+    trimFirst = case _ of
+      ls | Just "" <- Array.head ls -> Array.drop 1 ls
+      ls -> ls
+    trimLast = case _ of
+      ls | Just "" <- Array.last ls
+         , Just _ <- maxP -> Array.dropEnd 1 ls
+      ls -> ls
+  in String.joinWith "\n" $ trimmed # trimFirst # trimLast
+
+newtype CommonPrefix = CommonPrefix String
+derive instance newtypeCommonPrefix :: Newtype CommonPrefix _
+instance semigroupCommonPrefix :: Semigroup CommonPrefix where
+  append (CommonPrefix l) (CommonPrefix r) = CommonPrefix
+    case (compare `on` String.length) l r of
+      EQ | l == r -> l
+      LT | Just _ <- String.stripPrefix (String.Pattern l) r -> l
+      GT | Just _ <- String.stripPrefix (String.Pattern r) l -> r
+      _ -> ""
 
 only :: forall a. Array a -> Maybe a
 only [ a ] = Just a

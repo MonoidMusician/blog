@@ -91,8 +91,7 @@ trypurescript : PureScript/src
 .PHONY : watch-ps
 watch-ps : $(BUILDIR)
 	rm -f $(BUILDIR)/widgets.js.gz
-	spago bundle-app --purs-args "-g corefn,js" -w --main Main --to $(BUILDIR)/widgets.js
-	make assets-ps
+	spago bundle-app --purs-args "-g corefn,js" -w --then "make assets-ps" --main Main --to $(BUILDIR)/widgets.js
 
 .PHONY : docs-ps
 docs-ps :
