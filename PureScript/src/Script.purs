@@ -26,7 +26,6 @@ import Node.Stream (onDataString, onEnd, onError, writeString)
 import Parser.Comb.Comber ((<|>))
 import Parser.Comb.Comber as Comber
 import Parser.Languages.Show (mkReShow)
-import Parser.Main.Comb (assemble, bundle, compile, printErrors)
 import PureScript.Highlight (highlight, highlightPandoc)
 
 noArgs :: (String -> Aff (Either String String)) -> (Array String -> Either String (String -> Aff (Either String String)))
@@ -53,15 +52,15 @@ scripts = Map.fromFoldable
   , Tuple "echo" $ simplest identity
   , Tuple "highlight" $ simplest highlight
   , Tuple "highlightPandoc" $ simplest highlightPandoc
-  , Tuple "assembleParser" $ simpler $ lmap printErrors <<< assemble
-  , Tuple "compileParser" $ noArgs $
-      assemble >>> do
-        failing printErrors |||
-          compile >== (intercalate "\n" +++ identity)
-  , Tuple "bundleParser" $ noArgs $
-      assemble >>> do
-        failing printErrors |||
-          compile >== (intercalate "\n" +++ bundle)
+  -- , Tuple "assembleParser" $ simpler $ lmap printErrors <<< assemble
+  -- , Tuple "compileParser" $ noArgs $
+  --     assemble >>> do
+  --       failing printErrors |||
+  --         compile >== (intercalate "\n" +++ identity)
+  -- , Tuple "bundleParser" $ noArgs $
+  --     assemble >>> do
+  --       failing printErrors |||
+  --         compile >== (intercalate "\n" +++ bundle)
   ] <|> mapFlipped conversions \parserPrinter -> noArgs $ noAff $
       Comber.parse parserPrinter >== Dodo.print Dodo.plainText Dodo.twoSpaces
 

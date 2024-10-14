@@ -1,0 +1,98 @@
+
+==================== Tidy Core ====================
+2024-09-19 01:06:25.709276 UTC
+
+Result size of Tidy Core
+  = {terms: 30, types: 30, coercions: 0, joins: 0/0}
+
+-- RHS size: {terms: 2, types: 0, coercions: 0, joins: 0/0}
+Floating.foo1 :: Integer
+[GblId,
+ Unf=Unf{Src=<vanilla>, TopLvl=True,
+         Value=True, ConLike=True, WorkFree=True, Expandable=True,
+         Guidance=IF_ARGS [] 10 10}]
+Floating.foo1 = GHC.Num.Integer.IS 1#
+
+-- RHS size: {terms: 12, types: 12, coercions: 0, joins: 0/0}
+foo :: forall {a} {b}. (Num a, Enum a) => [b] -> [(a, b)]
+[GblId,
+ Arity=3,
+ Str=<MP(A,A,A,A,A,A,MCM(L))><1P(A,A,A,A,1C1(L),A,A,A)><ML>,
+ Unf=Unf{Src=InlineStable, TopLvl=True,
+         Value=True, ConLike=True, WorkFree=True, Expandable=True,
+         Guidance=ALWAYS_IF(arity=3,unsat_ok=True,boring_ok=False)
+         Tmpl= \ (@a_aw0)
+                 (@b_aw1)
+                 ($dNum_aEm [Occ=Once1] :: Num a_aw0)
+                 ($dEnum_aEn [Occ=Once1] :: Enum a_aw0)
+                 (xs_ago [Occ=Once1] :: [b_aw1]) ->
+                 GHC.Base.build
+                   @(a_aw0, b_aw1)
+                   (\ (@b1_aF3)
+                      (c_aF4 [Occ=Once1, OS=OneShot]
+                         :: (a_aw0, b_aw1) -> b1_aF3 -> b1_aF3)
+                      (n_aF5 [Occ=Once1, OS=OneShot] :: b1_aF3) ->
+                      GHC.List.foldr2
+                        @a_aw0
+                        @b_aw1
+                        @b1_aF3
+                        (GHC.List.zipFB @a_aw0 @b_aw1 @b1_aF3 @b1_aF3 c_aF4)
+                        n_aF5
+                        (enumFrom
+                           @a_aw0 $dEnum_aEn (fromInteger @a_aw0 $dNum_aEm Floating.foo1))
+                        xs_ago)}]
+foo
+  = \ (@a_aw0)
+      (@b_aw1)
+      ($dNum_aEm :: Num a_aw0)
+      ($dEnum_aEn :: Enum a_aw0)
+      (xs_ago :: [b_aw1]) ->
+      zip
+        @a_aw0
+        @b_aw1
+        (enumFrom
+           @a_aw0 $dEnum_aEn (fromInteger @a_aw0 $dNum_aEm Floating.foo1))
+        xs_ago
+
+-- RHS size: {terms: 1, types: 0, coercions: 0, joins: 0/0}
+Floating.$trModule4 :: GHC.Prim.Addr#
+[GblId,
+ Unf=Unf{Src=<vanilla>, TopLvl=True,
+         Value=True, ConLike=True, WorkFree=True, Expandable=True,
+         Guidance=IF_ARGS [] 20 0}]
+Floating.$trModule4 = "main"#
+
+-- RHS size: {terms: 2, types: 0, coercions: 0, joins: 0/0}
+Floating.$trModule3 :: GHC.Types.TrName
+[GblId,
+ Unf=Unf{Src=<vanilla>, TopLvl=True,
+         Value=True, ConLike=True, WorkFree=True, Expandable=True,
+         Guidance=IF_ARGS [] 10 10}]
+Floating.$trModule3 = GHC.Types.TrNameS Floating.$trModule4
+
+-- RHS size: {terms: 1, types: 0, coercions: 0, joins: 0/0}
+Floating.$trModule2 :: GHC.Prim.Addr#
+[GblId,
+ Unf=Unf{Src=<vanilla>, TopLvl=True,
+         Value=True, ConLike=True, WorkFree=True, Expandable=True,
+         Guidance=IF_ARGS [] 30 0}]
+Floating.$trModule2 = "Floating"#
+
+-- RHS size: {terms: 2, types: 0, coercions: 0, joins: 0/0}
+Floating.$trModule1 :: GHC.Types.TrName
+[GblId,
+ Unf=Unf{Src=<vanilla>, TopLvl=True,
+         Value=True, ConLike=True, WorkFree=True, Expandable=True,
+         Guidance=IF_ARGS [] 10 10}]
+Floating.$trModule1 = GHC.Types.TrNameS Floating.$trModule2
+
+-- RHS size: {terms: 3, types: 0, coercions: 0, joins: 0/0}
+Floating.$trModule :: GHC.Types.Module
+[GblId,
+ Unf=Unf{Src=<vanilla>, TopLvl=True,
+         Value=True, ConLike=True, WorkFree=True, Expandable=True,
+         Guidance=IF_ARGS [] 10 10}]
+Floating.$trModule
+  = GHC.Types.Module Floating.$trModule3 Floating.$trModule1
+
+

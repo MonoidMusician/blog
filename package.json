@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "make": "make all",
+    "make": "make",
     "pandoc": "make pandoc",
     "sass": "make sass"
   },

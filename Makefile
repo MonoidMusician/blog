@@ -4,7 +4,6 @@ MDS=$(wildcard $(TXTDIR)/*.md)
 HTMLS=$(patsubst $(TXTDIR)/%.md, $(BUILDIR)/%.html, $(MDS))
 
 .PHONY : all
-
 all : init sass prod-ps pandoc
 
 .PHONY : watch-all
@@ -62,6 +61,12 @@ prod-ps : $(BUILDIR) PureScript/src PureScript/directives.txt packages.dhall spa
 	spago run --purs-args "-g corefn,js" -m PreBuild
 	purs-backend-es bundle-app --directives PureScript/directives.txt --main Main --to $(BUILDIR)/widgets.js
 	gzip -f9k $(BUILDIR)/widgets.js
+	make assets-ps
+
+.PHONY : assets-ps
+assets-ps :
+	cp PureScript/src/Parser/Parserlude.purs output/Parser.Parserlude/index.purs
+	cp PureScript/src/Riverdragon/Dragon/Nest.purs output/Riverdragon.Dragon.Nest/index.purs
 
 prebuild : PureScript/src/PreBuild.purs PureScript/src/Parser/Parserlude.purs
 	spago run --purs-args "-g corefn,js" -m PreBuild
@@ -74,6 +79,7 @@ grammars :
 ps : $(BUILDIR) PureScript/src prebuild packages.dhall spago.dhall
 	rm -f $(BUILDIR)/widgets.js.gz
 	spago bundle-app --purs-args "-g corefn,js" --main Main --to $(BUILDIR)/widgets.js
+	make assets-ps
 
 watch-prebuild :
 	watchexec -w PureScript/src/PreBuild.purs -w PureScript/src/Parser/Parserlude.purs -r -- make prebuild
@@ -86,6 +92,11 @@ trypurescript : PureScript/src
 watch-ps : $(BUILDIR)
 	rm -f $(BUILDIR)/widgets.js.gz
 	spago bundle-app --purs-args "-g corefn,js" -w --main Main --to $(BUILDIR)/widgets.js
+	make assets-ps
+
+.PHONY : docs-ps
+docs-ps :
+	spago docs -f markdown --no-search
 
 .PHONY : live
 live : live/node_modules

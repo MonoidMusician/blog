@@ -1,6 +1,3 @@
----
-title: Live Parser Combinator Editor
----
+[live_parser.html](live_parser.html)
 
-::: {.widget widget="Parser.Main.Comb" widget-datakey="default" style="display: contents"}
-:::
+[live_frp.html](live_frp.html)

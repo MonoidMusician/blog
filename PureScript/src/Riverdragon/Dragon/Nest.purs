@@ -1,9 +1,20 @@
-module Parser.Parserlude ( module ReExports ) where
+module Riverdragon.Dragon.Nest ( module ReExports ) where
 
-import Parser.Comb.Comber
-import Parser.Comb.Comber as ReExports
 import Prelude
 import Prelude as ReExports
+
+import Riverdragon.Dragon.Bones as D
+import Riverdragon.Dragon (Dragon(..), renderId, renderEl, snapshot)
+import Riverdragon.Dragon (Dragon(..), renderId, renderEl, snapshot) as ReExports
+import Riverdragon.Dragon as Dragon
+import Riverdragon.Dragon.Wings as Wings
+import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, instantiateStore, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, statefulStream, stillRiver, subscribe, subscribeIsh, unsafeCopyFlowing, unsafeRiver, (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~))
+import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, instantiateStore, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, statefulStream, stillRiver, subscribe, subscribeIsh, unsafeCopyFlowing, unsafeRiver, (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~)) as ReExports
+import Riverdragon.River as River
+import Riverdragon.River.Bed as Bed
+import Riverdragon.River.Beyond (affToLake, animationLoop, counter, debounce, dedup, dedupBy, dedupOn, delay, delayAnim, delayMicro, delayWith, interval, mkAnimFrameBuffer)
+import Riverdragon.River.Beyond (affToLake, animationLoop, counter, debounce, dedup, dedupBy, dedupOn, delay, delayAnim, delayMicro, delayWith, interval, mkAnimFrameBuffer) as ReExports
+import Riverdragon.River.Beyond as Beyond
 
 import Data.Array as A
 import Data.Array as Array
@@ -120,14 +131,7 @@ import Effect.Class.Console (log, logShow)
 import Effect.Class.Console (log, logShow) as ReExports
 import Idiolect (type (-!>), type (/\/), EffectArrow, compactMap, compactMapFlipped, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterSnd, intercalateMap, morph, multiplexing, nonEmpty, only, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/))
 import Idiolect (type (-!>), type (/\/), EffectArrow, compactMap, compactMapFlipped, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterSnd, intercalateMap, morph, multiplexing, nonEmpty, only, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/)) as ReExports
-import Parser.Comb (Comb(..))
-import Parser.Comb (Comb(..)) as ReExports
-import Parser.Languages (digit, int, json, string, digit, int, number)
-import Parser.Languages (digit, int, json, string, digit, int, number) as ReExports
-import Parser.Languages.CSS (combinator, escape, ident, many1Comma, newline, percentage, url)
-import Parser.Languages.CSS (combinator, escape, ident, many1Comma, newline, percentage, url) as ReExports
 import Riverdragon.Dragon.Bones ((.<>), (<>.))
-import Parser.Main.Live as Parser.Main.Live
 import Prim.Row as Row
 import Prim.RowList as RL
 import Prim.TypeError (class Fail, Beside, Quote, Text)
@@ -138,19 +142,3 @@ import Type.Equality (class TypeEquals, proof)
 import Type.Equality (class TypeEquals, proof) as ReExports
 import Type.Proxy (Proxy(..))
 import Type.Proxy (Proxy(..)) as ReExports
-
-main :: Effect Unit
-main = Parser.Main.Live.mainForParser parser
-
-parser :: Comber (D.Doc Void)
-parser = empty
-
-class StringOrDoc t where
-  toDoc :: t -> D.Doc Void
-
-instance StringOrDoc String where
-  toDoc = D.text
-else instance TypeEquals ann Void => StringOrDoc (D.Doc ann) where
-  toDoc = proof
-else instance Fail (Beside (Text "Parser must produce String or Doc, not ") (Quote t)) => StringOrDoc t where
-  toDoc = mempty

@@ -100,6 +100,7 @@ to generate this file without the comments in this block.
   , "web-dom"
   , "web-events"
   , "web-html"
+  , "web-storage"
   , "web-uievents"
   ]
 , packages = ./packages.dhall

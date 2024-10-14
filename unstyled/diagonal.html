@@ -1,0 +1,129 @@
+<meta charset="utf-8"/>
+<title>Diagonal</title>
+<section style="z-index: 5">
+  <p>
+    <input type="checkbox" checked id="rotate"/><label for="rotate"> Rotate</label>
+  </p>
+</section>
+<section>
+<div class="diagonal">
+  <div class="padding right"></div>
+  <div class="padding left"></div>
+  <div class="padding left2"></div>
+  <p style="padding-top: 2em" lang="fa" class="gulzar-regular">
+    هر که شد مَحرمِ دل در حرمِ یار بِمانْد
+    / وان که این کار ندانست در انکار بِمانْد
+    / اگر از پرده برون شد دلِ من عیب مکن
+    / شُکرِ ایزد که نه در پردهٔ پندار بِمانْد
+    / صوفیان واسِتَدَنْد از گروِ مِی همه رَخْت
+    / دلقِ ما بود که در خانهٔ خَمّار بِمانْد
+    / محتسب شیخ شد و فِسقِ خود از یاد بِبُرد
+    / قصّهٔ ماست که در هر سرِ بازار بِمانْد
+    / هر مِیِ لعل کز آن دستِ بلورین سِتَدیم
+    / آبِ حسرت شد و در چشمِ گهربار بِمانْد
+    / جز دلِ من کز ازل تا به ابد عاشق رفت
+    / جاودان کس نشنیدیم که در کار بِمانْد
+    / گشت بیمار که چون چشمِ تو گردد نرگس
+    / شیوهٔ تو نَشُدَش حاصل و بیمار بِمانْد
+    / از صدایِ سخنِ عشق ندیدم خوشتر
+    / یادگاری که در این گنبدِ دَوّار بِمانْد
+    / داشتم دلقی و صد عیبِ مرا می‌پوشید
+    / خرقه رهنِ مِی و مطرب شد و زُنّار بِمانْد
+    / بر جمالِ تو چنان صورتِ چین حیران شد
+    / که حدیثش همه‌جا در در و دیوار بِمانْد
+    / به تماشاگَهِ زلفش دلِ حافظ روزی
+    / شد که بازآید و جاوید گرفتار بِمانْد
+  </p>
+</div>
+</section>
+
+<style>
+  @media (prefers-color-scheme: dark) {
+    html {
+      background: #111;
+      color: white;
+    }
+  }
+  body {
+    overflow-x: hidden;
+  }
+  .diagonal p {
+    padding: 0;
+    margin: 0;
+    text-align: justify;
+  }
+  .diagonal {
+    overflow: visible;
+    aspect-ratio: 2;
+  }
+  section:has(#rotate:checked) ~ section .diagonal {
+    transform: rotate(45deg);
+    /* width: 141vw; */
+    /* Literally a magic constant */
+    width: 200%;
+    /* Dunno?? */
+    transform-origin: 83.3vw 33.3vw;
+  }
+  .diagonal > .padding {
+    height: auto;
+    aspect-ratio: 1;
+  }
+  .diagonal > .padding.right {
+    float: right;
+    shape-outside: polygon(0% 0%, 100% 100%, 100% 0%);
+    width: calc(100% - 70.5vw);
+  }
+  .diagonal > .padding.left {
+    float: left;
+    shape-outside: polygon(0% 0%, 0% 100%, 100% 100%, 0% 50%, 100% 0%);
+    width: 70.5vw;
+    height: auto;
+    aspect-ratio: 1/2;
+  }
+  .diagonal > .padding.left2 {
+    float: left;
+    shape-outside: polygon(0% 0%, 0% 100%, 100% 100%);
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+    /* ??? */
+    shape-margin: 50vw;
+  }
+  [lang="fa"] {
+    font-family: "Gulzar";
+    /* font-family: "Vazirmatn"; */
+    font-weight: 400;
+    font-style: normal;
+    direction: rtl;
+  }
+</style>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Gulzar&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100..900&display=swap');
+</style>
+
+<script>
+  // Make the text 4x longer just for demo purposes
+  for (let p of document.querySelectorAll(".diagonal p")) {
+    for (let i=0; i<1; i++) {
+      p.textContent += " / " + p.textContent;
+    }
+  }
+  // Save options
+  for (let input of document.querySelectorAll("input")) {
+    if (!input.id) continue;
+    if (input.type === 'checkbox') {
+      let v = localStorage.getItem(input.id);
+      if (v !== null) input.checked = v === "true";
+      input.addEventListener("input", (e) => {
+        localStorage.setItem(input.id, input.checked);
+      });
+    } else {
+      let v = localStorage.getItem(input.id);
+      if (v) input.value = v;
+      input.addEventListener("input", (e) => {
+        localStorage.setItem(input.id, input.value);
+      });
+    }
+  }
+</script>

@@ -9,7 +9,7 @@ import Effect.Ref as Ref
 import Foreign.Object as Object
 import Parser.Main as Parser
 import Parser.Main.CSS as CSS
-import Parser.Main.Comb as Parser.Main.Comb
+import Parser.Main.Live as Parser.Main.Live
 import Parser.Main.HFS as Parser.Main.HFS
 import Parser.Main.TMTTMT as TMTTMT
 import Riverdragon.Test as Riverdragon.Test
@@ -37,7 +37,8 @@ widgets = foldl Object.union Object.empty
     , "Widget.Unicode" /\ Widget.Unicode.widget
     , "Widget.Show" /\ Widget.Unicode.widgetShow
     , "Parser.Main.HFS" /\ Parser.Main.HFS.widget
-    , "Parser.Main.Comb" /\ Parser.Main.Comb.widget
+    , "Parser.Main.Live" /\ Parser.Main.Live.widget
+    -- , "Riverdragon.Main.Live" /\ Riverdragon.Main.Live.widget
     , "Riverdragon.Test" /\ Riverdragon.Test.widget
     , "" /\ Widget.Datatypes.widget
     ]
@@ -45,15 +46,18 @@ widgets = foldl Object.union Object.empty
 
 -- Returns a cleanup effect
 main :: Effect (Effect Unit)
-main = do
+main = installWidgets widgets
+
+installWidgets :: Widgets -> Effect (Effect Unit)
+installWidgets widgetsToInstall = do
   unsub <- Ref.new mempty
   ready <- window >>= document >>= readyState
   if ready == Complete
-    then flip Ref.write unsub =<< instantiateAll widgets
+    then flip Ref.write unsub =<< instantiateAll widgetsToInstall
     else do
       l <- eventListener \_ ->
         window >>= requestAnimationFrame do
-          flip Ref.write unsub =<< instantiateAll widgets
+          flip Ref.write unsub =<< instantiateAll widgetsToInstall
       w <- window <#> toEventTarget
       addEventListener load l true w
       Ref.write (removeEventListener load l true w) unsub
