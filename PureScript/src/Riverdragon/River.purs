@@ -128,14 +128,14 @@ import Control.Plus (class Plus, empty)
 import Data.Array as Array
 import Data.Bifoldable (bifoldMap)
 import Data.Filterable (class Compactable, class Filterable, filterDefault, filterMap, partitionDefaultFilterMap, partitionMapDefault)
-import Data.Foldable (foldMap, for_, traverse_)
+import Data.Foldable (foldMap)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Set as Set
 import Data.These (These(..))
 import Data.Traversable (mapAccumL)
 import Data.Tuple (Tuple(..), fst, snd)
-import Effect (Effect)
+import Effect (Effect, foreachE)
 import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar) as ReExports
 import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar, accumulator, allocLazy, breaker, cleanup, globalId, iteM, loadingBurst, ordMap, prealloc, prealloc2, rolling, storeLast, storeUnsubscriber, subscriptions, threshold, unsafeAllocate)
 
@@ -312,9 +312,9 @@ combineStreams logic comb (Stream t1 e1) (Stream t2 e2) = Stream (t1 <> t2) \cbs
       when shouldPush do
         Tuple a b <- lastValues.get
         case lift2 comb a b of
-          -- Have not received a value on both sides
-          Nothing -> pure unit
           Just c -> cbs.receive c
+          -- Have not received a value on both sides
+          _ -> pure unit
       cbs.commit id
   -- and only count each destructor once (just in case)
   cbs1 <- cbs { receive = cbL, commit = commitL, destroyed = _ } <$> cleanup destroyed
@@ -397,10 +397,10 @@ createRiverStore initialValue = do
   lastValue <- storeLast
   case initialValue of
     Just a -> lastValue.set a
-    Nothing -> pure unit
+    _ -> pure unit
   r <- createRiverBurst $ lastValue.get <#> case _ of
     Just a -> [a]
-    Nothing -> []
+    _ -> []
   pure
     { send: \a -> lastValue.set a *> r.send a
     , stream: r.stream
@@ -471,7 +471,7 @@ subscribeIsh destroyed (Stream _ stream) receive = do
       whenM hasLoaded.get destroyed
   r <- stream { receive, commit: mempty, destroyed: upstreamDestroyed }
   unsubscriber.set r.unsubscribe
-  for_ r.burst receive
+  foreachE r.burst receive
   hasLoaded.set true
   whenM isDestroyed.get destroyed
   -- this stages `destroyed`
@@ -557,8 +557,10 @@ instantiateStore (Stream _ stream) = do
   lastValue <- storeLast
   { send, commit, stream: streamDependingOn, destroy } <- createProxy' (Array.fromFoldable <$> lastValue.get)
   { burst, sources, unsubscribe } <-
-    stream { receive: send, commit, destroyed: destroy }
-  for_ (Array.last burst) lastValue.set
+    stream { receive: lastValue.set <> send, commit, destroyed: destroy }
+  case Array.last burst of
+    Just v -> lastValue.set v
+    _ -> pure unit
   pure { burst, stream: streamDependingOn sources, destroy: unsubscribe <> destroy }
 
 -- | This function memoizes rivers, because it is safe to do so. It does not
@@ -577,7 +579,7 @@ mayMemoize (Stream Flowing upstream) = unsafeAllocate do
     up = cachedStream.get >>= case _ of
       Just { sources } -> do
         { sources, burst: _ } <$> burstOf (Stream Flowing upstream)
-      Nothing -> do
+      _ -> do
         { burst, sources, unsubscribe } <- upstream upstreamCbs
         { burst, sources } <$ cachedStream.set (Just { sources, unsubscribe })
     down = do
@@ -615,7 +617,9 @@ statefulStream b0 (Stream t stream) folder = Stream t \cbs -> do
   upstream <- stream $ cbs { receive = _ } \a -> do
     { state: b, emit: c } <- folder <$> current.get <@> a
     current.set b
-    traverse_ cbs.receive c
+    case c of
+      Just v -> cbs.receive v
+      _ -> pure unit
   let
     folder' b a =
       let r = folder b a in
@@ -634,9 +638,9 @@ instance filterableStream :: Filterable (Stream flow) where
   filterMap f (Stream flow stream) = mayMemoize $ Stream flow \cbs -> do
     r <- stream
       { receive: \a -> case f a of
-          Nothing -> mempty
           Just b -> do
             cbs.receive b
+          _ -> pure unit
       -- always pass commit through
       , commit: cbs.commit
       , destroyed: cbs.destroyed
@@ -675,7 +679,7 @@ selfGatingEf logic (Stream flow setup) = Stream flow \cbs -> do
   process <- logic (setUnsub mempty <> destroyed)
   sub <- setup $
       { receive: lastValue.set
-      , commit: const $ lastValue.get >>= traverse_ process
+      , commit: const $ lastValue.run process
       , destroyed: mempty
       }
     <>

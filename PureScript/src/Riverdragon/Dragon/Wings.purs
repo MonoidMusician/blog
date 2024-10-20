@@ -3,16 +3,20 @@ module Riverdragon.Dragon.Wings where
 import Prelude
 
 import Control.Alt ((<|>))
-import Data.Foldable (foldMap)
+import Data.Array as Array
+import Data.Foldable (foldMap, for_)
+import Data.Maybe (Maybe(..))
 import Data.String as String
 import Data.Time.Duration (Milliseconds)
+import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
-import Idiolect (nonEmpty, (==<))
-import Riverdragon.Dragon (AttrProp, Dragon(..))
-import Riverdragon.Dragon.Bones ((.<>), ($~~), (.$), (.$$), (.$$~), (:.), (:~), (<:>), (=:=), (=?=))
+import Idiolect (filterFst, nonEmpty, (==<))
+import Riverdragon.Dragon (AttrProp, Dragon(..), renderElSt)
+import Riverdragon.Dragon.Bones (($$), ($~~), (.$), (.$$), (.$$~), (.<>), (:.), (:~), (<:>), (=!=), (=:=), (=?=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.River (Lake, Stream, instantiate, instantiateStore, limitTo, makeLake, oneStream, subscribe)
-import Riverdragon.River.Bed (Allocar, accumulator, eventListener)
+import Riverdragon.River (Lake, Stream, createRiverStore, instantiate, instantiateStore, limitTo, makeLake, oneStream, subscribe)
+import Riverdragon.River as River
+import Riverdragon.River.Bed (Allocar, accumulator, eventListener, globalId, rolling)
 import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (delay)
 import Web.DOM.ElementId (ElementId)
@@ -31,6 +35,7 @@ type Shell =
   , inst :: forall flowIn flowOut a. Stream flowIn a -> Allocar (Stream flowOut a)
   , instStore :: forall flowIn flowOut a. Stream flowIn a -> Allocar (Stream flowOut a)
   , storeLast :: forall flow a. a -> Stream flow a -> Allocar (Allocar a)
+  , subscribe :: forall flow a. Stream flow a -> (a -> Effect Unit) -> Allocar Unit
   , destructor :: Allocar Unit -> Allocar Unit
   }
 
@@ -52,8 +57,11 @@ eggy cont = Egg do
     storeLast :: forall flow a. a -> Stream flow a -> Allocar (Allocar a)
     storeLast df stream = do
       lastValue <- Bed.prealloc df
-      destructors.put =<< subscribe stream lastValue.set
+      destructors.put =<< River.subscribe stream lastValue.set
       pure lastValue.get
+
+    subscribe :: forall flow a. Stream flow a -> (a -> Effect Unit) -> Allocar Unit
+    subscribe stream cb = destructors.put =<< River.subscribe stream cb
 
     release dragon = destructors.get <#> { destroy: _, dragon }
   release =<< cont
@@ -61,6 +69,7 @@ eggy cont = Egg do
     , inst
     , instStore
     , storeLast
+    , subscribe
     , destructor: destructors.put
     }
 
@@ -114,4 +123,23 @@ sourceCode lang attrs content =
   D.div :."sourceCode "<>String.toLower lang :~
     [ D.data_"lang" =:= lang, oneStream attrs ] $
       D.pre.$ D.code.$ content
+
+
+tabSwitcher :: Maybe String -> Array (String /\ Dragon) -> Dragon
+tabSwitcher initial tabs = eggy \shell -> do
+  destroyLast <- rolling
+  { stream: mounted, send: sendMounted } <- shell.track $ createRiverStore Nothing
+  let
+    onMounted el = do
+      sendMounted el
+      for_ initial \tab -> do
+        for_ (Array.findMap (filterFst (eq tab)) tabs) \content -> do
+          destroyLast =<< renderElSt mounted content
+  pure $ D.div :."tab-switcher".$ D.Fragment
+    [ D.div :."tab-switcher-header".$ D.Fragment $ tabs <#> \(name /\ content) -> do
+        D.button :."tab-switcher-tab":~
+          [ D.onClick =!= destroyLast =<< renderElSt mounted content
+          ] $$ name
+    , D.div :."tab-switcher-contents":~ [ D.Self =:= \el -> mempty <$ onMounted el ] $ mempty
+    ]
 

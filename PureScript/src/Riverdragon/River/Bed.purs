@@ -38,8 +38,6 @@ import Control.Monad.ST.Internal (STRef)
 import Control.Monad.ST.Internal as STRef
 import Data.Array as Array
 import Data.Array.ST as STA
-import Data.Foldable (traverse_)
-import Data.FoldableWithIndex (traverseWithIndex_)
 import Data.List as List
 import Data.Map (Map)
 import Data.Map as Map
@@ -291,7 +289,7 @@ ordMap = newSTR Map.empty <#> \ref ->
   , swap: \k v -> liftST do STRef.modify' (\m -> { value: Map.lookup k m, state: Map.insert k v m }) ref
   , get: \k -> Map.lookup k <$> getSTR ref
   , remove: \k -> liftST do STRef.modify' (\m -> { value: Map.lookup k m, state: Map.delete k m }) ref
-  , traverse: \f -> getSTR ref >>= traverseWithIndex_ f
+  , traverse: \f -> getSTR ref >>= Map.toUnfoldable >>> flip foreachE (uncurry f)
   , onKey: \k f -> do
       mv <- Map.lookup k <$> getSTR ref
       case mv of
@@ -317,7 +315,7 @@ ordSet = newSTR Set.empty <#> \ref ->
   , swap: \k -> liftST do STRef.modify' (\m -> { value: Set.member k m, state: Set.insert k m }) ref
   , get: \k -> Set.member k <$> getSTR ref
   , remove: \k -> liftST do STRef.modify' (\m -> { value: Set.member k m, state: Set.delete k m }) ref
-  , traverse: \f -> getSTR ref >>= traverse_ f
+  , traverse: \f -> getSTR ref >>= Set.toUnfoldable >>> flip foreachE f
   , whenPresent: \k f -> do
       mv <- Set.member k <$> getSTR ref
       case mv of
@@ -410,7 +408,9 @@ storeLast :: forall a. Allocar
   }
 storeLast = newSTR Nothing <#> \ref ->
   { get: getSTR ref
-  , run: \f -> getSTR ref >>= traverse_ f
+  , run: \f -> getSTR ref >>= case _ of
+      Nothing -> pure unit
+      Just v -> f v
   , set: \v -> setSTR ref (Just v)
   , swap: \v -> swapSTR ref (Just v)
   }

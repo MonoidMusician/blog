@@ -1,0 +1,153 @@
+workspace:
+  extraPackages:
+    free-boolean:
+      dependencies:
+        - arrays
+        - bifunctors
+        - control
+        - either
+        - foldable-traversable
+        - maybe
+        - newtype
+        - ordered-collections
+        - prelude
+        - profunctor-lenses
+        - record
+        - strings
+        - tuples
+        - typelevel-prelude
+      git: https://github.com/MonoidMusician/purescript-free-boolean.git
+      ref: main
+    language-cst-parser:
+      dependencies:
+        - arrays
+        - console
+        - const
+        - control
+        - effect
+        - either
+        - foldable-traversable
+        - free
+        - functions
+        - functors
+        - identity
+        - integers
+        - lazy
+        - lists
+        - maybe
+        - newtype
+        - node-process
+        - numbers
+        - ordered-collections
+        - partial
+        - prelude
+        - st
+        - strings
+        - transformers
+        - tuples
+        - typelevel-prelude
+        - unfoldable
+        - unsafe-coerce
+      git: https://github.com/natefaubion/purescript-language-cst-parser.git
+      ref: main
+    ordered-collections:
+      dependencies:
+        - arrays
+        - foldable-traversable
+        - gen
+        - lists
+        - maybe
+        - partial
+        - prelude
+        - st
+        - tailrec
+        - tuples
+        - unfoldable
+      git: https://github.com/purescript/purescript-ordered-collections.git
+      ref: v3.2.0
+    stylish:
+      dependencies:
+        - console
+        - effect
+        - foldable-traversable
+        - functors
+        - identity
+        - lists
+        - newtype
+        - node-process
+        - prelude
+        - record
+        - transformers
+      git: https://github.com/MonoidMusician/purescript-stylish.git
+      ref: main
+    tidy:
+      dependencies:
+        - arrays
+        - control
+        - dodo-printer
+        - either
+        - foldable-traversable
+        - language-cst-parser
+        - lists
+        - maybe
+        - newtype
+        - ordered-collections
+        - partial
+        - prelude
+        - strings
+        - tuples
+      git: https://github.com/natefaubion/purescript-tidy.git
+      ref: main
+    tidy-codegen:
+      dependencies:
+        - aff
+        - ansi
+        - arrays
+        - avar
+        - bifunctors
+        - console
+        - control
+        - dodo-printer
+        - effect
+        - either
+        - enums
+        - exceptions
+        - filterable
+        - foldable-traversable
+        - free
+        - identity
+        - integers
+        - language-cst-parser
+        - lazy
+        - lists
+        - maybe
+        - newtype
+        - node-buffer
+        - node-child-process
+        - node-fs-aff
+        - node-path
+        - node-process
+        - node-streams
+        - ordered-collections
+        - parallel
+        - partial
+        - posix-types
+        - prelude
+        - record
+        - safe-coerce
+        - st
+        - strings
+        - tidy
+        - transformers
+        - tuples
+        - type-equality
+        - unicode
+      git: https://github.com/natefaubion/purescript-tidy-codegen.git
+      ref: main
+    web-dom:
+      dependencies:
+        - web-events
+      git: https://github.com/purescript-web/purescript-web-dom.git
+      ref: 326c125d2f9dd5c5c1e74ac17fb95d5ddd7b4450
+  packageSet:
+    url: https://raw.githubusercontent.com/purescript/package-sets/psc-0.15.4-20221229/packages.json

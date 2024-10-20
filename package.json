@@ -16,7 +16,7 @@
     "katex": "^0.16.0",
     "parse5": "^7.0.0",
     "purescript": "^0.15.10",
-    "spago": "^0.20.9"
+    "spago": "^0.93.40"
   },
   "devDependencies": {
     "purs-backend-es": "^1.1.0",

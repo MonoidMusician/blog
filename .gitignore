@@ -18,6 +18,9 @@ output-es/
 /rendered/
 /assets/json/
 /assets/ps/*
+/assets/purs/
 /dist-newstyle/
 *.o
 *.hi
+/sources.txt
+/watch

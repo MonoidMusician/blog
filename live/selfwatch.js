@@ -1,4 +1,4 @@
-['', 'widgets.js'].forEach(tgt => {
+['', 'widgets.js', 'styles/bundled.css'].forEach(tgt => {
   let n = 0;
   const es = new EventSource(tgt+'?watch');
   es.onmessage = _ => {

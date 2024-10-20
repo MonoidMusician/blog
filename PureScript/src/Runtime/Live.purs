@@ -5,6 +5,7 @@ import Prelude
 import Control.Monad.Except (runExcept)
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
+import Data.Compactable (compact)
 import Data.Either (Either(..), either)
 import Data.Lens (traversed)
 import Data.Lens.Iso.Newtype (_Newtype)
@@ -15,6 +16,7 @@ import Data.String.Regex as Regex
 import Data.String.Regex.Flags as RegexFlags
 import Data.Traversable (traverse)
 import Data.Tuple.Nested ((/\))
+import Dodo as Dodo
 import Effect (Effect)
 import Effect.Aff (Aff, error, launchAff_, message, runAff, throwError)
 import Effect.Aff as Aff
@@ -23,15 +25,21 @@ import Fetch (Method(..), fetch)
 import Foreign (readArray, readString)
 import Foreign.Index (readProp)
 import Idiolect (intercalateMap)
+import Parser.Languages.HTML as HTML
 import Partial.Unsafe (unsafeCrashWith)
 import PureScript.CST.Errors (RecoveredError, printParseError)
 import PureScript.CST.Lexer as CST.Lexer
 import PureScript.CST.Parser as CST.Parser
 import PureScript.CST.Parser.Monad as CST.M
 import PureScript.CST.Types as CST.T
+import PureScript.Highlight as PureScript.Highlight
+import Riverdragon.Dragon (Dragon)
+import Riverdragon.Dragon as D
 import Riverdragon.Dragon.Breath (microtask)
-import Riverdragon.River (Lake, makeLake, subscribe)
+import Riverdragon.Dragon.Wings (sourceCode)
+import Riverdragon.River (Lake, Stream, dam, makeLake, subscribe)
 import Riverdragon.River.Bed as Bed
+import Riverdragon.River.Beyond (affToLake)
 import Runtime (cacheAff, fetchText, specialCache)
 import Runtime as Runtime
 import Tidy.Codegen as TC
@@ -121,7 +129,7 @@ bundle codeURL js =
 data Status
   = Fetching String
   | ParseErrors Boolean (NonEmptyArray CST.M.PositionedError)
-  | Compiling
+  | Compiling String
   | CompileErrors (Array String)
   | Compiled String
   | Crashed String
@@ -159,7 +167,7 @@ pipeline behavior incoming = makeLake \sub -> do
           Left errs -> sub $ ParseErrors false errs
           Right userParsed -> do
             let assembled = TC.printModule $ behavior.templating template userParsed
-            sub Compiling
+            sub $ Compiling assembled
             superviseAff (compile assembled) case _ of
               Left kaboom -> do
                 sub $ Crashed $ message kaboom
@@ -167,7 +175,7 @@ pipeline behavior incoming = makeLake \sub -> do
                 sub $ CompileErrors err
               Right (Right compiled) -> do
                 log ":3"
-                codeURL <- Runtime.configurable "codeURL" "https://tryps.veritates.love/assets/ps"
+                codeURL <- Runtime.configurable "codeURL" "https://tryps.veritates.love/assets/purs"
                 sub $ Compiled $ bundle codeURL compiled
   pure do
     unsub
@@ -194,3 +202,10 @@ printErrors = intercalateMap "\n" printPositionedError
 printPositionedError :: CST.M.PositionedError -> String
 printPositionedError { error, position } =
   "[" <> show (position.line + 1) <> ":" <> show (position.column + 1) <> "] " <> printParseError error
+
+fetchHighlight :: String -> Dragon
+fetchHighlight url = highlighting $ compact (affToLake (fetchText url))
+
+highlighting :: forall flow. Stream flow String -> Dragon
+highlighting stream = D.Replacing $ dam stream <#>
+  do PureScript.Highlight.highlight' >>> Dodo.print HTML.toDragon Dodo.twoSpaces >>> sourceCode "PureScript" []

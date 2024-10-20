@@ -5,8 +5,9 @@ import Prelude
 import Ansi.Codes as Ansi
 import Control.Plus ((<|>))
 import Data.Either (Either(..))
+import Data.Filterable (filterMap)
 import Data.Foldable (fold, foldMap)
-import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.String as String
 import Data.Tuple.Nested ((/\))
 import Dodo as Dodo
@@ -19,11 +20,12 @@ import PureScript.CST.Types as CST.T
 import Riverdragon.Dragon (Dragon, renderId)
 import Riverdragon.Dragon.Bones (($$), (.$), (.$$), (.$$~), (:.), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (eggy, sourceCode)
+import Riverdragon.Dragon.Wings (eggy, sourceCode, tabSwitcher)
 import Riverdragon.River (Lake, createRiverStore, makeLake)
 import Riverdragon.River.Beyond (counter)
 import Runtime (aSideChannel)
-import Runtime.Live (Status(..))
+import Runtime as Runtime
+import Runtime.Live (Status(..), fetchHighlight, highlighting)
 import Runtime.Live as Runtime.Live
 import Type.Proxy (Proxy(..))
 import Web.DOM.ElementId (ElementId(..))
@@ -89,7 +91,7 @@ _sideChannel = aSideChannel (Proxy :: Proxy SideChannel) "Parser.Main.Live"
 
 pipeline :: Lake String -> Lake Status
 pipeline = Runtime.Live.pipeline
-  { templateURL: "/assets/ps/Parser.Parserlude/index.purs"
+  { templateURL: "/assets/purs/Parser.Parserlude/source.purs"
   , parseUser: Right CST.Parser.parseExpr
   , templating: \template parserExpr ->
       Runtime.Live.renameModuleTo "Parser.Temp" $
@@ -117,11 +119,25 @@ embed incomingRaw = eggy \shell -> do
         Fetching _ -> D.text "Fetching ..."
         ParseErrors inTemplate errors -> preScroll $ errors #
           intercalateMap (D.br[]) (D.text <<< Runtime.Live.printPositionedError)
-        Compiling -> D.text "Compiling ..."
+        Compiling _ -> D.text "Compiling ..."
         CompileErrors errs -> preScroll $ errs #
           intercalateMap (D.br[]) D.text
         Compiled _ -> D.text "Loading ..."
         Crashed err -> preScroll $$ err
+  templated <- shell.instStore $ pipelined # filterMap case _ of
+    Compiling code -> Just code
+    _ -> Nothing
+  compiled <- shell.instStore $ pipelined # filterMap case _ of
+    Compiled code -> Just code
+    _ -> Nothing
+  codeURL <- Runtime.configurable "codeURL" "https://tryps.veritates.love/assets/purs"
+  let
+    assetFrame asset = D.html_"iframe"
+      [ D.attr "src" =:= codeURL <> "/" <> asset <> ".html"
+      , D.stylish =:= D.smarts { height: "calc(max(400px, 70vh))" }
+      ]
+      mempty
+    sourceCodeOf moduleName = fetchHighlight (codeURL <> "/" <> moduleName <> "/source.purs")
   pure $ D.Fragment
     [ D.div [ D.style =:= "white-space: pre" ] $ D.Replacing status
     , D.html_"style".$$ tripleQuoted """
@@ -150,6 +166,33 @@ embed incomingRaw = eggy \shell -> do
               fromMaybe "" $ encodeURIComponent latestBundle <#> \escaped ->
                 "data:text/javascript;utf8," <> escaped
           ]
+      ]
+    , D.html_"h2".$$ "Help"
+    , tabSwitcher (Just "Docs")
+      [ "Docs" /\ tabSwitcher (Just "Parser.Comb.Comber")
+        [ "Parser.Comb.Comber" /\ assetFrame "Parser.Comb.Comber/docs"
+        , "Parser.Comb" /\ assetFrame "Parser.Comb/docs"
+        , "Parser.Comb.Types" /\ assetFrame "Parser.Comb.Types/docs"
+        , "Parser.Comb.Combinators" /\ assetFrame "Parser.Comb.Combinators/docs"
+        , "Parser.Selective" /\ assetFrame "Parser.Selective/docs"
+        , "Parser.Printer.Types" /\ assetFrame "Parser.Printer.Types/docs"
+        , "Parser.Printer.Juxt" /\ assetFrame "Parser.Printer.Juxt/docs"
+        ]
+      , "Source Code" /\ tabSwitcher (Just "Parser.Comb.Combinators")
+        [ "Parser.Comb.Comber" /\ sourceCodeOf "Parser.Comb.Comber"
+        , "Parser.Comb.Types" /\ sourceCodeOf "Parser.Comb.Types"
+        , "Parser.Comb.Combinators" /\ sourceCodeOf "Parser.Comb.Combinators"
+        , "Parser.Comb.Run" /\ sourceCodeOf "Parser.Comb.Run"
+        , "Parser.Algorithms" /\ sourceCodeOf "Parser.Algorithms"
+        , "Parser.Lexing" /\ sourceCodeOf "Parser.Lexing"
+        , "Parser.Printer.Types" /\ sourceCodeOf "Parser.Printer.Types"
+        , "Parser.Printer.Juxt" /\ sourceCodeOf "Parser.Printer.Juxt"
+        ]
+      , "Live Code" /\ tabSwitcher (Just "Template")
+        [ "Template" /\ sourceCodeOf "Parser.Parserlude"
+        , "Templated" /\ highlighting templated
+        , "Compiled" /\ sourceCode "JavaScript" [] (D.Text compiled)
+        ]
       ]
     ]
 

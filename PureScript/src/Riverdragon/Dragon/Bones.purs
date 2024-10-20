@@ -443,7 +443,7 @@ title = attr "title" :: String -> AttrProp
 className = prop "className" <<< PropString :: String -> AttrProp
 classy = prop "className" :: Classy -> AttrProp
 style = prop "style" <<< PropString :: String -> AttrProp
-stylish = prop "className" :: Stylish -> AttrProp
+stylish = prop "style" :: Stylish -> AttrProp
 value = prop "value" :: forall t. PropType t => t -> AttrProp
 placeholder = prop "placeholder" <<< PropString :: String -> AttrProp
 checked = prop "checked" <<< PropBoolean :: Boolean -> AttrProp

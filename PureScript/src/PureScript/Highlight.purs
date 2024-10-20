@@ -4,23 +4,25 @@ import Prelude
 
 import Data.Array (fold, foldMap)
 import Data.Generic.Rep (class Generic)
-import Data.Maybe (maybe)
+import Data.Maybe (Maybe(..), maybe)
 import Data.Monoid (power)
 import Data.Set as Set
 import Data.Show.Generic (genericShow)
 import Dodo (Doc)
 import Dodo as Dodo
+import Parser.Languages.HTML (toHTML)
 import PureScript.CST.Lexer (lex)
 import PureScript.CST.Print as CST
 import PureScript.CST.TokenStream (TokenStep(..), TokenStream, step)
 import PureScript.CST.Types (Comment(..), Token(..), SourceToken)
-import Parser.Languages.HTML (toHTML)
 
-highlight :: String -> String
-highlight = lex
+highlight' :: String -> Doc String
+highlight' = lex
   >>> printTokenStream
   >>> map toClass
-  >>> Dodo.print toHTML Dodo.twoSpaces
+
+highlight :: String -> String
+highlight = highlight' >>> Dodo.print toHTML Dodo.twoSpaces
 
 
 highlightPandoc :: String -> String
@@ -175,11 +177,13 @@ classify = case _ of
 printTokenStream :: TokenStream -> Doc Category
 printTokenStream = go mempty
   where
-  go acc = step >>> case _ of
+  go acc stream = case step stream of
     TokenEOF _ comments ->
       acc <> printComments comments
     TokenError _ err rest _ ->
-      maybe acc (go acc) rest
+      case rest of
+        Just v -> go acc v
+        _ -> acc
     TokenCons tok _ rest _ ->
       go (acc <> printSourceToken tok) rest
 
