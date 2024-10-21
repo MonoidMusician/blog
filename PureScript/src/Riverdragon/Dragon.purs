@@ -272,7 +272,9 @@ renderDragonsIn = mkEffectFn3 \mgr insert children' -> do
       lastLast <- last.get
       pure
         { head: first.head
-        , destroy: flip foreachE identity =<< destroyers.reset
+        , destroy: do
+            first.destroy
+            flip foreachE identity =<< destroyers.read
         , tail: lastLast
         }
 
