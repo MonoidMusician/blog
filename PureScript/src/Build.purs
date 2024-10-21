@@ -43,7 +43,7 @@ import Safe.Coerce (coerce)
 
 main :: Effect Unit
 main = launchAff_ do
-  -- mainJson
+  mainJson
   mainPurs
 
 mainJson :: Aff Unit

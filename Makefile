@@ -42,7 +42,6 @@ clean-ps :
 squeaky-clean : clean
 	rm -rf node_modules
 	rm -rf dist-newstyle
-	rm -rf styles
 	rm -rf .spago
 
 sass : $(BUILDIR)/styles/bundles.css
@@ -82,11 +81,6 @@ prod-ps : $(BUILDIR) PureScript/src PureScript/directives.txt spago.yaml PureScr
 
 .PHONY : assets-ps
 assets-ps :
-	cp PureScript/src/Parser/Parserlude.purs output/Parser.Parserlude/index.purs
-	cp PureScript/src/Riverdragon/Dragon/Nest.purs output/Riverdragon.Dragon.Nest/index.purs
-
-.PHONY : grammars
-grammars :
 	time spago run -m Build
 	(for f in assets/json/*-parser-states.json; do gzip -f9k "$$f"; done)
 
@@ -103,7 +97,7 @@ trypurescript : PureScript/src
 .PHONY : watch-ps
 watch-ps : $(BUILDIR)
 	rm -f $(BUILDIR)/widgets.js.gz
-	watchexec -w PureScript/src -f 'PureScript/src/**/*.purs' -r --shell=bash 'spago bundle --bundle-type app --module Main --outfile ../$(BUILDIR)/widgets.js && make assets-ps'
+	watchexec -w PureScript/src -f 'PureScript/src/**/*.purs' -r --shell=bash 'spago bundle --bundle-type app --module Main --outfile ../$(BUILDIR)/widgets.js && make assets-ps >/dev/null'
 
 .PHONY : docs-ps
 docs-ps :
