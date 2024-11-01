@@ -43,6 +43,7 @@ executable blog
     -- Modules included in this executable, other than Main.
     other-modules:
         MTLite
+        Levity
 
     -- LANGUAGE extensions used by modules in this package.
     default-extensions:
@@ -58,7 +59,8 @@ executable blog
         base ^>=4.17.2.1,
         constraints ^>=0.14.2,
         mtl ^>=2.3.1,
-        profunctors ^>=5.6.2
+        profunctors ^>=5.6.2,
+        array ^>=0.5.0.0
 
     -- Directories containing source files.
     hs-source-dirs:   Haskell/src
