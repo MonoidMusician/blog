@@ -264,6 +264,7 @@ renderDragonsIn = mkEffectFn3 \mgr insert children' -> do
     [] -> pure first
     _ -> do
       destroyers <- pushArray
+      destroyers.push first.destroy
       last <- prealloc first.tail
       foreachE children.tail \child -> do
         r <- runEffectFn3 renderDragonIn mgr insert child
@@ -272,9 +273,7 @@ renderDragonsIn = mkEffectFn3 \mgr insert children' -> do
       lastLast <- last.get
       pure
         { head: first.head
-        , destroy: do
-            first.destroy
-            flip foreachE identity =<< destroyers.read
+        , destroy: flip foreachE identity =<< destroyers.reset
         , tail: lastLast
         }
 

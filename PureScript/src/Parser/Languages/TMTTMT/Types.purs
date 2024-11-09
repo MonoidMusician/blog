@@ -1,7 +1,9 @@
 module Parser.Languages.TMTTMT.Types where
 
+type Var = String
+
 data Pattern
-  = Var String
+  = Var Var
   | Scalar String
   | Vector (Array Pattern)
   | Macro Expr (Array Expr)

@@ -103,9 +103,9 @@ pipeline = Runtime.Live.pipeline
 
 embed :: Lake String -> Dragon
 embed incomingRaw = eggy \shell -> do
-  incoming <- shell.instStore do incomingRaw
-  pipelined <- shell.instStore do pipeline incoming
-  gotParser <- shell.instStore $ makeLake \cb -> mempty <$ _sideChannel.installChannel cb
+  incoming <- shell.store do incomingRaw
+  pipelined <- shell.store do pipeline incoming
+  gotParser <- shell.store $ makeLake \cb -> mempty <$ _sideChannel.installChannel cb
   let
     preScroll = D.pre [ D.style =:= "overflow-x: auto" ]
     -- the browser does not want to eval the same JavaScript script tag again,
@@ -124,10 +124,10 @@ embed incomingRaw = eggy \shell -> do
           intercalateMap (D.br[]) D.text
         Compiled _ -> D.text "Loading ..."
         Crashed err -> preScroll $$ err
-  templated <- shell.instStore $ pipelined # filterMap case _ of
+  templated <- shell.store $ pipelined # filterMap case _ of
     Compiling code -> Just code
     _ -> Nothing
-  compiled <- shell.instStore $ pipelined # filterMap case _ of
+  compiled <- shell.store $ pipelined # filterMap case _ of
     Compiled code -> Just code
     _ -> Nothing
   codeURL <- Runtime.configurable "codeURL" "https://tryps.veritates.love/assets/purs"

@@ -2,46 +2,48 @@ module Parser.Languages.TMTTMT.Eval where
 
 import Prelude
 
+import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Plus (empty)
-import Data.Array (fromFoldable)
 import Data.Array as A
-import Data.Array as Array
-import Data.Either (Either(..))
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
+import Data.Either (Either(..), either)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.List (List(..), foldMap)
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Monoid (power)
-import Data.Set (Set)
-import Data.Set as Set
 import Data.String as String
 import Data.Traversable (fold, traverse)
 import Data.Tuple (Tuple(..), uncurry)
-import Debug (spy)
 import Parser.Languages.TMTTMT.Parser (printExpr, printPattern)
-import Parser.Languages.TMTTMT.Types (Calling(..), Case(..), Condition(..), Declaration(..), Expr(..), Matching(..), Pattern(..))
+import Parser.Languages.TMTTMT.Types (Calling(..), Case(..), Condition(..), Declaration(..), Expr(..), Matching(..), Pattern(..), Var)
+
+data Valu
+  = EVar Var
+  | EScalar String
+  | EVector (Array Valu)
+  | EClosure Ctx Expr
+  | EOptions (NonEmptyArray Valu)
+
 
 type Ctx =
-  { values :: Map String Expr
-  , topLevel :: Set String
+  { locals :: Map String Valu
+  , globals :: Map String Expr
   }
 
-lookupIn :: Ctx -> String -> Eval Expr
-lookupIn ctx@{ values } v = case Map.lookup v values of
-  Nothing -> throwError $ LookupFailure v ctx
+lookupIn :: Ctx -> String -> Eval Valu
+lookupIn ctx v = case Map.lookup v ctx.locals of
   Just e -> pure e
+  Nothing ->
+    case Map.lookup v ctx.globals of
+      Just e -> pure $ EClosure { locals: Map.empty, globals: ctx.globals } e
+      Nothing -> throwError $ LookupFailure v ctx
 
-extend :: Ctx -> String -> Expr -> Ctx
-extend past v e = past { values = Map.insert v e past.values }
-
-narrow :: Ctx -> String -> Ctx
-narrow ctx v =
-  if Set.member v ctx.topLevel then revert ctx else ctx
-
-revert :: Ctx -> Ctx
-revert ctx = ctx { values = Map.intersection ctx.values (Set.toMap ctx.topLevel) }
+extend :: Ctx -> String -> Valu -> Ctx
+extend past v e = past { locals = Map.insert v e past.locals }
 
 fromDeclarations :: Array Declaration -> Ctx
 fromDeclarations = \decls ->
@@ -50,7 +52,7 @@ fromDeclarations = \decls ->
       Map.singleton name [casing]
     addDecl _ = mempty
     SemigroupMap ctx = Lambda <$> A.foldMap addDecl decls
-  in { values: ctx, topLevel: Map.keys ctx }
+  in { locals: Map.empty, globals: ctx }
 
 data Eval a
   = Result a
@@ -77,7 +79,7 @@ instance bindEval :: Bind Eval where
   bind (Result a) f = f a
   bind (Defer a) f = Defer (a >>> (_ >>= f))
   bind (Error e) _ = Error e
-instance mondEval :: Monad Eval
+instance monadEval :: Monad Eval
 instance monadThrowEval :: MonadThrow EvalError Eval where
   throwError = Error
 -- instance monadErrorEval :: MonadError EvalError Eval where
@@ -97,13 +99,15 @@ instance monadThrowEval :: MonadThrow EvalError Eval where
 --   sequence (Result a) = Result <$> a
 --   sequence (Defer a) = Defer <<< const <$> a unit
 --   sequence (Error e) = pure (Error e)
+instance monoidEval :: Monoid a => Monoid (Eval a) where mempty = pure mempty
+instance semigroupEval :: Semigroup a => Semigroup (Eval a) where append = lift2 append
 
-patFail :: forall a. Expr -> Expr -> Eval a
+patFail :: forall a. Valu -> Valu -> Eval a
 patFail pattern expr = throwError (PatternFailure (pure { pattern, expr }))
 
 type PatternFailure =
-  { pattern :: Expr
-  , expr :: Expr
+  { pattern :: Valu
+  , expr :: Valu
   }
 
 data EvalError
@@ -126,12 +130,12 @@ printEvalError = append "Evaluation error: " <<< case _ of
   PatternFailure failures -> fold
     [ "No cases matched:"
     , failures # foldMap \{ pattern, expr } ->
-        "\n  " <> printExpr expr <> " => " <> indentN 4 (printExpr pattern)
+        "\n  " <> printExpr (quote expr) <> " => " <> indentN 4 (printExpr (quote pattern))
     ]
   LookupFailure var' ctx -> fold
     [ "Variable missing from context:"
     , "\n  " <> var' <> " not in"
-    , ctx.values # foldMapWithIndex \var val ->
+    , ctx.locals # foldMapWithIndex \var val ->
         "\n    " <> var -- <> " := " <> indentN 6 (printExpr val)
     ]
   NotAFunction val -> fold
@@ -148,18 +152,6 @@ printEvalError = append "Evaluation error: " <<< case _ of
     ]
   Loop -> "Potential infinite loop"
 
-sigil :: Condition
-sigil = Condition (Pattern (Var "")) (Calling [] (Var ""))
-
-isSigil :: Condition -> Boolean
-isSigil (Condition (Pattern (Var "")) (Calling [] (Var ""))) = true
-isSigil _ = false
-
-unSigil :: Tuple Ctx (Array Condition) -> Tuple Ctx (Array Condition)
-unSigil (Tuple ctx conds) = case Array.uncons conds of
-  Just { head: c, tail: cs } | isSigil c -> Tuple (revert ctx) cs
-  _ -> Tuple ctx conds
-
 -- TODO: stuck
 fallback :: forall a. (Unit -> Eval a) -> Eval a -> Eval a
 fallback deferred = case _ of
@@ -169,12 +161,12 @@ fallback deferred = case _ of
     addFailures reasons (deferred unit)
   Error e -> Error e
 
-addFailures :: forall a216.
+addFailures :: forall a.
   List
-    { expr :: Expr
-    , pattern :: Expr
+    { expr :: Valu
+    , pattern :: Valu
     }
-  -> Eval a216 -> Eval a216
+  -> Eval a -> Eval a
 addFailures reasons = case _ of
   Result r -> Result r
   Defer x -> addFailures reasons (x unit)
@@ -182,165 +174,142 @@ addFailures reasons = case _ of
     Error (PatternFailure (reasons <> moreReasons))
   Error e -> Error e
 
-evalMacro :: Ctx -> Expr -> Array Expr -> Eval Expr
-evalMacro ctx0 e allArgs = case A.uncons allArgs of
-  Nothing -> evalExpr ctx0 e
-  Just { head: arg0, tail: args } -> Defer \_ -> do
-    arg <- evalExpr ctx0 arg0
-    e' <- evalFun ctx0 e
-    cases <- case e' of
-      Pattern p -> spy "cannot apply pattern (non-functions)" $
-        throwError (NotAFunction p)
-      Lambda cases -> pure cases
-    let
-      tryCases :: Ctx -> Array Case -> Eval Expr
-      tryCases ctx = A.uncons >>> case _ of
-        Nothing -> spy "absurd" $ throwError (PatternFailure empty)
-        Just { head: Case (Matching patterns result) conds, tail: moreCases } ->
-          case A.uncons patterns of
-            -- We have a thunk, we need to force it, hope it is a lambda,
-            -- and continue to evaluate its cases, and then do magic at the
-            -- end to deal with `moreCases`
-            -- TODO stuck
-            Nothing -> fallback (\_ -> tryCases ctx moreCases) do
-              ctx' <- evals ctx conds -- closurize
-              evalFun ctx' result >>= case _ of
-                Lambda theseCases -> Defer \_ ->
-                  tryCases ctx' theseCases <#>
-                    case _ of
-                      Pattern final -> Pattern final
-                      Lambda cases' -> Lambda $ cases' <>
-                        case force (tryCases ctx moreCases) of
-                          Right (Lambda cases'') -> cases''
-                          Right (Pattern fallbackFn) -> [Case (Matching [] (Pattern fallbackFn)) []]
-                          Left _ -> []
-                Pattern p -> spy "did not force to a lambda" $
-                  throwError (NotAFunction p)
-            -- We have a pattern `pat` to match against `arg`:
-            Just { head: pat, tail: pats } -> do
-              pat' <- evalPattern ctx pat
-              fallback (\_ -> tryCases ctx moreCases) do
-                ctx' <- match ctx pat' arg
-                case pats of
-                  -- We should be able to finish evaluation here and skip
-                  -- the remaining cases
-                  -- TODO stuck
-                  [] -> do
-                    ctx'' <- evals ctx' conds
-                    evalExpr ctx'' result
-                  -- Awaiting more arguments, already evaluated then
-                  _ -> Defer \_ -> Result $ Lambda $ A.cons
-                    (Case (Matching pats result)
-                      -- Add this match to the local context
-                      -- (TODO: destruct it??)
-                      (A.cons (Condition arg (Calling [] pat)) conds)
-                    )
-                    -- Back to original context!
-                    (gatherCases ctx moreCases)
-      gatherCases :: Ctx -> Array Case -> Array Case
-      gatherCases ctx = (=<<)
-        \(Case (Matching patterns result) conds) ->
-          -- TODO stuck
-          case A.uncons patterns of
-            Nothing -> fold $ force do
-              ctx' <- evals ctx conds
-              evalExpr ctx' result <#> case _ of
-                Lambda theseCases ->
-                  gatherCases ctx' theseCases
-                Pattern p -> [] -- throwError (NotAFunction p)
-            Just { head: pat, tail: pats } -> fromFoldable $ force do
-              pat' <- evalPattern ctx pat
-              _ctx' <- match ctx pat' arg
-              -- Add this match to the local context
-              -- (TODO: destruct it??)
-              pure $ Case (Matching pats result)
-                (A.cons (Condition arg (Calling [] pat)) conds)
-    e'' <- tryCases ctx0 cases
-    evalMacro ctx0 e'' args
+quote :: Valu -> Expr
+quote (EVar v) = Pattern $ Var v
+quote (EScalar s) = Pattern $ Scalar s
+quote (EVector vs) = Pattern $ Vector $ unExpr <<< quote <$> vs
+quote (EClosure ctx expr) = substitute ctx expr
+quote (EOptions opts) = Lambda $ map quote opts # foldMap \opt -> case opt of
+  Lambda cases -> cases
+  e -> [Case (Matching [] e) []]
+
+unExpr :: Expr -> Pattern
+unExpr (Pattern p) = p
+unExpr e = Macro e []
+
+substitute :: Ctx -> Expr -> Expr
+substitute _ (Pattern (Scalar s)) = Pattern $ Scalar s
+substitute ctx (Pattern (Vector vs)) = Pattern $ Vector $ vs <#> Pattern >>> substitute ctx >>> unExpr
+substitute ctx (Pattern (Macro fn args)) = Pattern (Macro (substitute ctx fn) (substitute ctx <$> args))
+substitute ctx (Pattern (Var v)) =
+  case Map.lookup v ctx.locals of
+    Nothing -> Pattern (Var v)
+    Just e -> quote e
+substitute ctx (Lambda cases) = Lambda $ cases <#>
+  \(Case (Matching pats result) conds) -> Case
+    (Matching (pats <#> Pattern >>> substitute ctx >>> unExpr) (substitute ctx result)) $
+      conds <#> \(Condition fn (Calling args pat)) ->
+        Condition (substitute ctx fn) $ Calling (args <#> substitute ctx) (pat # Pattern >>> substitute ctx >>> unExpr)
+
+evalMacro :: Ctx -> Expr -> Array Expr -> Eval Valu
+evalMacro ctx0 e [] = evalExpr ctx0 e
+evalMacro ctx0 e allArgs = Defer \_ -> do
+  argValus <- traverse (evalExpr ctx0) allArgs
+  cases <- evalFun ctx0 =<< evalExpr ctx0 e
+  evalCases cases argValus
+
+evalCases :: Array (Tuple Ctx Case) -> Array Valu -> Eval Valu
+evalCases cases argValus = do
+  let
+    matching :: Ctx -> Array Pattern -> Eval Ctx
+    matching ctx patterns = do
+      patterns' <- traverse (evalPattern ctx) $ A.take (A.length argValus) patterns
+      A.zip patterns' argValus #
+        A.foldM (\ctx' (Tuple pat expr) -> match ctx' pat expr) ctx
+    tryCase :: Ctx -> Case -> Eval Valu
+    tryCase ctx (Case (Matching patterns result) conds) = do
+      ctx1 <- matching ctx patterns
+      case A.length patterns `compare` A.length argValus of
+        GT -> do
+          let remaining = A.drop (A.length argValus) patterns
+          pure $ EClosure ctx1 $ Lambda $ pure $ Case (Matching remaining result) conds
+        EQ -> do
+          ctx2 <- evals ctx1 conds
+          evalExpr ctx2 result
+        LT -> do
+          let remaining = A.drop (A.length patterns) argValus
+          ctx2 <- evals ctx1 conds
+          cases' <- evalFun ctx2 =<< evalExpr ctx2 result
+          evalCases cases' remaining
+    trying :: _ -> Tuple Ctx Case -> _
+    trying (Left r) _ = pure $ Left r
+    trying (Right acc) c = fallback (\_ -> pure (Right acc)) $
+      mayFinish acc =<< uncurry tryCase c
+
+    mayFinish acc = case _ of
+      r@(EClosure _ _) -> pure $ Right (acc <> [r])
+      EOptions acc' -> pure $ Right (acc <> NEA.toArray acc')
+      r -> Left <$> finish (acc <> [r])
+    finish [e] = pure e
+    finish acc = case NEA.fromArray acc of
+      Nothing -> throwError $ PatternFailure empty
+      Just acc' -> pure $ EOptions acc'
+  either pure finish =<< A.foldM trying (Right []) cases
 
 -- Evaluate macros within a pattern
-evalPattern :: Ctx -> Pattern -> Eval Pattern
+evalPattern :: Ctx -> Pattern -> Eval Valu
 evalPattern ctx = case _ of
-  p@(Var v) -> case force (lookupIn ctx v) of
-    Left _ -> pure p
-    Right (Pattern p') -> pure p'
-    Right e@(Lambda _) -> spy "evalPattern Var Lambda" (throwError (NotAPattern e))
-  p@(Scalar _) -> pure p
-  Macro fn args ->
-    evalMacro ctx fn args >>= case _ of
-      Pattern p -> pure p
-      e@(Lambda _) -> spy "evalPattern evalMacro Lambda" (throwError (NotAPattern e))
-  Vector patterns -> Vector <$> traverse (evalPattern ctx) patterns
+  Var v ->
+    case Map.lookup v ctx.locals of
+      Just e -> pure e
+      Nothing ->
+        case Map.lookup v ctx.globals of
+          Just e -> pure $ EClosure { locals: Map.empty, globals: ctx.globals } e
+          Nothing -> pure (EVar v)
+  Scalar s -> pure (EScalar s)
+  Macro fn args -> evalMacro ctx fn args
+  Vector exprs -> EVector <$> traverse (evalPattern ctx) exprs
 
 -- Evaluate macros within an expression
-evalExpr :: Ctx -> Expr -> Eval Expr
+evalExpr :: Ctx -> Expr -> Eval Valu
 evalExpr ctx = case _ of
-  Pattern (Var v) -> evalExpr (narrow ctx v) =<< lookupIn ctx v
-  p@(Pattern (Scalar _)) -> pure p
+  Pattern (Var v) -> lookupIn ctx v
+  Pattern (Scalar s) -> pure (EScalar s)
   Pattern (Macro fn args) -> evalMacro ctx fn args
-  Pattern (Vector exprs) -> Pattern <<< Vector <$> traverse (evalSubExpr ctx) exprs
-  Lambda cases
-    | Just (Case (Matching [] result) conds) <- A.head cases ->
-      -- TODO stuck
-      fallback (\_ -> evalExpr ctx (Lambda (spy "evalExpr failed" (A.drop 1 cases)))) do
-        ctx' <- evals ctx conds
-        evalExpr ctx' result
-  e@(Lambda _) -> pure e
+  Pattern (Vector exprs) -> EVector <$> traverse (evalSubExpr ctx) exprs
+  e@(Lambda _) -> pure $ EClosure ctx e
 
-evalSubExpr :: Ctx -> Pattern -> Eval Pattern
-evalSubExpr ctx p = evalExpr ctx (Pattern p) <#> case _ of
-  Lambda _ -> p
-  Pattern p' -> p'
+evalSubExpr :: Ctx -> Pattern -> Eval Valu
+evalSubExpr ctx p = evalExpr ctx (Pattern p)
 
-evalFun :: Ctx -> Expr -> Eval Expr
+evalFun :: Ctx -> Valu -> Eval (Array (Tuple Ctx Case))
 evalFun ctx = case _ of
-  Pattern (Var v) -> evalFun (narrow ctx v) =<< lookupIn ctx v
-  Pattern p@(Scalar _) -> spy "evalFun Scalar" (throwError (NotAFunction p))
-  Pattern p@(Vector _) -> spy "evalFun Vector" (throwError (NotAFunction p))
-  Pattern (Macro fn args) -> evalMacro ctx fn args
-  Lambda cases
-    | Just (Case (Matching [] result) conds) <- A.head cases ->
-      -- TODO stuck
-      fallback (\_ -> evalExpr ctx (Lambda (A.drop 1 cases))) do
-        ctx' <- evals ctx conds
-        evalExpr ctx' result
-  e@(Lambda _) -> pure e
+  EVar v -> lookupIn ctx v >>= evalFun ctx
+  EScalar s -> throwError (NotAFunction (Scalar s))
+  EVector exprs -> throwError $ NotAFunction $ Vector $
+    exprs <#> quote >>> unExpr
+  EClosure ctx' (Lambda cases) -> pure $ Tuple ctx' <$> cases
+  EClosure ctx' e -> evalExpr ctx' e >>= evalFun ctx'
+  EOptions opts -> foldMap (evalFun ctx) opts
 
 evals :: Ctx -> Array Condition -> Eval Ctx
 evals = A.foldM \ctx (Condition fn (Calling args pat)) -> do
   result <- evalMacro ctx fn args
-  match ctx pat result
+  pat' <- evalPattern ctx pat
+  match ctx pat' result
 
 
 
-match :: Ctx -> Pattern -> Expr -> Eval Ctx
+match :: Ctx -> Valu -> Valu -> Eval Ctx
 match ctx = case _, _ of
-  Var v, e ->
+  EVar v, e ->
     case force (lookupIn ctx v) of
       Left _ -> pure (extend ctx v e)
       Right e' -> ctx <$ unify e e'
-  Scalar s1, Pattern (Scalar s2) | s1 == s2 -> pure ctx
-  Vector pats, Pattern (Vector exprs)
+  EScalar s1, EScalar s2 | s1 == s2 -> pure ctx
+  EVector pats, EVector exprs
     | Just patexprs <- zip pats exprs ->
-      A.foldM (\ctx' (Tuple pat expr) -> match ctx' pat (Pattern expr)) ctx patexprs
-  Macro fn args, e ->
-    evalMacro ctx fn args >>= case _ of
-      Pattern p -> match ctx p e
-      e'@(Lambda _) -> spy "evalMacro Lambda" (patFail e' e)
-  p, e -> spy "bad match" (patFail (Pattern p) e)
+      A.foldM (\ctx' (Tuple pat expr) -> match ctx' pat expr) ctx patexprs
+  p, e -> patFail p e
 
 
-unify :: Expr -> Expr -> Eval Expr
-unify (Pattern p1) (Pattern p2) = Pattern <$> unifyP p1 p2
-unify e1 e2 = patFail e1 e2
-
-unifyP :: Pattern -> Pattern -> Eval Pattern
-unifyP = case _, _ of
-  Var v1, Var v2 | v1 == v2 -> pure (Var v1)
-  Scalar s1, Scalar s2 | s1 == s2 -> pure (Scalar s1)
-  Vector vs1, Vector vs2 | Just vs <- zip vs1 vs2 ->
-    Vector <$> traverse (uncurry unifyP) vs
-  p1, p2 -> patFail (Pattern p1) (Pattern p2)
+unify :: Valu -> Valu -> Eval Valu
+unify = case _, _ of
+  EVar v1, EVar v2 | v1 == v2 -> pure (EVar v1)
+  EScalar s1, EScalar s2 | s1 == s2 -> pure (EScalar s1)
+  EVector vs1, EVector vs2 | Just vs <- zip vs1 vs2 ->
+    EVector <$> traverse (uncurry unify) vs
+  p1, p2 -> patFail p1 p2
 
 
 

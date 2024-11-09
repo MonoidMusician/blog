@@ -57,6 +57,8 @@ import Web.Event.Event as Web
 import Web.Event.EventPhase (EventPhase(..))
 import Web.Event.EventTarget (EventTarget)
 import Web.Event.EventTarget as Event
+import Web.HTML as HTML
+import Web.HTML.Window as Window
 
 
 -- | Benign effects of allocation and deallocation.
@@ -450,3 +452,10 @@ storeUnsubscriber = do
     , wrapDestroy: (clear *> _)
     , unsub: clear
     }
+
+
+
+requestAnimationFrame :: Effect Unit -> Effect (Effect Unit)
+requestAnimationFrame cb = do
+  w <- HTML.window
+  Window.cancelAnimationFrame <$> Window.requestAnimationFrame cb w <@> w

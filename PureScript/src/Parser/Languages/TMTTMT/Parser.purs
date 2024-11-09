@@ -71,7 +71,7 @@ stringP = "string"#: choices
   ]
 
 nameP :: Comber String
-nameP = "name"#: rawr "[-a-zA-Z0-9_]+"
+nameP = "name"#: rawr "[-a-zA-Z0-9_]+" <> opt (token "#")
 
 pathP :: Comber String
 pathP = "path"#: rawr "[-a-zA-Z0-9_]+/" <#> CU.dropRight 1

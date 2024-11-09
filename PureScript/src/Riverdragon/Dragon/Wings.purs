@@ -14,7 +14,7 @@ import Idiolect (filterFst, nonEmpty, (==<))
 import Riverdragon.Dragon (AttrProp, Dragon(..), renderElSt)
 import Riverdragon.Dragon.Bones (($$), ($~~), (.$), (.$$), (.$$~), (.<>), (:.), (:~), (<:>), (=!=), (=:=), (=?=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.River (Lake, Stream, createRiverStore, instantiate, instantiateStore, limitTo, makeLake, oneStream, subscribe)
+import Riverdragon.River (Lake, Stream, createRiverStore, instantiate, store, limitTo, makeLake, oneStream, subscribe)
 import Riverdragon.River as River
 import Riverdragon.River.Bed (Allocar, accumulator, eventListener, globalId, rolling)
 import Riverdragon.River.Bed as Bed
@@ -33,7 +33,7 @@ type Shell =
       Allocar { destroy :: Allocar Unit | r } ->
       Allocar { destroy :: Allocar Unit | r }
   , inst :: forall flowIn flowOut a. Stream flowIn a -> Allocar (Stream flowOut a)
-  , instStore :: forall flowIn flowOut a. Stream flowIn a -> Allocar (Stream flowOut a)
+  , store :: forall flowIn flowOut a. Stream flowIn a -> Allocar (Stream flowOut a)
   , storeLast :: forall flow a. a -> Stream flow a -> Allocar (Allocar a)
   , subscribe :: forall flow a. Stream flow a -> (a -> Effect Unit) -> Allocar Unit
   , destructor :: Allocar Unit -> Allocar Unit
@@ -49,10 +49,10 @@ eggy cont = Egg do
     track act = act >>= \r -> r <$ destructors.put r.destroy
 
     inst :: forall flowIn flowOut a. Stream flowIn a -> Allocar (Stream flowOut a)
-    inst = _.stream ==< track <<< instantiate
+    inst = _.stream ==< track <<< River.instantiate
 
-    instStore :: forall flowIn flowOut a. Stream flowIn a -> Allocar (Stream flowOut a)
-    instStore = _.stream ==< track <<< instantiateStore
+    store :: forall flowIn flowOut a. Stream flowIn a -> Allocar (Stream flowOut a)
+    store = _.stream ==< track <<< River.store
 
     storeLast :: forall flow a. a -> Stream flow a -> Allocar (Allocar a)
     storeLast df stream = do
@@ -67,7 +67,7 @@ eggy cont = Egg do
   release =<< cont
     { track
     , inst
-    , instStore
+    , store
     , storeLast
     , subscribe
     , destructor: destructors.put

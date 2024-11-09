@@ -40,6 +40,7 @@ import Data.Time.Duration (Milliseconds(..))
 import Data.Traversable (mapAccumL, sequence, traverse)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
+import Debug (spy)
 import Effect (Effect)
 import Effect.Class.Console (log)
 import Effect.Class.Console as Log
@@ -59,7 +60,7 @@ import Riverdragon.Dragon.Bones (AttrProp, Dragon, smarties, ($$), ($<), ($~~), 
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy, inputValidated)
 import Riverdragon.River (Lake, createRiver, createRiverStore, foldStream, sampleOnRightOp, selfGating, subscribe, (<**>))
-import Riverdragon.River.Beyond (dedup, dedupOn, interval, animationLoop)
+import Riverdragon.River.Beyond (animationLoop, dedup, dedupOn, delay, delayMicro, interval)
 import Stylish.Types (Classy(..))
 import Test.QuickCheck.Gen as QC
 import Unsafe.Coerce (unsafeCoerce)
@@ -615,10 +616,10 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
         (pure 0 <|> (add 1 <$> fst <$> actions.addRule.stream))
     getCurrentText <- shell.storeLast mempty currentText
     getCounted <- shell.storeLast (Array.length initialRules) counted
-    currentTop <- shell.instStore $ currentTop
-    currentRules <- shell.inst $ foldStream initialRules ruleChanges changeRule
+    currentTop <- shell.store $ currentTop
+    currentRules <- shell.store $ foldStream initialRules ruleChanges changeRule
     let
-      currentNTs = dedup $ map longestFirst $
+      currentNTs = {- dedup $ -} map (spy "currentNTs" <<< longestFirst) $
         (<**>)
           (map (_.pName <<< snd) <$> currentRules)
           (append <<< pure <<< fromMaybe defaultTopName <<< NES.fromString <<< _.top <$> currentTop)
@@ -805,7 +806,7 @@ explorerComponent grammar sendUp = eggy \shell -> do
     currentParts = actions.select.stream
     firstNonTerminal = Array.head <<< foldMapWithIndex
       \i v -> maybe [] (\r -> [ i /\ r ]) (unNonTerminal v)
-  currentFocused <- shell.instStore
+  currentFocused <- shell.store
     (pure (Just (0 /\ entry)) <|> actions.focus.stream <|> map firstNonTerminal currentParts)
   let
     activity here = here <#> if _ then "active" else "inactive"
@@ -1175,7 +1176,7 @@ inputComponent :: forall r.
   Dragon
 inputComponent initialInput inputStream sendInput current = eggy \shell -> do
   { send: pushInput, stream: localInput } <- shell.track $ createRiverStore Nothing
-  currentValue <- shell.instStore (pure initialInput <|> inputStream <|> localInput)
+  currentValue <- shell.store (pure initialInput <|> inputStream <|> localInput)
   getCurrentValue <- shell.storeLast initialInput currentValue
   getCurrentProducible <- shell.storeLast Nothing (Just <$> current.producible)
   let
@@ -1281,7 +1282,7 @@ inputComponent initialInput inputStream sendInput current = eggy \shell -> do
             -- Maintain the current index, clamped between 0 and nEntitities
             -- (Note: it is automatically reset, since `switcher` resubscribes,
             -- creating new state for it)
-          currentState <- shell.instStore fullState
+          currentState <- shell.store fullState
           let stackIndex = dedupOn _.idx currentState
           let isRunning = _.running <$> currentState
           sweeper <- spotlightBeh (map _.idx stackIndex)

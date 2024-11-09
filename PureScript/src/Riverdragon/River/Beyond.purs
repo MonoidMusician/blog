@@ -2,6 +2,8 @@ module Riverdragon.River.Beyond where
 
 import Prelude
 
+import Data.DateTime.Instant (Instant)
+import Data.DateTime.Instant as Instant
 import Data.Either (hush)
 import Data.Filterable (compact)
 import Data.Int as Int
@@ -13,12 +15,11 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect, foreachE, whileE)
 import Effect.Aff (Aff)
 import Effect.Aff as Aff
+import Effect.Now (now)
 import Effect.Timer (clearInterval, clearTimeout, setInterval, setTimeout)
 import Riverdragon.Dragon.Breath (microtask)
-import Riverdragon.River (Allocar, Lake, Stream, fixPrjBurst, makeLake, makeLake', oneStream, statefulStream, subscribeIsh, unsafeCopyFlowing, (<?*>), (>>~))
-import Riverdragon.River.Bed (breaker, freshId, ordMap, prealloc, pushArray)
-import Web.HTML (window)
-import Web.HTML.Window (RequestAnimationFrameId, cancelAnimationFrame, requestAnimationFrame)
+import Riverdragon.River (Allocar, IsFlowing(..), Lake, River, Stream(..), fixPrjBurst, makeLake, makeLake', memoize, oneStream, statefulStream, subscribeIsh, unsafeCopyFlowing, (<?*>), (>>~))
+import Riverdragon.River.Bed (breaker, freshId, ordMap, prealloc, pushArray, requestAnimationFrame)
 
 -- | Requires its delay function to be predictable, especially if the result
 -- | is used as a river.
@@ -58,36 +59,57 @@ delayMicro = delayWith \cb -> do
   brk.trip <$ microtask (brk.run unit)
 
 delayAnim :: forall flow. Stream flow ~> Stream flow
-delayAnim = delayWith \cb -> do
-  w <- window
-  cancelAnimationFrame <$> requestAnimationFrame cb w <@> w
+delayAnim = delayWith requestAnimationFrame
 
 data AFBState
   = Idle
-  | Requested RequestAnimationFrameId
-  | Draining
+  | Requested (Effect Unit)
+  | Draining (Maybe { start :: Instant, timeout :: Milliseconds })
   | Destroyed
-derive instance Eq AFBState
-derive instance Ord AFBState
 
-mkAnimFrameBuffer ::
+mkAnimFrameBuffer :: Allocar
+  { buffering :: forall flow. Stream flow ~> Stream flow
+  , destroy :: Effect Unit
+  , drain :: Allocar Unit
+  , setDrainTimeout :: Maybe Milliseconds -> Allocar Unit
+  }
+mkAnimFrameBuffer = mkBufferedDelayer requestAnimationFrame
+
+mkBufferedDelayer ::
+  (Allocar Unit -> Allocar (Allocar Unit)) ->
   Allocar
     { buffering :: forall flow. Stream flow ~> Stream flow
     , drain :: Effect Unit
     , destroy :: Allocar Unit
+    , setDrainTimeout :: Maybe Milliseconds -> Allocar Unit
     }
-mkAnimFrameBuffer = do
-  w <- window
+mkBufferedDelayer delayFn = do
   pending <- pushArray
   state <- prealloc Idle
   drained <- prealloc true
+  currentDrainTimeout <- prealloc Nothing
   let
+    notDestroyed = case _ of
+      Destroyed -> false
+      _ -> true
     drain :: Effect Unit
-    drain = whenM (notEq Destroyed <$> state.get) do
-      state.set Draining
-      whileE (not <$> drained.get) do
-        drained.set true
-        pending.reset >>= \items -> foreachE items identity
+    drain = whenM (notDestroyed <$> state.get) do
+      timeout <- currentDrainTimeout.get
+      case timeout of
+        Nothing -> do
+          state.set (Draining Nothing)
+          whileE (not <$> drained.get) do
+            drained.set true
+            pending.reset >>= \items -> foreachE items identity
+        Just drainTimeout -> do
+          drainStart <- now
+          state.set (Draining (Just { start: drainStart, timeout: drainTimeout }))
+          whileE (not <$> drained.get) do
+            drained.set true
+            pending.reset >>= \items -> foreachE items \item -> do
+              drainTime <- now
+              when (Instant.diff drainTime drainStart < drainTimeout) do
+                item
       state.set Idle
     animFrameBuffer :: forall flow. Stream flow ~> Stream flow
     animFrameBuffer = delayWith \cb0 -> do
@@ -95,14 +117,14 @@ mkAnimFrameBuffer = do
       let cb = run unit
       state.get >>= case _ of
         Idle -> do
-          id <- requestAnimationFrame drain w
-          state.set (Requested id)
+          canceler <- delayFn drain
+          state.set (Requested canceler)
           drained.set false
           pending.push cb
         Requested _ -> do
           drained.set false
           pending.push cb
-        Draining -> do
+        Draining _ -> do
           drained.set false
           pending.push cb
         Destroyed -> pure unit
@@ -111,15 +133,17 @@ mkAnimFrameBuffer = do
       { buffering :: forall flow. Stream flow ~> Stream flow
       , drain :: Effect Unit
       , destroy :: Allocar Unit
+      , setDrainTimeout :: Maybe Milliseconds -> Effect Unit
       }
     r =
       { buffering: animFrameBuffer
       , drain
       , destroy: do
           state.get >>= case _ of
-            Requested id -> cancelAnimationFrame id w
+            Requested canceler -> canceler
             _ -> pure unit
           state.set Destroyed
+      , setDrainTimeout: currentDrainTimeout.set
       }
   pure r
 
@@ -153,6 +177,10 @@ dedupOn f = statefulStream Nothing <@> case _, _ of
 
 dedup :: forall flow a. Eq a => Stream flow a -> Lake a
 dedup = dedupBy eq
+
+-- dedupStore :: forall flow a. Eq a => River a -> River a
+-- dedupStore (Stream _ f) = memoize $ Stream Flowing \cbs -> do
+
 
 affToLake :: forall a. Aff a -> Lake (Maybe a)
 affToLake aff = makeLake \cb -> do

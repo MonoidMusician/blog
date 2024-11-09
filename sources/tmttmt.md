@@ -67,6 +67,9 @@ My goal is to have a syntax that is straightforward for humans to write and easy
 But I donʼt want this process to be magic!
 I just want it to look convenient for writing powerful systems of type theory.
 
+## Abstract
+
+[tmTTmt](blog.veritates.love/tmttmt.html) (transmorphism Type Theory metatheory) is an experiment in the UX and aesthetics of a pure, typed functional programming language, with the goal of being an interlingua (it must be easy to parse, reducible to an implementation with few required primitives, and human readable along the way, including methods for understanding what the source code is and does) and with an eye towards being suitable for being an exceptional metalanguage for type theory and compilers and also a welcoming place to write down algorithms of general interest (e.g. computing a cubic Bézier from a quadratic Bézier, or computing an LR(1) parse table from a grammar, or describing high-level cryptography operations that can be compiled to appropriate code in languages such as JavaScript, Python, or Erlang)
 
 ## Demos
 

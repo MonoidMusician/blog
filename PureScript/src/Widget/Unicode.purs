@@ -364,10 +364,10 @@ fetchParser = _.text =<< fetch "assets/json/show-parser-states.json" {}
 
 widgetShow :: Widget
 widgetShow _ = pure $ eggy \shell -> do
-  reShow <- shell.instStore (mkReShow <$> affToLake fetchParser)
+  reShow <- shell.store (mkReShow <$> affToLake fetchParser)
   { send: setValue, stream: valueSet } <- shell.track $ createRiverStore Nothing
   { send: set, stream: get } <- shell.track $ createRiverStore Nothing
-  formatted <- shell.instStore $ reShow <*> get
+  formatted <- shell.store $ reShow <*> get
   lastValue <- shell.storeLast mempty formatted
   pure $ D.Fragment
     [ sourceCode "Haskell" .$ D.textarea

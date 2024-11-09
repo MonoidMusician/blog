@@ -108,7 +108,7 @@ half = D.span [ D.style =:= "opacity:0.6" ]
 widget :: Widget
 widget _ = pure $ eggy \shell -> do
   { stream: valueSet, send: setValue } <- shell.track createRiver
-  done <- shell.inst $ pure (false /\ Right emptyEnv) <|>
+  done <- shell.store $ pure (false /\ Right emptyEnv) <|>
     map HFS.parseAndRun' <$> debounce (100.0 # Milliseconds) (dedup valueSet)
   let
     wrapOutput content =

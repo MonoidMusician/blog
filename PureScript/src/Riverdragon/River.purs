@@ -96,7 +96,7 @@ module Riverdragon.River
   , bursting
   , alwaysBurst
   , instantiate
-  , instantiateStore
+  , store
   , mayMemoize
   , memoize
   , foldStream
@@ -137,7 +137,7 @@ import Data.Traversable (mapAccumL)
 import Data.Tuple (Tuple(..), fst, snd)
 import Effect (Effect, foreachE)
 import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar) as ReExports
-import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar, accumulator, allocLazy, breaker, cleanup, globalId, iteM, loadingBurst, ordMap, prealloc, prealloc2, rolling, storeLast, storeUnsubscriber, subscriptions, threshold, unsafeAllocate)
+import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar, accumulator, allocLazy, breaker, cleanup, globalId, iteM, loadingBurst, ordMap, prealloc, prealloc2, pushArray, rolling, storeLast, storeUnsubscriber, subscriptions, threshold, unsafeAllocate)
 
 -- | A notion of event streams that comes with a few more features in addition
 -- | to the usual subscribe and unsubscribe.
@@ -523,6 +523,41 @@ alwaysBurst = map Just >>> \(Stream t stream) ->
     \r -> r { burst = if Array.null r.burst then [Nothing] else r.burst }
 
 
+data Course a
+  = StoreDedup (a -> a -> Boolean)
+  | Bursting (Effect (Array a) -> Effect (Array a))
+  | History
+
+coursing :: forall flowIn flowOut a.
+  Course a ->
+  Stream flowIn a ->
+  Allocar
+    { burst :: Array a
+    , stream :: Stream flowOut a
+    , destroy :: Allocar Unit
+    }
+coursing chosenCourse strm@(Stream _ stream) = case chosenCourse of
+  StoreDedup equalitor -> do
+    lastValue <- storeLast
+    { send, commit, stream: streamDependingOn, destroy } <- createProxy' (Array.fromFoldable <$> lastValue.get)
+    { burst, sources, unsubscribe } <-
+      stream { receive: lastValue.set <> send, commit, destroyed: destroy }
+    case Array.last burst of
+      Just v -> lastValue.set v
+      _ -> pure unit
+    pure { burst, stream: streamDependingOn sources, destroy: unsubscribe <> destroy }
+  Bursting getBurstBasedOn -> do
+    { send, commit, stream: streamDependingOn, destroy } <- createProxy' (getBurstBasedOn (burstOf strm))
+    { burst, sources, unsubscribe } <-
+      stream { receive: send, commit, destroyed: destroy }
+    pure { burst, stream: streamDependingOn sources, destroy: unsubscribe <> destroy }
+  History -> do
+    history <- pushArray
+    { send, commit, stream: streamDependingOn, destroy } <- createProxy' history.read
+    { burst, sources, unsubscribe } <-
+      stream { receive: history.push <> send, commit, destroyed: destroy }
+    pure { burst, stream: streamDependingOn sources, destroy: unsubscribe <> destroy }
+
 -- | Create a single subscriber to an upstream stream that broadcasts it to
 -- | multiple downstream subscribers at once. It returns any flow type simply
 -- | for the sake of polymorphism: its return stream is definitely a `River`.
@@ -545,7 +580,7 @@ instantiate strm@(Stream _ stream) = do
 
 -- | Instantiate a stream and inform each new subscriber of the last value that
 -- | it saw.
-instantiateStore ::
+store ::
   forall flowIn flowOut a.
   Stream flowIn a ->
   Allocar
@@ -553,7 +588,7 @@ instantiateStore ::
     , stream :: Stream flowOut a
     , destroy :: Allocar Unit
     }
-instantiateStore (Stream _ stream) = do
+store (Stream _ stream) = do
   lastValue <- storeLast
   { send, commit, stream: streamDependingOn, destroy } <- createProxy' (Array.fromFoldable <$> lastValue.get)
   { burst, sources, unsubscribe } <-

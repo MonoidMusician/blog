@@ -70,8 +70,8 @@ fetchParser = _.text =<< fetch "assets/json/css-parser-states.json" {}
 component :: Lake (Array String) -> Dragon
 component resetting = eggy \shell -> do
   { stream: pushedRaw, send: pushUpdate } <- shell.track createRiver
-  getParser <- shell.inst $ mkCSSParser <$> affToLake fetchParser
-  currentRaw <- shell.inst $
+  getParser <- shell.store $ mkCSSParser <$> affToLake fetchParser
+  currentRaw <- shell.store $
     foldStream (true /\ ["",""]) (Reset <$> resetting <|> pushedRaw)
       \(_ /\ last) -> case _ of
         Add -> true /\ (last <> [ "" ])

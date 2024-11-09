@@ -21,7 +21,7 @@ import Foreign.Object as Object
 import Idiolect ((/|\))
 import Parser.Comb.Comber (many, parse, ws)
 import Parser.Languages.TMTTMT (mkTMTTMTParser, mkTMTTMTTypeParser)
-import Parser.Languages.TMTTMT.Eval (evalExpr, fromDeclarations, limit, printEvalError)
+import Parser.Languages.TMTTMT.Eval (evalExpr, fromDeclarations, limit, printEvalError, quote)
 import Parser.Languages.TMTTMT.Parser (patternP, printExpr)
 import Parser.Languages.TMTTMT.TypeCheck.Structural (Functional, isSubtype, printFunctional, run, synExpr, testExprs, testPatterns, testPatternsResult)
 import Parser.Languages.TMTTMT.Types (Declaration(..))
@@ -53,9 +53,6 @@ uncurryS: ($ -> $ -> [$ $]) -> [$ $] -> [$ $]
 uncurryS/ f1 [a b] => r1:
   f1 a b => r1
 
-// Higher order functions are a hack
-// They need distinct variables
-// (Sorry sorry sorry)
 curryS: ([$ $] -> [$ $]) -> $ -> $ -> [$ $]
 curryS/ f2 c d => r2:
   f2 [c d] => r2
@@ -157,9 +154,9 @@ result = (<<<) case _ of
         _ -> Nothing
       evalResults = queries <#> \e0 ->
         fold
-          [ case limit 2000 (evalExpr evalCtx e0) of
+          [ case quote <$> limit 2000 (evalExpr evalCtx e0) of
               Right e -> printExpr e
-              Left e -> printEvalError e
+              Left e -> printEvalError e <> "\n"
           , fold case run tcEnv $ synExpr e0 of
               Left r ->
                 [ " // ", testPatternsResult (Left r) ]
@@ -198,8 +195,8 @@ fetchTypeParser = _.text =<< fetch "assets/json/tmttmt-types-parser-states.json"
 component :: (String -> Effect Unit) -> Lake String -> Dragon
 component setGlobal resetting = eggy \shell -> do
   { stream: pushedRaw, send: pushUpdate } <- shell.track createRiver
-  getParser <- shell.inst $ mkTMTTMTParser <$> affToLake fetchParser
-  currentRaw <- shell.inst $
+  getParser <- shell.store $ mkTMTTMTParser <$> affToLake fetchParser
+  currentRaw <- shell.store $
     foldStream (true /\ "") (Reset <$> resetting <|> pushedRaw)
       \_ -> case _ of
         Update v -> false /\ v
@@ -211,15 +208,15 @@ component setGlobal resetting = eggy \shell -> do
         , D.value <:> resetting
         , D.style =:= "height: 50vh"
         ]
-    , D.pre [ D.className =:= "css", D.style =:= "white-space: break-spaces;" ]
-        $ Text $ result <$> getParser <*> map snd currentRaw
+    , D.pre [ D.style =:= "white-space: break-spaces;" ] $ D.code[] $
+        Text $ result <$> getParser <*> map snd currentRaw
     ]
 
 widgetTypeSplit :: Widget
 widgetTypeSplit _ = pure $ eggy \shell -> do
   { stream: pushedRaw, send: pushUpdate } <- shell.track $ createRiverStore $ Just dfTy
   { stream: pushedPat, send: pushPat } <- shell.track $ createRiverStore $ Just dfPat
-  getParser <- shell.inst $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
+  getParser <- shell.store $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
   pure $ Fragment
     [ sourceCode "tmTTmt" .$ D.textarea
         [ D.onInputValue =:= pushUpdate
@@ -231,7 +228,7 @@ widgetTypeSplit _ = pure $ eggy \shell -> do
           , D.value =:= dfPat
           , D.style =:= "height: 100px"
           ]
-    , D.pre [ D.className =:= "css", D.style =:= "white-space: break-spaces; min-height: 150px" ] $
+    , D.pre [ D.style =:= "white-space: break-spaces; min-height: 150px" ] $ D.code[] $
         Text $ typeResult <$> getParser <*> pushedRaw <*> pushedPat
     ]
   where
@@ -255,7 +252,7 @@ widgetSubType :: Widget
 widgetSubType _ = pure $ eggy \shell -> do
   { stream: pushedRaw, send: pushUpdate } <- shell.track $ createRiverStore $ Just dfTy
   { stream: pushedPat, send: pushPat } <- shell.track $ createRiverStore $ Just dfPat
-  getParser <- shell.inst $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
+  getParser <- shell.store $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
   pure $ Fragment
     [ sourceCode "tmTTmt" .$ D.textarea
         [ D.onInputValue =:= pushUpdate
