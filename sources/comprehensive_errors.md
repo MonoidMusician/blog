@@ -2,6 +2,7 @@
 title: A Framework for Comprehensive Errors In a (Hypothetical?) Typechecker
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
+date: 2022/01/02 – 2022/01/15
 ---
 
 I am on a quest for the best errors out there. Will I ever realize it? Nope, I clearly donʼt have the time. But hereʼs my blueprint for what I believe are my most significant contributions to it so far.
@@ -59,7 +60,7 @@ Finally the conclusion of this perspective is that the actual algebraic checks t
 
 ### Monads and Applicatives in Parallel
 
-Functional implementations use monads to sequence effects in the compiler. Weʼll talk about the details of what these effects are later, since it matters more in the applicative version, but for now assume it has errors (via `ExceptT`), local context (via `ReaderT`), information reporting (via `WriterT`), and eventually state (via `StateT` … but actually not).
+Functional implementations use monads to sequence effects in the compiler. Weʼll talk about the details of what these effects are later, since it matters more in the applicative version, but for now assume it has errors (via `ExceptT`{.purescript}), local context (via `ReaderT`{.purescript}), information reporting (via `WriterT`{.purescript}), and eventually state (via `StateT`{.purescript} … but actually not).
 
 The original motivation for the parallel class is asynchronous operations. Strictly speaking, we do not need to talk about asynchronous effects here – static language semantics (for Dhall in particular) should not need to talk about disk or network access, for typechecking or evaluation. Still, it is worth it to provide context on parallel effects for one paragraph.
 
@@ -71,39 +72,39 @@ The rest of the effects will not be parallel in this sense of executing concurre
 
 Monads are a general abstraction for sequential effects. Every monad is also an applicative, however, and applicatives provide for possibly-parallel effects.
 
-Being a monad or an applicative is a structure on functors: there can be different instances of these structures for a given functor. We'll denote monadic functors with variables like `m` and `n` and applicative functors with variables like `f` and `g`.
+Being a monad or an applicative is a structure on functors: there can be different instances of these structures for a given functor. We'll denote monadic functors with variables like `m`{.purescript} and `n`{.purescript} and applicative functors with variables like `f`{.purescript} and `g`{.purescript}.
 
-For example, the monad for asynchronous effects in PureScript is `Aff` and its corresponding parallel applicative is `ParAff`. If you have an asynchronous function to get files, it might like look `readFile :: FileName -> Aff String`, for example, and converting this to `ParAff` will allow combining several of these in parallel. We read `Aff String` as “an asynchronous, effectful computation which produces a string if it succeeds”. In general, we read monadic and applicative functors `f a` as “producing a value of type `a` with some effects allowed by `f`”. Some categories of effects include reading/writing mutable variables, I/O, failure and errors, nondeterminism, and state, and functors give us tools to separate them out into distinct layers.
+For example, the monad for asynchronous effects in PureScript is `Aff`{.purescript} and its corresponding parallel applicative is `ParAff`{.purescript}. If you have an asynchronous function to get files, it might like look `readFile :: FileName -> Aff String`{.purescript}, for example, and converting this to `ParAff`{.purescript} will allow combining several of these in parallel. We read `Aff String`{.purescript} as “an asynchronous, effectful computation which produces a string if it succeeds”. In general, we read monadic and applicative functors `f x`{.purescript} as “producing a value of type `x`{.purescript} with some effects allowed by `f`{.purescript}”. Some categories of effects include reading/writing mutable variables, I/O, failure and errors, nondeterminism, and state, and functors give us tools to separate them out into distinct layers.
 
-Monads and applicatives share a common operation `pure :: forall a. a -> f a`. This operation creates an effectful computation that in fact has no effects (hence the name “pure”), and only returns the value passed to `pure`. Abstractly, this is an identity for the monoidal operations for monads and applicatives, and thus uniquely determined.
+Monads and applicatives share a common operation `pure :: forall x. x -> f x`{.purescript}. This operation creates an effectful computation that in fact has no effects (hence the name “pure”), and only returns the value passed to `pure`{.purescript}. Abstractly, this is an identity for the monoidal operations for monads and applicatives, and thus uniquely determined.
 
-Applicatives have an additional operation called `apply :: forall a b. f (a -> b) -> f a -> f b` (also written infix as `<*>`). One of the laws is that `pure f <*> pure a = pure (f a)` – applying a pure function to a pure value is the same as the pure computation whose result is the function applied to the value. For non-pure computations, the intent is obvious to see: effects from both are run and their results are applied to obtain the compound result.
+Applicatives have an additional operation called `apply :: forall x y. f (x -> y) -> f x -> f y`{.purescript} (also written infix as `<*>`{.purescript}). One of the laws is that `pure f <*> pure x = pure (f x)`{.purescript} – applying a pure function to a pure value is the same as the pure computation whose result is the function applied to the value. For non-pure computations, the intent is obvious to see: effects from both are run and their results are applied to obtain the compound result.
 
 Except, it is not quite so obvious. Is the first argument run first, or the second argument run first? Are they run in parallel? Does it matter??
 
-The beauty in applicatives is that there is the freedom to choose. In fact, it is a simple matter to swap effects around and run them in reverse order, for any applicative. For some applicatives ([e.g.]{t=} `Maybe`), this doesn't make a difference. But for our story here, the ability to have them run in “parallel” is crucial, and we will gradually clarify what this means.
+The beauty in applicatives is that there is the freedom to choose. In fact, it is a simple matter to swap effects around and run them in reverse order, for any applicative. For some applicatives ([e.g.]{t=} `Maybe`{.purescript}), this doesn't make a difference. But for our story here, the ability to have them run in “parallel” is crucial, and we will gradually clarify what this means.
 
-Back to monads now. Monads have a further operation called `bind :: forall a b. m a -> (a -> m b) -> m b` (written infix as `>>=`). This is the key that allows for sequencing effects. The intuition is is that the effects that need to be run to obtain the `b` are not known until the effects from the `m a` are run to obtain the `a` needed to pass to `a -> m b`. (This is not to suggest that there _must_ be a result `a` or _only one_ – indeed, that's part of the magic of monads: they can handle errors and nondeterminacy gracefully, meaning zero or multiple results respectively.)
+Back to monads now. Monads have a further operation called `bind :: forall x y. m x -> (x -> m y) -> m y`{.purescript} (written infix as `>>=`{.purescript}). This is the key that allows for sequencing effects. The intuition is is that the effects that need to be run to obtain the `y`{.purescript} are not known until the effects from the `m x`{.purescript} are run to obtain the `x`{.purescript} needed to pass to `x -> m y`{.purescript}. (This is not to suggest that there _must_ be a result `x`{.purescript} or _only one_ – indeed, that's part of the magic of monads: they can handle errors and nondeterminacy gracefully, meaning zero or multiple results respectively.)
 
-To give some intuition for how `bind` works, one of the monad laws is that `pure a >>= f = f a`. If the first argument is a pure computation resulting in some value `a`, the result of the bind just applies the continuation `f` to that value.
+To give some intuition for how `bind`{.purescript} works, one of the monad laws is that `pure x >>= f = f x`{.purescript}. If the first argument is a pure computation resulting in some value `x`{.purescript}, the result of the bind just applies the continuation `f`{.purescript} to that value.
 
-In fact, it is possible to implement `apply` from `bind`: `apply mf ma = mf >>= \f -> (ma >>= \a -> f a)`. The `Monad` typeclass in PureScript requires that if apply is not given by that implementation, it is at least equivalent to that.
+In fact, it is possible to implement `apply`{.purescript} from `bind`{.purescript}: `apply mf mx = mf >>= \f -> (mx >>= \x -> f x)`{.purescript}. The [`Monad`{.purescript}](https://pursuit.purescript.org/packages/purescript-prelude/6.0.1/docs/Control.Monad#t:Monad) typeclass in PureScript requires that if `apply` is not given by that implementation, it is at least equivalent to that.
 
-But there's nothing stopping us from considering additional applicative structures on the same type. So, to exploit the tension between parallel and sequential effects, we can relate a monad with a parallel counterpart, with trivial coercion functions each way. Now we have the choice which way we want to combine effects. There is still only one `bind` operation, but now there are two `apply` operations: sequential (via the `bind`) and parallel.
+But there's nothing stopping us from considering additional applicative structures on the same type. So, to exploit the tension between parallel and sequential effects, we can relate a monad with a parallel counterpart, with trivial coercion functions each way. Now we have the choice which way we want to combine effects. There is still only one `bind`{.purescript} operation, but now there are two `apply`{.purescript} operations: sequential (via the `bind`{.purescript}) and parallel.
 
-Sometimes the choice is forced for us: the dependency of later effects on previous values will force us to use `bind`. But in a surprising number of cases, `apply` is sufficient. In fact, for traversing over a datatype (like a list of values), `apply` is all that is necessary, so we just need a combinator to choose to do it in parallel.
+Sometimes the choice is forced for us: the dependency of later effects on previous values will force us to use `bind`{.purescript}. But in a surprising number of cases, `apply`{.purescript} is sufficient. In fact, for traversing over a datatype (like a list of values), `apply`{.purescript} is all that is necessary, so we just need a combinator to choose to do it in parallel.
 
 One caveat here is that sometimes the dependency is implicit, due to inexact types being used. In particular, in order for an expression to be safe to evaluate, it must be the case that the expression typechecks. So there is a logical dependency on typechecking an expression before evaluating it – but this isn't represented in the types. One could model this by having a new type solely for expressions that are known to typecheck, and then having normalization operate on that type instead of any and all expressions. But the PureScript type system isn't strong enough to express this internally or get any benefit from it. There are workarounds (so-called “smart constructors”) which provide slightly more safety, but they are still imperfect and I do not personally choose to do that. And there are cases where the evidence is indirect: if a list typechecks then so do its elements (in fact, any sub-expression).
 
 The main problem with monads is that they do not compose, in general. Instead, monad stacks must be carefully designed so that they consist of composable parts. Luckily it is not a problem for the examples we have to discuss. The obvious things we need to do are indeed possible. However, it results in a weird discrepancy in libraries where monads are defined with composable versions (monad transformers) and applicatives only have uncomposed versions.
 
-_(Sidebar: There is an additional abstraction of `alt :: forall a. f a -> f a -> f a` and `empty :: forall a. f a` (this is even more obviously a monoid operation and identity!) which is also useful, but a little beyond scope for now.)_
+_(Sidebar: There is an additional abstraction of `alt :: forall x. f x -> f x -> f x`{.purescript} and `empty :: forall x. f x`{.purescript} (this is even more obviously a monoid operation and identity!) which is also useful, but a little beyond scope for now.)_
 
 #### Examples
 
 Now we will go through some examples of common monads and how they are already parallel or can be given counterparts of parallel applicatives.
 
-##### Local Context from `ReaderT`
+##### Local Context from `ReaderT`{.purescript}
 
 In some sense, this is nicest monad to work in. It encodes local context – some form of read-only data that is kept around and accessible during all parts of the program, and nested computations can even receive modified context. Note that this isn't quite state: the local context cannot be changed for sequential computations like state would do, only nested ones. Context flows top-down through the computational tree instead of linearly through execution.
 
@@ -111,15 +112,15 @@ The reason why it is the most well-behaved is that it is literally just an extra
 
 It is for this reason that the parallel counterpart of this monad is literally itself, as an applicative. There is no notion of sequencing effects versus running them independently if the only effect is accessing read-only data, which is oblivious to whether other reads have occurred.
 
-##### Information Accumulation in `WriterT`
+##### Information Accumulation in `WriterT`{.purescript}
 
 On the flip side of the coin, we have write-only data accumulation. How this works is that we can accumulate data in a monoid. In practice, a common monoid to use is often just lists of data – for good reason, since lists form the free monoid.
 
-Similarly to the above monad, since the only effect here is _accumulating_ data, there isn't a separate parallel version that needs to be provided, it is just `WriterT` itself.
+Similarly to the above monad, since the only effect here is _accumulating_ data, there isn't a separate parallel version that needs to be provided, it is just `WriterT`{.purescript} itself.
 
 (My argument is that this is sufficient for the state of a typechecker, but more on that later.)
 
-##### Errors through `ExceptT`
+##### Errors through `ExceptT`{.purescript}
 
 Errors start to get a little tricky. If you assume every action is run in a well-defined sequence, and each depends on the previous ones (as is the assumption when using monads), then a sequence of actions can only fail with one error. The first one crashes the whole thing. However, when you start asking for things to be run in parallel, when possible, then it is desirable to keep track of however many errors occurred at once. We will use the same trick as above and store them in an arbitrary monoid, but often just as lists of errors.
 
@@ -127,15 +128,15 @@ In fact, things are worse: if we add the ability to try alternatives, one actual
 
 Now is a great time to clarify a bit what parallel means. As I said, PureScript is very much single-threaded, so the underlying evaluation is sequential. (Strictness is sort of relevant but not incredibly so.) So the parallel applicative instance cannot avoid actually evaluating them sequentially. But what it does do is give the opportunity for considering all the errors that occurred in the computations, and preserving all that information.
 
-#### State via `StateT`
+#### State via `StateT`{.purescript}
 
 State is kind of the beast of monad transformers. By state we finally mean readable _and_ writable state, where the data that is written most recently should be read by upcoming computations, until the next write.
 
 So … how in the world do we make this readwritable state parallel? … well, we don't.
 
-In fact, it's worse: if we stack errors and state in the useful way ([i.e.]{t=} `StateT (ExceptT e m) s`)., we only get state information when no error has occurred. Thus the sequential nature of state infects the potentially-parallel errors portion of the stack, and we're back to only getting a single error at a time.
+In fact, it's worse: if we stack errors and state in the useful way ([i.e.]{t=} `StateT (ExceptT e m) s`{.purescript})., we only get state information when no error has occurred. Thus the sequential nature of state infects the potentially-parallel errors portion of the stack, and we're back to only getting a single error at a time.
 
-<!-- TODO: applicative state composing wrong -->
+(In fact, there is a classic mistake when implementing `Applicative m => Applicative (StateT s m)`{.purescript} where one only uses `<*>`{.purescript} from the base monad and gets a different instance, derived as the composition of two applicative functors, than the intended monadic instance, which sequences the state through the base monad `m`{.purescript} differently.)
 
 Instead I argue that we need to **forgo readwritable state** and restrict ourselves to **separate readable context flowing top-down with writable information bubbling bottom-up during typechecking**.
 
@@ -145,9 +146,9 @@ This discipline, I argue, will result in clarity about how typechecking works as
 
 ### The Monad Stack in Practice
 
-For an implementation of Dhall as it stands today, it really only needs local context and errors. I also added a writer to the stack (just in case!). And for import resolution, the stack needs a base monad of `Aff` for asynchronous effects, instead of a pure monad like `Identity`. But the point is: it all supports parallelism nicely. (There's a tiny bit of state tied into import resolution, but it is unimportant since it isn't implemented with `StateT` but instead as part of effects already in `Aff`, plus its actual order of evaluation should not matter.)
+For an implementation of Dhall as it stands today, it really only needs local context and errors. I also added a writer to the stack (just in case!). And for import resolution, the stack needs a base monad of `Aff`{.purescript} for asynchronous effects, instead of a pure monad like `Identity`{.purescript}. But the point is: it all supports parallelism nicely. (There's a tiny bit of state tied into import resolution, but it is unimportant since it isn't implemented with `StateT` but instead as part of effects already in `Aff`{.purescript}, plus its actual order of evaluation should not matter.)
 
-For the new features I am adding, I need to add some notion of state. Part 2 will get into what actually goes into this (**not** `StateT`!), but the trick is ensuring that it works with parallelism. Once it does, the actual structure of typechecking is the same! Just with a few special function invocations sprinkled around the leaves to make use of the new state.
+For the new features I am adding, I need to add some notion of state. Part 2 will get into what actually goes into this (**not** `StateT`{.purescript}!), but the trick is ensuring that it works with parallelism. Once it does, the actual structure of typechecking is the same! Just with a few special function invocations sprinkled around the leaves to make use of the new state.
 
 ### Implementing a Parallel Typechecker
 
@@ -159,17 +160,17 @@ In Dhall, empty lists need to be annotated with their type, while nonempty lists
 
 When typechecking a nonempty list literal, typechecking the elements should be done in parallel. This situates all the errors that occur on equal footing. We should further consider all the resulting types on equal footing.
 
-In particular, I formulated a helper function called `checkConsistency` that takes in some non-empty foldable of values and sorts them into clusters of equal elements. If they're all equal, then great, return that. Otherwise throw an error showing exactly what the clusters are.
+In particular, I formulated a helper function called `checkConsistency`{.purescript} that takes in some non-empty foldable of values and sorts them into clusters of equal elements. If they're all equal, then great, return that. Otherwise throw an error showing exactly what the clusters are.
 
 This allows the user to see precisely what types were all present in the list when they do not match, no matter if all elements but one have a type or if they each have different types or whatnot. This is clearly the optimal solution, in terms of preserving all information, and we didn't have to sacrifice that much to get it. It is also superior because it doesn't leak information about how the typechecker is going about its job. Is it proceeding left to right? Did it pick the first type to compare against? Does it shuffle it and proceed in a random order, taking a random one to be a representative? By guaranteeing that the user sees all the information from doing it in parallel, none of this matters.
 
-This `checkConsistency` function was sufficient for Dhall as currently standardized. The next thing I will need to add is unification. It should not be a huge deal, but it will make the function effectful (since unification information will need to be produced). And there's some open questions about if naïve methods of grouping will work. This is where the ability to avoid committing state changes will be important. See Part 2 for more.
+This `checkConsistency`{.purescript} function was sufficient for Dhall as currently standardized. The next thing I will need to add is unification. It should not be a huge deal, but it will make the function effectful (since unification information will need to be produced). And there's some open questions about if naïve methods of grouping will work. This is where the ability to avoid committing state changes will be important. See Part 2 for more.
 
 #### Typechecking Function Application
 
 Simplified [function application rule](https://github.com/dhall-lang/dhall-lang/blob/master/standard/type-inference.md#functions):
 
-```{.agda data-lang=TT}
+```{.agda data-lang="Type Theory"}
 f : forall (x : A) -> B
 a : A
 _______________________
@@ -208,21 +209,21 @@ However, there are a ton of details to figure out.
 
 ### Implementation/Framework
 
-Okay, so what is this mysterious `StateT` replacement I've been hinting at?
+Okay, so what is this mysterious `StateT`{.purescript} replacement I've been hinting at?
 
-Well, there's a couple choices. But the simplest choice is literally just `MaybeT (WriterT w)`. Tada! QED. We're all done here.
+Well, there's a couple choices. But the simplest choice is literally just `MaybeT (WriterT w)`{.purescript}. Tada! [QED]{t=}. We're all done here.
 
 Just kidding.
 
-We will see why it is possible in a short bit, but there are two problems with using `MaybeT (WriterT w)`: it obscures a bit of what's really happening, and it allows the state where no error has occurred but no result was produced either. In practical terms this is not a big deal, just generate a “no error occurred” error, but it seems suboptimal.
+We will see why it is possible in a short bit, but there are two problems with using `MaybeT (WriterT w)`{.purescript}: it obscures a bit of what's really happening, and it allows the state where no error has occurred but no result was produced either. In practical terms this is not a big deal, just generate a “no error occurred” error, but it seems suboptimal.
 
 The general idea is sound, though: we want to accumulate some state, and if there's some error state then we can forgo returning a result.
 
-The next option is to split the state into “good” state `m` and error state `o`. The main problem is that error state may come mixed with good state.
+The next option is to split the state into “good” state `m`{.purescript} and error state `o`{.purescript}. The main problem is that error state may come mixed with good state.
 
 #### Monoid-ish State
 
-How it's work out is that the overall state `w` is a monoid, and then we have two subsets of “good” and “error” states (`m` and `o`) which are complementary in some sense.
+How it's work out is that the overall state `w`{.purescript} is a monoid, and then we have two subsets of “good” and “error” states (`m`{.purescript} and `o`{.purescript}) which are complementary in some sense.
 
 Since the overall state is a monoid, it means we **always know how to combine two states**. Which might be a surprise – don't we expect combining states to fail? And the answer is yes, totally – but we'll **still keep track of the error state wrapped up in the monoid**! But we expect that the good state contains the identity element (always want to start off on good footing), and complementarily we expect that error states are closed under the semigroup operation: combining error states shouldn't take us back to the land of goodness. However, they aren't completely separated: an error state with a good state may be a mixed state, where some of the good state survives and some of the error state infects the good state still. Nevertheless, adding good state to an error state shouldn't make the error state disappear.
 
@@ -250,11 +251,11 @@ Strictly speaking, this is really at the wrong level to model what we're working
 
 However, you may simply think of this AST as being either an abstract model of the constraints arising during typechecking, or as literally formed via some steps of processing that resemble typechecking. Or simply as the toy example it is.
 
-Let's begin by asking what a good state should look like? Well, if all the constraints `variable = value` are consistent, then we'll assign each variable to a single value. Something like `Map Name Value`.
+Let's begin by asking what a good state should look like? Well, if all the constraints `variable = value` are consistent, then we'll assign each variable to a single value. Something like `Map Name Value`{.purescript}.
 
-What's a bad state? Well, we've had at least two inconsistent assignments to the same variable. Is that all? No, potentially many variables could have conflicts! So, following our principle of keeping _all_ information around, the error state is really a non-empty map of inconsistencies: `NonEmptyMap Name (TwoOrMore Value)`.
+What's a bad state? Well, we've had at least two inconsistent assignments to the same variable. Is that all? No, potentially many variables could have conflicts! So, following our principle of keeping _all_ information around, the error state is really a non-empty map of inconsistencies: `NonEmptyMap Name (TwoOrMore Value)`{.purescript}.
 
-Now's where the magic happens. What's the least common denominator? Can we find a happy monoid that snugly encompasses both? Certainly it's going to be some sort of map with names as keys – that much is clear. It can definitely be empty – the trivial state, which is a good state, is empty! For each key, if it's consistent it will have one value, if it's inconsistent it will have two or more values … so it's really one or more values. As a type, then, it is `Map Name (OneOrMore Value)`.
+Now's where the magic happens. What's the least common denominator? Can we find a happy monoid that snugly encompasses both? Certainly it's going to be some sort of map with names as keys – that much is clear. It can definitely be empty – the trivial state, which is a good state, is empty! For each key, if it's consistent it will have one value, if it's inconsistent it will have two or more values … so it's really one or more values. As a type, then, it is `Map Name (OneOrMore Value)`{.purescript}.
 
 Watch this: the combining of two states now is just the obvious monoid operation on this type!!!! And then we sift out the consistent and inconsistent states based on whether they have a single value or multiple values.
 
@@ -262,9 +263,9 @@ That's it. We don't have to agonize over how to add error states, or how to add 
 
 And notice how it just does the obvious thing: “record all the unique values associated with the variable via constraints”. It preserves information.
 
-Note that we don't allow _no_ values with a name. There are slightly deep reasons why, which I might as well explain here, but feel free to skip. The obvious reason is that if there's no constraint mentioning a variable, we shouldn't record it, and if there is, there definitely is a value associated with that constraint. So we always have a value for each key. But there's deeper reasons too. One is that `Map k v` has a monoid structure whenever `v` has a semigroup structure – the empty map provides the identity, regardless of whether `v` has one! Looking further into the math, we might say that `Map k v` is really modelled by a function `k -> Maybe v` with finite support, where `Maybe v` this time shoulders the responsibility of adding the identity `Nothing`, which is lifted to the function `const Nothing` (with trivial support). This “semigroup-to-monoid” property pervades the theory of states built up in my implementation.
+Note that we don't allow _no_ values with a name. There are slightly deep reasons why, which I might as well explain here, but feel free to skip. The obvious reason is that if there's no constraint mentioning a variable, we shouldn't record it, and if there is, there definitely is a value associated with that constraint. So we always have a value for each key. But there's deeper reasons too. One is that `Map k v`{.purescript} has a monoid structure whenever `v`{.purescript} has a semigroup structure – the empty map provides the identity, regardless of whether `v` has one! Looking further into the math, we might say that `Map k v`{.purescript} is really modelled by a function `k -> Maybe v`{.purescript} with finite support, where `Maybe v`{.purescript} this time shoulders the responsibility of adding the identity `Nothing`{.purescript}, which is lifted to the function `const Nothing`{.purescript} (with trivial support). This “semigroup-to-monoid” property pervades the theory of states built up in my implementation.
 
-Backing up slightly, let's focus on what `OneOrMore` and `TwoOrMore` are.
+Backing up slightly, let's focus on what `OneOrMore`{.purescript} and `TwoOrMore`{.purescript} are.
 
 Open question: what would it look like if we added constraints of the form `variable1 = variable2`? Doesn't have to be a formal definition in types like the above. I know there's a good answer for what good states look like, but I'm not so sure about error states: there might be several options. It might be that a particular representation of error states is forced by the laws I want to hold – which would be interesting because it actually would violate the principle of “most information” and potentially be confusing, but if it is the option that makes sense I would still go for it. Or maybe the representation isn't forced, but it starts leaking the choices in the typechecker which I suggested should be hidden. Hm.
 
@@ -294,7 +295,7 @@ I've been working towards method that avoids this, but I'm not 100% sure it work
 
 ##### Errors
 
-It's not quite clear what comprehensive, associative errors should look like. Right now the errors that are returned simplify identify _some_ chain of axioms that result in a contradiction. Actually, it is more indirect than that: it identifies two expressions in the `GESolver` with such that `k !>= v` is requested to hold but in fact `k < v` across all models. Of course, this `k !>= v` constraint is just a combination of source constraints with axioms, and that derivation could be tracked. Plus, raw axioms are not really a suitable format for intelligibility either.
+It's not quite clear what comprehensive, associative errors should look like. Right now the errors that are returned simplify identify _some_ chain of axioms that result in a contradiction. Actually, it is more indirect than that: it identifies two expressions in the `GESolver`{.purescript} with such that `k !>= v` is requested to hold but in fact `k < v` across all models. Of course, this `k !>= v` constraint is just a combination of source constraints with axioms, and that derivation could be tracked. Plus, raw axioms are not really a suitable format for intelligibility either.
 
 It seems like an uphill battle to provide comprehensible errors, much less global errors that collect all the conflicting information. The one bright ray of hope is that the problem is secretly geometric! For predicative universes, in fact, each constraint carves out a (simply?) connected subset of <i>c<sub>00</sub></i>, and the boundaries are all of slope 0 or 1. For impredicative universes, it is a little worse, but not too bad. (I don't have a precise characterization yet.)
 
@@ -312,17 +313,17 @@ Uhh work in progress? I am hopeful a similar story will hold for row types as fo
 
 Unlike universe levels, where we literally do not solve a variable ever, rows are going to operate via partially inferred rows.
 
-Hmm I was thinking like `data Row a = Closed (Map String a) | Open (Map String (Maybe a))`.
+Hmm I was thinking like `data Row a = Closed (Map String a) | Open (Map String (Maybe a))`{.purescript}.
 
-<!-- But maybe we want `data Row a = Closed (Map String a) | Open (Map String { constraintPresent :: Constraint a, constraintAbsent :: Constraint Unit })` with the constraint information localized to where it occurs? But I think that won't really be compatible with (1) complex casing in constraints and (2) structural unification. -->
+<!-- But maybe we want `data Row a = Closed (Map String a) | Open (Map String { constraintPresent :: Constraint a, constraintAbsent :: Constraint Unit })`{.purescript} with the constraint information localized to where it occurs? But I think that won't really be compatible with (1) complex casing in constraints and (2) structural unification. -->
 
 ##### Descent To Type Constraints
 
 The unfortunate part about row constraints is that they necessitate type constraints.
 
-Consider the `//` operator: `((rL : { r1… }) // (rR : { r2… })) : { r1 || r2… }`.
+Consider the `//`{.dhall} operator: `((rL : { r1… }) // (rR : { r2… })) : { r1 || r2… }`{.dhall}.
 
-What if it becomes known that `r1` has a label `a`? Well, then we know that `r0 = r1 || r2` has the label `a` whether or not `r2` has it, but the type isn't known yet. That is `r1 = ( a : T1, r3-a… )` then `r0 = r1 || r2 = ( a : T0, r3-a || r4-a… )` with either `r2 = r4-a` not having the label `a` thus forcing `T0 = T1` or `r2 = ( a : T2, r4-a… )` having the label `a` forcing `T0 = T2`.
+What if it becomes known that `r1` has a label `l`? Well, then we know that `r0 = r1 || r2` has the label `l` whether or not `r2` has it, but the type isn't known yet. That is `r1 = ( l : T1, r3-a… )` then `r0 = r1 || r2 = ( l : T0, r3-l || r4-l… )` with either `r2 = r4-l` not having the label `l` thus forcing `T0 = T1` or `r2 = ( l : T2, r4-l… )` having the label `l` forcing `T0 = T2`.
 
 So really we have to consider type constraints when considering row constraints – at least if we want it to be complete! Luckily we shouldn't have to get into full structural unification yet, because the constraints are just the obvious unification constraints.
 
@@ -342,7 +343,7 @@ The tricky part is that repeated unifications generate unifications.
 
 ##### Universes
 
-Recall that universes are the types we give to types. So everytime we have something we know is a type, we need to ask what universe it is in – and in the general setting, we hardly know the answer right away. So if we have a bare lambda `\x -> b` without a type on the argument, we know `x` has some unknown type `T` and `T` must live in some universe `u`. So already we have to expand it to `\(x : T : Universe u) -> b`, and so on.
+Recall that universes are the types we give to types. So everytime we have something we know is a type, we need to ask what universe it is in – and in the general setting, we hardly know the answer right away. So if we have a bare lambda `\x -> b`{.dhall} without a type on the argument, we know `x` has some unknown type `T` and `T` must live in some universe `u`. So already we have to expand it to `\(x : T : Universe u) -> b`{.dhall}, and so on.
 
 Thus we need universe level solving. Luckily we have that!
 
@@ -362,15 +363,17 @@ This will sort of behave like a RecordValue by default. Its fields will have val
 
 The magic is that it will unify with either record values *or* union types! This is where we really start introducing relations into the unification lattice.
 
-Unfortunately, we have to hijack the occurs check on the type of the fields to instead – in certain special cases – force it to collapse into the UnionType case. (I told you it was only marginally principled.) If we have `u.x : u` or `u.x : t -> u` then it must be `u` is a UnionType. (*Is* that the occurs check, if it occurs on the _type_ of a field? I hope so. Ugh.)
+Unfortunately, we have to hijack the occurs check on the type of the fields to instead – in certain special cases – force it to collapse into the UnionType case. (I told you it was only marginally principled.) If we have `u.x : u`{.dhall} or `u.x : t -> u`{.dhall} then it must be `u`{.dhall} is a UnionType. (*Is* that the occurs check, if it occurs on the _type_ of a field? I hope so. Ugh.)
 
 The next step is that we have to close it under the operations we need. Luckily normalization is trivial.   Typechecking means we need to introduce a RecordTypeOrUniverse – again, normalizing that is trivial, and of course the type of a type has to be a universe so it stops there.
 
 One issue is that information has to flow backwards from RecordTypeOrUniverse – if it unifies with a RecordType or with a Universe – back to the corresponding RecordValueOrUnionType.
 
+<!--
 ##### Higher-Order
 
 Higher-order unification is certainly, definitely, absolutely undecidable.
+-->
 
 ## Part 3: Provenance
 
@@ -414,7 +417,7 @@ So given a particular source expression, there is a **function from provenances 
 
 The one problem with provenance is that it doesn't tell us _which_ source file it came from, only how to get from a source file to an expression. So we should pair an origin with provenance. The origin is really an index into some collection of source files. It could be actual file paths or URIs, or keys in a database, or numbered expressions in a REPL – whatever.
 
-In types, this looks like `type Location = Tuple origin provenance`, and it is this type that actually gets threaded around the typechecker and evaluator.
+In types, this looks like `type Location = Tuple origin provenance`{.purescript}, and it is this type that actually gets threaded around the typechecker and evaluator.
 
 ### Provenance in Practice
 

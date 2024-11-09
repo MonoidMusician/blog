@@ -187,6 +187,7 @@ unExpr :: Expr -> Pattern
 unExpr (Pattern p) = p
 unExpr e = Macro e []
 
+-- TODO: capture avoiding
 substitute :: Ctx -> Expr -> Expr
 substitute _ (Pattern (Scalar s)) = Pattern $ Scalar s
 substitute ctx (Pattern (Vector vs)) = Pattern $ Vector $ vs <#> Pattern >>> substitute ctx >>> unExpr
