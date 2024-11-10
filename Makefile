@@ -70,7 +70,7 @@ $(BUILDIR)/%.html : $(TXTDIR)/%.md pandoc/defaults.yaml pandoc/post.html PureScr
 
 .PHONY : watch-pandoc
 watch-pandoc :
-	watchexec -w pandoc -f 'pandoc/**' -w $(TXTDIR) -f '$(TXTDIR)/*.md' -- make pandoc
+	watchexec -w pandoc -f 'pandoc/**' -w $(TXTDIR) -f '$(TXTDIR)/*.md' -r -- make pandoc
 
 prod-ps : $(BUILDIR) PureScript/src PureScript/directives.txt spago.yaml PureScript/spago.yaml
 	rm -f $(BUILDIR)/widgets.js.gz
