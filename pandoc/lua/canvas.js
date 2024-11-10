@@ -16,8 +16,8 @@ if (output_dir === '--') {
   output_dir = process2.argv[++i];
 }
 
-registerFont('assets/fonts/KaTeX/KaTeX_Math-Italic.ttf', { family: "KaTeX Math", style: "italic" });
-registerFont('assets/fonts/KaTeX/KaTeX_Math-BoldItalic.ttf', { family: "KaTeX Math", style: "italic", weight: "bold" });
+registerFont('assets/katex/fonts/KaTeX_Math-Italic.ttf', { family: "KaTeX Math", style: "italic" });
+registerFont('assets/katex/fonts/KaTeX_Math-BoldItalic.ttf', { family: "KaTeX Math", style: "italic", weight: "bold" });
 
 const stdin = fs.readFileSync(0, "utf-8");
 const document = parse5.parseFragment(stdin);
