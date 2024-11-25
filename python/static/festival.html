@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <!-- <link rel="stylesheet" type="text/css" href="/assets/iconoir.css"> -->
+    <!-- <link rel="stylesheet" type="text/css" href="/serve/index.css"> -->
+    <script src="/static/verity.js"></script>
+    <style>
+        html, body {
+            background: #191919 !important;
+            color: whitesmoke;
+        }
+        input, textarea {
+            font: inherit;
+            color: inherit;
+            background: black;
+        }
+        button {
+            color: inherit;
+            background: gray;
+        }
+        input, textarea, button {
+            border: 1px solid cornflowerblue;
+            border-radius: 4px;
+        }
+        audio {
+            background: #ff39ff;
+        }
+        body:not(.authorized) .authed {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <script>
+        new WebSocket(`/watch${window.location.pathname}`).onmessage = () => location.reload();
+    </script>
+    <pre id="output"></pre>
+    <br/>
+    <div id="options" style="display: none;">
+        <div>
+            <textarea id="text"></textarea>
+            <br/>
+            <button id="tts" style="color: var(--red)">Text to Speech!</button>
+        </div>
+        <div class="authed">
+            <textarea id="scheme"></textarea>
+            <br/>
+            <button id="run" style="color: var(--red)">Run</button>
+        </div>
+    </div>
+    <button id="connect">Connect</button>
+    <script>
+        async function getAuth() {
+            const hasAuth = [200, 204].includes((await fetch('/auth')).status);
+            document.body.classList[hasAuth ? 'add' : 'remove']('authorized');
+            return hasAuth;
+        }
+        async function onMessage(data) {
+            try {
+                if (typeof data?.data !== 'undefined') data = data.data;
+            } catch {}
+            try {
+                if (typeof data === 'string')
+                    data = JSON.parse(data);
+            } catch {}
+            if (typeof data === 'string') data = { type: data };
+            if (typeof data !== 'object') return;
+            if (data?.type === 'WV' && data.data) {
+                Ve.ById.output.appendChild(Ve.HTML.audio({
+                    attrs: { controls: '' },
+                }, [
+                    Ve.HTML.source({
+                        attrs: { src: 'data:audio/wav;base64,' + data.data },
+                    }),
+                ]));
+            } else {
+                console.log(data);
+                if (data?.data) {
+                    if (data.type === "scheme") {
+                        Ve.ById.output.appendChild(Ve.HTML.div({
+                            style: {},
+                        }, [
+                            Ve.HTML.span({
+                                style: {'opacity':0.5},
+                            }, 'festival> '),
+                            data.data, '\n'
+                        ]));
+                    } else {
+                        Ve.ById.output.appendChild(Ve.HTML.div({
+                            style: {'color':data.type === 'text' ? '' : 'purple'},
+                        }, data.data, '\n'));
+                    }
+                } else if (data?.type !== "OK") {
+                    Ve.ById.output.appendChild(Ve.HTML.div({
+                        style: {'font-style':'italic'},
+                    }, data.type, '\n\n'));
+                }
+            }
+        }
+
+        Ve.once.click(Ve.ById.connect, async () => {
+            const hasAuth = await getAuth();
+
+            let ws;
+            function connect() {
+                if (ws) ws.close();
+                ws = new WebSocket(hasAuth
+                    ? `/festival/rich`
+                    : `/festival/tts`
+                );
+                ws.onopen = () => {
+                    onMessage("open");
+                    Ve.ById.options.style.display = 'flex';
+                    Ve.ById.connect.style.display = 'none';
+                };
+                ws.onmessage = onMessage;
+                ws.onclose = () => {
+                    onMessage("closed");
+                    Ve.ById.options.style.display = 'none';
+                    Ve.ById.connect.style.display = '';
+                    ws = null;
+                    setTimeout(connect, 200);
+                };
+            }
+            connect();
+
+            Ve.on.click(Ve.ById.tts, async () => {
+                ws.send(hasAuth ? JSON.stringify({type:'text',data:Ve.ById.text.value}) : Ve.ById.text.value);
+            });
+            Ve.on.click(Ve.ById.run, async () => {
+                ws.send(JSON.stringify({type:'scheme',data:Ve.ById.scheme.value}));
+            });
+        });
+    </script>
+</body>
+
+</html>

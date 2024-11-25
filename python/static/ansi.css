@@ -1,0 +1,11 @@
+html, body, code, pre {
+  background: #1A1B23;
+  color: #EFF0EB;
+  font-family: "Hasklig";
+  font-size: 10px;
+}
+
+::selection {
+  background: #ED96E0;
+}
+

@@ -1,0 +1,120 @@
+body
+  --red: #ff6565
+  --green: #85ff85
+  --greenish: #64bb64
+
+html, body
+  background: #2d0139
+  color: #EFF0EB
+  margin: auto
+  padding: 10px
+  font-family: "Libertinus Sans"
+body
+  padding: 4px
+
+*
+  transition: opacity 0.3s, color 0.3s, border-color 0.5s
+
+[class^="iconoir-"]::before, [class*=" iconoir-"]::before
+  display: inline-block
+  background: currentColor
+  mask-size: cover
+  -webkit-mask-size: cover
+  width: 1em
+  height: 1em
+  vertical-align: bottom
+  margin-bottom: 1px
+
+code:not(.proportional)
+  font-family: "Hasklig"
+code.condensed
+  display: inline-block
+  // transform: translateY(35%) scaleY(1.5) translateY(-35%)
+  // font-size: 66%
+  transform: translateY(35%) scaleY(1.25) translateY(-35%)
+  font-size: 80%
+code.proportional
+  font-family: "Libertinus Sans"
+div.run
+  width: 100%
+  padding-bottom: 0.5em
+  opacity: 0.7
+  border-top: 1px dotted rgba(255, 240, 220, 0.7)
+  padding-top: 0.5em
+  &:hover
+    opacity: 1
+  &:has(button.DEL:hover)
+    span.pretty-timestamp, span.log-summary
+      color: var(--red)
+    > details iframe
+      border-style: dashed
+  &:has(button.RE:hover)
+    code.command.fish, code.cwd
+      color: var(--green)
+
+  .run-info
+    max-width: 600px
+    > :first-child
+      padding-right: 2em
+    .run-actions
+      float: right
+
+  &.failed summary::marker
+    color: red
+  > details
+    padding: 2px
+    > summary
+      padding-left: 1em
+    iframe
+      width: 100%
+      box-sizing: border-box
+      border: none
+      border: 2px solid black
+      border-radius: 24px
+a[href]
+  color: #162d9d
+  &:visited
+    color: #4bb9de
+
+button
+  color: inherit
+  background: none
+  border: none
+  text-decoration: underline
+  text-decoration-thickness: 2px
+  font-size: inherit
+  font-weight: bold
+  font-family: "Amaranth"
+  &:not(:hover)
+    opacity: 0.8
+  &:hover
+    filter: saturate(140%)
+button.DEL
+  color: var(--red)
+button.RE
+  color: var(--green)
+
+input, textarea
+  font: inherit
+  &.code
+    font-family: Hasklig
+    font-size: 10pt
+  color: inherit
+  background: none
+  border: none
+  border: 1px dotted var(--greenish)
+  border-bottom-color: var(--green)
+  border-left-color: transparent
+  border-right-color: transparent
+  &:not(:focus)
+  &:focus
+    border-top-color: var(--green)
+    outline: none
+  &:invalid
+    border-left-color: var(--red)
+    border-right-color: var(--red)
+    &:not(:focus)
+      border-bottom-color: var(--greenish)
+
+iframe
+  background: #1A1B23
