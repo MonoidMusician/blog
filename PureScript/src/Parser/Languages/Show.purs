@@ -88,7 +88,7 @@ many1SurBy n s p = (\ps -> s *> ps) $
 lazyTop :: Comber (Doc Void)
 lazyTop = layers parseShown <|> pure mempty
 
-mkReShow :: Maybe String -> String -> String
+mkReShow :: Maybe String -> String -> D.PrintOptions -> String
 mkReShow json =
   thawWith { best: L.lazyBest } lazyTop (Json.parseJson (fromMaybe "" json))
-    >>> either identity (D.print D.plainText D.twoSpaces)
+    >>> either const (flip (D.print D.plainText))

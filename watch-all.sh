@@ -5,10 +5,10 @@ terminate(){
     exit
 }
 make live >/dev/null &
-spago build
+spago build || exit 1
 sleep 5
 make watch-sass &
 make watch-pandoc &
-which trypurescript && make trypurescript &
+which trypurescript && make trypurescript 2>/dev/null &
 make watch-ps
 wait

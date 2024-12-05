@@ -48,7 +48,7 @@ failing = noAff <<< map Left
 
 scripts :: Map String (Array String -> Either String (String -> Aff (Either String String)))
 scripts = Map.fromFoldable
-  [ Tuple "reShow" $ simplest $ mkReShow Nothing
+  [ Tuple "reShow" $ simplest $ mkReShow Nothing <@> Dodo.twoSpaces
   , Tuple "echo" $ simplest identity
   , Tuple "highlight" $ simplest highlight
   , Tuple "highlightPandoc" $ simplest highlightPandoc

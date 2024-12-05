@@ -5,6 +5,7 @@ import Prelude
 import Control.Alternative (alt, guard)
 import Control.Monad.Gen (class MonadGen, chooseBool, chooseInt, sized)
 import Control.Plus ((<|>))
+import Data.Array (fold)
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.CodePoint.Unicode (generalCatToUnicodeCat, isAlpha, isAlphaNum, isControl, isMark, isPrint, isPunctuation, isSpace, isSymbol)
@@ -28,6 +29,7 @@ import Data.String.CodeUnits as CU
 import Data.Symbol (class IsSymbol, reflectSymbol)
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
+import Dodo as Dodo
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Fetch (fetch)
@@ -39,10 +41,10 @@ import Prim.RowList (class RowToList)
 import Prim.RowList as RL
 import Record as Record
 import Riverdragon.Dragon (AttrProp, Dragon)
-import Riverdragon.Dragon.Bones (__textcursor, ($~~), (.$), (.$$~), (.$~~), (:.), (<!>), (<:>), (=:=), (>@))
+import Riverdragon.Dragon.Bones (__textcursor, ($$), ($~~), (.$), (.$$~), (.$~~), (:.), (<!>), (<:>), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy, sourceCode)
-import Riverdragon.River (Lake, createRiverStore)
+import Riverdragon.River (Lake, Stream, createRiverStore, oneStream)
 import Riverdragon.River.Beyond (affToLake, dedup)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Type.Proxy (Proxy(..))
@@ -367,7 +369,22 @@ widgetShow _ = pure $ eggy \shell -> do
   reShow <- shell.store (mkReShow <$> affToLake fetchParser)
   { send: setValue, stream: valueSet } <- shell.track $ createRiverStore Nothing
   { send: set, stream: get } <- shell.track $ createRiverStore Nothing
-  formatted <- shell.store $ reShow <*> get
+
+  indent <- shell.track $ createRiverStore $ Just 2
+  width <- shell.track $ createRiverStore $ Just 80
+  ribbon <- shell.track $ createRiverStore $ Just 0.50
+  opts :: Stream _ Dodo.PrintOptions <- pure ado
+    indentWidth <- indent.stream
+    pageWidth <- width.stream
+    ribbonRatio <- ribbon.stream
+    in
+      { indentUnit: power " " indentWidth
+      , indentWidth
+      , pageWidth
+      , ribbonRatio
+      }
+
+  formatted <- shell.store $ reShow <*> get <*> opts
   lastValue <- shell.storeLast mempty formatted
   pure $ D.Fragment
     [ sourceCode "Haskell" .$ D.textarea
@@ -375,8 +392,37 @@ widgetShow _ = pure $ eggy \shell -> do
         , D.value <:> valueSet
         , D.style =:= "height: 40vh"
         ]
+    , slider "adjust-indent" "Indent"
+      [ D.onInputInt =:= indent.send
+      , D.attr "type" =:= "range"
+      , D.attr "min" =:= 0
+      , D.attr "max" =:= 8
+      , D.value =:= 2
+      ]
+    , slider "adjust-width" "Width"
+      [ D.onInputInt =:= width.send
+      , D.attr "type" =:= "range"
+      , D.attr "min" =:= 10
+      , D.attr "max" =:= 150
+      , D.attr "step" =:= 2
+      , D.value =:= 80
+      ]
+    , slider "adjust-ribbon" "Ribbon"
+      [ D.onInputNumber =:= ribbon.send
+      , D.attr "type" =:= "range"
+      , D.attr "min" =:= 0.0
+      , D.attr "max" =:= 1.0
+      , D.attr "step" =:= 0.1
+      , D.value =:= 0.5
+      ]
     , D.div.$ D.buttonW "" "Use formatted" (setValue <<< (_ <> "\n") =<< lastValue)
     , sourceCode "Haskell" .$$~ formatted
     ]
+    where
+    slider id desc attrs = D.span.$ fold
+      [ D.label [ D.attr "for" =:= id ] $$ desc <> ": "
+      , D.input [ D.id =:= id, oneStream attrs ]
+      , D.br []
+      ]
 
 
