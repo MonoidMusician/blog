@@ -34,7 +34,7 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Fetch (fetch)
 import Idiolect (only, (/|\), (>==))
-import Parser.Languages.Show (mkReShow)
+import Parser.Languages.ShowFast (mkReShow)
 import Partial.Unsafe (unsafeCrashWith)
 import Prim.Row as Row
 import Prim.RowList (class RowToList)

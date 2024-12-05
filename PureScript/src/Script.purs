@@ -25,7 +25,7 @@ import Node.Process (argv, exit, stderr, stdin, stdout)
 import Node.Stream (onDataString, onEnd, onError, writeString)
 import Parser.Comb.Comber ((<|>))
 import Parser.Comb.Comber as Comber
-import Parser.Languages.Show (mkReShow)
+import Parser.Languages.ShowFast (mkReShow)
 import PureScript.Highlight (highlight, highlightPandoc)
 
 noArgs :: (String -> Aff (Either String String)) -> (Array String -> Either String (String -> Aff (Either String String)))
