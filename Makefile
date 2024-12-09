@@ -4,7 +4,7 @@ MDS=$(wildcard $(TXTDIR)/*.md)
 HTMLS=$(patsubst $(TXTDIR)/%.md, $(BUILDIR)/%.html, $(MDS))
 
 .PHONY : all
-all : init sass prod-ps pandoc
+all : init sass prod-ps sources.txt pandoc
 
 .PHONY : watch-all
 watch-all :
@@ -89,9 +89,11 @@ ps : $(BUILDIR) PureScript/src spago.yaml PureScript/spago.yaml
 	spago bundle --bundle-type app --module Main --outfile ../$(BUILDIR)/widgets.js
 	make assets-ps
 
-.PHONY : trypurescript
-trypurescript : PureScript/src
+sources.txt : spago.lock spago.yaml PureScript/spago.yaml
 	spago sources > sources.txt 2>/dev/null
+
+.PHONY : trypurescript
+trypurescript : PureScript/src sources.txt
 	watchexec -w $(BUILDIR)/widgets.js -r --shell=fish 'trypurescript 6565 (cat sources.txt)'
 
 .PHONY : watch-ps
