@@ -205,6 +205,7 @@ _[Overflow](knowlish_overflow.html)_
 - https://www.keycaps.info/
 <!-- https://www.codetinkerer.com/is-shell-portable/ -->
   <!-- ^ ugh ai generated images -->
+<!-- https://book.hacktricks.xyz/pentesting-web/content-security-policy-csp-bypass -->
 
 ### MacOS nonsense
 
