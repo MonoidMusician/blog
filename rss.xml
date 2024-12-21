@@ -10,10 +10,373 @@
 <docs>https://www.rssboard.org/rss-specification</docs>
 <generator>pandoc-rss</generator>
 <item>
+<title>Code golf for computing a 32-byte QR code!</title>
+<pubDate>Fri, 20 Dec 2024 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/qrinqr.html</guid>
+<description><![CDATA[<p>If you run <code class="js">.replaceAll(/ *(\/\/[^\n]*\n)?/g, '').replace('\\x20',' ').length</code> on <a href="https://blog.veritates.love/assets/js/qr.ann.js">this fileʼs contents</a>, you will see that this JavaScript comes in at 512 ASCII characters when minified! (Newlines without comments are still used as substitutes for semicolons, to keep the minified file somewhat readable. Other spaces are not important except for the one in the string.)</p>
+<p>Why would I do such a thing? Well, it helps me bootstrap a WebRTC connection over QR codes! The host generates a HTML stub that contains this JavaScript, allowing it to display the fingerprint of the guestʼs generated certificate.</p>
+<p>There is a hard limit of 2,953 bytes of UTF-8 for QR codes, and I have even less to work with considering that I have to encode it into a <code>data:</code> URI, so having a compact algorithm for this is essential.</p>
+<div id="demo">
+<p style="display: flex; align-items: baseline; gap: 2em">
+<label class="input-wrapper" style="flex: 1"> <span>32-bytes of hexadecimal</span> <input id="demo-input" class="code" style="width: 100%; text-overflow: ellipsis"> </label> <button id="demo-random" class="add" style="flex: 0 0 auto">Random!</button>
+</p>
+<pre id="demo-output" class="no-visible-space"></pre>
+<script>
+  "use strict";
+  function randomHex() {
+    return Array.from(crypto.getRandomValues(new Uint8Array(32)), x=>x.toString(16).padStart(2,'0')).join(":").toUpperCase();
+  }
+  function display(f) {
+    let s,d,u,a,z,i,r,x,k,Z,V,t,j,o;
+    s=420+f.replaceAll(':','')+0
+    d=[]
+    a=[u=1];z=[1/0]
+    for(i=0;d[i/2]="0x"+s[i]+s[++i],i<512;r=[...d])z[a[i]=(x=2*a[i-1])^(x>255)*285]??=i
+    for(k=35;Z=+r[i=0],--k;V={})for(var{abs:B,max:X,min:N}=Math;i<34;t=(x,y=x)=>X(B(x-i),B(y-j)))d[34+i]=r[i]=a['\xFBC.=vF@^ -'.charCodeAt(i)+z[Z]]^r[++i]
+    for(i=j=24;~j;j-=j%2^j>6?1:i<u|i-u>24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&0)V[[i,j]]=i-8&&j-8||16<i+j&i+j<25?"101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(i-6&&j-6&&d[k/8|0]>>7-k++%8&1)^(i+j)%2:4588023&1<<(i-8?24-i:j)
+    o='';
+    for(i=0;i<25;i++)for(o+=i?'\n':'',j=0;j<25;)o+=+V[[i,j++]]?'\u2588':' '
+    document.getElementById("demo-output").textContent=o;
+  }
+  var input = document.getElementById("demo-input");
+  display(input.value = randomHex());
+  input.oninput = () => { if (/^(:?[a-fA-F0-9]{2}){32}$/.test(input.value)) display(input.value) };
+  document.getElementById("demo-random").onclick = () => display(input.value = randomHex());
+</script>
+</div>
+<div class="full-width">
+<pre class="javascript"><code>s=420+(U=f[F='replace'](/:/g,''))+0
+d=[]
+a=[u=1];z=[1/0]
+for(i=0;d[i/2]="0x"+s[i]+s[++i],i&lt;512;r=[...d])z[a[i]=(x=2*a[i-1])^(x&gt;255)*285]??=i
+for(k=35;Z=+r[i=0],--k;V={})for(var{abs:B,max:X,min:N}=Math;i&lt;34;t=(x,y=x)=&gt;X(B(x-i),B(y-j)))d[34+i]=r[i]=a['\xFBC.=vF@^ -'.charCodeAt(i)+z[Z]]^r[++i]
+for(i=j=24;~j;j-=j%2^j&gt;6?1:i&lt;u|i-u&gt;24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&amp;0)V[[i,j]]=i-8&amp;&amp;j-8||16&lt;i+j&amp;i+j&lt;25?"101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(i-6&amp;&amp;j-6&amp;&amp;d[k/8|0]&gt;&gt;7-k++%8&amp;1)^(i+j)%2:4588023&amp;1&lt;&lt;(i-8?24-i:j)</code></pre>
+</div>
+<p>Hereʼs a walkthrough of the code:</p>
+<p>Letʼs start with the input <code class="ts">f: string</code>, a 32-byte fingerprint encoded as hexadecimal, with colon separators between each byte. We sandwich it between the strings <code class="js">"420"</code> and <code class="js">"0"</code> to form the raw QR data <code class="ts">s: string</code> in plain hexadecimal: The nibbles <code class="js">"420"</code> represent the encoding mode (<code class="js">0b0100</code> for encoding bytes) and the length of the encoded data (<code class="js">0x20 = 32</code> bytes), and it needs to be padded with the trailing nibble <code class="js">"0"</code> to be a whole number of octets.</p>
+<pre class="javascript"><code>s = 420 + (U=f[F='replace'](/:/g,'')) + 0</code></pre>
+<p>(<code class="js">U</code> and <code class="js">F</code> are useful for golfing the WebRTC connection establishment – not pictured.)</p>
+<p>We are going to grab the octets out of it to form 34 bytes in <code class="js">d</code>, but we also pad <code class="js">d</code> with 10 extra bytes for computing the error correction bytes (they end up as <code class="js">NaN</code>s, which mercifully does not matter, and later we overwrite them).</p>
+<pre class="javascript"><code>d = []</code></pre>
+<p>These are two tables for Galois fields: <code class="js">a</code> for antilogarithm (exponentiation) and <code class="js">z</code> for logarithm, such that <code class="js">a[z[i]] = i</code> (modulo 256). They are used to transform the problem of multiplication in the Galois field (which is pretty complicated) into a problem of addition (which is addition modulo 256, very easy).</p>
+<pre class="javascript"><code>a = [u=1]; z = [1/0]</code></pre>
+<p>To fill it in, we loop <code class="js">i</code> in the range <code class="js">0&lt;=i&lt;512</code>: the table repeats from 256 onwards, but doing it this way saves computing the modulo 256 later.</p>
+<p>We are computing powers <code class="js">a[i] = 2**i</code> in the Galois field <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">GF</mi><mo>⁡</mo><mo stretchy="false">(</mo><mn>256</mn><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\operatorname{GF}(256)</annotation></semantics></math></span> with prime modulus <code class="js">285 = 0b100011101</code>, subtracted using bitwise “or” (<code class="js">^</code>):</p>
+<pre class="javascript"><code>for (i=0; d[i/2] = "0x"+s[i]+s[++i], i &lt; 512; r=[...d]) //
+  z[ a[i] = (x=2*a[i-1]) ^ (x &gt; 255)*285 ] ??= i</code></pre>
+<p>As you can see, we snuck in the nibbles-&gt;bytes conversion on <code class="js">d</code> in the loop, just to save some space. This ends up filling <code class="js">d</code> with 34 bytes of actual data, 10 bytes of <code class="js">NaN</code> padding, more irrelevant bytes of <code class="js">NaN</code>s, and lots and lots of non-integer keys, all the way up to <code class="js">255.5</code>. Note that they are hexadecimal strings and so they need to be pulled out as numbers, using <code class="js">+d[k]</code>!</p>
+<p>Now we compute the error correction code, which will be 10 bytes. This is the most mathematically complicated part!</p>
+<p>The error correction code operates on polynomials over <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">GF</mi><mo>⁡</mo><mo stretchy="false">(</mo><mn>256</mn><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\operatorname{GF}(256)</annotation></semantics></math></span>: each “byte” is a coefficient, with index <code class="js">r[0]</code> being the leading term, and the constant term being in the last index.</p>
+<p>We have already copied the data from <code class="js">d</code> into <code class="js">r</code>, so we will loop 34 times to compute the remainder, which will end up being 10 bytes after starting with 34 bytes + 10 zeros (the bytes here are roughly the degree of the polynomial, although leading zeros still count). We first save the leading coefficient <code class="js">Z=+r[0]</code> and then loop over the remaining coefficients, propagating them leftwards as we transform them. Although <code class="js">d</code> has a lot of extra junk <code class="js">NaN</code>s that we also copy over, they quickly become zeros from the bitwise arithmetic and do not impact the algorithm. And because <code class="js">z[0] = 1/0 = Infinity</code>, on the loop iterations when <code class="js">Z=+r[0]=0</code>, it just shifts all relevant items leftwards by one index, removing leading zeros one at a time.</p>
+<p>The array <code class="js">[251,67,46,61,118,70,64,94,32,45][i]</code> is encoded as <code class="js">'\xFBC.=vF@^\x20-'.charCodeAt(i)</code>, and it represents the logarithm of the coefficients of the error correction polynomial, minus its leading term (the polynomial is monic, so its leading coefficient is <code class="js">1</code>, whose logarithm is <code class="js">0</code>). (The polynomial is the multiplication of <code class="js">(x-0)...(x-9)</code>, which we <em>could</em> compute … but it is shorter to just embed the coefficients directly, since we do not use polynomial multiplication anywhere else.) By taking the antilogarithm of the addition of the logarithms, we compute multiplication in <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">GF</mi><mo>⁡</mo><mo stretchy="false">(</mo><mn>256</mn><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\operatorname{GF}(256)</annotation></semantics></math></span>. This is where the doubled length of <code class="js">a</code> saves us one modulo operation, and awkward parenthesization to boot. Altogether, this computes the remainder of dividing the data (represented as a polynomial in <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">GF</mi><mo>⁡</mo><mo stretchy="false">(</mo><mn>256</mn><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\operatorname{GF}(256)</annotation></semantics></math></span>) by the error correction polynomial.</p>
+<pre class="javascript"><code>for (k = 35; Z = +r[i=0], --k; V={}) //
+  for ( var { abs: B, max: X, min: N } = Math; // grab some helpers
+        i&lt;34; // loop from i=0 through i=33
+        t=(x,y=x)=&gt;X(B(x-i),B(y-j)) // define a function for QR patterns for later
+      ) //
+    d[34+i] = r[i] = a['\xFBC.=vF@^\x20-'.charCodeAt(i) + z[Z]] ^ r[++i]</code></pre>
+<p>Since we need to splice the result of error correction, namely <code class="js">r[0..10]</code>, into the bytes after our padded data, namely <code class="js">d[34..44]</code>, we just continuously perform this copying during the loop: only the last time we do this matters. (And of course we continue the tradition of adding junk to <code class="js">d</code> after the data we care about.)</p>
+<p>Now we are ready to generate the graphical content of the QR code!</p>
+<p>We will write each “module” (pixel) into <code class="js">V={}</code>, where <code class="js">V["0,0"]</code> is the top left, <code class="js">V["24,0"]</code> is the bottom left, <code class="js">V["0,24"]</code> is the top right, and so on. We use a cute array trick to build these coordinates: <code class="js">V[[0,0]]</code> evaluates to <code class="js">V["0,0"]</code>, since the object index <code class="js">[0,0]</code> gets coerced to a string, joining the stringified components with a comma. This is shorter than trying to initialize an array with 25 empty arrays.</p>
+<p>After a lot of thinking and experimentation, I was able to reduce the QR code generation to one single loop, which is the best way to save characters, since <code class="js">for</code> loops require a lot of characters to set up (and <code class="js">while</code> loops are no better).</p>
+<p>The first note is that we have to walk the QR code in a strange way to pull out the data in the correct order:</p>
+<ul>
+<li>We start by walking upwards: <code class="js">u=1</code>, and this corresponds to bit <code class="js">k=0</code> of the data. (These variables were initialized in other places, to save characters.)</li>
+<li>The small-scale zigzag pattern is handled by <code class="js">j -= 1</code> or <code class="js">j += 1, i -= u</code></li>
+<li>The condition to decide between these is a little annoying: for <code class="js">j &gt; 6</code>, it is odd values <code class="js">j</code>, and for <code class="js">j &lt; 6</code>, it is even values of <code class="js">j</code>. (Column 7 is skipped over, as it has timing patterns.) Thus if <code class="js">j%2 ^ j&gt;6</code> is truthy, we choose <code class="js">j -= 1</code>, else <code class="js">j += 1, i -= u</code>.</li>
+<li>To make the larger-scale zigzag, when we reach the top or bottom edges of the QR code (<code class="js">i-u &lt; 0 || i-u == 25</code>), we decrement <code class="js">j</code>, and swap <code class="js">u = -u</code> to wander the other way.</li>
+<li>There is one special case: along the column <code class="js">j=6</code>, we walk strictly from top to bottom (<code class="js">i++</code>), to pick up the fixed patterns and the timing pattern that fills the rest of the column. When that reaches the bottom, we resume at the top with <code class="js">i=0</code> and <code class="js">u=-1</code> along column <code class="js">j=5</code>.</li>
+</ul>
+<p>First we add some static information about the QR codeʼs error correction level (Low) and Mask Pattern (0). This would be a nightmare to compute dynamically, because they also contain error correction and masking themselves, so instead we embed magic bitstrings encoded as decimal (shorter than hexadecimal). The magic bitstring is <code class="js">4588023 = 0b0010001100000000111110111</code>, read from right to left and top to bottom. This information ends up along row 9 and column 9, with gaps in the middle: <code class="js">16 &lt; i+j &amp;&amp; i+j &lt; 25</code> is a cute way to encode the gaps without checking which of <code class="js">i</code> or <code class="js">j</code> equals <code class="js">8</code>: if <code class="js">j=8</code>, then it translates to <code class="js">8 &lt; i &lt; 17</code>, and vice-versa.</p>
+<p>Next we use a helper <code class="js">t = (x,y=x) =&gt; Math.max(Math.abs(x-y), Math.abs(y-i))</code> to compute square patterns around certain locations. It returns the largest deviation of the current coordinate <code class="js">[i,j]</code> from the center <code class="js">[x,y]</code>, and if it is too high, the pattern will not be applied and the next part of the algorithm will run instead.</p>
+<ul>
+<li>The three finder patterns around <code class="js">[3,3]</code>, <code class="js">[3,21]</code> and <code class="js">[21,3]</code> have a radius of <code class="js">5</code> and the bit pattern <code class="js">"11010"</code>. (These are fixed for all QR codes.)</li>
+<li>The lone alignment pattern at <code class="js">[18,18]</code> has a radius of <code class="js">3</code> and the bit pattern <code class="js">"101"</code>. (Larger versions of QR codes have more alignment patterns.)</li>
+</ul>
+<p>Next there are two timing patterns, vertical and horizontal, that run along row 7 and column 7 in the space not taken up by the other patterns. Again we can combine both lines into one check: <code class="js">(i+j)%2</code>.</p>
+<p>Finally, if none of the static patterns apply, we have to pull out the binary data and increment the bit index <code class="js">k</code>:</p>
+<ul>
+<li>The <em>byte</em> we are interested in is <code class="js">d[(k/8) | 0]</code> which computes the integer division of <code class="js">k</code> by <code class="js">8</code>,</li>
+<li>and the <em>bit index</em> is <code class="js">7 - (k%8)</code>, which is the amount we shift the byte by before masking with <code class="js">&amp; 1</code> (while incrementing <code class="js">k</code> inline, which saves some characters).</li>
+<li>(Remember that <code class="js">d</code> now contains the error correcting code from bytes <code class="js">34</code> to <code class="js">44</code>!)</li>
+<li>Finally we negate and XOR it with <code class="js">!(...) ^ (i+j)%2</code> to implement masking pattern 0, which consists of inverting the odd pixels.</li>
+</ul>
+<p>Notice that the masking pattern <code class="js">(i+j)%2</code> coincides nicely with the timing pattern: we only compute it once for the both of them! This is the reason for choosing that masking pattern, and we also happen to save a character with the magic constant <code class="js">4588023 = 0b0010001100000000111110111</code> because of its two leading zeros (which are displayed as white pixels on the right side and the top of the QR code, along row/column 9).</p>
+<pre class="javascript"><code>for ( // Zigzag from bottom right, up and around to bottom left
+      i = j = 24; ~j;                            //
+      j -= j%2 ^ j&gt;6 ? 1 :                       //
+           i&lt;u|i-u&gt;24 ? (j-6 ? u=-u : i=0,  1) : //
+           j-6 ? (i-=u,-1) : i++ &amp; 0             //
+    ) //
+  V[[i,j]] = //
+    i-8 &amp;&amp; j-8  ||  16&lt;i+j &amp; i+j&lt;25 // detect metadata or not
+    ? "101"[t(18)] ?? // alignment pattern
+      "11010"[N(t(3),t(3,21),t(21,3))] ?? // finder patterns
+      !(i-6 &amp;&amp; j-6 &amp;&amp; // i==6 or j==6 for timing patterns
+        d[k/8 | 0] &gt;&gt; 7 - k++%8  &amp;  1 // data + error correction, indexed by bit
+      ) ^ (i+j)%2 // timing patterns *and* mask pattern
+    : 4588023 &amp; 1&lt;&lt;(i-8 ? 24-i : j) // metadata</code></pre>
+<p>Tada! Now we are left with <code class="js">V</code>, an object whose <em>numeric</em> value at index <code class="js">i+','+j</code> is nonzero if the pixel at <code class="js">i,j</code> is black and zeroish if it is white. (You have to pull it out with <code class="js">+V[[i,j]]</code> to cast the <code class="js">"0"</code> strings to a zero value.)</p>
+<p>Tricks we used along the way include</p>
+<ul>
+<li>Booleans doubling as numbers, <code class="js">|</code> instead of <code class="js">||</code>, and other such coercions.</li>
+<li>Very careful analysis of <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Operator_precedence#table">operator precedence</a> to eliminate parentheses. It is honestly so ridiculous that <code class="js">d[k/8|0]&gt;&gt;7-k++%8&amp;1</code> works correctly!</li>
+<li><code class="js">j-6</code> as a subsitute for <code class="js">j!=6</code> when only the truthiness mattered (mostly in ternary conditionals!): e.g.&nbsp;<code class="js">j-6 ? u=-u : i=0</code> means “if <code class="js">j</code> is <code class="js">6</code>, then <code class="js">i=0</code>, else flip the sign of <code class="js">u</code>”.</li>
+<li><code class="js">V[[i,j]]</code> to encode indices as <code class="js">i+','+j</code>.</li>
+<li>Using static tables like <code class="js">"101"[t(18)]</code> and <code class="js">[251,67,46,61,118,70,64,94,32,45][i]</code> (actually <code class="js">'\xFBC.=vF@^ -'.charCodeAt(i)</code> now) and the bitstring <code class="js">4588023 &amp; 1&lt;&lt;j</code> to cheaply encode choices that change over time.</li>
+<li>Squashing lots of loops together and re-using loop indices, to save on characters.</li>
+<li>One single helper function. Seriously, it wasnʼt worth it for anything else!</li>
+</ul>
+<p>In general, choosing as many parts of the QR code standard ahead of time as is possible (fixed size, fixed mask pattern, fixed length, and so on) is the only way this was possible. And choosing a fixed mask pattern, while technically discouraged, is not even that big of a deal: the fingerprint bytes are essentially random, so odds are that this pattern will be good enough anyways.</p>
+<p>All in all, this feels like a really successful project. It is incredible that it is even possible, and I am even happier that the code crystallized into a somewhat tidy form, as opposed to some of the monsters I created during development. All the characters I shaved off here are characters I can put towards things like WebRTC connection information in the SDP, or CSS, or error handling, or proper HTML structure.</p>
+<p>Of course, most of the journey of how this code evolved and came out, what I was thinking of and what I <em>wasnʼt</em> thinking of, is in the less successful attempts at golfing the algorithm:</p>
+<details class="Details">
+<summary>
+Previous revisions
+</summary>
+<p>These are just the copies I still have lying around, there arenʼt particularly evenly distributed or anything. Some of them have bugs!</p>
+<ol>
+<li><p>672 characters, my first real proof of concept after a day of hyperfocus. You can see that I used some different methods and initialized the layers of the QR code one at a time, costing four whole loops (but no special cases!):</p>
+<pre class="javascript"><code>let{abs:B,max:X,min:N}=Math
+a=[1]
+z=[0,0]
+for(i=0;++i&lt;512;)z[a[i]=((x=2*a[i-1])&gt;255)*285^x]??=i
+s='420'+f.replace(/:/g,'')+'0'
+d=[];for(i=0;i&lt;68;)d[i/2]=+("0x"+s[i++]+s[i++])
+r=[...d,..."0000000000"]
+while(X(...r.slice(0,-10))&gt;0)r=r.slice(1).map((x,i)=&gt;x^a[[251,67,46,61,118,70,64,94,32,45][i]+z[r[0]]])
+V=[]
+W=25
+for(i=0;i&lt;W;i+=i-8?1:9)V[V[[8,i]]=27132263&amp;1&lt;&lt;i,[i,8]]=30015987&amp;1&lt;&lt;i
+for(i=W;i--&gt;0;)for(j=W;j--&gt;0;)V[t=(x,y=x)=&gt;X(B(x-i),B(y-j)),[i,j]]??="11010"[N(t(3),t(3,21),t(21,3))]??"101"[t(18)]??(i-6?j-6?V.V:1-i%2:1-j%2)
+k=0;u=1
+i=j=W-1
+while(j&gt;=0)j-=(V[[i,j]]??=[...d,...r.slice(-10)][k/8|0]&gt;&gt;(7-k++%8)&amp;1^(1-i%2),j-(j&gt;6))%2?1:(i-u&lt;0||i-u==W)?(u=-u,j-7?1:2):(i-=u,-1)</code></pre></li>
+<li><p>650 characters:</p>
+<pre class="javascript"><code>let{abs:B,max:X,min:N}=Math
+a=[1]
+z=[0,0]
+for(i=0;++i&lt;512;z[a[i]=((x=2*a[i-1])&gt;255)*285^x]??=i)d=[]
+s=420+(U=f[F='replace'](/:/g,''))+0
+for(i=0;i&lt;88;)d[i/2]=+("0x"+s[i++]+s[i++])
+for(r=[...d];X(...r.slice(0,-10))&gt;0;r=r.slice(1).map((x,i)=&gt;x^a[[251,67,46,61,118,70,64,94,32,45][i]+z[r[0]]]))W=25
+V=[]
+for(i=0;i&lt;W;i+=i-8?1:9)V[V[[8,i]]=27132263&amp;1&lt;&lt;i,[i,8]]=30015987&amp;1&lt;&lt;i
+for(i=W;i--;d[34+i]=r.at(-10+i))for(j=W;j--;)V[t=(x,y=x)=&gt;X(B(x-i),B(y-j)),[i,j]]??="11010"[N(t(3),t(3,21),t(21,3))]??"101"[t(18)]??(i-6?j-6?V.V:1-i%2:1-j%2)
+k=0;u=1
+for(i=j=W-1;j&gt;=0;j-=(j-(j&gt;6))%2?1:(i-u&lt;0||i-u==W)?(u=-u,j-7?1:2):(i-=u,-1))V[[i,j]]??=d[k/8|0]&gt;&gt;(7-k++%8)&amp;1^(1-i%2)</code></pre></li>
+<li><p>636 characters:</p>
+<pre class="javascript"><code>let{abs:B,max:X,min:N}=Math
+a=[1]
+z=[0,0]
+for(i=0;++i&lt;512;z[a[i]=((x=2*a[i-1])&gt;255)*285^x]??=i)d=[]
+s=420+(U=f[F='replace'](/:/g,''))+0
+for(i=0;i&lt;88;)d[i/2]=+("0x"+s[i++]+s[i++])
+for(r=[...d];X(...r.slice(0,-10))&gt;0;r=r.slice(1).map((x,i)=&gt;x^a[[251,67,46,61,118,70,64,94,32,45][i]+z[r[0]]]))W=25
+V=[]
+for(i=0;i&lt;W;i+=i-8?1:9)d[34+i]=r.at(-10+i),V[V[[8,i]]=27132263&amp;1&lt;&lt;i,[i,8]]=30015987&amp;1&lt;&lt;i
+k=0;u=1
+t=(x,y=x)=&gt;X(B(x-i),B(y-j))
+for(i=j=W-1;j&gt;=0;j-=(j-(j&gt;6))%2?1:i-u&lt;0||i-u==W?(j-6?u=-u:i=1,1):j-6?(i-=u,-1):(i+=1,0))V[[i,j]]??="11010"[N(t(3),t(3,21),t(21,3))]??"101"[t(18)]??(i-6&amp;&amp;j-6?V.V:(1-i+j)%2),V[[i,j]]??=d[k/8|0]&gt;&gt;(7-k++%8)&amp;1^!(i%2)</code></pre></li>
+<li><p>604 characters. <code class="js">31327172</code> was my favorite number, but it was not canonical and it did not stay long.</p>
+<pre class="javascript"><code>let{abs:B,max:X,min:N}=Math
+a=[1];z=[0,0]
+for(i=0;++i&lt;512;d=[])z[a[i]=((x=2*a[i-1])&gt;255)*285^x]??=i
+s=420+(U=f[F='replace'](/:/g,''))+0
+for(i=0;i&lt;88;)d[i/2]=+("0x"+s[i++]+s[i++])
+for(r=[...d];X(...r.slice(0,-10))&gt;0;)r=r.slice(1).map((x,i)=&gt;x^a[[251,67,46,61,118,70,64,94,32,45][i]+z[r[0]]])
+V={}
+for(i=0;i&lt;25;i+=i-8?1:9)d[34+i]=r.at(i-10),V[V[[8,i]]=4588023&amp;1&lt;&lt;i,[i,8]]=31327172&amp;1&lt;&lt;i
+t=(x,y=x)=&gt;X(B(x-i),B(y-j))
+k=0;u=1
+for(i=j=24;j+1;j-=j%2^j&gt;6?1:i-u&lt;0||i-u==25?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):(i++,0))V[[i,j]]??="101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??(i-6&amp;&amp;j-6&amp;&amp;d[k/8|0]&gt;&gt;(7-k++%8)&amp;1)^(1+i+j)%2</code></pre></li>
+<li><p>594 characters:</p>
+<pre class="javascript"><code>s=420+(U=f[F='replace'](/:/g,''))+0
+d=[]
+a=[1];z=[0,0]
+for(i=0;d[i/2]=+("0x"+s[i]+s[++i]),i&lt;512;)z[a[i]=((x=2*a[i-1])&gt;255)*285^x]??=i
+let{abs:B,max:X,min:N}=Math
+for(r=d.slice(0,44);X(...r.slice(0,-10))&gt;0;)r=r.slice(1).map((x,i)=&gt;x^a[[251,67,46,61,118,70,64,94,32,45][i]+z[r[0]]])
+V={}
+for(i=0;i&lt;25;i+=i-8?1:9)d[34+i]=r.at(i-10),V[[8,i]]=4588023&amp;1&lt;&lt;i,V[[i,8]]=31327172&amp;1&lt;&lt;i
+t=(x,y=x)=&gt;X(B(x-i),B(y-j))
+k=0;u=1
+for(i=j=24;j+1;j-=j%2^j&gt;6?1:i-u&lt;0||i-u==25?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):(i++,0))V[[i,j]]??="101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??(i-6&amp;&amp;j-6&amp;&amp;d[k/8|0]&gt;&gt;(7-k++%8)&amp;1)^(1+i+j)%2</code></pre></li>
+<li><p>561 characters:</p>
+<pre class="javascript"><code>s=420+(U=f[F='replace'](/:/g,''))+0
+d=[]
+a=[u=1];z=[1/0,0]
+for(i=0;d[i/2]="0x"+s[i]+s[++i],i&lt;512;)z[a[i]=((x=2*a[i-1])&gt;255)*285^x]??=i
+let{abs:B,max:X,min:N}=Math
+for(r=d.slice(0,44);r[10]+1;r=r.slice(1).map((x,i)=&gt;x^a[[251,67,46,61,118,70,64,94,32,45][i]+z[+r[0]]]))V={}
+for(k=i=0;i&lt;25;i+=i-8?1:9)V[[8,i]]=4588023&amp;1&lt;&lt;i,V[[i,8]]=31326660&amp;1&lt;&lt;i
+t=(x,y=x)=&gt;X(B(x-i),B(y-j))
+for(i=j=24;j+1;j-=j%2^j&gt;6?1:i&lt;u|i-u&gt;24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&amp;0)V[[i,j]]??="101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(d[34+k]=r[k],i-6&amp;&amp;j-6&amp;&amp;d[k/8|0]&gt;&gt;(7-k++%8)&amp;1)^(i+j)%2</code></pre></li>
+<li><p>553 characters, when I switched to manual iteration for the Galois remainder:</p>
+<pre class="javascript"><code>s=420+(U=f[F='replace'](/:/g,''))+0
+d=[]
+a=[u=1];z=[1/0]
+for(i=0;d[i/2]="0x"+s[i]+s[++i],i&lt;512;)z[a[i]=((x=2*a[i-1])&gt;255)*285^x]??=i
+r=[...d]
+for(k=35;Z=+r[i=0],--k;V={})for(;i&lt;34;)r[i]=a[[251,67,46,61,118,70,64,94,32,45][i]+z[Z]]^r[++i]
+for(i=0;i&lt;25;i+=i-8?1:9)V[[i,8]]=31326404&amp;1&lt;&lt;i,V[[8,i]]=4588023&amp;1&lt;&lt;i
+let{abs:B,max:X,min:N}=Math
+t=(x,y=x)=&gt;X(B(x-i),B(y-j))
+for(i=j=24;j+1;j-=j%2^j&gt;6?1:i&lt;u|i-u&gt;24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&amp;0)V[[i,j]]??="101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(d[34+k]=r[k],i-6&amp;&amp;j-6&amp;&amp;d[k/8|0]&gt;&gt;(7-k++%8)&amp;1)^(i+j)%2</code></pre></li>
+<li><p>552 characters, when I consolidated the magic constants:</p>
+<pre class="javascript"><code>s=420+(U=f[F='replace'](/:/g,''))+0
+d=[]
+a=[u=1];z=[1/0]
+for(i=0;d[i/2]="0x"+s[i]+s[++i],i&lt;512;)z[a[i]=((x=2*a[i-1])&gt;255)*285^x]??=i
+r=[...d]
+for(k=35;Z=+r[i=0],--k;V={})for(;i&lt;34;)r[i]=a[[251,67,46,61,118,70,64,94,32,45][i]+z[Z]]^r[++i]
+for(i=0;i&lt;25;i+=i-7?1:10)V[[8,i]]=V[[24-i,8]]=4588023&amp;1&lt;&lt;i
+let{abs:B,max:X,min:N}=Math
+t=(x,y=x)=&gt;X(B(x-i),B(y-j))
+for(V[[8,8]]=i=j=24;j+1;j-=j%2^j&gt;6?1:i&lt;u|i-u&gt;24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&amp;0)V[[i,j]]??="101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(d[34+k]=r[k],i-6&amp;&amp;j-6&amp;&amp;d[k/8|0]&gt;&gt;(7-k++%8)&amp;1)^(i+j)%2</code></pre></li>
+<li><p>548 characters:</p>
+<pre class="javascript"><code>s=420+(U=f[F='replace'](/:/g,''))+0
+d=[]
+a=[u=1];z=[1/0]
+for(i=0;d[i/2]="0x"+s[i]+s[++i],i&lt;512;)z[a[i]=((x=2*a[i-1])&gt;255)*285^x]??=i
+r=[...d]
+for(k=35;Z=+r[i=0],--k;V={})for(;i&lt;34;)r[i]=a[[251,67,46,61,118,70,64,94,32,45][i]+z[Z]]^r[++i]
+for(;i&lt;25;i+=i-7?1:10)V[[8,i]]=V[[24-i,8]]=4588023&amp;1&lt;&lt;i
+let{abs:B,max:X,min:N}=Math
+t=(x,y=x)=&gt;X(B(x-i),B(y-j))
+for(V[[8,8]]=j=--i;j+1;j-=j%2^j&gt;6?1:i&lt;u|i-u&gt;24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&amp;0)V[[i,j]]??="101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(d[34+k]=r[k],i-6&amp;&amp;j-6&amp;&amp;d[k/8|0]&gt;&gt;(7-k++%8)&amp;1)^(i+j)%2</code></pre></li>
+<li><p>526 characters, when I finally got the QR code down to one loop:</p>
+<pre class="javascript"><code>s=420+(U=f[F='replace'](/:/g,''))+0
+d=[]
+a=[u=1];z=[1/0]
+for(i=0;d[i/2]="0x"+s[i]+s[++i],i&lt;512;r=[...d])z[a[i]=((x=2*a[i-1])&gt;255)*285^x]??=i
+for(k=35;Z=+r[i=0],--k;V={})for(var{abs:B,max:X,min:N}=Math;i&lt;34;t=(x,y=x)=&gt;X(B(x-i),B(y-j)))r[i]=a[[251,67,46,61,118,70,64,94,32,45][i]+z[Z]]^r[++i]
+for(i=j=24;d[34+k]=r[k],~j;j-=j%2^j&gt;6?1:i&lt;u|i-u&gt;24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&amp;0)V[[i,j]]=i-8&amp;&amp;j-8||16&lt;i+j&amp;i+j&lt;25?"101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(i-6&amp;&amp;j-6&amp;&amp;d[k/8|0]&gt;&gt;(7-k++%8)&amp;1)^(i+j)%2:4588023&amp;1&lt;&lt;(i-8?24-i:j)</code></pre></li>
+<li><p>518 characters (final? polished? edition):</p>
+<pre class="javascript"><code>s=420+(U=f[F='replace'](/:/g,''))+0
+d=[]
+a=[u=1];z=[1/0]
+for(i=0;d[i/2]="0x"+s[i]+s[++i],i&lt;516;r=[...d])z[a[i]=(x=2*a[i-1])^(x&gt;255)*285]??=i
+for(k=35;Z=+r[i=0],--k;V={})for(var{abs:B,max:X,min:N}=Math;i&lt;34;t=(x,y=x)=&gt;X(B(x-i),B(y-j)))d[34+i]=r[i]=a[[251,67,46,61,118,70,64,94,x,45][i]+z[Z]]^r[++i]
+for(i=j=24;~j;j-=j%2^j&gt;6?1:i&lt;u|i-u&gt;24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&amp;0)V[[i,j]]=i-8&amp;&amp;j-8||16&lt;i+j&amp;i+j&lt;25?"101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(i-6&amp;&amp;j-6&amp;&amp;d[k/8|0]&gt;&gt;7-k++%8&amp;1)^(i+j)%2:4588023&amp;1&lt;&lt;(i-8?24-i:j)</code></pre></li>
+</ol>
+<p>And as an addendum since you were nice enough to scroll through here, the silly code that renders it to HTML!</p>
+<pre class="html"><code>&lt;style&gt;pre{line-height:1;padding:3em;transform:scaleY(0.6)}&lt;/style&gt;</code></pre>
+<pre class="javascript"><code>o=f+'&lt;pre&gt;'
+for(i=0;i&lt;25;i++)for(o+='\n',j=0;j&lt;25;)o+=+V[[i,j++]]?'\u2588':' '
+document.body.innerHTML=o</code></pre>
+</details>
+<p>And some links to helpful resources about QR codes:</p>
+<ul>
+<li><a href="https://qr.blinry.org/" class="uri">https://qr.blinry.org/</a></li>
+<li><a href="https://www.nayuki.io/page/creating-a-qr-code-step-by-step" class="uri">https://www.nayuki.io/page/creating-a-qr-code-step-by-step</a></li>
+<li><a href="https://www.thonky.com/qr-code-tutorial/" class="uri">https://www.thonky.com/qr-code-tutorial/</a></li>
+</ul>
+<style>
+  #demo > pre {
+    font-size: 8px;
+    line-height: 1;
+    padding: 3em;
+    user-select: none;
+    transform: scaleY(0.6);
+    transform-origin: top center;
+    color: black;
+    background: white;
+    width: fit-content;
+    margin: auto;
+    margin-bottom: -10%; /* idk why 10% */
+  }
+  pre.sourceCode:not([data-lang]).javascript::before {
+    content: '';
+    margin-bottom: 0;
+  }
+  pre.sourceCode:not([data-lang]).javascript {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-width: 100%;
+  }
+</style>]]></description>
+</item>
+<item>
+<title>Design your programming languages right!</title>
+<pubDate>Mon, 16 Dec 2024 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/design_it_right.html</guid>
+<description><![CDATA[<p>I just think we should have some ground rules for new programming languages and their configuration. Yʼknow?</p>
+<p>Just some rambly thoughts on features I think you should include, or at least think about and not block yourself <em>out of</em> including. And other topics I am thinking about with no real answers yet.</p>
+<h2 id="solved-problems-non-issues">Solved problems / non-issues</h2>
+<h3 id="indented-multiline-strings">Indented multiline strings!</h3>
+<p>Itʼs so ugly when you go to embed a multiline string into your code, and you realize that you’re going to have to close your eyes and pretend the current indentation level does not exist, as the raw contents take over the left gutter.</p>
+<p>This is a solved problem. <a href="https://github.com/dhall-lang/dhall-lang/blob/master/standard/multiline.md">Dhall</a> did a pretty good job of it (although I am not too fond of the escaping rules there), and <a href="https://docs.lix.systems/manual/lix/stable/language/values.html#type-string">Nix/Lix</a> have similar rules.</p>
+<p>I implemented similar logic for JavaScript template literals in <a href="https://blog.veritates.love/assets/js/verity.js">Ve.dedent</a>, I am very happy with it. And Iʼve tried my best for PureScript (and Python?), but not having the distinction between source and escaped/interpolated texts makes it much harder, and more of a tool that works for some cases than a systematic approach that it could be if it was baked in.</p>
+<p>Indented multiline strings are just a thing that you can put a few extra hours of effort into fixing early, before it becomes a problem for your users and then you canʼt change without backwards compatibility issues.</p>
+<h3 id="relative-file-paths">Relative file paths</h3>
+<p>File paths should be relative to the file theyʼre in, or to a well defined project root. This mostly applies to configuration, less so running programs (for which a working directory is usually fine), but like … imports should be predictable.</p>
+<p>Notably, configuration files for both <a href="https://docs.docker.com/compose/how-tos/multiple-compose-files/extends/#understanding-multiple-compose-files">Docker Compose</a> and <a href="https://doc.rust-lang.org/cargo/reference/config.html#config-relative-paths">Rustʼs Cargo</a> get this wrong.</p>
+<p>Again, you have to get it right up-front, or figure out solid plans for versioning. (But of course, programming languages that donʼt have the thought put in to get it right up front, usually donʼt have good enough versioning policies to deal with this either.)</p>
+<h3 id="file-extensions">File extensions</h3>
+<p>Pick an extension or two, and stick to it! Remember that if youʼre a new language, youʼre a guest entering existing ecosystems by their good grace and should work on their terms.</p>
+<p>Syntax highlighting, in IDEs and online code viewers/git forges, is mainly based on the file extension. And if you donʼt have a recognizable file extension, your users are going to have to work harder.</p>
+<p>As one example, Bazel uses Starlark in files named <code>WORKSPACE</code> and <code>BUILD</code> and <code>.bzl</code> or <code>.bazel</code>. Starlark just has Python syntax highlighting, which is nice that you can use that.</p>
+<p>But itʼs hard to convince your IDE to highlight them if thereʼs different extensions and extensionless file names. (Itʼs even harder if these names are configurable, but I donʼt think <code>WORKSPACE</code> and <code>BUILD</code> are?) Itʼs harder to <code>grep</code> through the files if you have to include all the forms that it can occur. And so on.</p>
+<h3 id="commas">Commas</h3>
+<p>Another solved problem: allow trailing commas! (And possibly leading commas, if you feel like that … or actual bullet points.)</p>
+<h3 id="extensible-syntax">Extensible syntax</h3>
+<p>A lot of languages have made mistakes around numeric literals (wanting to add more prefixes or suffixes, but the path forward is blocked by backwards compatibility), or string/regex escapes (use delimited escapes like <code class="js">"\u{XXXX}"</code>!), or keywords.</p>
+<p>Itʼs more my personal opinion, but I dislike bare keywords. I think keywords should come with a sigil to clearly denote them as a keyword and allow extending the language with more keywords without breaking old code that used them as identifiers. Do you <em>really</em> think youʼll get the perfect set of keywords right the first time? … can you point to a programming language that did?</p>
+<h2 id="mostly-unsolved-nuanced-problems">(Mostly) unsolved, nuanced problems</h2>
+<h3 id="developer-experience-vs-released-code">Developer experience vs Released code</h3>
+<p>iterating on code as youʼre developing it, versus having a nice clean, pristine released version … theyʼre quite different things, and I think these workflows should be respected!</p>
+<p>e.g.&nbsp;when developing, we often put web servers on different ports and/or LAN hosts, and use HTTP or self-signed HTTPS (or even <code>file:///</code> in the few cases we can get away with it!), whereas in production it might be behind a reverse proxy under some specific route, and so on.</p>
+<h3 id="versioning">Versioning</h3>
+<p>Versioning means a lot of things.</p>
+<p>One of the problems that I havenʼt really seen <em>solved</em> before, is how to deal with code <em>across</em> versions.</p>
+<p>Like, letʼs say that I want to have a migration script between versions of my released software. Well, I guess the code for it has to live in the later version – itʼs not like the previous version knew what was coming up. But how do you test it? You kind of need to check out the previous version of your code from source control, and have them both in parallel. (This is also something where the “development” and “release” modes are pretty separate!)</p>
+<p>And in general, if youʼre expecting people to write libraries in your programming language, give them a sensible way to talk about versions. One of the cooler tools in this area are the ones that check a libraryʼs API (especially if it is typed!) to determine whether it should be a patch/minor/major release.</p>
+<p><em>However</em>, I must stress: version numbers are always going to be subject to judgment calls. They are an imperfect tool of communication, not a mathematically precise abstraction.</p>
+<hr>
+<p>Oh another hobby horse: Please always include dates with your release version numbers! It doesnʼt have to be <em>in</em> the version number, but it should be easily accessible, displayed beside it or in a tooltip or on a canonical webpage. Itʼs nearly impossible to compare versions <em>across</em> software (languages, runtimes, packages, dependencies) without having a sense of release dates of it all.</p>
+<h3 id="file-watching">File watching</h3>
+<p>This is part of a larger discussion around build systems and the like, but.</p>
+<p>Iʼve never found it possible to retrofit detailed file watching onto build systems that didnʼt have it. Without, like, writing a whole Python program to go and parse files, reconstruct their dependency tree, make sure I know how each file is getting used and if it is relevant at all, reload the whole watcher if the configuration changes, and so on.</p>
+<h3 id="integration-with-tools">Integration with tools</h3>
+<p>Like <code>find</code>/<code>grep</code>: itʼs much nicer if you can ask your build tool to tell you all the files to search through, and then you can ask if you want to include dependencies or not. (Also this listing of files/globs gives you a first step towards filewatching too, although (again) you really need proper integration to be able to account for added files, and changing configuration, and so on!)</p>
+<p>Itʼs even better if you want to add proper code search, being able to distinguish your search terms in identifiers versus strings, or in types versus terms, and so on. Yeah ^.^</p>]]></description>
+</item>
+<item>
+<title>Self-names (paths)</title>
+<pubDate>Mon, 16 Dec 2024 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/selfnames.html</guid>
+<description><![CDATA[<blockquote>
+<p><a href="https://martinfowler.com/bliki/TwoHardThings.html">There are 2 hard problems in computer science: cache invalidation, naming things, and off-by-1 errors.</a> </p>
+</blockquote>
+<p>You know, Iʼve always heard this and been like, “Yeah, naming functions and variables is difficult, language and communication are difficult, I guess Iʼll just call it <code>Create​Puppeteer​And​Chromium​Instance​Or​Testing​Stub​Factory</code> and call it a day”<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>.</p>
+<p>However, I think the stronger problem is that we expect to be able to reuse names (*paths) in contexts other than they were made in. We need to!</p>
+<h2 id="selfnames-in-webdev-with-reverse-proxies">Selfnames in webdev with reverse proxies</h2>
+<p>Reverse proxies (like nginx) are a particularly compelling example of this that I keep running into: they can change the public URL of something, in a way that the code often needs to know about, and there isnʼt always a great way to tell the frontend code about.</p>
+<p>For work Iʼve been working on packaging our multiple layers of products into a single deployment, thus deployed on a single HTTPS port but with different root paths for each software. Getting it to work through the reverse proxies was a bit of a pain (and is still not perfectly finished: some paths have to redirect like <code>/B/*</code> -&gt; <code>/A/B/*</code>).</p>
+<p>For my blog, Iʼve kept the directory structure very predictable so far so it doesnʼt matter where it is hosted: there are no absolute references, even to <code>assets/</code> and so on. But if I want to have articles that are nested under directories, either I need to add a <code>../</code> to all of these relative URLs, or I need to commit to having it hosted at the root of the domain.</p>
+<p>There are some ways to work around this … unfortunately <a href="https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base"><code>&lt;base&gt;</code></a> is a particularly bad one, since it cannot leave relative URLs unaffected, for example. (It would be great if it was able to just rename absolute URLs that start with a slash, for example.)</p>
+<p>Idk, you basically just have to commit to caring about it in <em>some</em> place, passing along information to handle it where you can (and hopefully not break down too many abstraction boundaries).</p>
+<h2 id="selfnames-in-programming-languages-modules">Selfnames in programming languages (modules?)</h2>
+<p>When developing <a href="https://blog.veritates.love/assets/js/verity.js">verity.js</a> I decided that I prefer the code to be <em>copyable</em>, not convenient to write. So I committed to always writing out the <code class="js">Ve.</code> prefix so that I was able to copy the source code out and run it from outside the module, .</p>
+<p>But to some extent this <em>should</em> be a tooling problem, <em>were</em> we to live in the alternate reality where we treated programs as structured syntax, not plain text.</p>
+<p>Like, in theory, if you were to copy code out of one Haskell or PureScript (not JavaScript) module into another, it would be able to re-qualify all of the identifiers and add imports for you, possibly throwing an error <em>only</em> if the code was using local identifiers that were not exported (though it could prompt you with a button to add exports for them).</p>
+<p>But the hegemonic tools we are forced to use do not understand this fine distinction.</p>
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn1"><p>Fictional example, no Iʼve never done that.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>]]></description>
+</item>
+<item>
 <title>Monoids in Public</title>
 <pubDate>Wed, 18 Sep 2024 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/monoids_in_public.html</guid>
 <description><![CDATA[<h2 id="vdom-trees-as-monoids">VDOM trees as monoids</h2>
+<p class="dated">
+2023/11/15
+</p>
 <p>Imagine you have your favorite VDOM model:</p>
 <pre class="purescript"><code>data VDOM
   = Text String
@@ -101,6 +464,9 @@ stripTextEnd = Array.unsnoc &gt;=&gt; case _ of
 </div>
 </details>
 <h2 id="join-with-separator-monoid">Join with separator monoid</h2>
+<p class="dated">
+2023/11/15
+</p>
 <p>I confess that this is also motivated by webdev: for the class attribute, which is a space-separated list of class names.</p>
 <p>We do a similar trick: we detect the identity and handle it specially.<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a></p>
 <pre class="purescript"><code>newtype ClassName = ClassName String
@@ -133,7 +499,96 @@ instance IsSymbol s =&gt; Semigroup (JoinWith s) where
 joinWithComma = unwrap &lt;&lt;&lt; foldMap
   (JoinedWith :: String -&gt; JoinWith ", " String)</code></pre>
 <p>And the real benefit of making a proper monoid structure is that it is now compositional. You can just chuck it in a record and it does the right thing ^.^</p>
+<h2 id="precedence-in-pretty-printers">Precedence in pretty printers</h2>
+<p class="dated">
+2024/05/01
+</p>
+<div class="centered">
+<p><em>Originally posted at <a href="https://tech.lgbt/@monoidmusician/112368939004740994" class="uri">https://tech.lgbt/@monoidmusician/112368939004740994</a></em></p>
+</div>
+<p>This semiring is an amalgamation of a few concepts: a unification monoid, the <a href="https://pursuit.purescript.org/packages/purescript-maybe/6.0.0/docs/Data.Maybe.Last#t:Last"><code class="purescript">Last</code></a> monoid, and some other stuff.</p>
+<p>My goal is to capture precedence during the pretty-printing phase of my printer–parser–pretty-printer framework. It really <em>really</em> needs to be compositional and to handle arbitrary structures, not just the usual binary operators.</p>
+<p>The idea is that the applicative <code class="purescript">&lt;*&gt;</code> combinators of the parser will correspond to multiplication <code class="purescript">*</code> of precedence, and the alternative <code class="purescript">&lt;|&gt;</code> combinators of the parser will correspond to addition of precedence.</p>
+<p>During printing, when the precedence combines in certain ways, it will automatically insert parentheses (or some other method of delineating precedence, obviously i am not going to hardcode it).</p>
+<p>The</p>
+<pre class="purescript"><code>Prec 1 + Prec 1 * Prec 2
+  = Prec 1 + Prec 2
+  = NoPrec (since 1 /= 2)
+
+Prec 1 * (NoPrec + Prec 2)
+  = ??? no good answer …</code></pre>
+<hr>
+<p>it is a similar problem as follow sets: what do you do with empty alternatives? … just not recursive (no need to peek inside nonterminals)</p>
+<hr>
+<p>well, this is algebra, so we can just invent an answer <code class="purescript">MTPrec</code> (“empty or [known] precedence”) and see if it still works out:</p>
+<pre class="purescript"><code>NoPrec + Prec 2
+  = MTPrec 2
+
+Prec 1 * EmptyOrPrec 2
+  = NoPrec (since 1 /= 2)</code></pre>
+<p>I guess I also need a <code class="purescript">DiffPrec</code> …</p>
+<p>hmm I wrote an impl, best to throw it into QuickCheck at this point, I think</p>
+<hr>
+<p>QuickCheck is happy! I will just have to consider tomorrow whether this actually buys me anything…</p>
+<p>specifically I want it to help me delineate precedence for pretty printing … <em>and</em> parsing? idk yet</p>
+<p>the specific idea is that it will explain why reduction rules can be assigned precedence in Happy (this is necessary for the implicit adjuxtaposition operator for function application), and how it defaults to that of the last token</p>
+<hr>
+<pre class="purescript"><code>data Prec v
+  = NoPrec
+  | AnyPrec
+  | DiffPrec
+  | Prec v
+  | MTPrec v
+
+instance semiringPrec :: Eq v =&gt; Semiring (Prec v) where
+  zero = AnyPrec
+  one = NoPrec
+
+  add DiffPrec _ = DiffPrec
+  add _ DiffPrec = DiffPrec
+  add AnyPrec v = v
+  add v AnyPrec = v
+  add NoPrec (Prec v) = MTPrec v
+  add (Prec v) NoPrec = MTPrec v
+  add NoPrec (MTPrec v) = MTPrec v
+  add (MTPrec v) NoPrec = MTPrec v
+  add (Prec v1) (Prec v2)
+    | v1 == v2 = Prec v1
+    | otherwise = DiffPrec
+  add (Prec v1) (MTPrec v2)
+    | v1 == v2 = MTPrec v1
+    | otherwise = DiffPrec
+  add (MTPrec v1) (Prec v2)
+    | v1 == v2 = MTPrec v1
+    | otherwise = DiffPrec
+
+  mul AnyPrec _ = AnyPrec
+  mul _ AnyPrec = AnyPrec
+  mul NoPrec v = v
+  mul v NoPrec = v
+  mul _ DiffPrec = DiffPrec
+  mul DiffPrec (MTPrec _) = DiffPrec
+  mul (Prec v1) (MTPrec v2)
+    | v1 == v2 = Prec v2
+    | otherwise = DiffPrec
+  mul (MTPrec v1) (MTPrec v2)
+    | v1 == v2 = MTPrec v1
+    | otherwise = DiffPrec
+  mul _ (Prec v) = Prec v</code></pre>
+<hr>
+<p>shout-out to quickcheck-laws</p>
+<p><a href="https://github.com/purescript-contrib/purescript-quickcheck-laws/blob/v7.0.0/src/Test/QuickCheck/Laws/Data/Semiring.purs" class="uri">https://github.com/purescript-contrib/purescript-quickcheck-laws/blob/v7.0.0/src/Test/QuickCheck/Laws/Data/Semiring.purs</a></p>
+<hr>
+<p>I think the upshot is that parsing rules have a simple precedence behavior: just use the Last monoid for each rule, since the alternative rules are already in a list structure</p>
+<p>pretty printing will require this new semiring, since it does not have alternatives in the same structure, it is just a function</p>
+<p>so when you transition from “known precedence” to “unknown precedence”, is where it adds the opportunity to parenthesize</p>
+<p>ughhh how does this interact with CST nowwww</p>
+<hr>
+<p>CST shouldnʼt need precedence, right, thatʼs kind of the point of it, that it just preserves parentheses that existed in the input</p>
 <h2 id="top-down-traversals">Top-Down Traversals</h2>
+<p class="dated">
+2024/09/18
+</p>
 <p>Recently I faced a problem: how do I get more control out of a traversal in PureScript?</p>
 <p>There are two problems here:</p>
 <ol type="1">
@@ -1108,6 +1563,8 @@ normalize (Roll layer) = Roll (map normalize layer)</code></pre>
 <p>I want to skew to the left of many design choices that have been made for most languages, aiming for very specific tradeoffs to achieve aesthetics and functionality.</p>
 <p>My goal is to have a syntax that is straightforward for humans to write and easy for computers to interpret.</p>
 <p>But I donʼt want this process to be magic! I just want it to look convenient for writing powerful systems of type theory.</p>
+<h2 id="abstract">Abstract</h2>
+<p><a href="https://blog.veritates.love/blog.veritates.love/tmttmt.html">tmTTmt</a> (transmorphism Type Theory metatheory) is an experiment in the UX and aesthetics of a pure, typed functional programming language, with the goal of being an interlingua (it must be easy to parse, reducible to an implementation with few required primitives, and human readable along the way, including methods for understanding what the source code is and does) and with an eye towards being suitable for being an exceptional metalanguage for type theory and compilers and also a welcoming place to write down algorithms of general interest (e.g.&nbsp;computing a cubic Bézier from a quadratic Bézier, or computing an LR(1) parse table from a grammar, or describing high-level cryptography operations that can be compiled to appropriate code in languages such as JavaScript, Python, or Erlang)</p>
 <h2 id="demos">Demos</h2>
 <p>AAaaahhhh</p>
 <p>Implementation in progress!</p>

@@ -51,6 +51,18 @@ But itʼs hard to convince your IDE to highlight them if thereʼs different exte
 Itʼs harder to `grep` through the files if you have to include all the forms that it can occur.
 And so on.
 
+### Commas
+
+Another solved problem: allow trailing commas! (And possibly leading commas, if you feel like that … or actual bullet points.)
+
+### Extensible syntax
+
+A lot of languages have made mistakes around numeric literals (wanting to add more prefixes or suffixes, but the path forward is blocked by backwards compatibility), or string/regex escapes (use delimited escapes like `"\u{XXXX}"`{.js}!), or keywords.
+
+Itʼs more my personal opinion, but I dislike bare keywords. I think keywords should come with a sigil to clearly denote them as a keyword and allow extending the language with more keywords without breaking old code that used them as identifiers.
+Do you *really* think youʼll get the perfect set of keywords right the first time?
+… can you point to a programming language that did?
+
 
 ## (Mostly) unsolved, nuanced problems
 
