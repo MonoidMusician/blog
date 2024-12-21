@@ -77,6 +77,8 @@ code
   padding-bottom: 1px
   margin-left: -1px
   margin-right: -1px
+  @media (max-width: $breakpoint-narrow)
+    overflow-wrap: anywhere
 pre
   /* Silly firefox */
   margin: 0
@@ -111,6 +113,10 @@ pre > code
     margin-right: 0
     border-radius: 0
     box-shadow: none
+    @if $light
+      border: 2px solid rgb(67 98 177 / 8%)
+      border-left: none
+      border-right: none
 
   & > textarea
     margin: -0.75em

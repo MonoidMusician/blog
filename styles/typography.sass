@@ -198,6 +198,9 @@ a[href]
       section > &, section > div > &
         // thin-space
         content: "§\200A"
+  &.uri
+    @media (max-width: $breakpoint)
+      line-break: anywhere
 
   // &[href^="https://en.wikipedia.org/"]
   //   &::before

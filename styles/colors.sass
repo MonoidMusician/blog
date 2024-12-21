@@ -218,20 +218,28 @@ $transition: 0.4s
 code span.kw, code.kw
   /* Keyword */
   color: #cf2a8f
+  @if $light
+    color: #810551
 code span.st, code.st
   /* String */
   color: goldenrod
+  @if $light
+    color: #d89102
 code span.sc, code.sc
   /* SpecialChar */
   color: yellow
   @if $light
-    color: darkorange
+    color: #ff6c00
 code span.ss, code.ss
   /* SpecialString */
   color: yellow
+  @if $light
+    color: #b84304
 code span.dt, code.dt
   /* DataType */
   color: #db74b9
+  @if $light
+    color: #f809a9
 code span.ot, code.ot
   /* Other */
   color: #acd4e4
@@ -240,15 +248,21 @@ code span.ot, code.ot
 code span.op, code.op
   /* Operator */
   color: #f97d7d
+  @if $light
+    color: #f44444
 code span.ch, code.ch
   /* Char */
   color: #049b0a
 code span.fu, code.fu
   /* Function */
   color: #ff9358
+  @if $light
+    color: #3714bc
 code span.al, code.al
   /* Alert */
   color: #ffff00
+  @if $light
+    color: #f09811
 code span.an, code.an
   /* Annotation */
   color: #0066ff
@@ -274,6 +288,8 @@ code span.co, code.co
   /* Comment */
   color: #27c856
   font-style: italic
+  @if $light
+    color: #20ab00
 code span.do, code.do
   /* Documentation */
   color: #0066ff
@@ -281,12 +297,14 @@ code span.do, code.do
 code span.dv, code.dv
   /* DecVal */
   color: #44aa43
+  @if $light
+    color: #118d10
 code span.er, code.er
   /* Error */
   @if not $light
     color: #ffff00
   @else
-    color: #ff7517
+    color: #fe440a
   font-weight: 500
 code span.ex, code.ex
   /* Extension */
@@ -314,6 +332,8 @@ code span.vs, code.vs
 code span.wa, code.wa
   /* Warning */
   color: #ffff00
+  @if $light
+    color: #f09811
   font-weight: 500
 
 
