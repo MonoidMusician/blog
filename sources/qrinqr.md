@@ -17,7 +17,7 @@ There is a hard limit of 2,953 bytes of UTF-8 for QR codes, and I have even less
 ::: {#demo}
 <p style="display: flex; align-items: baseline; gap: 2em">
   <label class="input-wrapper" style="flex: 1">
-    <span>32-bytes of hexadecimal</span>
+    <span>32 bytes of hexadecimal</span>
     <input id="demo-input" class="code" style="width: 100%; text-overflow: ellipsis" />
   </label>
   <button id="demo-random" class="add" style="flex: 0 0 auto">Random!</button>
