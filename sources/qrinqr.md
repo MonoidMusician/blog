@@ -393,7 +393,7 @@ And some links to helpful resources about QR codes:
     background: white;
     width: fit-content;
     margin: auto;
-    margin-bottom: -10%; /* idk why 10% */
+    margin-bottom: -10em;
   }
   pre.sourceCode:not([data-lang]).javascript::before {
     content: '';
