@@ -19,6 +19,11 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 
 ## Posts <a class="icon iconoir" href="rss.xml"><?xml version="1.0" encoding="UTF-8"?><svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
 
+- [Code golf for computing a 32-byte QR code!](qrinqr.html) [2024/12/20]{.dated}
+
+  > This JavaScript comes in at 512 ASCII characters when minified!
+  > Why would I do such a thing? Well, it helps me bootstrap a WebRTC connection over QR codes!
+
 - [Design your programming languages right!](design_it_right.html) [2024/12/16]{.dated}
 
 - [Self-names (paths): The other hardest problem in programming?](selfnames.html) [2024/12/16]{.dated}
