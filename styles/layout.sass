@@ -16,14 +16,14 @@ body > section
   margin-right: auto
   .full-width
     width: 100vw
-    margin-left: calc(-20vw - 8px)
-    margin-right: calc(-20vw - 8px)
+    margin-left: calc(-20vw - 5px)
+    margin-right: calc(-20vw - 5px)
     box-sizing: border-box
   @media (max-width: $breakpoint)
     max-width: 98%
     .full-width
-      margin-left: calc(-7vw - 8px)
-      margin-right: calc(-7vw - 8px)
+      margin-left: calc(-5vw - 7px)
+      margin-right: calc(-5vw - 7px)
 body section > .Box
     &:not(.full-width)
       margin: 0 -9px
@@ -107,8 +107,10 @@ pre > code
   transition: 0.3s box-shadow
 
   .full-width &
-    margin-left: 0.5em
-    margin-right: 0.5em
+    margin-left: 0
+    margin-right: 0
+    border-radius: 0
+    box-shadow: none
 
   & > textarea
     margin: -0.75em
