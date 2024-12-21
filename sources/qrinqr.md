@@ -385,7 +385,7 @@ And some links to helpful resources about QR codes:
   #demo > pre {
     font-size: 8px;
     line-height: 1;
-    padding: 3em;
+    padding: 5em 3em;
     user-select: none;
     transform: scaleY(0.6);
     transform-origin: top center;
