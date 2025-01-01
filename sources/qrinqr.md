@@ -52,7 +52,7 @@ There is a hard limit of 2,953 bytes of UTF-8 for QR codes, and I have even less
 s=420+(U=f[F='replace'](/:/g,''))+0
 d=[]
 a=[u=1];z=[1/0]
-for(i=0;d[i/2]="0x"+s[i]+s[++i],i<512;r=[...d])z[a[i]=(x=2*a[i-1])^(x>255)*285]??=i
+for(i=0;d[i/2]="0x"+s[i]+s[++i],i<511;r=[...d])z[a[u*=2,i]=u^=(u>255)*285]??=i
 for(k=35;Z=+r[i=0],--k;V={})for(var{abs:B,max:X,min:N}=Math;i<34;t=(x,y=x)=>X(B(x-i),B(y-j)))d[34+i]=r[i]=a['\xFBC.=vF@^ -'.charCodeAt(i)+z[Z]]^r[++i]
 for(i=j=24;~j;j-=j%2^j>6?1:i<u|i-u>24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&0)V[[i,j]]=i-8&&j-8||16<i+j&i+j<25?"101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(i-6&&j-6&&d[k/8|0]>>7-k++%8&1)^(i+j)%2:4588023&1<<(i-8?24-i:j)
 ```

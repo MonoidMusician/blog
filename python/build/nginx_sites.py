@@ -27,7 +27,7 @@ friendly = """
 """.lstrip()
 
 bad_bots = ["ChatGPT-User", "GPTBot"]
-#bad_bots = json.loads(requests.get("https://github.com/ai-robots-txt/ai.robots.txt/raw/refs/heads/main/robots.json").text).keys()
+#bad_bots = list(json.loads(requests.get("https://github.com/ai-robots-txt/ai.robots.txt/raw/refs/heads/main/robots.json").text).keys())
 
 def robots_txt(*disallowed):
     content = [friendly]
@@ -165,6 +165,18 @@ sites = [
     ),
     private(re.compile(r"^(a(wa)*\.)+verified\.veritates\.love$"),
         proxy("http://localhost:48484", trusted=True),
+    ),
+
+    Comment("WebRTC/QR project"),
+    public(["webrtc-over-qr.veritates.love"],
+        serve(root="/var/www/webrtc-over-qr.veritates.love", location="/", autoindex=True, disable_symlinks=False)(
+            redirect_path(re.compile(r"^/online(?:/index)?(?:.html)?$"), "/online/webrtc-over-qr.html"),
+            redirect_path(re.compile(r"^/download(?:/index)?(?:.html)?$"), "/download/webrtc-over-qr.html"),
+            redirect_path(re.compile(r"^/(webrtc-over-qr|scanner)(?:.html)?$"), "/online/$1.html"),
+            Directive("location", Token.re("/download/"),
+                ("add_header", "Content-Disposition", "attachment"),
+            ),
+        ),
     ),
 
     Comment("Private content"),

@@ -138,11 +138,11 @@ def server_name(*domains):
     )
 
 # Redirect `http://:80` to `https://:443`
-def to_ssl(*domains, default_server=True):
+def to_ssl(*domains, default_server=True, code=301):
     return Directive("server",
         http(default_server=default_server),
         server_name(*domains),
-        ("return", 301, "https://$host$request_uri"),
+        ("return", code, "https://$host$request_uri"),
     )
 # Redirect to base domain without `www.`
 def no_www():
@@ -157,7 +157,12 @@ def host_redirect(match, to, *directives, code=301):
     return Directive("server",
         *directives,
         server_name(match),
-        ("return", 301, to),
+        ("return", code, to),
+    )
+def redirect_path(location, to, *directives, code=301):
+    return Directive("location", Token.re(location),
+        *directives,
+        ("return", code, to),
     )
 
 # Takes a public certificate, the corresponding private key, and optionally
