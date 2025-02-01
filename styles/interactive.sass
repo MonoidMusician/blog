@@ -229,6 +229,8 @@ label:not([for]):not(.sidenote-number):not(.margin-toggle)
   $tooltip-bg-color: rgba(39, 39, 39, 1)
   $min-width: 80px
 
+  cursor: help
+
   position: relative
 
   & > .tooltip
@@ -240,7 +242,11 @@ label:not([for]):not(.sidenote-number):not(.margin-toggle)
     left: 50%
 
     min-width: $min-width
-    max-width: 200px
+    max-width: 250px
+    width: max-content
+
+    overflow-x: hidden
+    text-overflow: ellipsis
 
     bottom: calc(100% + #{$distance})
     transform: translate(-50%)
@@ -281,6 +287,9 @@ label:not([for]):not(.sidenote-number):not(.margin-toggle)
   &:not(:hover)
     & > .tooltip, &::before, &::after
       pointer-events: none
+      /* Try to fix default triple-click text selection */
+      user-select: none
+      display: none
   &:hover
     & > .tooltip, &::before, &::after
       animation: fade-in 300ms ease

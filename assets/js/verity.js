@@ -867,6 +867,26 @@ Verity = Ve = {};
     }
   });
 
+  Ve.lifecycle = {
+    close: function (tgt) {
+      if (tgt instanceof WebSocket) {
+        if (tgt.readyState === tgt.CLOSED) return;
+        return new Promise((resolve, reject) => {
+          Ve.once.close(tgt, resolve);
+          Ve.once.error(tgt, reject);
+        });
+      }
+      if (tgt instanceof RTCDataChannel) {
+        if (tgt.readyState === "closed") return;
+        return new Promise((resolve, reject) => {
+          Ve.once.close(tgt, resolve);
+          Ve.once.error(tgt, reject);
+        });
+      }
+      throw new TypeError("Unknown lifecycle object");
+    },
+  };
+
   //////////////////////////////////////////////////////////////////////////////
 
   Ve.RAFBuffer = function() {

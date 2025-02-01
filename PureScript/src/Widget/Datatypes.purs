@@ -35,8 +35,8 @@ linkify _ Nothing = identity
 linkify external (Just href) =
   D.aW href [ D.attr "target" =?= ("_blank" <$ guard external) ]
 
-nobreak :: String -> String
-nobreak = String.replaceAll (String.Pattern " ") (String.Replacement "\xA0")
+nobreak :: String -> Dragon
+nobreak = D.span [ D.attr "style" =:= "white-space: nowrap" ] <<< D.text
 
 unabbreviate :: String -> Maybe Abbreviation
 unabbreviate abbr =
@@ -59,16 +59,33 @@ datatypes = Map.fromFoldable
               Acronym expanded ->
                 D.span [ D.className =:= "tooltipped abbreviated" ] $ D.Fragment
                   [ D.span [ D.className =:= "abbreviation", D.aria_"hidden" =:= "true" ] embed
-                  , D.span [ D.className =:= "tooltip abbreviation" ] $ D.text $ nobreak expanded
+                  , D.span [ D.className =:= "tooltip abbreviation" ] $ nobreak expanded
+                  ]
+              Jargon short fmt desc ->
+                let
+                  shortFmtDesc = case if desc == "" then FormatNone else fmt of
+                    FormatNone -> [short]
+                    FormatColon -> [short <> ":", desc]
+                    FormatComma -> [short <> ",", desc]
+                    FormatEquiv -> [short, "≈ " <> desc]
+                    FormatEqual -> [short, "= " <> desc]
+                    FormatDefEq -> [short, "≜ " <> desc]
+                    FormatParen -> [short, "(" <> desc <> ")"]
+                in D.span [ D.className =:= "tooltipped abbreviated" ] $ D.Fragment
+                  [ D.span [ D.className =:= "abbreviation" ] embed
+                  , D.span [ D.className =:= "tooltip abbreviation", D.aria_"hidden" =:= "true" ] $ D.Fragment
+                    [ Array.intercalate (D.br[]) $ shortFmtDesc <#>
+                        \m -> nobreak m
+                    ]
                   ]
               Foreign lang value link meanings ->
                 D.span [ D.className =:= "tooltipped abbreviated" ] $ D.Fragment
                   [ D.span [ D.className =:= "foreign", D.attr "lang" =:= lang ] embed
                   , D.span [ D.className =:= "tooltip abbreviation", D.aria_"hidden" =:= "true" ] $ D.Fragment
                     [ linkify true link $
-                        D.span [ D.className =:= "foreign", D.attr "lang" =:= lang ] $ D.text $ nobreak value
-                    , D.text $ Array.intercalate "," $ meanings <#>
-                        \m -> " “" <> nobreak m <> "”"
+                        D.span [ D.className =:= "foreign", D.attr "lang" =:= lang ] $ nobreak value
+                    , Array.intercalate (D.text ",") $ meanings <#>
+                        \m -> D.text " “" <> nobreak m <> D.text "”"
                     ]
                   ]
           Nothing -> do
@@ -134,7 +151,17 @@ printUnicodeHex cp = do
 
 data Abbreviation
   = Acronym String
+  | Jargon String InfoFormat String
   | Foreign String String (Maybe String) (Array String)
+
+data InfoFormat
+  = FormatNone
+  | FormatColon
+  | FormatComma
+  | FormatEquiv
+  | FormatEqual
+  | FormatDefEq
+  | FormatParen
 
 abbreviations :: Map String Abbreviation
 abbreviations = Map.fromFoldable
@@ -173,6 +200,20 @@ abbreviations = Map.fromFoldable
   , "JS" /\ Acronym "JavaScript"
   , "PS" /\ Acronym "PureScript"
   , "HS" /\ Acronym "Haskell"
+  , "P2P" /\ Acronym "Peer-to-Peer"
+  , "LAN" /\ Jargon "Local Area Network" FormatEquiv "private internet"
+  , "WAN" /\ Jargon "Wide Area Network" FormatEquiv "public internet"
+  , "IP" /\ Jargon "Internet Protocol" FormatEquiv "routing between computers"
+  , "STUN" /\ Jargon "Session Traversal Utilities for NAT" FormatColon "returns public IP and public port"
+  , "TURN" /\ Jargon "Traversal Using Relays around NAT" FormatColon "relay server for when P2P fails"
+  , "SDP" /\ Jargon "Session Description Protocol" FormatColon "data for WebRTC establishment"
+  , "ICE" /\ Jargon "Interactive Connectivity Establishment" FormatNone ""
+  , "HTML" /\ Acronym "Hypertext Markup Language"
+  , "XML" /\ Acronym "Extensible Markup Language"
+  , "QR" /\ Jargon "Quick-Response code" FormatParen "a 2D Matrix Barcode"
+  , "URI" /\ Acronym "Uniform Resource Indicator"
+  , "URL" /\ Acronym "Uniform Resource Locator"
+  , "NAT" /\ Jargon "Network Address Translation" FormatColon "routes private IPs to public internet"
   ]
 
 matching :: String -> Array String
