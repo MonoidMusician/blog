@@ -15,7 +15,7 @@ Hereʼs a tiny taste:
 
 _What you write:_
 
-```{.js data-lang="tmTTmt"}
+```js{data-lang="tmTTmt"}
 // If we are casing on a known boolean, we know which case to choose
 normalize/ ["if" "true" "then" exprT "else" exprF] => exprT;
 normalize/ ["if" "false" "then" exprT "else" exprF] => exprF;
@@ -367,7 +367,7 @@ But what if it is the first item that has the wrong type, and all 12 other items
 I believe it is best to typecheck each term in isolation, then see if the results can be unified all at once – and then unify the unification states, since unification variables may have been unified in inconsistent ways.
 (This requires unification state to be `WriterT`{.haskell} not `StateT`{.haskell}. Yeah.)
 
-```{.js data-lang="tmTTmt"}
+```js{data-lang="tmTTmt"}
 typecheck/ ["ListLiteral" items] => ["App" "ListType" itemType]
   map typecheck items => itemTypes
   ensureConsistency itemTypes => itemType
@@ -382,7 +382,7 @@ I would like to be able to short-circuit typechecking non-dependent functions, a
 This would show up as a soft error that allows further typechecking to proceed.
 Soft errors can be turned into critical errors when we need to be able to trust the result of typechecking, [e.g.]{t=} to know that normalization is going to complete.
 
-```{.js data-lang="tmTTmt"}
+```js{data-lang="tmTTmt"}
 typecheck/ ["App" fn arg] => resultType:
   // Unifies the result with a "Pi" type
   typecheck fn => ["Pi" binder domain codomain]
@@ -417,7 +417,7 @@ branch :: f (Either a b) -> f (a -> c) -> f (b -> c) -> f c
 Is this good notation for lambdas as arguments to functions?
 I donʼt know.
 
-```{.js data-lang="tmTTmt"}
+```js{data-lang="tmTTmt"}
   strictly | [] => r:
     typecheck arg => r
   ! => domain
@@ -425,7 +425,7 @@ I donʼt know.
 
 Macros for currying?
 
-```{.js data-lang="tmTTmt"}
+```js{data-lang="tmTTmt"}
 asdf (!2 append !1 !0 !)
 ```
 
@@ -435,7 +435,7 @@ I want to avoid some problems:
 - Related: figuring out where the lambdas end is also annoying.
   I do like dangling lambdas actually.
 
-```{.js data-lang="tmTTmt"}
+```js{data-lang="tmTTmt"}
 ["if" ($matches-tag arg1) (: MyExprType) "then" "true" "else" ($failed-match)]
 ```
 :::

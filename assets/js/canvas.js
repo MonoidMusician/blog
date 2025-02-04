@@ -11,13 +11,14 @@ function sizeCanvas(canvas) {
   var desired_width = Math.round(display_width / 2)*4;
   canvas.width = desired_width;
   if (canvas.getBoundingClientRect().width != display_width) {
-    console.log("Resetting from ", canvas.width, " to ", original_width, " since ", canvas.getBoundingClientRect().width," != ",display_width);
+    console.warn("Resetting from ", canvas.width, " to ", original_width, " since ", canvas.getBoundingClientRect().width," != ",display_width);
     canvas.width = original_width;
   }
   canvas.height = Math.round(canvas.width / 4)*2;
 }
 function drawPixelGraph(canvas, ...fns) {
   sizeCanvas(canvas);
+  if (!canvas.width || !canvas.height) return;
   justDrawPixelGraph(canvas, detectColor(canvas), fns);
 }
 function detectColor(canvas) {

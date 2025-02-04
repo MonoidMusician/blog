@@ -11,6 +11,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 ## Posts <a class="icon iconoir" href="rss.xml"><?xml version="1.0" encoding="UTF-8"?><svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
 
 - [Perfect Vector Graphics for a QR code](svgqr.html) [2025/01/29]{.dated}
+  <img class="sidenote" src="assets/images/qr_demo1.svg" style="max-height: min(100%, 100vh)">
 
   > You would think that SVG would be a perfect medium for rendering QR codes, but iOS was having trouble rendering the SVGs for the complex, large QR codes I was using (nearly max size).
   > We need to render adjacent modules as a single SVG path.
@@ -20,11 +21,44 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 
   > Details on the connection protocol for [WebRTC over QR](https://webrtc-over-qr.veritates.love/).
   > How is it even possible, and how could you use it too?
+  >
+  > :::Warning
+  > See there for caveats and compatibility and so on.
+  >
+  > Most notably: automatic connection only works on Chromium-based browsers and only for [LAN]{t=} connections.
+  > :::
+  >
+  > ```javascript
+  > rtc.oniceconnectionstatechange = async (e) => {
+  >   if (rtc.iceConnectionState === "checking") {
+  >     const stats = [...(await rtc.getStats()).values()];
+  >     const { usernameFragment: fingerprint } = stats
+  >       .find(s => s.type === 'remote-candidate');
+  >     const sdp = `
+  >       ...
+  >       a=ice-ufrag:${fingerprint.replaceAll(':','')}
+  >       a=ice-pwd:${AGREED_UPON_PASSWORD}
+  >       a=fingerprint:sha-256 ${fingerprint}
+  >       ...
+  >     `;
+  >     rtc.setRemoteDescription({ type: 'answer', sdp });
+  >   }
+  > };
+  > ```
 
 - [Code golf for computing a 32-byte QR code!](qrinqr.html) [2024/12/20]{.dated}
 
   > This JavaScript comes in at 512 ASCII characters when minified!
   > Why would I do such a thing? Well, it helps me bootstrap a WebRTC connection over QR codes!
+  >
+  > ```javascript{.wrap}
+  > s=420+(U=f[F='replace'](/:/g,''))+0
+  > d=[]
+  > a=[u=1];z=[1/0]
+  > for(i=0;d[i/2]="0x"+s[i]+s[++i],i<511;r=[...d])z[a[i]=u=2*u^(u>127)*285]??=i
+  > for(k=35;Z=+r[i=0],--k;V={})for({abs:B,max:X,min:N}=Math;i<34;t=(x,y=x)=>X(B(x-i),B(y-j)))d[34+i]=r[i]=a['\xFBC.=vF@^ -'.charCodeAt(i)+z[Z]]^r[++i]
+  > for(i=j=24;~j;j-=j%2^j>6?1:i<u|i-u>24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&0)V[[i,j]]=i-8&&j-8||16<i+j&i+j<25?"101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(i-6&&j-6&&d[k/8|0]>>7-k++%8&1)^(i+j)%2:4588023>>(i-8?24-i:j)&1
+  > ```
 
 - [Design your programming languages right!](design_it_right.html) [2024/12/16]{.dated}
 
@@ -83,6 +117,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   > - Implemented using semilattices ([monoids](version_solver.html#monoids-monoids-everywhere)).
 
 - [Impossible Bézier Calligraphy: Approximating cubic nibs drawn along cubic strokes](bezier_calligraphy.html) [2022/09/18 – 2023/04/23]{.dated}
+  <img class="sidenote" src="assets/images/calligraphy_demo1.svg" style="max-height: min(100%, 100vh)">
 
   > Given a pen nib of some shape, what composite shape is produced when that pen is drawn along any particular path?
   > If the inputs are cubic Bézier curves, is the output as well?
@@ -99,6 +134,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   > Alternatively, it can serve as a playground to test out hypotheses about grammars, see exactly where things go wrong when conflicts occur, and what to do to fix those errors.
 
 - [Eudoxus Real Numbers as Slopes of Pixelated Graphs](Eudoxus.html) [2022/05/10 – 2022/07/20]{.dated}
+  <canvas data-graph="[x => Math.round(2*Math.round(Math.round(x/2) + 2)), x => 3 + Math.round(x/Math.PI) - Math.round(x/Math.E), x => Math.round(-24*x/43)]" class="pixelated sidenote" width="200" height="100"></canvas>
 
   > This is a post on constructing real numbers without constructing rational numbers. Along the way the rationals will sort of be constructed, or at least heavily implied, but they donʼt directly figure into the definition! Instead all we need is functions from integers to integers.
   >

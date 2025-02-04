@@ -89,7 +89,7 @@ We write the dependent version as `Π ~mode1:(i : I), ~mode0:O(i)`.
 
 Since normal function applications _chk_ their argument, we have this equation for reasoning about modes (the only equation I can think of?):
 
-```{.agda data-lang=Pseudo}
+```agda{data-lang=Pseudo}
 ~syn:(A → B)
 ===============
 ~chk:A → ~syn:B
@@ -104,7 +104,7 @@ Thus the argument does not need to be provided, and so we will prefer the first 
 
 Itʼs instructive to consider a bunch of examples to get our bearings:
 
-```{.agda data-lang=Pseudo}
+```agda{data-lang=Pseudo}
 id {A : Type} : ~syn:A → ~syn:A
 iter {A : Type} : Π ~chk:(n : Nat), ~syn:(A → A) → ~syn:(A → A)
 
@@ -168,7 +168,7 @@ Or QTT (Quantitative Type Theory), with quantity 0.
 
 Now that weʼre picking apart types, we might as well throw in overloads.
 
-```{.agda data-lang=Pseudo}
+```agda{data-lang=Pseudo}
 compose {A B C : Type}
   : ~syn:(B → C) → ~syn:(A → B) → ~syn:(A → C)
   : ~syn:(B → C) → ~chk:(A → B) → ~chk:(A → C)

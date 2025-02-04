@@ -170,7 +170,7 @@ This `checkConsistency`{.purescript} function was sufficient for Dhall as curren
 
 Simplified [function application rule](https://github.com/dhall-lang/dhall-lang/blob/master/standard/type-inference.md#functions):
 
-```{.agda data-lang="Type Theory"}
+```agda{data-lang="Type Theory"}
 f : forall (x : A) -> B
 a : A
 _______________________

@@ -29,16 +29,17 @@ There is a hard limit of 2,953 bytes of UTF-8 for QR codes, and I have even less
     return Array.from(crypto.getRandomValues(new Uint8Array(32)), x=>x.toString(16).padStart(2,'0')).join(":").toUpperCase();
   }
   function display(f) {
-    let s,d,u,a,z,i,r,x,k,Z,V,t,j,o;
+    let s,d,u,a,z,i,r,x,k,Z,V,t,j,o,B,X,N;
     s=420+f.replaceAll(':','')+0
     d=[]
     a=[u=1];z=[1/0]
-    for(i=0;d[i/2]="0x"+s[i]+s[++i],i<512;r=[...d])z[a[i]=(x=2*a[i-1])^(x>255)*285]??=i
-    for(k=35;Z=+r[i=0],--k;V={})for(var{abs:B,max:X,min:N}=Math;i<34;t=(x,y=x)=>X(B(x-i),B(y-j)))d[34+i]=r[i]=a['\xFBC.=vF@^ -'.charCodeAt(i)+z[Z]]^r[++i]
-    for(i=j=24;~j;j-=j%2^j>6?1:i<u|i-u>24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&0)V[[i,j]]=i-8&&j-8||16<i+j&i+j<25?"101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(i-6&&j-6&&d[k/8|0]>>7-k++%8&1)^(i+j)%2:4588023&1<<(i-8?24-i:j)
+    for(i=0;d[i/2]="0x"+s[i]+s[++i],i<511;r=[...d])z[a[i]=u=2*u^(u>127)*285]??=i
+    for(k=35;Z=+r[i=0],--k;V={})for({abs:B,max:X,min:N}=Math;i<34;t=(x,y=x)=>X(B(x-i),B(y-j)))d[34+i]=r[i]=a['\xFBC.=vF@^ -'.charCodeAt(i)+z[Z]]^r[++i]
+    for(i=j=24;~j;j-=j%2^j>6?1:i<u|i-u>24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&0)V[[i,j]]=i-8&&j-8||16<i+j&i+j<25?"101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(i-6&&j-6&&d[k/8|0]>>7-k++%8&1)^(i+j)%2:4588023>>(i-8?24-i:j)&1
     o='';
-    for(i=0;i<25;i++)for(o+=i?'\n':'',j=0;j<25;)o+=+V[[i,j++]]?'\u2588':' '
-    document.getElementById("demo-output").textContent=o;
+    for(;~i;i--)for(o+=`
+`,j=25;j--;)o+=`<b style=opacity:${V[[i,j]]}>\u2588</b>`
+    document.getElementById("demo-output").innerHTML=o;
   }
   var input = document.getElementById("demo-input");
   display(input.value = randomHex());
@@ -48,13 +49,13 @@ There is a hard limit of 2,953 bytes of UTF-8 for QR codes, and I have even less
 :::
 
 :::full-width
-```javascript
+```javascript{.wrap}
 s=420+(U=f[F='replace'](/:/g,''))+0
 d=[]
 a=[u=1];z=[1/0]
-for(i=0;d[i/2]="0x"+s[i]+s[++i],i<511;r=[...d])z[a[u*=2,i]=u^=(u>255)*285]??=i
-for(k=35;Z=+r[i=0],--k;V={})for(var{abs:B,max:X,min:N}=Math;i<34;t=(x,y=x)=>X(B(x-i),B(y-j)))d[34+i]=r[i]=a['\xFBC.=vF@^ -'.charCodeAt(i)+z[Z]]^r[++i]
-for(i=j=24;~j;j-=j%2^j>6?1:i<u|i-u>24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&0)V[[i,j]]=i-8&&j-8||16<i+j&i+j<25?"101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(i-6&&j-6&&d[k/8|0]>>7-k++%8&1)^(i+j)%2:4588023&1<<(i-8?24-i:j)
+for(i=0;d[i/2]="0x"+s[i]+s[++i],i<511;r=[...d])z[a[i]=u=2*u^(u>127)*285]??=i
+for(k=35;Z=+r[i=0],--k;V={})for({abs:B,max:X,min:N}=Math;i<34;t=(x,y=x)=>X(B(x-i),B(y-j)))d[34+i]=r[i]=a['\xFBC.=vF@^ -'.charCodeAt(i)+z[Z]]^r[++i]
+for(i=j=24;~j;j-=j%2^j>6?1:i<u|i-u>24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&0)V[[i,j]]=i-8&&j-8||16<i+j&i+j<25?"101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(i-6&&j-6&&d[k/8|0]>>7-k++%8&1)^(i+j)%2:4588023>>(i-8?24-i:j)&1
 ```
 :::
 
@@ -350,7 +351,7 @@ Of course, most of the journey of how this code evolved and came out, what I was
       for(i=j=24;d[34+k]=r[k],~j;j-=j%2^j>6?1:i<u|i-u>24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&0)V[[i,j]]=i-8&&j-8||16<i+j&i+j<25?"101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(i-6&&j-6&&d[k/8|0]>>(7-k++%8)&1)^(i+j)%2:4588023&1<<(i-8?24-i:j)
       ```
 
-  #. 518 characters (final? polished? edition):
+  #. 518 characters:
 
       ```javascript
       s=420+(U=f[F='replace'](/:/g,''))+0
@@ -361,6 +362,17 @@ Of course, most of the journey of how this code evolved and came out, what I was
       for(i=j=24;~j;j-=j%2^j>6?1:i<u|i-u>24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&0)V[[i,j]]=i-8&&j-8||16<i+j&i+j<25?"101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(i-6&&j-6&&d[k/8|0]>>7-k++%8&1)^(i+j)%2:4588023&1<<(i-8?24-i:j)
       ```
 
+  #. 502 characters:
+
+      ```javascript
+      s=420+(U=f[F='replace'](/:/g,''))+0
+      d=[]
+      a=[u=1];z=[1/0]
+      for(i=0;d[i/2]="0x"+s[i]+s[++i],i<511;r=[...d])z[a[i]=u=2*u^(u>127)*285]??=i
+      for(k=35;Z=+r[i=0],--k;V={})for({abs:B,max:X,min:N}=Math;i<34;t=(x,y=x)=>X(B(x-i),B(y-j)))d[34+i]=r[i]=a['\xFBC.=vF@^ -'.charCodeAt(i)+z[Z]]^r[++i]
+      for(i=j=24;~j;j-=j%2^j>6?1:i<u|i-u>24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&0)V[[i,j]]=i-8&&j-8||16<i+j&i+j<25?"101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(i-6&&j-6&&d[k/8|0]>>7-k++%8&1)^(i+j)%2:4588023>>(i-8?24-i:j)&1
+      ```
+
   And as an addendum since you were nice enough to scroll through here, the silly code that renders it to HTML!
 
   ```html
@@ -369,7 +381,7 @@ Of course, most of the journey of how this code evolved and came out, what I was
 
   ```javascript
   o=f+'<pre>'
-  for(i=0;i<25;i++)for(o+='\n',j=0;j<25;)o+=+V[[i,j++]]?'\u2588':' '
+  for(;~i;i--)for(o+='\n',j=25;j--;)o+=`<b style=opacity:${V[[i,j]]}>\u2588</b>`
   document.body.innerHTML=o
   ```
 

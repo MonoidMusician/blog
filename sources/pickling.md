@@ -545,7 +545,7 @@ It has some metaprogramming facilities by default, plus I prototyped some more o
 
 Finally it has this one special function: `id(obj)`{.javascript}.
 It returns a string representation of the (stable) pointer for any object!
-```{.javascript data-lang=Nasal}
+```javascript{data-lang=Nasal}
 >>> id([])
 'vec:0x7fea11014c40'
 ```

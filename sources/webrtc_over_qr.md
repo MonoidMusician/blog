@@ -84,19 +84,19 @@ Here are the steps for basic connection establishment:
 
 #. Guest starts setting up its own side of the peer connection
 
-    ```{.javascript data-lang="Guest JS"}
+    ```javascript{data-lang="Guest JS"}
     var rtc = new RTCPeerConnection($TEMPLATE_OPTIONS);
     ```
 
 #. Guest sets the offer using the [SDP]{t=} from the host (can be taken verbatim, maybe preprocessed a little bit by the host to trim candidates, useless information, or whatever)
 
-    ```{.javascript data-lang="Guest JS"}
+    ```javascript{data-lang="Guest JS"}
     rtc.setRemoteDescription({type:'offer',sdp:$TEMPLATE_OFFER})
     ```
 
 #. Guest creates its own answer [SDP]{t=}, and modifies it to exfiltrate the fingerprint and override the password
 
-    ```{.javascript data-lang="Guest JS"}
+    ```javascript{data-lang="Guest JS"}
     rtc.createAnswer().then({ sdp } => {
       // Extract the fingerprint from the SDP
       var fingerprint = /fingerprint:sha-256 (.+)/.exec(sdp)[1];
@@ -114,7 +114,7 @@ Here are the steps for basic connection establishment:
 
 #. Guest starts waiting for a data channel, which it will `eval`{.js} messages from
 
-    ```{.javascript data-lang="Guest JS"}
+    ```javascript{data-lang="Guest JS"}
     var dc;
     rtc.ondatachannel = ev => {
       dc = ev.channel;

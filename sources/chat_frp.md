@@ -55,7 +55,7 @@ that's the basic lay of the land, next i'll figure out what contributions i want
 
 the big problem I want to solve is this:
 
-```{.haskell data-lang="PureScript"}
+```haskell{data-lang="PureScript"}
 let
   source :: Event Int = ...
 
@@ -74,7 +74,7 @@ if `source` emits `1, 2, 4`, what does `addSelf` emit?
 
 because it receives separate left and right events:
 
-```{.js data-lang=""}
+```js{data-lang=""}
 receive 1 on left  -> nothing on right yet, so no output
 receive 1 on right -> emit 1+1 = 2
 receive 2 on left  -> emit 2+1 = 3

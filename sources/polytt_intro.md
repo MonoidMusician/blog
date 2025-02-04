@@ -150,7 +150,7 @@ The essential data underlying a polynomial functor `P`{.agda data-lang=PolyTT} i
 
 We write a polynomial as a summation:
 
-```{.agda data-lang=PolyTT}
+```agda{data-lang=PolyTT}
 Σ (i : base P), y^(fib P i)
 
 -- A polynomial can be written in standard form
@@ -162,7 +162,7 @@ def Poly-eta (P : Poly)
 
 From this essential data, we can construct the corresponding functor:
 
-```{.agda data-lang=PolyTT}
+```agda{data-lang=PolyTT}
 -- Interpret a Poly as a functor Type → Type
 def ofP (P : Poly) : Type → Type :=
   -- Take an actual type as a parameter
@@ -190,7 +190,7 @@ But we bundle this as a single mapping `f : Π (p : base P), Σ (q : base q), (f
 
 Again, from this data we really want to get a natural transformation out of it:
 
-```{.agda data-lang=PolyTT}
+```agda{data-lang=PolyTT}
 -- Interpret a morphism as a natural transformation
 def ofM (P Q : Poly) : P ⇒ Q → Π (Y : Type), ofP P Y → ofP Q Y :=
   λ m Y (p , v) →
@@ -215,14 +215,14 @@ But when we talk about wiring diagrams, the positive component is the output, an
 This is why we use a leftwards arrow to write it: `(p+ <~ p-)`{.agda data-lang=PolyTT}.
 
 If we have a polynomial `P`{.agda data-lang=PolyTT}, then introducing the box `(p+ <~ p-)`{.agda data-lang=PolyTT} will give us two new variables in scope:
-```{.agda data-lang=PolyTT}
+```agda{data-lang=PolyTT}
 + p+ : base P
 - p- : fib P p+
 ```
 
 A morphism of polynomials is written as a function from one box to another:
 
-```{.agda data-lang=PolyTT}
+```agda{data-lang=PolyTT}
 λ (p+ <~ p-) =>
   return (p+ <~ p-)
 ```
@@ -230,7 +230,7 @@ A morphism of polynomials is written as a function from one box to another:
 You can fulfill an obligation by writing to a sink.
 
 You can split sinks of (dependent) pairs into individual sinks:
-```{.agda data-lang=PolyTT}
+```agda{data-lang=PolyTT}
 λ (p+ <~ pq-) =>
   -- Split
   let (p- , q-) := pq-;
@@ -276,7 +276,7 @@ No normal form for programs this way, just the base/fib data.
 
 Given a sink whose type is a sigma type:
 
-```{.agda data-lang=PolyTT}
+```agda{data-lang=PolyTT}
 A : Type
 B : A → Type
 pq⁻ : (Σ (a : A), B a)⁻
@@ -284,14 +284,14 @@ pq⁻ : (Σ (a : A), B a)⁻
 
 If you unpair that sink:
 
-```{.agda data-lang=PolyTT}
+```agda{data-lang=PolyTT}
 let⁻ (p⁻ , q⁻) := pq⁻;
 ......
 ```
 
 For the rest of the program, you end up with two sinks and write to the original sink:
 
-```{.agda data-lang=PolyTT}
+```agda{data-lang=PolyTT}
 p⁻ : (A)⁻
 q⁻ : (B⁻ (borrow p⁻))⁻
 pq⁻ ← (borrow p⁻ , borrow q⁻)
@@ -306,7 +306,7 @@ And then their values are immediately borrowed and written as a pair (now a posi
 # Code from talk
 
 
-```{.agda data-lang=PolyTT}
+```agda{data-lang=PolyTT}
 import Data::Polynomial::Fin
 
 -- ⊗ × ◁
