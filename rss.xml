@@ -10,6 +10,545 @@
 <docs>https://www.rssboard.org/rss-specification</docs>
 <generator>pandoc-rss</generator>
 <item>
+<title>Perfect Vector Graphics for a QR code</title>
+<pubDate>Wed, 29 Jan 2025 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/svgqr.html</guid>
+<description><![CDATA[<p>You would think that SVG would be a perfect medium for rendering QR codes (or other 2D matrix codes): it is perfectly scalable so the renderer can decide how best to render it at each resolution, thereʼs no need to mess around with hints like <a href="https://developer.mozilla.org/en-US/docs/Web/CSS/image-rendering"><code class="css">image-rendering: pixelated;</code></a>, and so there should be no compromises, right? Right??</p>
+<p>Well the quality of SVG renderers really varies, and iOS was having trouble rendering the SVGs for the complex, large QR codes I was using (nearly max size). Specifically, it was failing to render adjacent black modules<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a> of the QR code as contiguous blocks of rendered pixels: in fact, entire rows and columns “between” the modules were consistently white all the way across, but only a single screen pixel in width. (Some form of this problem appeared at every zoom level I tried.)</p>
+<p>Presumably this is due to some rounding assumptions the renderer made when dealing with many objects that had fill but no stroke. After all, I had chosen the simplest method of <em>generating</em> the SVG: each module became a <code class="dimension">1x1</code> filled rectangle in the SVG, which was then sized to fit on the screen. Again, one would naïvely think that having it on integer coordinates in the SVG coordinate space may help a renderer realize they were adjacent, certainly there were no floating point problems before scaling, but for whatever reason, this did not in fact help.</p>
+<p>So in the end, maybe it wasnʼt so surprising that we are obligated to help the renderer along.</p>
+<p>How best to do this?</p>
+<p>Well, the answer (and about the only thing we can try) is to teach the renderer that there are no gaps between adjacent modules. We need to render adjacent modules as a single SVG path, and modules adjacent to those, and so on: the <a href="https://en.wikipedia.org/wiki/Connected_component_(graph_theory)"><em>connected components</em></a> of the QR code.</p>
+<p>So there are two core steps: finding the connected components of the matrix, and rendering each component into the SVG as a single path.</p>
+<p>As one example, the recognition and locating features of the QR code are nested squares, so each inner square and each outer square will now be a single path each, forcing the renderer to render all of their modules contiguously, helping ensure there are no glitchy gaps. Other patterns are essentially random, and in fact are meant to be somewhat unpredictable<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a>.</p>
+<div>
+<noscript>
+<img src="assets/images/qr_demo1.svg">
+</noscript>
+<div id="demo_qr" class="fit" data-qr="https://webrtc-over-qr.veritates.love">
+
+</div>
+<div class="scriptful">
+<label class="input-wrapper" style="width: 100%"> <span>QR text</span> <input id="demo_input" class="code" style="width: 100%; box-sizing: border-box; text-overflow: ellipsis" value="https://webrtc-over-qr.veritates.love"> </label> <label class="input-wrapper"> <span>Margin</span> <input id="demo_margin" class="code" style="width: 50px" type="number" min="0" max="4" value="1"> </label> <label> <input id="demo_debug" type="checkbox" checked=""> <span>Debug</span> </label> <label> <input name="demo_ecc" type="radio" checked="" value="L"> <span>L</span> </label> <label> <input name="demo_ecc" type="radio" value="M"> <span>M</span> </label> <label> <input name="demo_ecc" type="radio" value="Q"> <span>Q</span> </label> <label> <input name="demo_ecc" type="radio" value="H"> <span>H</span> </label>
+<div style="display: flex; justify-content: space-around; margin-top: 1em">
+<div>
+Components: <span data-output="components.length">57</span>
+</div>
+<div>
+Version: <span data-output="version.versionNumber">3</span>
+</div>
+<div>
+Codewords: <span data-output="version.totalCodewords">70</span>
+</div>
+<div>
+Mask pattern: <span data-output="maskPattern">7</span>
+</div>
+<div>
+[<a id="demo_download" download="QR.svg">Download</a>]
+</div>
+</div>
+</div>
+</div>
+<script src="assets/js/zxing.min.js"></script>
+<script src="assets/js/moreqr.js"></script>
+<script>
+  "use strict";
+  window.addEventListener('DOMContentLoaded', function() {
+    Ve.forQuery('[data-qr]', (e) => {
+      MoreQR.debug = true;
+      const matrix = ZXing.QRCodeEncoder.encode(e.dataset.qr, ZXing.QRCodeDecoderErrorCorrectionLevel.L).getMatrix();
+      const components = MoreQR.matrix2components(matrix);
+      const paths = components.map(MoreQR.component2path);
+      const margin = 4;
+      const viewBox = `${-margin} ${-margin} ${matrix.getWidth()+2*margin} ${matrix.getHeight()+2*margin}`;
+      const svg = Ve.SVG.svg.qrcode(
+        { attrs: { viewBox } },
+        paths,
+      );
+      if (e.dataset.viewbox) svg.attrs.viewBox = e.dataset.viewbox;
+      e.clearChildren(); // from verity.js <3
+      e.appendChild(svg);
+    });
+    let debounce = 0, generation;
+    function demo() {
+      const now = Date.now();
+      if (generation || now < debounce+200) {
+        generation && clearTimeout(generation);
+        generation = setTimeout(() => { generation = undefined; demo() }, 250);
+        debounce = now;
+        return;
+      } else { debounce = now; generation = undefined; }
+      const ecc = document.querySelector('[name=demo_ecc]:checked')?.value ?? 'L';
+      MoreQR.debug = Ve.ById.demo_debug?.checked ?? true;
+      const encoded = ZXing.QRCodeEncoder.encode(Ve.ById.demo_input.value, ZXing.QRCodeDecoderErrorCorrectionLevel[ecc]);
+      const matrix = encoded.getMatrix();
+      const components = MoreQR.matrix2components(matrix);
+      const paths = components.map(MoreQR.component2path);
+      console.log(Object.assign(encoded, { components }));
+      const margin = Ve.ById.demo_margin?.value ?? 1;
+      const viewBox = `${-margin} ${-margin} ${matrix.getWidth()+2*margin} ${matrix.getHeight()+2*margin}`;
+      const svg = Ve.SVG.svg.qrcode(
+        { attrs: { viewBox } },
+        paths,
+      );
+      if (!MoreQR.debug) svg.style.background = 'white';
+      Ve.ById.demo_qr.clearChildren();
+      Ve.ById.demo_qr.appendChild(svg);
+      // Download link
+      const xml = new XMLSerializer().serializeToString(svg);
+      const href = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml' }));
+      Ve.ById.demo_download.href = href;
+      // Outputs
+      Ve.forQuery("[data-output]", e => {
+        let data = encoded;
+        for (const key of e.dataset.output.split(".")) data = data[key];
+        e.textContent = String(data);
+      });
+    }
+    Ve.ById.demo_input.oninput = demo;
+    Ve.ById.demo_debug.oninput = demo;
+    Ve.ById.demo_margin.oninput = demo;
+    Ve.forQuery('[name=demo_ecc]', (e) => e.oninput = demo);
+    demo();
+  });
+</script>
+<style>
+  div[data-qr] > svg {
+    display: block;
+    margin: auto;
+    max-width: 100%;
+    max-height: 100%;
+  }
+  div.fit > svg {
+    max-width: min(100%, 100vw);
+    max-height: min(100%, 100vh);
+    max-width: min(100%, 100svw);
+    max-height: min(100%, 100svh);
+  }
+  div.smol > svg {
+    max-width: 100px;
+    max-height: 100px;
+  }
+  div.medium > svg {
+    max-width: 300px;
+    max-height: 300px;
+  }
+  div[data-qr][data-viewbox] {
+    margin: 20px;
+  }
+</style>
+<noscript>
+<style>.scriptful { display: none }</style>
+</noscript>
+<h2 id="calculate-connected-components">Calculate connected components</h2>
+<p>Calculating the connected components is fairly straightforward, so I spent some time trying to optimize it.</p>
+<p>Instead of operating cell-by-cell in the matrix, we process each row by detecting a run of black modules, which we will patch together to form the components. A component maps which row this takes place on with all of the runs in the component, and links back to the accumulated component.</p>
+<p>To match up entries from each row, we scan across the previous row and look for columns that overlap with the current one: if <code class="js">[j_0, k_0]</code> is a run from the previous row, and <code class="js">[j_1, k_1]</code> is the run we are currently looking at, then they overlap when <code class="js">k_0 &gt; j_1 &amp;&amp; j_0 &lt; k_1</code>.</p>
+<p>When we find an overlap, we add this new run into the connected component. However, it may also overlap with additional runs: if they do not already belong to the same connected component, we need to merge the connected components.</p>
+<pre class="javascript"><code>MoreQR.matrix2components = function matrix2components(matrix) {
+  const comps = []; // rows of horizontally connected components
+  for (let i=0; i&lt;matrix.getWidth(); i++) {
+    comps.push([]);
+    let l = 0;
+    for (let j=0, k; j&lt;matrix.getHeight(); j=k) {
+      if (!matrix.get(i, j)) { k = j+1; continue }
+      for (k=j; k&lt;matrix.getHeight() &amp;&amp; matrix.get(i, k); k++) {}
+      const c = comps.at(-2); // previous row of horiz-connected components
+      const len = c?.length;
+      let f = {}; // found component, `f = { [i]: [[j,k,f], ...], ... }`
+      // scan while the upper bound is less than the current lower bound
+      while (l &lt; len &amp;&amp; c[l][1] &lt;= j) l++;
+      if (l &lt; len &amp;&amp; c[l][0] &lt; k) {
+        // grab the existing connected component
+        f = c[l][2];
+        // fuse it with other components that are also connected to `[j,k]`
+        while (l+1 &lt; len &amp;&amp; c[l+1][0] &lt; k) {
+          l++;
+          const f2 = c[l][2];
+          if (f2 === f) continue;
+          // Copy everything over and update the references
+          for (const row in f2) {
+            (f[row] = f[row] || []).push(...f2[row]);
+            for (const h of f2[row]) h[2] = f;
+          }
+        }
+      }
+      const t = [j, k, f]; // lower, upper (half-open), reference to its connected component
+      (f[i] = f[i] || []).push(t); // add it to the connected component
+      comps.at(-1).push(t);
+    }
+  }
+  // Gather all the unique components!
+  const components = [...new Set(comps.flatMap(row =&gt; row.map(t =&gt; t[2])))];
+  return components;
+}</code></pre>
+<h2 id="draw-them">Draw them</h2>
+<p>Once we have the modules of each component grouped together, we need to render it to an SVG element, using <code class="svg">&lt;path d="..."/&gt;</code> and four of the <a href="https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/d#path_commands">SVG path commands</a>:</p>
+<ul>
+<li><code>M</code> for move, to set the initial position</li>
+<li><code>h</code> for relative horizontal movements</li>
+<li><code>v</code> for relative vertical movements</li>
+<li><code>Z</code> to close the path</li>
+</ul>
+<p>Like the naïve approach, we will use SVG elements with fill and no stroke, and very conveniently, SVG provides a way to cut out the interiors of connected components<a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a>: the default <a href="https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/fill-rule"><code class="svg">fill-rule="nonzero"</code></a> is sufficient to allow this cookie cutter approach.</p>
+<p>For both horizontal and vertical movements, we <em>could</em> specify them as a bunch of single-module movements … but we might as well put in the effort to coalesce them, and this will generate a much smaller SVG source as well.</p>
+<h3 id="outer-path">Outer Path</h3>
+<p>The basic idea is that we will start at some point along the outside of the component, might as well be the leftmost module of the first row of the component. And then we will walk around the outside of the shape, tracing the outline and recording the steps to draw it along the way: the first step is horizontal to the right, then we will turn right so that we are moving down, and proceed apace.</p>
+<p>You can think of it as operating like those cute little line-following robots, that zip around a path, making decisions based upon whether they bump into the left or right of a line. In this case, we want to be following a boundary between black and white modules, instead of a thin line.</p>
+<p>A little bit of mathematical intuition (topology?) tells us that we will end up right back where we began, exactly when we finish the loop. That is, connected components have nice perimeters, and operating in discrete space makes it really easy for us.</p>
+<p>So thereʼs a little bit of logic to implement it correctly, but the idea is very simple.</p>
+<div class="Bonus">
+<p>It turns out that the SVG representation of paths works very conveniently for this algorithm.</p>
+<p>Sometimes there are weird edge cases and such when dealing with SVG paths. Like sometimes you just have odd code to handle the first or last item in the array. And <em>reversing</em> a path is a pain: you canʼt just reverse the commands, you have to know where they start and end to patch them (and deal with relative coordinates).</p>
+<p>But here, since we are describing our algorithm as walking a path around the outside of the component, it corresponds quite nicely with the SVG draw commands which operate in that sense too.</p>
+</div>
+<h4 id="walking-variables">Walking variables</h4>
+<p>These variables track where we are (and which direction we are facing) as we walk along the perimeter.</p>
+<pre class="javascript"><code>// `i` for the first index: row (a.k.a. `y` in the SVG)
+let i = +Object.keys(component)[0];
+// `j` for the second index: column (a.k.a. `x` in the SVG)
+let j = component[i][0][0];
+// `d` for direction: what direction are we moving in (+i, -i, +j, -j)
+let d = [0,1];</code></pre>
+<p>Then for each step, we calculate some helper variables.</p>
+<pre class="javascript"><code>// vertical or horizontal movement?
+const v = +!!d[0];
+// relative directions: `l` for left, `r` for right
+const l = [-d[1],d[0]];
+const r = [d[1],-d[0]];</code></pre>
+<h4 id="center-vs-perimeter">Center vs perimeter</h4>
+<p>The fussiest detail is that we consider modules as an integer grid based on their top left coordinate, but we want to trace around their perimeter. That is, the first module at <code>0,0</code> has a perimeter between <code>0,0</code> and <code>1,1</code>: as an SVG path, that is <code class="svg">&lt;path d="M0,0 h1 v1 h-1 Z"&gt;</code>. When we are tracing along the bottom, from <code>1,1</code> back to <code>0,1</code>, we want to make sure we are still inspecting the module at <code>0,0</code> in determining where to go next (in this case, move <code class="svg">h-1</code> and then turn the corner).</p>
+<pre class="javascript"><code>// We want to inspect *this* point: because we are walking along the
+// left edge of the outline, the center of the pixel we are
+// inspecting is half a forward and half a right move away,
+// and then we shift it by `-[0.5,0.5]` back to the integer grid
+const c = [i+d[0]/2+r[0]/2-0.5, j+d[1]/2+r[1]/2-0.5];</code></pre>
+<h4 id="movement-patterns">Movement patterns</h4>
+<pre class="javascript"><code>// If the current cell is blank, we wrap around to the right to
+// get back on track.
+if (!grid[c]) {
+  // Buffered line drawing
+  if (i !== i0 || j !== j0) path += `hv`[v]+([j,i][v] - last);
+  last = [i,j][v];
+  // Turn to the right
+  d = r;
+// Otherwise we might want to swing out to the left, if there is a
+// filled cell there.
+} else if (grid[[c[0]+l[0], c[1]+l[1]]]) {
+  // Buffered line drawing
+  if (i !== i0 || j !== j0) path += `hv`[v]+([j,i][v] - last);
+  last = [i,j][v];
+  // Turn to the left
+  d = l;
+// Finally we proceed ahead. This is where we draw lines conceptually,
+// although we buffer it so we are not stepping pixel by pixel.
+} else {
+  if (visited[[i,j,d]]) continue OUTER;
+  visited[[i,j,d]] = true;
+  const C = [i+d[0]/2+r[0]/2, j+d[1]/2+r[1]/2];
+  i += d[0];
+  j += d[1];
+}</code></pre>
+<div class="smol" data-qr="demo" data-viewbox="0 0 7 7">
+
+</div>
+<div class="smol" data-qr="https://webrtc-over-qr.veritates.love" data-viewbox="0 17 4 4">
+
+</div>
+<h3 id="inner-paths">Inner Paths</h3>
+<p>This is where we get very lucky: we can reuse the same algorithm, and it even runs in the correct direction to make the default <code class="svg">fill-rule="nonzero"</code> work! (Otherwise we would have to use <code class="svg">fill-rule="evenodd"</code>, or reverse the algorithm for the inner paths.)</p>
+<p>A sprinkle more of topological knowledge tells us that the connected component may have a series of holes punched out of it, but it is not infinitely nested: any further black modules inside will be considered a separate connected component.</p>
+<p>So yeah, all that we really need to do is to find where holes start and trace around them like normal.</p>
+<h4 id="detect-holes">Detect holes</h4>
+<p>It is pretty simple to come up with spots that are missing from the interior of the connected component.</p>
+<p>These arenʼt exactly the holes, though: several of them might belong to the same hole.</p>
+<p>However!, since we are already walking the shape in order to turn it into a path, we just need to toss out duplicates: if we reach the same spot and direction along the way, weʼve already traced this hole and do not need to continue.</p>
+<p>In the debug mode, we mark the candidate holes with circles. You can see that most holes end up along outside edges, and in this example, the three holes that are on the inside edge are redundant with each other.</p>
+<div class="medium" data-qr="https://webrtc-over-qr.veritates.love" data-viewbox="19 11 10 18">
+
+</div>
+<pre class="javascript"><code>// We initialize the grid, indexed with `grid[[i,j]]`.
+const grid = {};
+// We also keep track of possible holes inside the connected component,
+// which we need to punch out of the SVG path. This records places
+// we should start looking for a hole, but these start points are
+// likely to result in the same holes, or may even be on the exterior,
+// where we were never going to draw anyways.
+const holes = [];
+// So to prune holes, we throw out a hole if we end up revisiting
+// the same exact edge of the cell (i.e. same cell, same direction),
+// since that is just retracing our steps at that point.
+const visited = {};
+
+// The connected component is of the form `{ [i]: [[j,k], ...], ... }`,
+// where `i` is the row, `j` is the first column of a contiguous run,
+// and `k` is past the last column of the run: that is, the cell of
+// `grid[[i,j]]` is filled while `grid[[i,k]]` is blank.
+//
+// We also assume that its keys are sorted, since they are visited
+// in order by the above algorithm at least.
+const entries = Object.entries(component).map(([i,row]) =&gt; ([+i,row]));
+for (const [i, row] of entries) {
+  for (const run of row) {
+    // Fill in the cells of the run, `run[0] &lt;= j &lt; run[1]`
+    for (let j = run[0]; j &lt; run[1]; j++) {
+      grid[[i,j]] = true;
+    }
+    // Look for potential holes: this is easy, because it just means
+    // that we have more than one run in the row.
+    if (run !== row.at(-1)) {
+      // Trim off the first and last rows for efficiency, since we
+      // know they are exposed to the air, so to speak.
+      if (row !== entries.at(0)[1] &amp;&amp; row !== entries.at(-1)[1]) {
+        // This is a location where the hole may start: ideally it is
+        // the leftmost blank cell of the first row of the hole,
+        // otherwise it will end up being a revisit of the same hole,
+        // but we cannot really know that until we trace its contour.
+        // And then `[1,0]` is the direction to move in.
+        holes.push([i, run[1], [1,0]]);
+      }
+    }
+  }
+}
+</code></pre>
+<h4 id="draw-holes">Draw holes</h4>
+<p>As mentioned, we can reuse the same drawing code for holes as for the outside contour. So the changes to support holes is mostly structural in the code: wrap it in another loop, abort the loop if we encounter a visited path, and collate all of the paths together.</p>
+<pre class="javascript"><code>const paths = [];
+OUTER: for (let startPoint of [[i,j,d], ...holes]) {
+  [i,j,d] = startPoint;
+  let path = `M`+[j,i];
+  // walk along the contour until we are back at the start
+  do {
+    const v, l, r, c; // ... described previously
+    if (!grid[c]) {
+      if (i !== i0 || j !== j0) path += `hv`[v]+([j,i][v] - last);
+      last = [i,j][v];
+      d = r;
+    } else if (grid[[c[0]+l[0], c[1]+l[1]]]) {
+      if (i !== i0 || j !== j0) path += `hv`[v]+([j,i][v] - last);
+      last = [i,j][v];
+      d = l;
+    } else {
+      if (visited[[i,j,d]]) continue OUTER;
+      visited[[i,j,d]] = true;
+      i += d[0];
+      j += d[1];
+    }
+  } while (i !== i0 || j !== j0);
+  // If we did not revisit an edge and thus call `continue OUTER`,
+  // then this path is valid and we will append it to the paths.
+  paths.push(path+`Z`);
+}
+return Ve.SVG.path({ attrs: { d: paths.join('') }});</code></pre>
+<h2 id="finishing-touches">Finishing touches</h2>
+<p>To finish it out, we can compose it all together, using ZXing-JS to assemble the matrix that represents the QR code, turning it into a list of connected components, turning them into SVG paths, and plopping them in an SVG with a margin around it (“quiet zone”).</p>
+<p>I additionally extract the XML, save it to a <code>blob:</code> URL, and render it as an <code class="html">&lt;img&gt;</code> tag. I think this makes it more efficient, but I donʼt really have any data to back that up, just a hope and a wish. But it keeps some data and nodes out of the DOM and hopefully allows the browser to render it more statically, not interactive at all.</p>
+<pre class="javascript"><code>// Better SVG rendering! On some systems, especially iOS, the SVG rendering is
+// not particularly great, and so the QR code can end up glitchy, with white
+// pixels rendered in between contiguous modules. So we fix this by rendering
+// an entire connected component as a single path, so that the rendering engine
+// does not dare put white pixels in between them. Furthermore, we stuff it
+// into an `&lt;img&gt;` tag instead of the `&lt;svg&gt;` to optimize the DOM, rendering?
+function MoreQR(data, ...params) {
+  // Generate the QR matrix as normal
+  const matrix = ZXing.QRCodeEncoder.encode(data, ...params).getMatrix();
+
+  // Get a list of the connected components in the QR code.
+  const components = MoreQR.matrix2components(matrix);
+  // Now we transform each connected component into an SVG path node
+  const paths = components.map(MoreQR.component2path);
+
+  // SVG parameters
+  // Account for the margin (quiet zone)
+  const margin = 4;
+  const viewBox = `${-margin} ${-margin} ${matrix.getWidth()+2*margin} ${matrix.getHeight()+2*margin}`;
+
+  // Stick it into an `&lt;svg&gt;` node
+  const svg = Ve.SVG.svg.qrcode(
+    { attrs: { viewBox } },
+    paths,
+  );
+  // Render it to XML
+  const xml = new XMLSerializer().serializeToString(svg);
+  // Turn it into a `blob:` URL (to be nice to the DOM, hopefully)
+  const src = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml' }));
+
+  // And render it as an `&lt;img&gt;` tag!
+  return Ve.HTML.img.qrcode({ src });
+}</code></pre>
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn1"><p>A module is a pixel unit of the QR code, as opposed to the pixels used when rendering it to a screen.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn2"><p>(look distinct from other features of the QR code)<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn3"><p>so that we do not have to render white on top of the black modules to cancel them out – that just feels conceptually ugly<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>]]></description>
+</item>
+<item>
+<title>WebRTC over QR Connection Protocol</title>
+<pubDate>Sun, 26 Jan 2025 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/webrtc_over_qr.html</guid>
+<description><![CDATA[<p>Details on the connection protocol for <a href="https://webrtc-over-qr.veritates.love/">WebRTC over QR</a>. How is it even possible, and how could you use it too?</p>
+<div class="Warning">
+<p>See there for caveats and compatibility and so on.</p>
+<p>Most notably: automatic connection only works on Chromium-based browsers and only for <span data-t="" data-widget="">LAN</span> connections.</p>
+</div>
+<h2 id="baseline-connection-initiation-happy-path">Baseline connection initiation (happy path ^^)</h2>
+<p>This relies on a particular mechanic that only seems to be available in Chromium: the peer reflexive candidate<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a> is available via <code class="js">RTCPeerConnection.prototype.getStats</code>, which exposes the <span data-t="" data-widget="">ICE</span> username fragment before the host JavaScript sets any answer <span data-t="" data-widget="">SDP</span>.</p>
+<p>We use this as a side-channel to exfiltrate the fingerprint of the guest, which the host must set before the connection will be trusted. This allows for one-way connection establishment, whereas normal signaling processes need to be bidirectional.</p>
+<p>Outside of this happy path, some data will need to be returned from the guest back to the host: always the fingerprint, and then candidate information for <span data-t="" data-widget="">WAN</span> connections (public <span data-t="" data-widget="">IP</span> and public port, as discovered via a <span data-t="" data-widget="">STUN</span> server).</p>
+<p>Here are the steps for basic connection establishment:</p>
+<ol>
+<li><p>Host generates a password that the guest will set as its password for <span data-t="" data-widget="">ICE</span> (<code class="sdp">a=ice-pwd:$TEMPLATE_PASSWORD</code> in the <span data-t="" data-widget="">SDP</span>)</p>
+<pre class="javascript"><code>const AGREED_UPON_PASSWORD = 'this-is-not-a-password+' + String(Math.random()).substring(2);</code></pre>
+<div class="Note">
+<p>Using <a href="https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues"><code class="js">crypto.getRandomValues</code></a> is recommended, but less cute.</p>
+<p>Something like</p>
+<pre class="javascript"><code>function randomHex() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), x=&gt;x.toString(16).padStart(2,'0')).join("").toUpperCase();
+}</code></pre>
+</div></li>
+<li><p>Host starts a peer connection and creates a data channel for it</p>
+<pre class="javascript"><code>// Start creating a peer connection
+var rtc = new RTCPeerConnection(options);
+
+// As the host, we create a data channel immediately, so it is in the offer
+var dc = rtc.createDataChannel('init', { reliable: true });</code></pre></li>
+<li><p>Host creates an offer with all available candidates</p>
+<pre class="javascript"><code>// Create an offer
+var offer = undefined;
+rtc.createOffer().then(async desc =&gt; {
+  // We need to set it locally
+  rtc.setLocalDescription(desc);
+  // Bypass trickle ICE
+  await new Promise(resolve =&gt; {
+    rtc.onicegatheringstatechange = _ =&gt;
+      rtc.iceGatheringState === 'complete' &amp;&amp; resolve();
+  });
+  // The SDP is now updated with ICE candidates
+  offer = rtc.localDescription.sdp;
+});</code></pre></li>
+<li><p>Host generates the JavaScript for the guest, substituting in <code class="js">$TEMPLATE_*</code> variables (the content of the template is given in the following code snippets for the guest)</p>
+<pre class="javascript"><code>const templateJS = `...`; // Obtain the guest template somehow
+const guestJS = templateJS
+  .replace('$TEMPLATE_OPTIONS', options ? `(${options})` : ``)
+  .replace('$TEMPLATE_OFFER', "`"+offer+"`")
+  .replace('$TEMPLATE_PASSWORD', "`"+AGREED_UPON_PASSWORD+"`");</code></pre></li>
+<li><p>Next you have to transport the JavaScript to the guest, <span data-t="" data-widget="">e.g.</span> encode it as an <span data-t="" data-widget="">HTML</span> <code>data:</code> <span data-t="" data-widget="">URI</span> in a <span data-t="" data-widget="">QR</span> code, scan it with a <span data-t="" data-widget="">QR</span> reader that will give you that raw <span data-t="" data-widget="">URI</span>, and paste it into a compatible browser (<strong>not</strong> Firefox on iOS)</p></li>
+<li><p>Guest starts setting up its own side of the peer connection</p>
+<pre class="javascript" data-lang="Guest JS"><code>var rtc = new RTCPeerConnection($TEMPLATE_OPTIONS);</code></pre></li>
+<li><p>Guest sets the offer using the <span data-t="" data-widget="">SDP</span> from the host (can be taken verbatim, maybe preprocessed a little bit by the host to trim candidates, useless information, or whatever)</p>
+<pre class="javascript" data-lang="Guest JS"><code>rtc.setRemoteDescription({type:'offer',sdp:$TEMPLATE_OFFER})</code></pre></li>
+<li><p>Guest creates its own answer <span data-t="" data-widget="">SDP</span>, and modifies it to exfiltrate the fingerprint and override the password</p>
+<pre class="javascript" data-lang="Guest JS"><code>rtc.createAnswer().then({ sdp } =&gt; {
+  // Extract the fingerprint from the SDP
+  var fingerprint = /fingerprint:sha-256 (.+)/.exec(sdp)[1];
+  // Exfiltrate it via `ice-ufrag`
+  sdp = sdp.replace(/(a=ice-ufrag):.+/, '$1:'+fingerprint);
+  // And replace `ice-pwd` with the password the host already knows about
+  sdp = sdp.replace(/(a=ice-pwd):.+/, '$1:'+$TEMPLATE_PASSWORD);
+  // Use this updated answer SDP
+  rtc.setLocalDescription({
+    type:'answer',
+    sdp: sdp,
+  });
+});</code></pre></li>
+<li><p>Guest starts waiting for a data channel, which it will <code class="js">eval</code> messages from</p>
+<pre class="javascript" data-lang="Guest JS"><code>var dc;
+rtc.ondatachannel = ev =&gt; {
+  dc = ev.channel;
+  dc.onmessage = e =&gt; eval(e.data);
+};</code></pre></li>
+<li><p>Host listens for the guest to try to connect, which allows us to finish the connection</p>
+<div class="Warning">
+This only works on Chromium-based browsers! And only over <span data-t="" data-widget="">LAN</span>! (not behind <span data-t="" data-widget="">NAT</span>)
+</div>
+<ul>
+<li>The fingerprint comes from the <code class="sdp">a=ice-ufrag:</code> line</li>
+<li>The password is known, since we asked the guest to set it to the one we chose</li>
+<li>The <span data-t="" data-widget="">SDP</span> does not require many other details (like candidates) since the peer already initiated the connection</li>
+</ul>
+<pre class="javascript"><code>// On Chromium we can see the remote connection that is trying our
+// Offer SDP before we have the right Answer SDP and, most importantly,
+// before we have the fingerprint for its certificate to trust it
+rtc.oniceconnectionstatechange = async (e) =&gt; {
+  if (rtc.iceConnectionState === "checking") {
+    // This `getStats` API is wonky and not fully standardized
+    const stats = [...(await rtc.getStats()).values()];
+    // But we can get the remote candidate and thus the username fragment from it
+    const { usernameFragment: fingerprint } = stats.find(s =&gt; s.type === 'remote-candidate');
+    // Which the guest kindly set to be its fingerprint
+
+    // Most of this Answer SDP is just formality
+    // e.g. the `c=` line is literally ignored but must be present
+    // I believe the ice-{ufrag,pwd} is enough to identify which remote
+    // we are talking about, given that it has attempted to connect
+    // already (that is how we got here after all)
+    const sdp = `
+      v=0
+      o=- 1 2 IN IP4 127.0.0.1
+      s=-
+      t=0 0
+      a=group:BUNDLE 0
+      a=extmap-allow-mixed
+      a=msid-semantic: WMS
+      m=application 9 UDP/DTLS/SCTP webrtc-datachannel
+      c=IN IP4 0.0.0.0
+      a=ice-ufrag:${fingerprint.replaceAll(':','')}
+      a=ice-pwd:${AGREED_UPON_PASSWORD}
+      a=ice-options:trickle
+      a=fingerprint:sha-256 ${fingerprint}
+      a=setup:active
+      a=mid:0
+      a=sctp-port:5000
+      a=max-message-size:262144
+    `.replaceAll(/\n\s+/g,'\n').slice(1); // keep the trailing newline!
+
+    rtc.setRemoteDescription({ type: 'answer', sdp });
+  }
+};</code></pre>
+<div class="Note">
+Note that the host and guest have somewhat/extremely different <span data-t="" data-widget="">SDP</span>s for each other, and this is okay!
+</div></li>
+<li><p>Host waits for the connection to fully open and then sends some JavaScript over the <code class="js">DataChannel</code> to finish bootstrapping the guest</p>
+<pre class="javascript"><code>dc.onopen = () =&gt; {
+  dc.send(`
+    // Your JavaScript code to start the application
+    alert("hi");
+
+    // Remember to clean up from the bootstrapping:
+    // Delete global variables (especially from code golfing)
+    // Remove event listeners to prevent further \`eval()\`
+    rtc.ondatachannel = null;
+    dc.onmessage = null;
+    // Etc.
+
+    // You also should add error handling, since
+    // there was no room for it in the QR code
+  `);
+};</code></pre></li>
+</ol>
+<h2 id="tweaks-and-so-on">Tweaks and so on</h2>
+<p>First of all: to get the JavaScript-in-HTML-in-<code>data:</code> <span data-t="" data-widget="">URI</span> to fit into a QR code with a full <span data-t="" data-widget="">SDP</span>, the JavaScript template needs to be minified a bunch, but it is possible.</p>
+<p>As I mentioned above, outside of this happy path you need to return a fingerprint, and this is what the <a href="https://blog.veritates.love/qrinqr.html">QR in QR</a> code is intended for: with aggressive minification and code golfing, the guest can print a QR code which the host can scan. This is an alright solution for that in a local situation.</p>
+<p>And for <span data-t="" data-widget="">WAN</span> connections, it needs the public <span data-t="" data-widget="">IP</span> address and public port from the <span data-t="" data-widget="">STUN</span> candidate(s). I donʼt really have a great way to return this information yet: itʼs just a bit ugly to write the guest code, it really should be a dedicated mode with a separate template. (<span data-t="" data-widget="">TURN</span> servers<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a> are basically out of scope for this, though it would be possible to add support … but at that point you should almost always set up your own signaling server and use standard solutions, especially since <span data-t="" data-widget="">TURN</span> servers require passwords and are not publicly available because of the bandwidth considerations.)</p>
+<p>Smaller details include:</p>
+<ul>
+<li>I set the username fragment to be the fingerprint without colons, but putting them back in requires code that is just ugly to present here. (Thanks JavaScript.)</li>
+<li>The first <code class="js">eval</code> kicks off a multi-stage bootstrapping, first loading the stage 1 script, which runs itself on the guest, then it calls stage 2 (which is one of the scripts copied by stage 1), and finally it is ready to call the main app now that host and guest are basically identically loaded</li>
+<li>Various debug helpers and error handling</li>
+<li>Support for remote candidate (from STUN)</li>
+</ul>
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn1"><p>Apparently just over <span data-t="" data-widget="">LAN</span> (link-local connections?), though I have not really confirmed this.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn2"><p>which act as relays, especially when one peer is behind symmetric NAT/CGNAT, which prevents P2P connections from being established with the help of STUN<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>]]></description>
+</item>
+<item>
 <title>Code golf for computing a 32-byte QR code!</title>
 <pubDate>Fri, 20 Dec 2024 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/qrinqr.html</guid>
@@ -18,7 +557,7 @@
 <p>There is a hard limit of 2,953 bytes of UTF-8 for QR codes, and I have even less to work with considering that I have to encode it into a <code>data:</code> URI, so having a compact algorithm for this is essential.</p>
 <div id="demo">
 <p style="display: flex; align-items: baseline; gap: 2em">
-<label class="input-wrapper" style="flex: 1"> <span>32-bytes of hexadecimal</span> <input id="demo-input" class="code" style="width: 100%; text-overflow: ellipsis"> </label> <button id="demo-random" class="add" style="flex: 0 0 auto">Random!</button>
+<label class="input-wrapper" style="flex: 1"> <span>32 bytes of hexadecimal</span> <input id="demo-input" class="code" style="width: 100%; box-sizing: border-box; text-overflow: ellipsis"> </label> <button id="demo-random" class="add" style="flex: 0 0 auto">Random!</button>
 </p>
 <pre id="demo-output" class="no-visible-space"></pre>
 <script>
@@ -48,7 +587,7 @@
 <pre class="javascript"><code>s=420+(U=f[F='replace'](/:/g,''))+0
 d=[]
 a=[u=1];z=[1/0]
-for(i=0;d[i/2]="0x"+s[i]+s[++i],i&lt;512;r=[...d])z[a[i]=(x=2*a[i-1])^(x&gt;255)*285]??=i
+for(i=0;d[i/2]="0x"+s[i]+s[++i],i&lt;511;r=[...d])z[a[u*=2,i]=u^=(u&gt;255)*285]??=i
 for(k=35;Z=+r[i=0],--k;V={})for(var{abs:B,max:X,min:N}=Math;i&lt;34;t=(x,y=x)=&gt;X(B(x-i),B(y-j)))d[34+i]=r[i]=a['\xFBC.=vF@^ -'.charCodeAt(i)+z[Z]]^r[++i]
 for(i=j=24;~j;j-=j%2^j&gt;6?1:i&lt;u|i-u&gt;24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&amp;0)V[[i,j]]=i-8&amp;&amp;j-8||16&lt;i+j&amp;i+j&lt;25?"101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(i-6&amp;&amp;j-6&amp;&amp;d[k/8|0]&gt;&gt;7-k++%8&amp;1)^(i+j)%2:4588023&amp;1&lt;&lt;(i-8?24-i:j)</code></pre>
 </div>
@@ -276,7 +815,7 @@ document.body.innerHTML=o</code></pre>
   #demo > pre {
     font-size: 8px;
     line-height: 1;
-    padding: 3em;
+    padding: 5em 3em;
     user-select: none;
     transform: scaleY(0.6);
     transform-origin: top center;
@@ -284,7 +823,7 @@ document.body.innerHTML=o</code></pre>
     background: white;
     width: fit-content;
     margin: auto;
-    margin-bottom: -10%; /* idk why 10% */
+    margin-bottom: -10em;
   }
   pre.sourceCode:not([data-lang]).javascript::before {
     content: '';

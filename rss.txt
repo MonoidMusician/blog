@@ -1,3 +1,5 @@
+sources/svgqr.md
+sources/webrtc_over_qr.md
 sources/qrinqr.md
 sources/design_it_right.md
 sources/selfnames.md

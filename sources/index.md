@@ -6,18 +6,20 @@ author: "[@MonoidMusician](https://github.com/MonoidMusician)"
 I believe knowledge should be free & accessible.
 When I have the energy and time, I will contribute to putting more knowledge out there and sharing topics I am passionate about.
 
-This blog will be more focused on programming and mathematics, while my more personal stuff will probably continue to live on my personal website: [https://monoidmusician.github.io/](https://monoidmusician.github.io/).
-
-I strive to be an open book, with minimal ego involved, just insight and connection.
-However, I am losing patience for putting energy into ephemeral instruction, so if you want to learn something serious from me directly, maybe we can collaborate on a short blog post instead of exchanging messages on social media where it will get lost quickly.
-
-I would also like to share bits of how I customize my software experiences and navigate the tech world.
-If technology isnʼt working for the people, what is it doing?
-(Lining the pockets of capitalists and actively oppressing the working class, apparently. Sigh…)
-
 Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/blog) and my account of the [technologies](technology.html) that go into this blog.
 
 ## Posts <a class="icon iconoir" href="rss.xml"><?xml version="1.0" encoding="UTF-8"?><svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
+
+- [Perfect Vector Graphics for a QR code](svgqr.html) [2025/01/29]{.dated}
+
+  > You would think that SVG would be a perfect medium for rendering QR codes, but iOS was having trouble rendering the SVGs for the complex, large QR codes I was using (nearly max size).
+  > We need to render adjacent modules as a single SVG path.
+  > There are two core steps: finding the connected components of the matrix, and rendering each component into the SVG as a single path.
+
+- [WebRTC over QR Connection Protocol](webrtc_over_qr.html) [2025/01/26]{.dated}
+
+  > Details on the connection protocol for [WebRTC over QR](https://webrtc-over-qr.veritates.love/).
+  > How is it even possible, and how could you use it too?
 
 - [Code golf for computing a 32-byte QR code!](qrinqr.html) [2024/12/20]{.dated}
 
