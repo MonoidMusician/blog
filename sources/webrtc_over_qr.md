@@ -101,7 +101,7 @@ Here are the steps for basic connection establishment:
       // Extract the fingerprint from the SDP
       var fingerprint = /fingerprint:sha-256 (.+)/.exec(sdp)[1];
       // Exfiltrate it via `ice-ufrag`
-      sdp = sdp.replace(/(a=ice-ufrag):.+/, '$1:'+fingerprint);
+      sdp = sdp.replace(/(a=ice-ufrag):.+/, '$1:'+btoa(fingerprint));
       // And replace `ice-pwd` with the password the host already knows about
       sdp = sdp.replace(/(a=ice-pwd):.+/, '$1:'+$TEMPLATE_PASSWORD);
       // Use this updated answer SDP
@@ -159,10 +159,10 @@ Here are the steps for basic connection establishment:
           a=msid-semantic: WMS
           m=application 9 UDP/DTLS/SCTP webrtc-datachannel
           c=IN IP4 0.0.0.0
-          a=ice-ufrag:${fingerprint.replaceAll(':','')}
+          a=ice-ufrag:${fingerprint}
           a=ice-pwd:${AGREED_UPON_PASSWORD}
           a=ice-options:trickle
-          a=fingerprint:sha-256 ${fingerprint}
+          a=fingerprint:sha-256 ${atob(fingerprint)}
           a=setup:active
           a=mid:0
           a=sctp-port:5000

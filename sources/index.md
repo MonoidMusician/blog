@@ -36,9 +36,9 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   >       .find(s => s.type === 'remote-candidate');
   >     const sdp = `
   >       ...
-  >       a=ice-ufrag:${fingerprint.replaceAll(':','')}
+  >       a=ice-ufrag:${fingerprint}
   >       a=ice-pwd:${AGREED_UPON_PASSWORD}
-  >       a=fingerprint:sha-256 ${fingerprint}
+  >       a=fingerprint:sha-256 ${atob(fingerprint)}
   >       ...
   >     `;
   >     rtc.setRemoteDescription({ type: 'answer', sdp });
