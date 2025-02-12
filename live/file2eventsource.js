@@ -2,6 +2,7 @@ const express = require("express");
 const bodyParser = require('body-parser');
 const fs = require("node:fs/promises");
 const watch = require("node-watch");
+const https = require("node:https");
 
 let app = express();
 
@@ -69,7 +70,22 @@ app.use(express.static('./'));
 app.use(express.static(__dirname + '/'));
 
 var port = 5678;
-app.listen(port, function() {
-  console.log("Edit ./live/scribe.svg (e.g. in Inkscape)");
-  console.log("and view the result live at http://localhost:"+port+"/scribe.html?live");
+fs.stat('./cert/localhost.key').then(v => !!v, () => false).then(async hasCert => {
+  let server = app;
+  if (hasCert) {
+    server = https.createServer({
+      key: await fs.readFile('./cert/localhost.key'),
+      cert: await fs.readFile('./cert/localhost.crt'),
+    }, app);
+    server.on('tlsClientError', (tlsError, tlsSocket) => {
+      if (tlsError.reason === 'http request') {
+        tlsSocket._parent.write('HTTP/1.1 302 Found\n' +
+                                `Location: https://localhost:${port}`);
+      }
+    });
+  }
+  server.listen(port, function() {
+    console.log("Edit ./live/scribe.svg (e.g. in Inkscape)");
+    console.log("and view the result live at http://localhost:"+port+"/scribe.html?live");
+  });
 });

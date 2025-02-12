@@ -42,6 +42,9 @@
     Ve.ById.layer1.setAttribute("filter", "url(#inset-shadow)");
     let nib = null;
     Ve.forQuery('#paper path', p0 => {
+      if (p0.classList.contains('not-calligraphy')) {
+        return;
+      }
       if (!nib) {
         nib = p0;
         return;
