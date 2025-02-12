@@ -2,13 +2,16 @@ module Riverdragon.River.Beyond where
 
 import Prelude
 
+import Control.Alt ((<|>))
+import Data.Array as Array
 import Data.DateTime.Instant (Instant)
 import Data.DateTime.Instant as Instant
 import Data.Either (hush)
-import Data.Filterable (compact)
+import Data.Filterable (compact, partition)
 import Data.Int as Int
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
+import Data.Set as Set
 import Data.Time.Duration (Milliseconds(..))
 import Data.Tuple (snd)
 import Data.Tuple.Nested (type (/\), (/\))
@@ -17,9 +20,17 @@ import Effect.Aff (Aff)
 import Effect.Aff as Aff
 import Effect.Now (now)
 import Effect.Timer (clearInterval, clearTimeout, setInterval, setTimeout)
+import Idiolect ((#..))
 import Riverdragon.Dragon.Breath (microtask)
-import Riverdragon.River (Allocar, IsFlowing(..), Lake, River, Stream(..), fixPrjBurst, makeLake, makeLake', memoize, oneStream, statefulStream, subscribeIsh, unsafeCopyFlowing, (<?*>), (>>~))
-import Riverdragon.River.Bed (breaker, freshId, ordMap, prealloc, pushArray, requestAnimationFrame)
+import Riverdragon.River (Allocar, Lake, River, Stream, allStreams, dam, fixPrjBurst, foldStream, mailboxRiver, makeLake, makeLake', mapAl, oneStream, singleShot, statefulStream, subscribeIsh, unsafeCopyFlowing, withInstantiated, (<?*>), (>>~))
+import Riverdragon.River.Bed (breaker, eventListener, freshId, ordMap, prealloc, pushArray, requestAnimationFrame)
+import Web.Event.Event (EventType(..))
+import Web.Event.Event as Event
+import Web.Event.EventPhase (EventPhase(..))
+import Web.HTML (window)
+import Web.HTML.HTMLDocument as HTMLDocument
+import Web.HTML.Window (document)
+import Web.UIEvent.KeyboardEvent as KeyboardEvent
 
 -- | Requires its delay function to be predictable, especially if the result
 -- | is used as a river.
@@ -161,6 +172,16 @@ debounce timing input =
       if requested > arriving then Nothing else Just datum
   in compact $ gateLatest <$> tags <?*> delayLine
 
+withLast ::
+  forall flow a.
+  Stream flow a ->
+  Lake
+    { last :: Maybe a
+    , next :: a
+    }
+withLast = statefulStream Nothing <@> \last next ->
+  { emit: Just { last, next }, state: Just next }
+
 dedupBy :: forall flow a. (a -> a -> Boolean) -> Stream flow a -> Lake a
 dedupBy method = statefulStream Nothing <@> case _, _ of
   Just last, next | method last next ->
@@ -209,3 +230,81 @@ animationLoop s0 out actions =
         -- And follow that action, until a new one arrives
         >>~ \(state /\ action) -> action state
 
+
+-- | `risingFalling` maintains a `Set` internally so it can discard duplicate
+-- | `keydown` events, and then this can be partitioned into the rising and
+-- | falling events exactly once it is instantiated
+risingFalling ::
+  forall flow k. Ord k =>
+  Stream flow { key :: k, value :: Boolean } ->
+  Lake { key :: k, value :: Boolean }
+risingFalling = statefulStream Set.empty <@> \state { key, value } ->
+  case Set.member key state == value of
+    true -> { state, emit: Nothing }
+    false ->
+      { state: (if value then Set.insert else Set.delete) key state
+      , emit: Just { key, value }
+      }
+
+data JoinLeave m = Join Int m | Leave Int
+
+-- | `joinLeave` has a sparse array internally (`Map Int`), and it updates it to
+-- | maintain a list of active values (e.g. audio nodes)
+joinLeave ::
+  forall flow1 flow2 m.
+  Stream flow1 { value :: m, leave :: Stream flow2 Unit } ->
+  Lake (Array m)
+joinLeave upstream =
+  let numbering = counter upstream in
+  withInstantiated numbering \_ numbered -> do
+    let
+      leaves = allStreams numbered \({ leave } /\ i) ->
+        Leave i <$ singleShot leave
+      joins = numbered <#> \({ value } /\ i) -> do
+        Join i value
+      joinsLeaves = dam joins <|> leaves
+    Array.fromFoldable <$> foldStream Map.empty joinsLeaves
+      case _, _ of
+        kvs, Join i m -> Map.insert i m kvs
+        kvs, Leave i -> Map.delete i kvs
+
+-- | `fallingLeaves` combines them and has a little glue to allocate values
+-- | for each rising event (`false` -> `true`), and even lets it leave on its
+-- | own (before a `keyup` event). The result is a running state of audio nodes
+-- | that join and leave in response to external events.
+fallingLeaves ::
+  forall flow1 flow2 k m. Ord k => Show k =>
+  Stream flow1 { key :: k, value :: Boolean } ->
+  (k -> River Unit -> Allocar { value :: m, leave :: Stream flow2 Unit }) ->
+  Lake (Array m)
+fallingLeaves upstream f =
+  withInstantiated (risingFalling upstream) \_ edges ->
+    let
+      { yes: rising, no: falling } = partition _.value edges
+      waitFor = mailboxRiver falling
+      tracked = rising # mapAl \{ key } -> do
+        f key (void (waitFor key))
+    in joinLeave tracked
+
+
+documentEvent :: forall e.
+  EventType ->
+  (Event.Event -> Maybe e) ->
+  (e -> Effect Unit) ->
+  Allocar (Allocar Unit)
+documentEvent eventType conv handle = do
+  doc <- window >>= document
+  eventListener
+    { eventPhase: Bubbling
+    , eventTarget: HTMLDocument.toEventTarget doc
+    , eventType
+    } \event -> case conv event of
+        Just e -> handle e
+        Nothing -> pure unit
+
+keyEvents ::
+  (KeyboardEvent.KeyboardEvent -> Effect Unit) ->
+  Allocar (Allocar Unit)
+keyEvents =
+  [ "keydown", "keyup", "keypress" ] #.. \ty ->
+    documentEvent (EventType ty) KeyboardEvent.fromEvent

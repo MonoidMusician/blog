@@ -118,8 +118,8 @@ import Effect.Aff (Aff)
 import Effect.Aff (Aff) as ReExports
 import Effect.Class.Console (log, logShow)
 import Effect.Class.Console (log, logShow) as ReExports
-import Idiolect (type (-!>), type (/\/), EffectArrow, compactMap, compactMapFlipped, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterSnd, intercalateMap, morph, multiplexing, nonEmpty, only, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/))
-import Idiolect (type (-!>), type (/\/), EffectArrow, compactMap, compactMapFlipped, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterSnd, intercalateMap, morph, multiplexing, nonEmpty, only, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/)) as ReExports
+import Idiolect (type (-!>), type (/\/), EffectArrow, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterSnd, intercalateMap, morph, multiplexing, nonEmpty, only, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/))
+import Idiolect (type (-!>), type (/\/), EffectArrow, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterSnd, intercalateMap, morph, multiplexing, nonEmpty, only, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/)) as ReExports
 import Parser.Comb (Comb(..))
 import Parser.Comb (Comb(..)) as ReExports
 import Parser.Languages (digit, int, json, string, digit, int, number)

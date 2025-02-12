@@ -4,19 +4,19 @@ import Prelude
 
 import Control.Alt ((<|>))
 import Data.Array as Array
-import Data.Foldable (foldMap, for_)
+import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
 import Data.String as String
 import Data.Time.Duration (Milliseconds)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
-import Idiolect (filterFst, nonEmpty, (==<))
+import Idiolect (filterFst, nonEmpty, (#..), (==<))
 import Riverdragon.Dragon (AttrProp, Dragon(..), renderElSt)
 import Riverdragon.Dragon.Bones (($$), ($~~), (.$), (.$$), (.$$~), (.<>), (:.), (:~), (<:>), (=!=), (=:=), (=?=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.River (Lake, Stream, createRiverStore, instantiate, store, limitTo, makeLake, oneStream, subscribe)
+import Riverdragon.River (Lake, Stream, createRiverStore, instantiate, limitTo, makeLake, oneStream)
 import Riverdragon.River as River
-import Riverdragon.River.Bed (Allocar, accumulator, eventListener, globalId, rolling)
+import Riverdragon.River.Bed (Allocar, accumulator, eventListener, rolling)
 import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (delay)
 import Web.DOM.ElementId (ElementId)
@@ -78,7 +78,7 @@ eggy cont = Egg do
 listenInput :: Boolean -> ElementId -> Lake String
 listenInput includeFirst id = makeLake \cb -> do
   mel <- getElementById id <<< HTMLDocument.toNonElementParentNode =<< document =<< window
-  mel >>= InputElement.fromElement # foldMap \el -> do
+  mel >>= InputElement.fromElement #.. \el -> do
     when includeFirst do cb =<< InputElement.value el
     eventListener
       { eventType: EventType "input"

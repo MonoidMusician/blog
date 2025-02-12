@@ -26,6 +26,7 @@ import Data.String.Regex.Flags (global)
 import Data.String.Regex.Unsafe (unsafeRegex)
 import Effect.Exception (message, try)
 import Effect.Unsafe (unsafePerformEffect)
+import Idiolect ((<#>:))
 import Parser.Comb as Comb
 
 -- | `HFList`: an `Array`-based representation for FFI
@@ -1405,9 +1406,9 @@ data IsPointed = NotPointed | Pointed | Current
 
 stacksInfo :: Env -> StacksInfo
 stacksInfo env =
-  stacks # mapWithIndex \i (Tuple (Tuple values building) nDequeued) ->
+  stacks <#>: \i (Tuple (Tuple values building) nDequeued) ->
     { building
-    , values: Array.fromFoldable values # mapWithIndex \j ->
+    , values: Array.fromFoldable values <#>: \j ->
         { value: _
         , dequeued: j < nDequeued
         }

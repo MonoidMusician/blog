@@ -23,6 +23,7 @@ import Web.HTML.Window (document, requestAnimationFrame, toEventTarget)
 import Widget (Widgets, instantiateAll)
 import Widget.Datatypes as Widget.Datatypes
 import Widget.Query as Widget.Query
+import Widget.Roar as Widget.Roar
 import Widget.Unicode as Widget.Unicode
 import Widget.Widgets as Widget.Widgets
 
@@ -37,6 +38,7 @@ widgets = foldl Object.union Object.empty
     , "Widget.Control" /\ Widget.Widgets.controlWidget
     , "Widget.Unicode" /\ Widget.Unicode.widget
     , "Widget.Show" /\ Widget.Unicode.widgetShow
+    , "Widget.Roar.Harpsynthorg" /\ Widget.Roar.widgetHarpsynthorg
     , "Parser.Main.HFS" /\ Parser.Main.HFS.widget
     , "Parser.Main.Live" /\ Parser.Main.Live.widget
     , "Riverdragon.Main.Live" /\ Riverdragon.Main.Live.widget

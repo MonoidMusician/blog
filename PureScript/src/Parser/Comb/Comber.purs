@@ -26,6 +26,7 @@ import Data.Codec.Argonaut as CA
 import Data.Compactable (class Compactable)
 import Data.Compactable (class Compactable, compact) as ReExports
 import Data.Either (Either(..), either)
+import Data.Filterable (class Filterable)
 import Data.Foldable (fold, foldMap, traverse_)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.List (List(..))
@@ -82,6 +83,7 @@ derive newtype instance altComber :: Alt Comber
 derive newtype instance plusComber :: Plus Comber
 derive newtype instance alternativeComber :: Alternative Comber
 derive newtype instance compactableComber :: Compactable Comber
+derive newtype instance filterableComber :: Filterable Comber
 derive newtype instance selectComber :: Select Comber
 derive newtype instance casingComber :: Casing Comber
 derive newtype instance semigroupComber :: Semigroup a => Semigroup (Comber a)

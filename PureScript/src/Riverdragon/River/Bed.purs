@@ -454,6 +454,33 @@ storeUnsubscriber = do
     }
 
 
+diffingArraySet ::
+  forall a. Eq a =>
+  Allocar
+    { swap :: Array a -> Allocar
+        { added :: Array a
+        , removed :: Array a
+        , still :: Array a
+        }
+    , destroy :: Allocar (Array a)
+    }
+diffingArraySet = do
+  destroyed <- prealloc false
+  cell <- prealloc []
+  pure
+    { destroy: do
+        destroyed.set true
+        cell.swap []
+    , swap: \newItems -> whenMM (not <$> destroyed.get) do
+        oldItems <- cell.swap newItems
+        pure
+          { added: newItems Array.\\ oldItems
+          , removed: oldItems Array.\\ newItems
+          , still: newItems `Array.intersect` oldItems
+          }
+    }
+
+
 
 requestAnimationFrame :: Effect Unit -> Effect (Effect Unit)
 requestAnimationFrame cb = do

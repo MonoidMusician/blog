@@ -104,11 +104,17 @@ module Riverdragon.River
   , statefulStream
   , limitTo
   , selfGating
+  , singleShot
   , selfGatingEf
+  , withInstantiated
+  , alLake
+  , alLake'
+  , mapAl
   , mapLatest
   , latestStream
   , (>>~)
   , latestStreamEf
+  , allStreams
   , allStreamsEf
   , fix
   , fixPrj
@@ -128,14 +134,14 @@ import Control.Plus (class Plus, empty)
 import Data.Array as Array
 import Data.Bifoldable (bifoldMap)
 import Data.Filterable (class Compactable, class Filterable, filterDefault, filterMap, partitionDefaultFilterMap, partitionMapDefault)
-import Data.Foldable (foldMap)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Set as Set
 import Data.These (These(..))
-import Data.Traversable (mapAccumL)
+import Data.Traversable (mapAccumL, traverse)
 import Data.Tuple (Tuple(..), fst, snd)
 import Effect (Effect, foreachE)
+import Idiolect ((#..))
 import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar) as ReExports
 import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar, accumulator, allocLazy, breaker, cleanup, globalId, iteM, loadingBurst, ordMap, prealloc, prealloc2, pushArray, rolling, storeLast, storeUnsubscriber, subscriptions, threshold, unsafeAllocate)
 
@@ -254,9 +260,9 @@ instance booleanAlgebraStream :: BooleanAlgebra a => BooleanAlgebra (Stream flow
 oneStream :: forall flow a. Array (Stream flow a) -> Stream flow a
 oneStream [] = empty
 oneStream [s] = s
-oneStream streams = Stream (streams # foldMap \(Stream t _) -> t) \cbs -> do
+oneStream streams = Stream (streams #.. \(Stream t _) -> t) \cbs -> do
   destroyed <- threshold (Array.length streams) cbs.destroyed
-  streams # foldMap \(Stream _ s) ->
+  streams #.. \(Stream _ s) ->
     s =<< do cbs { destroyed = _ } <$> cleanup destroyed
 
 -- | Combine streams according to selection logic, where each side can reject
@@ -572,6 +578,8 @@ instantiate ::
     , stream :: Stream flowOut a
     , destroy :: Allocar Unit
     }
+instantiate (Stream Flowing stream) = pure
+  { burst: [], stream: Stream Flowing stream, destroy: pure unit }
 instantiate strm@(Stream _ stream) = do
   { send, commit, stream: streamDependingOn, destroy } <- createProxy' (burstOf strm)
   { burst, sources, unsubscribe } <-
@@ -702,6 +710,9 @@ limitTo n (Stream flow setup) = Stream flow \cbs -> do
 selfGating :: forall flow a. (a -> Boolean) -> Stream flow a -> Lake a
 selfGating pred = selfGatingEf \stop -> pure \a -> when (pred a) stop
 
+singleShot :: forall flow. Stream flow ~> Lake
+singleShot = selfGating tt
+
 selfGatingEf :: forall flow a.
   (Effect Unit -> Effect (a -> Effect Unit)) ->
   Stream flow a -> Lake a
@@ -726,6 +737,30 @@ selfGatingEf logic (Stream flow setup) = Stream flow \cbs -> do
   pure sub
 
 
+withInstantiated :: forall flow a b.
+  Stream flow a ->
+  (Array a -> River a -> Lake b) ->
+  Lake b
+withInstantiated toFlow f = alLake do
+  { burst, stream, destroy } <- instantiate toFlow
+  pure { lake: f burst stream, destroy }
+
+
+alLake :: forall a.
+  Allocar { lake :: Lake a, destroy :: Allocar Unit } ->
+  Lake a
+alLake mkLake = Stream NotFlowing \cbs -> do
+  { lake: Stream _ lake, destroy } <- mkLake
+  r <- lake cbs
+  pure r { unsubscribe = r.unsubscribe <> destroy }
+
+alLake' :: forall a.
+  Allocar (Lake a) ->
+  Lake a
+alLake' mkLake = Stream NotFlowing \cbs -> do
+  Stream _ lake <- mkLake
+  lake cbs
+
 
 -- is this allowed to be polymorphic?
 -- mapEf :: forall flow a b. (a -> Effect b) -> Stream flow a -> Stream flow b
@@ -734,11 +769,11 @@ selfGatingEf logic (Stream flow setup) = Stream flow \cbs -> do
 --   burst <- traverse f r.burst
 --   pure r { burst = burst }
 
--- mapAl :: forall flow a b. (a -> Allocar b) -> Stream flow a -> Stream flow b
--- mapAl f (Stream t g) = Stream t \cbs -> do
---   r <- g cbs { receive = \a -> cbs.receive =<< f a }
---   burst <- traverse f r.burst
---   pure r { burst = burst }
+mapAl :: forall flow a b. (a -> Allocar b) -> Stream flow a -> Stream flow b
+mapAl f (Stream t g) = mayMemoize $ Stream t \cbs -> do
+  r <- g cbs { receive = \a -> cbs.receive =<< f a }
+  burst <- traverse f r.burst
+  pure r { burst = burst }
 
 -- overCb ::
 --   forall flow a.
@@ -827,6 +862,14 @@ allStreamsEf source mkStream = makeLake \cb -> do
     stream <- mkStream a
     unsubscribes.put =<< subscribe stream cb
   pure $ join unsubscribes.get <> unsubscribe
+
+allStreams ::
+  forall flowIn flowInner a b.
+  Stream flowIn a ->
+  (a -> Stream flowInner b) ->
+  Lake b
+allStreams source mkStream = allStreamsEf source $ pure <<< mkStream
+
 
 -- | Compute a “fixpoint” or “fixed point” of a stream function.
 -- |

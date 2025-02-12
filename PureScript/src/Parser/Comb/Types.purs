@@ -11,6 +11,7 @@ import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (class Bifunctor, bimap, lmap)
 import Data.Compactable (class Compactable, compact, separateDefault)
 import Data.Either (Either(..), blush, hush, note)
+import Data.Filterable (class Filterable, filterDefault, filterMapDefault, partitionDefault, partitionMapDefault)
 import Data.Functor.Contravariant (class Contravariant, cmap)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Lazy (Lazy)
@@ -289,6 +290,11 @@ instance alternativeComb :: Alternative (Comb rec err prec space air nt cat o)
 instance compactableComb :: Compactable (Comb rec err prec space air nt cat o) where
   compact (Comb c) = Comb c { rules = c.rules <#> \r -> r { resultant = compact r.resultant } }
   separate eta = separateDefault eta
+instance filterableComb :: Filterable (Comb rec err prec space air nt cat o) where
+  partitionMap p = partitionMapDefault p
+  partition p = partitionDefault p
+  filterMap p = filterMapDefault p
+  filter p = filterDefault p
 instance semigroupComb :: Semigroup a => Semigroup (Comb rec err prec space air nt cat o a) where
   append = lift2 append
 instance monoidComb :: Monoid a => Monoid (Comb rec err prec space air nt cat o a) where

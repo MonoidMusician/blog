@@ -132,8 +132,8 @@ import Effect.Aff (Aff)
 import Effect.Aff (Aff) as ReExports
 import Effect.Class.Console (log, logShow)
 import Effect.Class.Console (log, logShow) as ReExports
-import Idiolect (type (-!>), type (/\/), EffectArrow, compactMap, compactMapFlipped, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterSnd, intercalateMap, morph, multiplexing, nonEmpty, only, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/))
-import Idiolect (type (-!>), type (/\/), EffectArrow, compactMap, compactMapFlipped, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterSnd, intercalateMap, morph, multiplexing, nonEmpty, only, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/)) as ReExports
+import Idiolect (type (-!>), type (/\/), EffectArrow, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterSnd, intercalateMap, morph, multiplexing, nonEmpty, only, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/))
+import Idiolect (type (-!>), type (/\/), EffectArrow, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterSnd, intercalateMap, morph, multiplexing, nonEmpty, only, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/)) as ReExports
 import Riverdragon.Dragon.Bones ((.<>), (<>.))
 import Prim.Row as Row
 import Prim.RowList as RL

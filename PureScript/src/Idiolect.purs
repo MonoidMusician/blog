@@ -7,11 +7,12 @@ import Control.Apply (lift2)
 import Control.Plus (class Plus)
 import Data.Array as Array
 import Data.CodePoint.Unicode as U
-import Data.Compactable (class Compactable, compact)
 import Data.Either (Either(..))
 import Data.Either.Nested (type (\/))
-import Data.Foldable (class Foldable, fold, intercalate, oneOfMap)
+import Data.Filterable (class Filterable, filterMap, partitionMap)
+import Data.Foldable (class Foldable, fold, foldMap, intercalate, oneOfMap)
 import Data.Function (on)
+import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Data.String as String
@@ -37,14 +38,34 @@ morph = oneOfMap pure
 intercalateMap :: forall f a m. Foldable f => Monoid m => Functor f => m -> (a -> m) -> f a -> m
 intercalateMap sep f = intercalate sep <<< map f
 
+infixr 0 foldMap as ..$
 
-compactMap :: forall f a b. Compactable f => Functor f => (a -> Maybe b) -> f a -> f b
-compactMap = map compact <<< map
-infixl 4 compactMap as <$?>
+foldMapFlipped :: forall f a m. Foldable f => Monoid m => f a -> (a -> m) -> m
+foldMapFlipped = flip foldMap
+infixl 1 foldMapFlipped as #..
 
-compactMapFlipped :: forall f a b. Compactable f => Functor f => f a -> (a -> Maybe b) -> f b
-compactMapFlipped = flip compactMap
-infixl 1 compactMapFlipped as <#?>
+-- ..<
+-- >..
+-- ..:$
+-- #:..
+
+infixl 4 mapWithIndex as :<$>
+
+mapWithIndexFlipped :: forall f i a b. FunctorWithIndex i f => f a -> (i -> a -> b) -> f b
+mapWithIndexFlipped = flip mapWithIndex
+infixl 1 mapWithIndexFlipped as <#>:
+
+infixl 4 filterMap as <$?>
+
+filterMapFlipped :: forall f a b. Filterable f => f a -> (a -> Maybe b) -> f b
+filterMapFlipped = flip filterMap
+infixl 1 filterMapFlipped as <#?>
+
+infixl 4 partitionMap as /$?\
+
+partitionMapFlipped :: forall f a l r. Filterable f => f a -> (a -> Either l r) -> { left :: f l, right :: f r }
+partitionMapFlipped = flip partitionMap
+infixl 1 partitionMapFlipped as /#?\
 
 composeMap :: forall f a b c. Functor f => (b -> c) -> (a -> f b) -> (a -> f c)
 composeMap f g = map f <<< g

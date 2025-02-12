@@ -10,7 +10,6 @@ import Data.Codec.Argonaut as CA
 import Data.Either (Either, blush, hush)
 import Data.Filterable (filter, filterMap)
 import Data.Foldable (fold, foldMap, oneOfMap)
-import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (fromMaybe)
 import Data.Traversable (sequence)
 import Data.Tuple (fst, snd)
@@ -19,6 +18,7 @@ import Effect.Aff (Aff)
 import Fetch (fetch)
 import Foreign.Object (Object)
 import Foreign.Object as Object
+import Idiolect ((<#>:))
 import Parser.Languages.CSS (mkCSSParser)
 import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones (($~~), (=:=), (>@))
@@ -76,12 +76,12 @@ component resetting = eggy \shell -> do
       \(_ /\ last) -> case _ of
         Add -> true /\ (last <> [ "" ])
         Delete i -> true /\ (last # fromMaybe <*> Array.deleteAt i)
-        Update i v -> false /\ (last # mapWithIndex \j -> if i == j then v else _)
+        Update i v -> false /\ (last <#>: \j -> if i == j then v else _)
         Reset vs -> true /\ vs
 
   pure $ D.div[] $~~
     [ filter fst currentRaw >@ \(_ /\ values) ->
-        Fragment $ values # mapWithIndex \i value ->
+        Fragment $ values <#>: \i value ->
           D.div[] $~~
             [ inputValidated "terminal" "CSS selector" "" value
                 ((\parser val -> if val == "" then "" else fold (blush (parser val))) <$> getParser <*> filterMap (_ !! i) (map snd currentRaw))
