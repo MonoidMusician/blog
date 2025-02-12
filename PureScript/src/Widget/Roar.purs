@@ -2,7 +2,7 @@ module Widget.Roar where
 
 import Prelude
 
-import Control.Plus (empty)
+import Control.Plus (empty, (<|>))
 import Data.Array as Array
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
@@ -12,7 +12,7 @@ import Effect.Class.Console as Console
 import Riverdragon.Dragon.Bones ((=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy)
-import Riverdragon.River (bursting, createRiver)
+import Riverdragon.River (bursting, createRiver, dam, mapAl)
 import Riverdragon.River.Beyond (delay, documentEvent, fallingLeaves)
 import Riverdragon.Roar.Types (createGainNode, createSines, fixed, pinkNoise, roaring)
 import Web.Audio.Node as AudioNode
@@ -83,6 +83,10 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
       createPinkNoise <- pinkNoise ctx
       let
         activeSynths = fallingLeaves noteStream \semitones release -> do
+          let releaseTime = mapAl (const (currentTime ctx)) release
+          let range = (Int.toNumber semitones - 48.0) / 36.0
+          let acrossRange low high = low + range * (high - low)
+          let adjustedVolume = acrossRange 1.0 0.1
           t0 <- liftEffect $ currentTime ctx
           pink <- createPinkNoise
           gain2 <- liftEffect $ createGainNode
@@ -95,6 +99,8 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
                     [ CmdTarget { ramp: LinRamp, target: 0.1, time: t0 + 0.05 }
                     , CmdTarget { ramp: LinRamp, target: 0.0, time: t0 + 1.0 }
                     ]
+                  <|> (\t1 -> CmdTarget { ramp: LinRamp, target: 0.0, time: t1 + 0.1 })
+                    <$> dam releaseTime
               }
             }
           sine <- liftEffect $ createSines
@@ -110,9 +116,11 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
               { default: Just 0.0
               , ctl: const $ pure $ { srcs: empty, cmds: _ } $
                   bursting
-                    [ CmdTarget { ramp: LinRamp, target: 1.0, time: t0 + 0.05 }
+                    [ CmdTarget { ramp: LinRamp, target: 1.0 * adjustedVolume, time: t0 + 0.05 }
                     , CmdTarget { ramp: LinRamp, target: 0.0, time: t0 + 1.0 }
                     ]
+                  <|> (\t1 -> CmdTarget { ramp: LinRamp, target: 0.0, time: t1 + 0.3 })
+                    <$> dam releaseTime
               }
             }
           AudioNode.start sine.node (t0 + 0.0)
