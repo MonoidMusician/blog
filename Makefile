@@ -97,7 +97,7 @@ sources.txt : spago.lock spago.yaml PureScript/spago.yaml
 
 .PHONY : trypurescript
 trypurescript : PureScript/src sources.txt
-	watchexec -w $(BUILDIR)/widgets.js -r --shell=fish 'trypurescript 6565 (cat sources.txt)'
+	watchexec -w $(BUILDIR)/widgets.js -r --shell=bash 'set -o noglob; trypurescript 6565 $$(cat sources.txt)'
 
 .PHONY : watch-ps
 watch-ps : $(BUILDIR)
