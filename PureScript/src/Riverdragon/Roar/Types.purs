@@ -2,24 +2,23 @@ module Riverdragon.Roar.Types where
 
 import Prelude
 
-import Control.Plus (empty)
 import Data.Foldable (traverse_)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe)
+import Data.RecordOverloads (class RecordOverloads, overloads)
 import Effect (Effect)
 import Effect.Aff (Aff)
-import Effect.Class (liftEffect)
+import Effect.Class.Console as Console
 import Idiolect ((>==))
-import Prim.Boolean (False, True)
-import Riverdragon.River (Allocar, Lake, Stream, cumulate, dam, mapAl, oneStream, (<?*>), (>>~))
+import Prim.Boolean (False)
+import Riverdragon.River (Allocar, Lake, Stream, cumulate, dam, mapAl, oneStream, (>>~))
 import Riverdragon.River as River
 import Riverdragon.River.Bed (diffingArraySet)
-import Type.Equality (class TypeEquals, proof)
+import Type.Equality (class TypeEquals, proof, to)
 import Type.Proxy (Proxy(..))
-import Web.Audio.Context (createAudioContext)
-import Web.Audio.Node (AudioDest, AudioSrc, destination, intoNode, intoParam, outOfNode)
+import Web.Audio.Node (AudioDest, AudioSrc, createPeriodicWave, intoNode, intoParam, outOfNode)
 import Web.Audio.Node as AudioNode
 import Web.Audio.Param as AudioParam
-import Web.Audio.Types (ARate, AudioContext, AudioNode, AudioParamCmd(..), Float, OscillatorType(..), Ramp(..), Time, currentTime)
+import Web.Audio.Types (ARate, AudioContext, AudioNode, AudioParamCmd, Float, OscillatorType(..), SequenceFloat, Time, currentTime)
 import Web.Audio.Types as Audio
 import Web.Audio.Worklet (mkAudioWorkletteNode)
 
@@ -61,9 +60,28 @@ instance ToRoars i => ToRoars (Array i) where toRoars = cumulate <<< map toRoars
 instance ToRoars i => ToRoars (Stream flow i)  where toRoars stream = stream >>~ toRoars
 
 class ToLake i t where toLake :: i -> Lake t
-instance ToLake t t where toLake = pure
-else instance ToLake i t => ToLake (Array i) t where toLake = oneStream <<< map toLake
-else instance TypeEquals i t => ToLake (Stream flow i) t  where toLake = dam <<< proof
+instance ToLake i t => ToLake (Array i) t where toLake = oneStream <<< map toLake
+else instance TypeEquals i t => ToLake (Stream flow i) t where toLake = dam <<< proof
+else instance TypeEquals i t => ToLake i t where toLake = pure <<< to
+
+class ToOther i o where thingy :: i -> o
+
+type OscillatorTypeOverloads =
+  ( sines :: { sines :: SequenceFloat } -> OscillatorType
+  , cosines :: { cosines :: SequenceFloat } -> OscillatorType
+  , both :: { sines :: SequenceFloat, cosines :: SequenceFloat } -> OscillatorType
+  )
+
+instance
+  ( TypeEquals ctx AudioContext
+  , RecordOverloads OscillatorTypeOverloads r OscillatorType
+  ) => ToOther (Record r) (ctx -> OscillatorType) where
+    thingy = flip \ctx -> overloads @OscillatorTypeOverloads
+      { sines: \r -> Custom $ createPeriodicWave (to ctx) false (0.0 <$ r.sines) r.sines
+      , cosines: \r -> Custom $ createPeriodicWave (to ctx) false r.cosines (0.0 <$ r.cosines)
+      , both: \r ->  Custom $ createPeriodicWave (to ctx) false r.cosines r.sines
+      }
+instance ToOther OscillatorType (ctx -> OscillatorType) where thingy = const
 
 
 pinkNoise ::
@@ -78,11 +96,12 @@ pinkNoise = mkAudioWorkletteNode
   { name: "PinkNoiseGenerator"
   , function:
     """
-      function PinkNoiseProcessor(_options, _port) {
+      function PinkNoiseProcessor(_options, port) {
         // https://noisehack.com/generate-noise-web-audio-api/
         // Copyright (c) 2013 Zach Denton: The MIT License (MIT)
         var b0, b1, b2, b3, b4, b5, b6;
         b0 = b1 = b2 = b3 = b4 = b5 = b6 = 0.0;
+        var stop = false; port.onmessage = (e) => { stop = true; };
         return function process(_inputs, outputs, _parameters) {
           for (var output of outputs) for (var channel of output) {
             for (var i = 0; i < channel.length; i++) {
@@ -98,13 +117,13 @@ pinkNoise = mkAudioWorkletteNode
               b6 = white * 0.115926;
             }
           }
-          return true;
+          return !stop;
         };
       }
     """
   , parameters: {}
   } >== \mkNode -> do
-    { node, destroy } <- mkNode
+    { node, destroy, send } <- mkNode
       { numberOfInputs: 0
       , numberOfOutputs: 1
       , outputChannelCount: [1]
@@ -113,7 +132,7 @@ pinkNoise = mkAudioWorkletteNode
     pure
       { node
       , output: outOfNode node 0
-      , destroy
+      , destroy: send unit <> destroy
       }
 
 rescalePower ::
@@ -131,6 +150,7 @@ rescalePower = mkAudioWorkletteNode
   , function:
     """
       function RescalePowerNode(_options, _port) {
+        var stop = false; port.onmessage = (e) => { stop = true; };
         return (inputs, outputs, parameters) => {
           const pow = parameters.pow;
           const pow0 = pow[0];
@@ -145,13 +165,13 @@ rescalePower = mkAudioWorkletteNode
               }
             }
           }
-          return true;
+          return !stop;
         };
       }
     """
   , parameters: { pow: { defaultValue: 1.0 } }
   } >== \mkNode { input, pow } -> do
-    { node, destroy: destroy0 } <- mkNode
+    { send, node, destroy: destroy0 } <- mkNode
       { numberOfInputs: 1
       , numberOfOutputs: 1
       , parameterData: { pow: pow.default }
@@ -161,6 +181,7 @@ rescalePower = mkAudioWorkletteNode
     powCtl <- pow.ctl (AudioParam.currentValue powP)
     destroy2 <- connecting powCtl.srcs (intoParam powP)
     destroy3 <- River.subscribe powCtl.cmds (AudioParam.applyCmd powP)
+    let destroy4 = send unit
     pure
       { node
       , output: outOfNode node 0

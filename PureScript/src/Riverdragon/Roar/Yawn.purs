@@ -8,10 +8,8 @@ import Control.Monad.Writer.Class (tell)
 import Data.Either (either)
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
 import Data.Monoid.Dual (Dual(..))
 import Data.Newtype (unwrap)
-import Data.Traversable (traverse)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Aff (Aff, ParAff, launchAff, launchAff_, parallel, sequential)
@@ -19,20 +17,19 @@ import Effect.Aff as Aff
 import Effect.Class (liftEffect)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
-import Riverdragon.River (Stream, Allocar, createRiver, dam)
+import Riverdragon.River (Allocar, Lake, Stream, dam)
 import Riverdragon.River as River
 import Riverdragon.River.Bed (cleanup)
 import Riverdragon.River.Bed as Bed
 import Riverdragon.Roar.Knob (class ToKnob, Knob(..), renderKnobs)
-import Riverdragon.Roar.Types (class ToLake, class ToRoars, Roar, RoarO, connecting, toLake, toRoars)
-import Safe.Coerce (coerce)
+import Riverdragon.Roar.Types (class ToLake, class ToOther, class ToRoars, Roar, RoarO, connecting, thingy, toLake, toRoars)
 import Type.Proxy (Proxy(..))
 import Uncurried.RWSET (RWSET, runRWSET)
 import Web.Audio.Context (createAudioContext)
 import Web.Audio.Node (destination, intoNode, outOfNode)
 import Web.Audio.Node as AudioNode
 import Web.Audio.Node as Node
-import Web.Audio.Types (AudioContext, BiquadFilterType, OscillatorType(..))
+import Web.Audio.Types (AudioContext, BiquadFilterType, OscillatorType)
 import Web.Audio.Types as Audio
 
 type YawnM =
@@ -159,8 +156,9 @@ gain input knob = yaaawn \{ ctx } -> liftEffect do
   pure { result: outOfNode node 0, destroy: destroy1 <> destroy2, ready: mempty }
 
 osc ::
-  forall flowOscillatorType frequencyKnob detuneKnob.
-    ToLake flowOscillatorType OscillatorType =>
+  forall flowOscillatorType oscType frequencyKnob detuneKnob.
+    ToLake flowOscillatorType oscType =>
+    ToOther oscType (AudioContext -> OscillatorType) =>
     ToKnob frequencyKnob =>
     ToKnob detuneKnob =>
   { type :: flowOscillatorType
@@ -171,7 +169,9 @@ osc config@{ frequency, detune } = yaaawn \{ ctx } -> liftEffect do
   let { defaults, apply: applyKnobs } = renderKnobs { frequency, detune } ctx
   node <- AudioNode.createOscillatorNode ctx defaults
   destroy1 <- applyKnobs node
-  destroy2 <- River.subscribe (toLake config.type) $ Node.setOscillatorType node
+  destroy2 <- River.subscribe
+    (thingy <$> (toLake config.type :: Lake oscType) <@> ctx)
+    (Node.setOscillatorType node)
   pure
     { result: outOfNode node 0
     , destroy: destroy1 <> destroy2

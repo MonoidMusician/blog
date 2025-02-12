@@ -5,14 +5,11 @@ import Prelude
 import Data.Argonaut as Json
 import Data.Either (Either(..))
 import Data.Maybe (Maybe)
-import Data.MediaType (MediaType(..))
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Symbol (class IsSymbol, reflectSymbol)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Aff as Aff
-import Effect.Class (liftEffect)
-import Effect.Class.Console as Console
 import Effect.Exception (Error)
 import Prim.Boolean (False)
 import Prim.Row as Row
@@ -23,8 +20,6 @@ import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Web.Audio.FFI (toFFI)
 import Web.Audio.Types (AudioContext, AudioNode, Rate, Float)
-import Web.File.Blob as Blob
-import Web.File.Url (createObjectURL, revokeObjectURL)
 
 -- loadAudioWorkletNode :: AudioContext -> Aff.Aff ({} -> Effect (AudioNode "AudioWorkletNode" False () () ()))
 -- loadAudioWorkletNode ctx = Aff.makeAff \cb ->

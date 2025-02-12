@@ -2,29 +2,23 @@ module Widget.Roar where
 
 import Prelude
 
-import Control.Plus (empty, (<|>))
 import Data.Array as Array
-import Data.Filterable (compact, partition)
+import Data.HeytingAlgebra (ff)
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
-import Data.Traversable (sequence)
-import Effect (Effect)
-import Effect.Aff (Milliseconds(..), launchAff, launchAff_)
+import Effect.Aff (Milliseconds(..))
 import Effect.Class (liftEffect)
-import Effect.Class.Console as Console
-import Prim.Boolean (False)
 import Riverdragon.Dragon.Bones ((=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy)
-import Riverdragon.River (Lake, River, allStreams, bursting, createRiver, dam, mailboxRiver, mapAl, withInstantiated)
-import Riverdragon.River.Beyond (affToLake, delay, documentEvent, fallingLeaves, fallingLeavesAff, joinLeave, risingFalling)
+import Riverdragon.River (createRiver)
+import Riverdragon.River as River
+import Riverdragon.River.Beyond (KeyPhase(..), delay, documentEvent, fallingLeavesAff, keyEvents)
 import Riverdragon.Roar.Sugar (Noise(..), toNode)
-import Riverdragon.Roar.Types (Roar, RoarO, toRoars)
-import Riverdragon.Roar.Yawn (biiigYawn, osc, yawnytime)
+import Riverdragon.Roar.Yawn (biiigYawn, yawnytime)
 import Riverdragon.Roar.Yawn as Y
 import Web.Audio.Node (createPeriodicWave)
-import Web.Audio.Node as AudioNode
-import Web.Audio.Types (ARate, AudioContext, AudioNode, AudioParamCmd(..), BiquadFilterType(..), Duration, OscillatorType(..), Ramp(..), Time, currentTime)
+import Web.Audio.Types (BiquadFilterType(..), OscillatorType(..))
 import Web.Event.Event (EventType(..))
 import Web.Event.Event as Event
 import Web.UIEvent.KeyboardEvent as KeyboardEvent
@@ -107,13 +101,15 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
           sine <- Y.osc
             { detune: 100 * (semitones - 69)
             , frequency: 440.0
-            , type: Custom $ createPeriodicWave ctx false [0.4, 0.5, 0.1] [0.0, 0.0, 0.0]
+            , type: { sines: [0.4, 0.5, 0.1] }
             }
           sineGain <- Y.gain sine { adsr: sineEnv, volume, release }
           let leave = delay (500.0 # Milliseconds) release
           pure { value: [ pinkGain, sineGain ], leave }
-        activeSynths = join <$> fallingLeavesAff noteStream \key release ->
-          map _.result $ makeItHappen $ oneVoice key release
+        activeSynths = join <$> fallingLeavesAff noteStream \key release -> do
+          { result, destroy } <- makeItHappen $ oneVoice key release
+          _ <- liftEffect $ River.subscribe result.leave \_ -> destroy
+          pure result
       melody <- Y.gain activeSynths 0.3
       antialiased <- Y.filter melody
         { type: Lowpass
@@ -127,24 +123,18 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
 
   let
     getNote kb
-      | not KeyboardEvent.altKey kb
-      , not KeyboardEvent.ctrlKey kb
-      , not KeyboardEvent.metaKey kb
-      , Just idx <- Array.elemIndex (KeyboardEvent.code kb) keymap = do
+      | kb.mod == ff
+      , Just idx <- Array.elemIndex kb.code keymap = do
         Just $ idx + 48
     getNote _ = Nothing
-  shell.destructor =<<
-    documentEvent (EventType "keydown") KeyboardEvent.fromEvent case _ of
-      kb | Just note <- getNote kb -> do
-        Event.preventDefault (KeyboardEvent.toEvent kb)
-        sendNote { key: note, value: true }
-      _ -> pure unit
-  shell.destructor =<<
-    documentEvent (EventType "keyup") KeyboardEvent.fromEvent case _ of
-      kb | Just note <- getNote kb -> do
-        Event.preventDefault (KeyboardEvent.toEvent kb)
-        sendNote { key: note, value: false }
-      _ -> pure unit
+  shell.destructor =<< keyEvents case _ of
+    event | Just note <- getNote event -> do
+      event.preventDefault
+      case event.phase of
+        KeyDown -> sendNote { key: note, value: true }
+        KeyRepeat -> pure unit
+        KeyUp -> sendNote { key: note, value: false }
+    _ -> pure unit
 
   pure $ D.Fragment
     [ D.button

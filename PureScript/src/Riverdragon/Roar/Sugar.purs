@@ -12,6 +12,7 @@ import Type.Equality (proof)
 
 class ToNode i o | i -> o where toNode :: i -> YawnM o
 
+instance ToNode Roar Roar where toNode = pure
 instance (Labels tgt overload, RecordToNode overload tgt o) => ToNode (Record tgt) o where
   toNode = recordToNode @overload
 

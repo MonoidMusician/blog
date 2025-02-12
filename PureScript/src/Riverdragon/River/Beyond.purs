@@ -8,7 +8,6 @@ import Data.DateTime.Instant (Instant)
 import Data.DateTime.Instant as Instant
 import Data.Either (hush)
 import Data.Filterable (compact, partition)
-import Data.Foldable (fold)
 import Data.Int as Int
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
@@ -22,6 +21,7 @@ import Effect.Aff as Aff
 import Effect.Now (now)
 import Effect.Timer (clearInterval, clearTimeout, setInterval, setTimeout)
 import Idiolect ((#..))
+import Partial.Unsafe (unsafePartial)
 import Riverdragon.Dragon.Breath (microtask)
 import Riverdragon.River (Allocar, Lake, River, Stream, allStreams, dam, fixPrjBurst, foldStream, mailboxRiver, makeLake, makeLake', mapAl, oneStream, singleShot, statefulStream, subscribeIsh, unsafeCopyFlowing, withInstantiated, (<?*>), (>>~))
 import Riverdragon.River.Bed (breaker, eventListener, freshId, ordMap, prealloc, pushArray, requestAnimationFrame)
@@ -317,9 +317,50 @@ documentEvent eventType conv handle = do
         Just e -> handle e
         Nothing -> pure unit
 
+data KeyPhase = KeyDown | KeyRepeat | KeyUp
+derive instance Eq KeyPhase
+derive instance Ord KeyPhase
+
+type KeyEvent =
+  { phase :: KeyPhase
+  , key :: String
+  , code :: String
+  , location :: KeyboardEvent.KeyLocation
+  , composing :: Boolean
+  , event :: KeyboardEvent.KeyboardEvent
+  , mod :: { ctrl :: Boolean, alt :: Boolean, shift :: Boolean, meta :: Boolean }
+  , preventDefault :: Effect Unit
+  , stopPropagation :: Effect Unit
+  , stopImmediatePropagation :: Effect Unit
+  }
+
+keyPhase :: KeyboardEvent.KeyboardEvent -> KeyPhase
+keyPhase event =
+  case Event.type_ (KeyboardEvent.toEvent event), KeyboardEvent.repeat event of
+    EventType "keydown", true -> KeyRepeat
+    EventType "keydown", false -> KeyDown
+    _, _ -> KeyUp
+
 keyEvents ::
-  (KeyboardEvent.KeyboardEvent -> Effect Unit) ->
+  (KeyEvent -> Effect Unit) ->
   Allocar (Allocar Unit)
-keyEvents =
-  [ "keydown", "keyup", "keypress" ] #.. \ty ->
-    documentEvent (EventType ty) KeyboardEvent.fromEvent
+keyEvents cb =
+  [ "keydown", "keyup" ] #.. \ty ->
+    documentEvent (EventType ty) KeyboardEvent.fromEvent \event -> do
+      cb
+        { phase: keyPhase event
+        , key: KeyboardEvent.key event
+        , code: KeyboardEvent.code event
+        , location: unsafePartial KeyboardEvent.location event
+        , composing: KeyboardEvent.isComposing event
+        , event
+        , mod:
+          { ctrl: KeyboardEvent.ctrlKey event
+          , alt: KeyboardEvent.altKey event
+          , shift: KeyboardEvent.shiftKey event
+          , meta: KeyboardEvent.metaKey event
+          }
+        , preventDefault: Event.preventDefault (KeyboardEvent.toEvent event)
+        , stopPropagation: Event.stopPropagation (KeyboardEvent.toEvent event)
+        , stopImmediatePropagation: Event.stopImmediatePropagation (KeyboardEvent.toEvent event)
+        }
