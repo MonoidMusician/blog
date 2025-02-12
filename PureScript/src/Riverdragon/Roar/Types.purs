@@ -185,7 +185,7 @@ rescalePower = mkAudioWorkletteNode
     pure
       { node
       , output: outOfNode node 0
-      , destroy: destroy0 <> destroy1 <> destroy2 <> destroy3
+      , destroy: destroy0 <> destroy1 <> destroy2 <> destroy3 <> destroy4
       }
 
 
