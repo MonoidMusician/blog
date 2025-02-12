@@ -139,7 +139,7 @@ import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Set as Set
 import Data.These (These(..))
-import Data.Traversable (class Foldable, fold, foldMap, mapAccumL, traverse)
+import Data.Traversable (class Foldable, foldMap, mapAccumL, traverse)
 import Data.Tuple (Tuple(..), fst, snd)
 import Effect (Effect, foreachE)
 import Idiolect ((#..))

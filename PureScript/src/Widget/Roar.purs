@@ -8,20 +8,21 @@ import Data.Int as Int
 import Data.Maybe (Maybe(..))
 import Effect.Aff (Milliseconds(..))
 import Effect.Class (liftEffect)
-import Riverdragon.Dragon.Bones ((=:=))
+import Effect.Ref as Ref
+import Riverdragon.Dragon.Bones (smarts, ($~~), (=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy)
-import Riverdragon.River (createRiver)
+import Riverdragon.River (createRiver, createRiverStore)
 import Riverdragon.River as River
-import Riverdragon.River.Beyond (KeyPhase(..), delay, documentEvent, fallingLeavesAff, keyEvents)
+import Riverdragon.River.Beyond (KeyPhase(..), delay, fallingLeavesAff, keyEvents)
 import Riverdragon.Roar.Sugar (Noise(..), toNode)
 import Riverdragon.Roar.Yawn (biiigYawn, yawnytime)
 import Riverdragon.Roar.Yawn as Y
-import Web.Audio.Node (createPeriodicWave)
-import Web.Audio.Types (BiquadFilterType(..), OscillatorType(..))
-import Web.Event.Event (EventType(..))
+import Web.Audio.Types (BiquadFilterType(..))
+import Web.DOM.Element (getBoundingClientRect)
+import Web.DOM.Element as Element
 import Web.Event.Event as Event
-import Web.UIEvent.KeyboardEvent as KeyboardEvent
+import Web.UIEvent.MouseEvent as MouseEvent
 import Widget (Widget)
 
 -- | This picks keys out of a standard QWERTY keyboard layout in a way that
@@ -86,10 +87,10 @@ pitchGain semitones = linmap (Interval 48.0 84.0) (Interval 1.0 0.1) $ Int.toNum
 
 widgetHarpsynthorg :: Widget
 widgetHarpsynthorg _ = pure $ eggy \shell -> do
-  { send: setValue, stream: valueSet } <- shell.track createRiver
+  { send: setValue, stream: _valueSet } <- shell.track createRiver
   { send: sendNote, stream: noteStream } <- shell.track createRiver
   let
-    startSynth = void $ biiigYawn {} \ctx -> do
+    startSynth = void $ biiigYawn {} \_ctx -> do
       makeItHappen <- yawnytime
       let
         oneVoice semitones release = do
@@ -136,8 +137,45 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
         KeyUp -> sendNote { key: note, value: false }
     _ -> pure unit
 
+  { stream: circlePos, send: sendCirclePos } <- shell.track $ createRiverStore $
+    Just { r: 5.0, cx: 25.0, cy: 80.0 }
+  svgRef <- Ref.new Nothing
+
   pure $ D.Fragment
     [ D.button
       [ D.onClick =:= \_ -> setValue unit
       ] $ D.text "Play"
+    , D.svg
+      [ D.stylish =:= smarts
+        { "width": "200px"
+        , "height": "100px"
+        , "stroke": "currentColor"
+        , "stroke-width": "2px"
+        , "border": "1px solid currentColor"
+        , "fill": "rebeccapurple"
+        }
+      , D.Self =:= \el -> Ref.write Nothing svgRef <$ Ref.write (Just el) svgRef
+      {-
+        There are a lot of things wrong with this:
+        - It should be a mousemove event on document, installed during mousedown
+        - mousedown should also record the initial position as a reference for dragging
+        - this does not take into account the viewBox (there is an API for this?)
+        - maybe you want escape to cancel a movement, before mouseup
+        But the basic idea is sound, and I think client coordinates are the right play here
+      -}
+      , D.on_"mousemove" =:= \e -> do
+          Ref.read svgRef >>= case MouseEvent.fromEvent e, _ of
+            Just ev, Just svg -> do
+              bb <- getBoundingClientRect svg
+              let mx = Int.toNumber (MouseEvent.clientX ev)
+              let my = Int.toNumber (MouseEvent.clientY ev)
+              let cx = 200.0 * (mx - bb.left) / bb.width
+              let cy = 100.0 * (my - bb.top) / bb.height
+              -- Console.logShow { bb, cx, cy, mx, my }
+              sendCirclePos { r: 5.0, cx, cy }
+            _, _ -> pure unit
+      ] $~~
+      [ D.path [ D.d =:= "M 0 15 L 100 50 L 200 100" ]
+      , D.circleW' circlePos [] mempty
+      ]
     ]

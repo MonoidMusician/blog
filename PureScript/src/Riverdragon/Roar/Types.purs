@@ -7,7 +7,6 @@ import Data.Maybe (Maybe)
 import Data.RecordOverloads (class RecordOverloads, overloads)
 import Effect (Effect)
 import Effect.Aff (Aff)
-import Effect.Class.Console as Console
 import Idiolect ((>==))
 import Prim.Boolean (False)
 import Riverdragon.River (Allocar, Lake, Stream, cumulate, dam, mapAl, oneStream, (>>~))

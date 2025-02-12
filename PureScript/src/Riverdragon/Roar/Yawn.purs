@@ -193,13 +193,13 @@ filter ::
   , frequency :: knobFrequency
   , gain :: knobGain
   } -> YawnM Roar
-filter input config@{ detune, frequency, gain } = yaaawn \{ ctx } -> liftEffect do
+filter input config = yaaawn \{ ctx } -> liftEffect do
   let
     { defaults, apply: applyKnobs } = renderKnobs
       { "Q": config."Q"
-      , detune
-      , frequency
-      , gain
+      , detune: config.detune
+      , frequency: config.frequency
+      , gain: config.gain
       } ctx
   node <- AudioNode.createBiquadFilterNode ctx defaults
   destroy1 <- applyKnobs node

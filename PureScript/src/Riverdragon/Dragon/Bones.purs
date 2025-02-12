@@ -491,11 +491,11 @@ onToggleOpen = onToggle <<< __open :: (Boolean -!> Unit) -> AttrProp
 
 -- (yoinked from d3 i think?)
 
-svgNS = "http://www.w.org/2000/svg" :: String
-xhtmlNS = "http://www.w.org/1999/xhtml" :: String
-xlinkNS = "http://www.w.org/1999/xlink" :: String
-xmlNS = "http://www.w.org/XML/1998/namespace" :: String
-xmlnsNS = "http://www.w.org/2000/xmlns/" :: String
+svgNS = "http://www.w3.org/2000/svg" :: String
+xhtmlNS = "http://www.w3.org/1999/xhtml" :: String
+xlinkNS = "http://www.w3.org/1999/xlink" :: String
+xmlNS = "http://www.w3.org/XML/1998/namespace" :: String
+xmlnsNS = "http://www.w3.org/2000/xmlns/" :: String
 
 --------------------------------------------------------------------------------
 -- | ## SVG stuff                                                           | --
