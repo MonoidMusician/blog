@@ -22,6 +22,9 @@ rendered :
 cache :
 	mkdir -p cache
 
+assets/json :
+	mkdir -p assets/json
+
 .PHONY : clean
 clean : clean-pandoc clean-ps
 
@@ -80,7 +83,7 @@ prod-ps : $(BUILDIR) PureScript/src PureScript/directives.txt spago.yaml PureScr
 	make assets-ps
 
 .PHONY : assets-ps
-assets-ps :
+assets-ps : assets/json
 	time spago run -m Build
 	(for f in assets/json/*-parser-states.json; do gzip -f9k "$$f"; done)
 
