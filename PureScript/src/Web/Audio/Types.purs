@@ -95,7 +95,8 @@ data Ramp
   | LinRamp
   | DecayRamp Duration
 
-data Cancel = Revert | Hold
+-- | `Hold` is not supported in Firefox https://bugzilla.mozilla.org/show_bug.cgi?id=1308431
+data Cancel = Revert -- | Hold
 
 data AudioParamCmd
   = CmdTarget { time :: Time, target :: Number, ramp :: Ramp }

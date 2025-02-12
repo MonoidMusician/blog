@@ -128,13 +128,13 @@ createAnalyserNode = unsafeCreateNode
 createBiquadFilterNode ::
   CreateNodeType "BiquadFilterNode" False
     ( type :: BiquadFilterType
-    , "Q" :: Float
-    , detune :: Float
-    , frequency :: Float
-    , gain :: Float
+    , "Q" :: Maybe Float
+    , detune :: Maybe Float
+    , frequency :: Maybe Float
+    , gain :: Maybe Float
     )
     ()
-    ()
+    ( type :: BiquadFilterType )
     ( "Q" :: ARate
     , detune :: ARate
     , frequency :: ARate

@@ -153,7 +153,10 @@ cleanup' act = do
     }
 
 cleanup :: Allocar Unit -> Allocar (Allocar Unit)
-cleanup = cleanup' >>> map _.cleanup
+cleanup act = do
+  actionToRun <- newSTR act
+  pure do
+    join $ getSTR actionToRun <* setSTR actionToRun mempty
 
 -- | Runs the last action each time a new action is set. Useful for when you are
 -- | replacing subscriptions or swapping out other resources.

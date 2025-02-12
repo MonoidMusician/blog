@@ -99,6 +99,7 @@ module Riverdragon.River
   , store
   , mayMemoize
   , memoize
+  , cumulate
   , foldStream
   , emitState
   , statefulStream
@@ -138,7 +139,7 @@ import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Set as Set
 import Data.These (These(..))
-import Data.Traversable (mapAccumL, traverse)
+import Data.Traversable (class Foldable, fold, foldMap, mapAccumL, traverse)
 import Data.Tuple (Tuple(..), fst, snd)
 import Effect (Effect, foreachE)
 import Idiolect ((#..))
@@ -528,6 +529,11 @@ alwaysBurst = map Just >>> \(Stream t stream) ->
   Stream t \cbs -> stream cbs <#>
     \r -> r { burst = if Array.null r.burst then [Nothing] else r.burst }
 
+alwaysBurstM :: forall flow m. Monoid m => Stream flow m -> Stream flow m
+alwaysBurstM (Stream t stream) =
+  Stream t \cbs -> stream cbs <#>
+    \r -> r { burst = if Array.null r.burst then [mempty] else r.burst }
+
 
 data Course a
   = StoreDedup (a -> a -> Boolean)
@@ -642,6 +648,10 @@ mayMemoize stream = stream
 -- | the sake of polymorphism: morally it returns a `River`.
 memoize :: forall flow a. River a -> Stream flow a
 memoize (Stream _ stream) = mayMemoize (Stream Flowing stream)
+
+
+cumulate :: forall f flow m. Foldable f => Monoid m => f (Stream flow m) -> Stream flow m
+cumulate = foldMap alwaysBurstM
 
 
 -- | Fold a function over a stream, giving it internal state.

@@ -18,7 +18,7 @@ import Data.Newtype (class Newtype)
 import Data.String as String
 import Data.Symbol (class IsSymbol)
 import Data.These (These(..))
-import Data.Traversable (class Traversable, traverse)
+import Data.Traversable (class Traversable, for, traverse)
 import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
@@ -43,6 +43,10 @@ infixr 0 foldMap as ..$
 foldMapFlipped :: forall f a m. Foldable f => Monoid m => f a -> (a -> m) -> m
 foldMapFlipped = flip foldMap
 infixl 1 foldMapFlipped as #..
+
+infixl 4 traverse as <..$>
+
+infixl 1 for as <#..>
 
 -- ..<
 -- >..

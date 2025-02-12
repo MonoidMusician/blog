@@ -3,9 +3,9 @@ export const disConnect = dis => ({ src, outputIndex }) => ({ dest, inputIndex }
 };
 
 export const start = node => time => () => node.start(time);
-export const startNow = node => () => node.startNow(time);
+export const startNow = node => () => node.start();
 export const stop = node => time => () => node.stop(time);
-export const stopNow = node => () => node.stopNow(time);
+export const stopNow = node => () => node.stop();
 export const whenEnded = node => cb => () => node.addEventListener("ended", () => cb());
 
 export const _eqAudioSrc = o1 => o2 => o1.src === o2.src && o1.outputIndex === o2.outputIndex;

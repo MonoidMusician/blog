@@ -1,4 +1,5 @@
-export const cancelAndHoldAtTime = param => time => () => param.cancelAndHoldAtTime(time);
+// https://bugzilla.mozilla.org/show_bug.cgi?id=1308431
+// export const cancelAndHoldAtTime = param => time => () => param.cancelAndHoldAtTime(time);
 export const cancelScheduledValues = param => time => () => param.cancelScheduledValues(time);
 export const exponentialRampToValueAtTime = param => value => time => () => param.exponentialRampToValueAtTime(value, time);
 export const linearRampToValueAtTime = param => value => time => () => param.linearRampToValueAtTime(value, time);

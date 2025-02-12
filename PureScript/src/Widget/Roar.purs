@@ -4,21 +4,27 @@ import Prelude
 
 import Control.Plus (empty, (<|>))
 import Data.Array as Array
+import Data.Filterable (compact, partition)
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
+import Data.Traversable (sequence)
 import Effect (Effect)
-import Effect.Aff (Milliseconds(..), launchAff_)
+import Effect.Aff (Milliseconds(..), launchAff, launchAff_)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Prim.Boolean (False)
 import Riverdragon.Dragon.Bones ((=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy)
-import Riverdragon.River (River, bursting, createRiver, dam, mapAl)
-import Riverdragon.River.Beyond (delay, documentEvent, fallingLeaves)
-import Riverdragon.Roar.Types (RoarO, createGainNode, createSines, fixed, pinkNoise, roaring)
+import Riverdragon.River (Lake, River, allStreams, bursting, createRiver, dam, mailboxRiver, mapAl, withInstantiated)
+import Riverdragon.River.Beyond (affToLake, delay, documentEvent, fallingLeaves, fallingLeavesAff, joinLeave, risingFalling)
+import Riverdragon.Roar.Sugar (Noise(..), toNode)
+import Riverdragon.Roar.Types (Roar, RoarO, toRoars)
+import Riverdragon.Roar.Yawn (biiigYawn, osc, yawnytime)
+import Riverdragon.Roar.Yawn as Y
+import Web.Audio.Node (createPeriodicWave)
 import Web.Audio.Node as AudioNode
-import Web.Audio.Types (ARate, AudioContext, AudioNode, AudioParamCmd(..), Duration, Ramp(..), Time, currentTime)
+import Web.Audio.Types (ARate, AudioContext, AudioNode, AudioParamCmd(..), BiquadFilterType(..), Duration, OscillatorType(..), Ramp(..), Time, currentTime)
 import Web.Event.Event (EventType(..))
 import Web.Event.Event as Event
 import Web.UIEvent.KeyboardEvent as KeyboardEvent
@@ -76,37 +82,6 @@ keymap =
   , "BracketRight"
   ]
 
-type Envelope
-  = { attack :: Duration
-    , decay :: Duration
-    , sustain :: Number
-    , release :: Duration
-    }
-
-type GainNode
-  = { output :: RoarO
-    , node :: AudioNode "GainNode" False () () ( gain :: ARate )
-    , destroy :: Effect Unit
-    }
-
-applyGain :: AudioContext -> Number -> Envelope -> River Time -> RoarO -> Effect GainNode
-applyGain ctx gain e releaseTime output = do
-  t0 <- currentTime ctx
-  createGainNode
-    { ctx
-    , input: pure [ output ]
-    , gain:
-      { default: Just 0.0
-      , ctl: const $ pure $ { srcs: empty, cmds: _ } $
-        bursting
-        [ CmdTarget { ramp: LinRamp, target: gain, time: t0 + e.attack }
-        , CmdTarget { ramp: LinRamp, target: gain * e.sustain, time: t0 + e.attack + e.decay }
-        ]
-        <|> (\t1 -> CmdTarget { ramp: LinRamp, target: 0.0, time: t1 + e.release })
-        <$> dam releaseTime
-      }
-    }
-
 data Interval = Interval Number Number
 
 linmap :: Interval -> Interval -> Number -> Number
@@ -120,36 +95,35 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
   { send: setValue, stream: valueSet } <- shell.track createRiver
   { send: sendNote, stream: noteStream } <- shell.track createRiver
   let
-    startSynth = void $ roaring {} \ctx -> do
-      createPinkNoise <- pinkNoise ctx
+    startSynth = void $ biiigYawn {} \ctx -> do
+      makeItHappen <- yawnytime
       let
-        activeSynths = fallingLeaves noteStream \semitones release -> do
-          let releaseTime = mapAl (const (currentTime ctx)) release
+        oneVoice semitones release = do
           let volume = pitchGain semitones
-          let pinkEnv = { attack: 0.05, decay: 0.95, sustain: 0.0, release: 0.1 }
-          let sineEnv = { attack: 0.05, decay: 0.95, sustain: 0.0, release: 0.3 }
-          t0 <- liftEffect $ currentTime ctx
-          pink <- createPinkNoise
-          gain2 <- liftEffect $ applyGain ctx 0.1 pinkEnv releaseTime pink.output
-          sine <- liftEffect $ createSines
-            { ctx
-            , detune: fixed $ Int.toNumber $ 100 * (semitones - 69)
-            , frequency: fixed 440.0
-            , sines: [0.4, 0.5, 0.1]
+          let pinkEnv = { attack: 0.10, decay: 0.95, sustain: 0.0, release: 0.1 }
+          let sineEnv = { attack: 0.05, decay: 0.95, sustain: 0.8, release: 0.3 }
+          pink <- toNode PinkNoise
+          pinkGain <- Y.gain pink { adsr: pinkEnv, volume: 0.03, release }
+          sine <- Y.osc
+            { detune: 100 * (semitones - 69)
+            , frequency: 440.0
+            , type: Custom $ createPeriodicWave ctx false [0.4, 0.5, 0.1] [0.0, 0.0, 0.0]
             }
-          gain <- liftEffect $ applyGain ctx volume sineEnv releaseTime sine.output
-          AudioNode.start sine.node (t0 + 0.0)
-          pure
-            { value: [ gain.output, gain2.output ]
-            , leave: delay (1200.0 # Milliseconds) release
-            }
-      t0 <- liftEffect $ currentTime ctx
-      pure
-        { output: unit
-        , outputs: join <$> activeSynths
-        , start: mempty <* Console.logShow t0
+          sineGain <- Y.gain sine { adsr: sineEnv, volume, release }
+          let leave = delay (500.0 # Milliseconds) release
+          pure { value: [ pinkGain, sineGain ], leave }
+        activeSynths = join <$> fallingLeavesAff noteStream \key release ->
+          map _.result $ makeItHappen $ oneVoice key release
+      melody <- Y.gain activeSynths 0.3
+      antialiased <- Y.filter melody
+        { type: Lowpass
+        , frequency: 8000.0
+        , detune: 0.0
+        , "Q": 0.3
+        , gain: unit
         }
-  launchAff_ $ void startSynth
+      pure $ pure [antialiased]
+  startSynth
 
   let
     getNote kb

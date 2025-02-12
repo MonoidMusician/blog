@@ -8,6 +8,7 @@ import Data.DateTime.Instant (Instant)
 import Data.DateTime.Instant as Instant
 import Data.Either (hush)
 import Data.Filterable (compact, partition)
+import Data.Foldable (fold)
 import Data.Int as Int
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
@@ -284,6 +285,20 @@ fallingLeaves upstream f =
       waitFor = mailboxRiver falling
       tracked = rising # mapAl \{ key } -> do
         f key (void (waitFor key))
+    in joinLeave tracked
+
+fallingLeavesAff ::
+  forall flow1 flow2 k m. Ord k => Show k =>
+  Stream flow1 { key :: k, value :: Boolean } ->
+  (k -> River Unit -> Aff { value :: m, leave :: Stream flow2 Unit }) ->
+  Lake (Array m)
+fallingLeavesAff upstream f =
+  withInstantiated (risingFalling upstream) \_ edges ->
+    let
+      { yes: rising, no: falling } = partition _.value edges
+      waitFor = mailboxRiver falling
+      tracked = allStreams rising \{ key } -> do
+        compact $ affToLake $ f key $ void $ waitFor key
     in joinLeave tracked
 
 

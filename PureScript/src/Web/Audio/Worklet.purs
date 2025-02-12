@@ -114,11 +114,10 @@ mkAudioWorkletteNode { name, function, parameters } ctx = do
       mkParamDescs (Proxy :: Proxy il) parameters
     nameSource = Json.stringify $ Json.fromString name
     source = _1 <> nameSource <> _2 <> function <> _3 <> params <> _4
-  Console.log source
-  url <- liftEffect $ createObjectURL $ Blob.fromString source (MediaType "text/javascript")
+  -- url <- liftEffect $ createObjectURL $ Blob.fromString source (MediaType "text/javascript")
   r <- Aff.makeAff \cb ->
-    mempty <$ _loadAudioWorkletNode ctx url name (cb <<< Right) (cb <<< Left)
-  liftEffect $ revokeObjectURL url
+    mempty <$ _loadAudioWorkletNode ctx source name (cb <<< Right) (cb <<< Left)
+  -- liftEffect $ revokeObjectURL url
   pure r
 
 sourceWrapping :: String /\ String /\ String /\ String
