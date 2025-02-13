@@ -78,6 +78,10 @@ module Riverdragon.River
   , (<?**>)
   , applyOp
   , (<**>)
+  , tupleOnLeft
+  , tupleOnRight
+  , (/?*\)
+  , (/*?\)
   , createRiver
   , createRiverBurst
   , createRiverStore
@@ -134,6 +138,7 @@ import Control.Apply (lift2)
 import Control.Plus (class Plus, empty)
 import Data.Array as Array
 import Data.Bifoldable (bifoldMap)
+import Data.Compactable (separateDefault)
 import Data.Filterable (class Compactable, class Filterable, filterDefault, filterMap, partitionDefaultFilterMap, partitionMapDefault)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Maybe (Maybe(..), maybe)
@@ -362,6 +367,15 @@ applyOp :: forall f a b. Applicative f => f a -> f (a -> b) -> f b
 applyOp ea ef = apply ((#) <$> ea) ef
 
 infixl 4 applyOp as <**>
+
+tupleOnLeft :: forall flow a b. Stream flow a -> Stream flow b -> Stream flow (Tuple a b)
+tupleOnLeft = combineStreams (This tt) Tuple
+
+tupleOnRight :: forall flow a b. Stream flow a -> Stream flow b -> Stream flow (Tuple a b)
+tupleOnRight = combineStreams (That tt) Tuple
+
+infixl 4 tupleOnLeft as /*?\
+infixl 4 tupleOnRight as /?*\
 
 
 -- | Create a river as a message channel, that broadcasts any message to all of
@@ -683,7 +697,7 @@ statefulStream b0 (Stream t stream) folder = Stream t \cbs -> do
 
 instance compactableStream :: Compactable (Stream flow) where
   compact s = filterMap identity s
-  separate s = partitionMapDefault identity s
+  separate s = separateDefault s
 instance filterableStream :: Filterable (Stream flow) where
   filter f s = filterDefault f s
   partition f s = partitionDefaultFilterMap f s

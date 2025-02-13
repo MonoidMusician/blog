@@ -135,7 +135,7 @@ infixl 4 _id'd as :# -- over <>
 _hrefy :: forall f r. Applicative f => (Array (f AttrProp) -> r) -> String -> Array (f AttrProp) -> r
 _hrefy fn whither = fn <<< Array.cons (attr "href" =:= whither)
 infixl 4 _hrefy as :@ -- over <>
--- | `D.div :% "display: flow" $ contents`
+-- | `D.div :% "display: flow" .$ contents`
 _stylish :: forall f r. Applicative f => (Array (f AttrProp) -> r) -> String -> Array (f AttrProp) -> r
 _stylish fn whither = fn <<< Array.cons (style =:= whither)
 infixl 4 _stylish as :% -- over <>

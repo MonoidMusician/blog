@@ -97,6 +97,14 @@ Why canʼt Firefox have nice codecs?
 
 - https://docs.fedoraproject.org/en-US/quick-docs/rpmfusion-setup/#_enabling_the_rpm_fusion_repositories_using_command_line_utilities
 
+Middle click for scrolling
+
+:   [How to scroll the screen using the middle click?](https://unix.stackexchange.com/questions/58900/how-to-scroll-the-screen-using-the-middle-click)
+
+    - `xinput list`{.sh}
+    - `xinput set-prop 18 "libinput Scroll Method Enabled" 0, 0, 1`{.sh}
+    - `xinput set-prop 18 "libinput Button Scrolling Button" 2`{.sh}
+
 
 ## Misc. links
 

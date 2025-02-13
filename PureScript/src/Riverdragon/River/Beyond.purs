@@ -6,8 +6,8 @@ import Control.Alt ((<|>))
 import Data.Array as Array
 import Data.DateTime.Instant (Instant)
 import Data.DateTime.Instant as Instant
-import Data.Either (hush)
-import Data.Filterable (compact, partition)
+import Data.Either (Either(..), hush, isLeft)
+import Data.Filterable (compact, partitionMap)
 import Data.Int as Int
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
@@ -236,15 +236,17 @@ animationLoop s0 out actions =
 -- | `keydown` events, and then this can be partitioned into the rising and
 -- | falling events exactly once it is instantiated
 risingFalling ::
-  forall flow k. Ord k =>
-  Stream flow { key :: k, value :: Boolean } ->
-  Lake { key :: k, value :: Boolean }
-risingFalling = statefulStream Set.empty <@> \state { key, value } ->
-  case Set.member key state == value of
+  forall flow k r. Ord k =>
+  ({ key :: k | r } -> Boolean) ->
+  Stream flow { key :: k | r } ->
+  Lake { key :: k | r }
+risingFalling predicate = statefulStream Set.empty <@> \state r@{ key } ->
+  let risen = predicate r in
+  case Set.member key state == risen of
     true -> { state, emit: Nothing }
     false ->
-      { state: (if value then Set.insert else Set.delete) key state
-      , emit: Just { key, value }
+      { state: (if risen then Set.insert else Set.delete) key state
+      , emit: Just r
       }
 
 data JoinLeave m = Join Int m | Leave Int
@@ -274,31 +276,39 @@ joinLeave upstream =
 -- | own (before a `keyup` event). The result is a running state of audio nodes
 -- | that join and leave in response to external events.
 fallingLeaves ::
-  forall flow1 flow2 k m. Ord k => Show k =>
-  Stream flow1 { key :: k, value :: Boolean } ->
-  (k -> River Unit -> Allocar { value :: m, leave :: Stream flow2 Unit }) ->
+  forall flow1 flow2 k r x y m. Ord k =>
+  ({ key :: k | r } -> Either x y) ->
+  Stream flow1 { key :: k | r } ->
+  ({ key :: k | r } -> x -> River y -> Allocar { value :: m, leave :: Stream flow2 Unit }) ->
   Lake (Array m)
-fallingLeaves upstream f =
-  withInstantiated (risingFalling upstream) \_ edges ->
+fallingLeaves p upstream f =
+  withInstantiated (risingFalling (isLeft <<< p) upstream) \_ edges ->
     let
-      { yes: rising, no: falling } = partition _.value edges
+      p' r = case p r of
+        Left x -> Left (r /\ x)
+        Right y -> Right { key: r.key, value: y }
+      { left: rising, right: falling } = partitionMap p' edges
       waitFor = mailboxRiver falling
-      tracked = rising # mapAl \{ key } -> do
-        f key (void (waitFor key))
+      tracked = rising # mapAl \(r /\ x) -> do
+        f r x (waitFor r.key)
     in joinLeave tracked
 
 fallingLeavesAff ::
-  forall flow1 flow2 k m. Ord k => Show k =>
-  Stream flow1 { key :: k, value :: Boolean } ->
-  (k -> River Unit -> Aff { value :: m, leave :: Stream flow2 Unit }) ->
+  forall flow1 flow2 k r x y m. Ord k =>
+  ({ key :: k | r } -> Either x y) ->
+  Stream flow1 { key :: k | r } ->
+  ({ key :: k | r } -> x -> River y -> Aff { value :: m, leave :: Stream flow2 Unit }) ->
   Lake (Array m)
-fallingLeavesAff upstream f =
-  withInstantiated (risingFalling upstream) \_ edges ->
+fallingLeavesAff p upstream f =
+  withInstantiated (risingFalling (isLeft <<< p) upstream) \_ edges ->
     let
-      { yes: rising, no: falling } = partition _.value edges
+      p' r = case p r of
+        Left x -> Left (r /\ x)
+        Right y -> Right { key: r.key, value: y }
+      { left: rising, right: falling } = partitionMap p' edges
       waitFor = mailboxRiver falling
-      tracked = allStreams rising \{ key } -> do
-        compact $ affToLake $ f key $ void $ waitFor key
+      tracked = allStreams rising \(r /\ x) -> do
+        compact $ affToLake $ f r x $ waitFor r.key
     in joinLeave tracked
 
 

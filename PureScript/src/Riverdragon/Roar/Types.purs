@@ -2,7 +2,8 @@ module Riverdragon.Roar.Types where
 
 import Prelude
 
-import Data.Foldable (traverse_)
+import Data.Compactable (compact)
+import Data.Foldable (foldMap, traverse_)
 import Data.Maybe (Maybe)
 import Data.RecordOverloads (class RecordOverloads, overloads)
 import Effect (Effect)
@@ -12,6 +13,7 @@ import Prim.Boolean (False)
 import Riverdragon.River (Allocar, Lake, Stream, cumulate, dam, mapAl, oneStream, (>>~))
 import Riverdragon.River as River
 import Riverdragon.River.Bed (diffingArraySet)
+import Riverdragon.River.Beyond (affToLake)
 import Type.Equality (class TypeEquals, proof, to)
 import Type.Proxy (Proxy(..))
 import Web.Audio.Node (AudioDest, AudioSrc, createPeriodicWave, intoNode, intoParam, outOfNode)
@@ -22,8 +24,10 @@ import Web.Audio.Types as Audio
 import Web.Audio.Worklet (mkAudioWorkletteNode)
 
 type Roar = AudioSrc
+
 type RoarI = AudioDest
 type RoarO = AudioSrc
+
 type RoarP =
   { default :: Maybe Float
   , ctl :: RoarCtl
@@ -55,12 +59,15 @@ connecting srcsStream dest = do
 
 class ToRoars i where toRoars :: i -> Lake (Array Roar)
 instance ToRoars Roar where toRoars = pure <<< pure
+instance ToRoars i => ToRoars (Maybe i) where toRoars = foldMap toRoars
 instance ToRoars i => ToRoars (Array i) where toRoars = cumulate <<< map toRoars
 instance ToRoars i => ToRoars (Stream flow i)  where toRoars stream = stream >>~ toRoars
+instance ToRoars i => ToRoars (Aff i)  where toRoars act = compact (affToLake act) >>~ toRoars
 
 class ToLake i t where toLake :: i -> Lake t
 instance ToLake i t => ToLake (Array i) t where toLake = oneStream <<< map toLake
 else instance TypeEquals i t => ToLake (Stream flow i) t where toLake = dam <<< proof
+else instance TypeEquals i t => ToLake (Aff i) t where toLake = compact <<< affToLake <<< proof
 else instance TypeEquals i t => ToLake i t where toLake = pure <<< to
 
 class ToOther i o where thingy :: i -> o

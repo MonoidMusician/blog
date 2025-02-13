@@ -15,8 +15,11 @@ import Web.Audio.FFI (class FFI, _undefined, _unsafeGetProperty, _unsafeSetPrope
 type Float = Number
 type Norm = Float
 type Duration = Number
-
 type Time = Number
+type Volume = Number
+type Frequency = Number
+type Cents = Number
+
 type SequenceFloat = Array Float
 
 

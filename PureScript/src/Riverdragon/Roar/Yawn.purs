@@ -2,62 +2,73 @@ module Riverdragon.Roar.Yawn where
 
 import Prelude
 
+import Control.Monad.MutStateT (MutStateT(..), runMutStateT)
+import Control.Monad.Reader (ReaderT(..), asks, runReaderT)
 import Control.Monad.Reader.Class (ask)
-import Control.Monad.Trans.Class (lift)
-import Control.Monad.Writer.Class (tell)
-import Data.Either (either)
+import Control.Monad.State (get)
+import Data.Array ((!!))
+import Data.Compactable (compact)
+import Data.Int as Int
 import Data.Map (Map)
 import Data.Map as Map
+import Data.Maybe (fromMaybe)
 import Data.Monoid.Dual (Dual(..))
 import Data.Newtype (unwrap)
-import Data.Tuple.Nested ((/\))
+import Data.Number as Number
+import Data.SequenceRecord (sequenceRecord)
+import Data.Traversable (traverse)
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
-import Effect.Aff (Aff, ParAff, launchAff, launchAff_, parallel, sequential)
+import Effect.Aff (Aff, ParAff, launchAff, parallel, sequential)
 import Effect.Aff as Aff
 import Effect.Class (liftEffect)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
-import Riverdragon.River (Allocar, Lake, Stream, dam)
+import Riverdragon.River (Lake, Stream, alwaysBurst, dam, unsafeRiver, (>>~))
 import Riverdragon.River as River
 import Riverdragon.River.Bed (cleanup)
 import Riverdragon.River.Bed as Bed
+import Riverdragon.River.Beyond (affToLake)
+import Riverdragon.Roar.Dimensions (temperaments)
 import Riverdragon.Roar.Knob (class ToKnob, Knob(..), renderKnobs)
 import Riverdragon.Roar.Types (class ToLake, class ToOther, class ToRoars, Roar, RoarO, connecting, thingy, toLake, toRoars)
 import Type.Proxy (Proxy(..))
-import Uncurried.RWSET (RWSET, runRWSET)
+import Type.Row (type (+))
 import Web.Audio.Context (createAudioContext)
 import Web.Audio.Node (destination, intoNode, outOfNode)
 import Web.Audio.Node as AudioNode
 import Web.Audio.Node as Node
-import Web.Audio.Types (AudioContext, BiquadFilterType, OscillatorType)
+import Web.Audio.Types (AudioContext, BiquadFilterType, Frequency, OscillatorType(..))
 import Web.Audio.Types as Audio
+import Widget (Interface, storeInterface)
 
-type YawnM =
-  RWSET
-    { ctx :: AudioContext
-    , state :: Ref
-      { id :: Int
-      , worklets :: Map String (Aff Unit) -- unused at the moment
-      }
-    }
-    { destroy :: Dual (Effect Unit)
-    , ready :: ParAff Unit
-    }
-    Unit
-    Void
-    Aff
+type YawnM = MutStateT YawnSt (ReaderT YawnRW Effect)
+type YawnSt = Record (YawnS + ())
+type YawnRW = Record (YawnR + ( written :: Ref (Record (YawnW + ())) ))
 
-type YawnFn result =
-  { ctx :: AudioContext
-  -- TODO: caching of knobs?
-  , state :: Ref
-    { id :: Int
-    , worklets :: Map String (Aff Unit)
-    }
-  } -> Aff
-  { destroy :: Effect Unit
-  , ready :: Aff Unit
-  , result :: result
+-- Reader state
+type YawnR r =
+  ( ctx :: AudioContext
+  , iface :: YawnLive
+  | r
+  )
+-- Writer state
+type YawnW r =
+  ( destroy :: Dual (Effect Unit)
+  , ready :: ParAff Unit
+  | r
+  )
+-- Mutable state
+-- TODO: caching of knobs?
+type YawnS r =
+  ( id :: Int
+  , worklets :: Map String (Aff Unit) -- unused at the moment
+  | r
+  )
+-- Live variables that notify when they change
+type YawnLive =
+  { temperament :: Interface (Array Number)
+  , pitch :: Interface Frequency
   }
 
 biiigYawn :: forall flow.
@@ -66,74 +77,106 @@ biiigYawn :: forall flow.
   Effect
     { ctx :: AudioContext
     , destroy :: Effect Unit
-    , waitUntilReady :: Aff (Stream flow (Array RoarO))
+    , waitUntilReady :: Aff Unit
     }
 biiigYawn options creator = do
   ctx <- createAudioContext options
-  state <- Ref.new { id: 0, worklets: Map.empty }
-  currentDestroy <- Bed.prealloc mempty
-  -- TODO: bracket
-  fiber <- launchAff do
-    _ /\ orStream /\ written <- runRWSET { ctx, state } unit (creator ctx)
-    let outputs = either absurd identity orStream
-    let { destroy: Dual destroy1, ready } = written
-    destroy2 <- liftEffect $ connecting (dam outputs) (destination ctx)
-    destroy <- liftEffect $ cleanup $ destroy1 <> destroy2
-    sequential ready
-    liftEffect $ currentDestroy.set destroy
-    pure outputs
-  currentDestroy.set $ launchAff_ $ Aff.killFiber (Aff.error "Canceled Yawn") fiber
+  temperament <- storeInterface
+  temperament.send temperaments.equal
+  pitch <- storeInterface
+  pitch.send 440.0
+  let
+    iface = { temperament, pitch }
+    state0 =
+      { id: 0
+      , worklets: Map.empty
+      }
+  written <- Ref.new mempty
+  Tuple _state outputs <- runReaderT (runMutStateT state0 (creator ctx)) { ctx, written, iface }
+  { destroy: Dual destroy1, ready } <- Ref.read written
+  destroy2 <- liftEffect $ connecting (dam outputs) (destination ctx)
+  destroy <- liftEffect $ cleanup $ destroy1 <> destroy2
+  fiber <- launchAff $ unit <$ sequential ready
   pure
     { ctx
-    , destroy: join currentDestroy.get
+    , destroy
     , waitUntilReady: Aff.joinFiber fiber
     }
 
 
+type YawnFn result =
+  { ctx :: AudioContext
+  , state :: YawnSt
+  , ref :: Ref YawnSt
+  } -> Effect
+  { destroy :: Effect Unit
+  , ready :: Aff Unit
+  , result :: result
+  }
+
 yaaawn :: forall result. YawnFn result -> YawnM result
 yaaawn f = do
-  ctx <- ask
-  { result, destroy, ready } <- lift $ f ctx
-  tell { destroy: Dual destroy, ready: parallel ready }
-  pure result
-
--- yawnOnDemand :: forall flow1 flow2 x. Stream flow1 (YawnM x) -> YawnM (Stream flow2 x)
--- yawnOnDemand upstream = yaaawn \{ ctx, state } -> liftEffect do
---   { send, stream, destroy: destroy1 } <- createRiver
---   pendingReady <- Bed.prealloc (Just (mempty :: ParAff Unit))
---   let
---     whenReady :: Aff Unit -> Aff Unit
---     whenReady act =
---       liftEffect pendingReady.get >>= case _ of
---         Just pending -> liftEffect do
---           pendingReady.set (Just (pending <> parallel act))
---         Nothing -> act
---   rollingDestroy <- Bed.rolling
---   destroy2 <- River.subscribe upstream \creator -> launchAff_ do
---     _ /\ orStream /\ written <- runRWSET { ctx, state } unit creator
---     liftEffect $ rollingDestroy $ coerce written.destroy
---     whenReady do
---       sequential written.ready
---       liftEffect $ send $ either absurd identity orStream
---   let destroy = destroy1 <> destroy2 <> rollingDestroy mempty
---   pure { destroy, ready: mempty, result: stream }
-
-yawnytime :: YawnM (forall x. YawnM x -> Aff { result :: x, destroy :: Allocar Unit })
-yawnytime = yaaawn \{ ctx, state } -> liftEffect do
-  destroyAll <- Bed.accumulator
+  { ctx, written } <- ask
+  state <- get
+  ref <- MutStateT (ReaderT pure)
+  r <- liftEffect $ f { ctx, state, ref }
+  isReady <- liftEffect $ Bed.prealloc false
   let
-    result :: forall x. YawnM x -> Aff { result :: x, destroy :: Allocar Unit }
-    result creator = do
-      _ /\ orStream /\ written <- runRWSET { ctx, state } unit creator
-      destroy <- liftEffect $ cleanup (unwrap written.destroy)
-      liftEffect $ destroyAll.put destroy
-      sequential written.ready
-      pure { result: either absurd identity orStream, destroy }
-  pure
-    { destroy: join destroyAll.get
-    , ready: mempty
-    , result: result :: forall x. YawnM x -> Aff { result :: x, destroy :: Allocar Unit }
+    ready = do
+      alreadyRun <- liftEffect $ isReady.get
+      when (not alreadyRun) r.ready
+      liftEffect $ isReady.set true
+  liftEffect $ written # Ref.modify_ \s -> s
+    { destroy = s.destroy <> Dual r.destroy
+    , ready = s.ready <> parallel ready
     }
+  pure r.result
+
+yawnOnDemand :: forall flow1 flow2 x. Stream flow1 (YawnM x) -> YawnM (Stream flow2 x)
+yawnOnDemand upstream = do
+  rollingDestroy <- liftEffect Bed.rolling
+  { run }  <- yawnytime
+  { destroy: destroyStream, stream } <- liftEffect $ River.instantiate $
+    upstream >>~ \act -> compact $ affToLake do
+      { destroy: newDestroy, waitForReady, result } <- liftEffect $ run act
+      liftEffect $ rollingDestroy newDestroy
+      result <$ waitForReady
+  { written } <- ask
+  liftEffect $ written # Ref.modify_ \s -> s <>
+    { destroy: Dual $ destroyStream <> rollingDestroy mempty
+    , ready: mempty
+    }
+  pure stream
+
+type RunYawn =
+  forall x. YawnM x -> Effect
+    { result :: x
+    , destroy :: Effect Unit
+    , waitForReady :: Aff Unit
+    }
+
+-- | `yawnytime` creates a localized runner for `Yawn`. This is basically
+-- | bracketed so you can destroy all of them at once, or individually.
+-- | If you need to wait for asynchronous availability (e.g. of worklettes),
+-- | you may use `waitForReady`, but this is not necessary.
+yawnytime :: YawnM { run :: RunYawn, destroyAll :: Effect Unit }
+yawnytime = MutStateT $ ReaderT \state -> ReaderT \upper@{ ctx } -> do
+  destroyAll <- Bed.accumulator
+  upper.written # Ref.modify_ \s -> s <>
+    { destroy: Dual $ join destroyAll.get
+    , ready: mempty
+    }
+  let
+    run :: RunYawn
+    run (MutStateT (ReaderT creator)) = do
+      writing <- Ref.new mempty
+      r <- runReaderT (creator state) { ctx, written: writing, iface: upper.iface }
+      written <- Ref.read writing
+      destroy <- liftEffect $ cleanup $ unwrap written.destroy
+      liftEffect $ destroyAll.put destroy
+      fiber <- launchAff $ sequential written.ready
+      pure { result: r, destroy, waitForReady: Aff.joinFiber fiber }
+  pure ({ run, destroyAll: join destroyAll.get } :: { run :: RunYawn | _ })
 
 
 roars :: Array Roar -> YawnM Roar
@@ -211,5 +254,26 @@ filter input config = yaaawn \{ ctx } -> liftEffect do
     , ready: mempty
     }
 
--- freqs :: forall flow. Stream flow (Array Knob) -> YawnM Roar
--- freqs = roarings <=< yawnOnDemand <<< map (traverse \frequency -> osc { type: Sine, frequency, detune: 0 })
+mtf :: Int -> YawnM Frequency
+mtf note = do
+  { temperament, pitch: reference } <- ask >>= \{ iface } -> liftEffect do
+    sequenceRecord { temperament: iface.temperament.current, pitch: iface.pitch.current }
+  let
+    semitones = (note - 69)
+    temper = fromMaybe 0.0 $ fromMaybe temperaments.equal temperament !! (note `mod` 12)
+    cents = Int.toNumber (100 * semitones) + temper
+    octaves = cents / 1200.0
+    freq = fromMaybe 440.0 reference * Number.pow 2.0 octaves
+  pure freq
+
+mtf_ :: forall flow flowInt. ToLake flowInt Int => flowInt -> YawnM (Stream flow Number)
+mtf_ notes = do
+  { temperament, pitch } <- asks _.iface
+  yawnOnDemand ado
+    alwaysBurst (unsafeRiver temperament.loopback)
+    alwaysBurst (unsafeRiver pitch.loopback)
+    note <- toLake notes
+    in mtf note
+
+freqs :: forall flow knob. ToKnob knob => Stream flow (Array knob) -> YawnM Roar
+freqs = roarings <=< yawnOnDemand <<< map (traverse \frequency -> osc { type: Sine, frequency, detune: 0 })
