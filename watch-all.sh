@@ -1,9 +1,5 @@
 #!/bin/bash
-trap terminate SIGINT
-terminate(){
-    pkill -SIGINT -P $$
-    exit
-}
+trap 'trap - SIGTERM && kill 0' EXIT SIGTERM
 make live >/dev/null &
 spago build || exit 1
 sleep 5
