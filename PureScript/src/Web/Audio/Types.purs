@@ -2,6 +2,9 @@ module Web.Audio.Types where
 
 import Prelude
 
+import Data.Enum (class BoundedEnum, class Enum, cardinality)
+import Data.Enum.Generic (genericCardinality, genericFromEnum, genericPred, genericSucc, genericToEnum)
+import Data.Generic.Rep (class Generic)
 import Data.Reflectable (class Reflectable, class Reifiable)
 import Data.Symbol (class IsSymbol, reflectSymbol)
 import Effect (Effect)
@@ -275,3 +278,17 @@ instance FFI FFTSize Int where
     16384 -> FFT16384
     32768 -> FFT32768
     _ -> unsafeCrashWith "Invalid FFTSize"
+
+derive instance Eq FFTSize
+derive instance Ord FFTSize
+derive instance Generic FFTSize _
+instance Enum FFTSize where
+  pred = genericPred
+  succ = genericSucc
+instance Bounded FFTSize where
+  bottom = FFT32
+  top = FFT32768
+instance BoundedEnum FFTSize where
+  toEnum = genericToEnum
+  fromEnum = genericFromEnum
+  cardinality = genericCardinality

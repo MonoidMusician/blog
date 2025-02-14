@@ -19,7 +19,10 @@ import Record.Unsafe.Union as RU
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Web.Audio.FFI (toFFI)
-import Web.Audio.Types (AudioContext, AudioNode, Rate, Float)
+import Web.Audio.Types (AudioContext, AudioNode, Float, Rate)
+
+type AudioWorkletNode =
+  AudioNode "AudioWorkletNode" False () ()
 
 -- loadAudioWorkletNode :: AudioContext -> Aff.Aff ({} -> Effect (AudioNode "AudioWorkletNode" False () () ()))
 -- loadAudioWorkletNode ctx = Aff.makeAff \cb ->
@@ -96,7 +99,7 @@ mkAudioWorkletteNode ::
   } ->
   AudioContext -> Aff.Aff
     (Record given -> Effect
-      { node :: AudioNode "AudioWorkletNode" False () () params
+      { node :: AudioWorkletNode params
       , send :: send -> Effect Unit
       , receive :: (receive -> Effect Unit) -> Effect (Effect Unit)
       , destroy :: Effect Unit

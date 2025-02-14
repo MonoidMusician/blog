@@ -8,9 +8,10 @@ import Data.DateTime.Instant (Instant)
 import Data.DateTime.Instant as Instant
 import Data.Either (Either(..), hush, isLeft)
 import Data.Filterable (compact, partitionMap)
+import Data.Foldable (fold)
 import Data.Int as Int
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), isJust)
 import Data.Set as Set
 import Data.Time.Duration (Milliseconds(..))
 import Data.Tuple (snd)
@@ -213,6 +214,21 @@ interval :: Milliseconds -> Lake Int
 interval (Milliseconds ms) = makeLake \cb -> do
   counted <- freshId
   clearInterval <$> setInterval (Int.floor ms) (cb =<< counted)
+
+everyFrame :: Lake Int
+everyFrame = makeLake \cb -> do
+  counted <- freshId
+  cancelRequest <- prealloc Nothing
+  let
+    next = cancelRequest.set <<< Just =<< requestAnimationFrame do
+      hasRequest <- isJust <$> cancelRequest.get
+      when hasRequest do
+        cb =<< counted
+        next
+    destroy = do
+      fold =<< cancelRequest.get
+      cancelRequest.set Nothing
+  destroy <$ next
 
 animationLoop :: forall state out.
   state -> out ->

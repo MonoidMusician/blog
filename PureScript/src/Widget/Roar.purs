@@ -4,6 +4,7 @@ import Prelude
 
 import Control.Monad.Reader (asks)
 import Data.Array as Array
+import Data.Filterable (filter)
 import Data.HeytingAlgebra (ff)
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
@@ -14,16 +15,22 @@ import Riverdragon.Dragon.Bones (smarts, ($~~), (=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy)
 import Riverdragon.River (River, createRiver, createRiverStore)
+import Riverdragon.River as River
+import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (KeyPhase(..), delay, keyEvents)
 import Riverdragon.Roar.Dimensions (temperaments)
 import Riverdragon.Roar.Knob (Envelope)
 import Riverdragon.Roar.Sugar (Noise(..), toNode)
 import Riverdragon.Roar.Synth (notesToNoises)
 import Riverdragon.Roar.Types (Roar, toRoars)
+import Riverdragon.Roar.Viz (oscilloscope, spectrogram)
 import Riverdragon.Roar.Yawn (YawnM, biiigYawn, mtf_)
 import Riverdragon.Roar.Yawn as Y
 import Web.Audio.Types (BiquadFilterType(..))
 import Web.DOM.Element (getBoundingClientRect)
+import Web.DOM.Element as Element
+import Web.DOM.Node as Node
+import Web.HTML.HTMLCanvasElement as HTMLCanvasElement
 import Web.UIEvent.MouseEvent as MouseEvent
 import Widget (Widget)
 
@@ -110,38 +117,51 @@ oneVoice { pinkEnv, sineEnv } semitones release = do
 
 widgetHarpsynthorg :: Widget
 widgetHarpsynthorg _ = pure $ eggy \shell -> do
-  { send: setValue, stream: _valueSet } <- shell.track createRiver
+  { send: setValue, stream: valueSet } <- shell.track createRiver
   { send: sendNote, stream: noteStream } <- shell.track createRiver
   { send: sendPinkEnv, stream: pinkEnvStream } <- shell.track $
     createRiverStore $ Just { attack: 0.10, decay: 0.95, sustain: 0.0, release: 0.1 }
   { send: sendSineEnv, stream: sineEnvStream } <- shell.track $
     createRiverStore $ Just { attack: 0.05, decay: 0.95, sustain: 0.8, release: 0.3 }
+  { send: sendScopeParent, stream: scopeParent } <- shell.track $ createRiverStore Nothing
+
+  destroyLastSynth <- Bed.rolling
   let
-    startSynth = void $ biiigYawn {} \_ctx -> do
-      -- This triggers synthesizers and shuts them down when they are released
-      activeSynths <- notesToNoises
-        { pinkEnv: pinkEnvStream
-        , sineEnv: sineEnvStream
-        } noteStream oneVoice
+    startSynth = do
+      { destroy: stopSynth } <- biiigYawn {} \_ctx -> do
+        -- This triggers synthesizers and shuts them down when they are released
+        activeSynths <- notesToNoises
+          { pinkEnv: pinkEnvStream
+          , sineEnv: sineEnvStream
+          } noteStream oneVoice
 
-      -- Set the tuning of the instrument
-      iface <- asks _.iface
-      liftEffect $ iface.temperament.send temperaments.kirnbergerIII
-      liftEffect $ iface.pitch.send 441.0
+        -- Set the tuning of the instrument
+        iface <- asks _.iface
+        liftEffect $ iface.temperament.send temperaments.kirnbergerIII
+        liftEffect $ iface.pitch.send 441.0
 
-      -- Mix them and reduce their volume
-      melody <- Y.gain activeSynths 0.3
-      -- Take the edge off slightly ... not a substitute for proper synth design
-      antialiased <- Y.filter melody
-        { type: Lowpass
-        , frequency: 8000.0
-        , detune: 0.0
-        , "Q": 0.3
-        , gain: unit
-        }
-      pure $ toRoars antialiased
+        -- Mix them and reduce their volume
+        melody <- Y.gain activeSynths 0.3
+        -- Take the edge off slightly ... not a substitute for proper synth design
+        antialiased <- Y.filter melody
+          { type: Lowpass
+          , frequency: 8000.0
+          , detune: 0.0
+          , "Q": 0.3
+          , gain: unit
+          }
+        scopeEl1 <- oscilloscope { width: 1024, height: 512 } antialiased
+        scopeEl2 <- spectrogram { height: 512, width: 400 } antialiased
+        void $ liftEffect $ River.subscribe scopeParent \el -> do
+          Node.appendChild (HTMLCanvasElement.toNode scopeEl1) (Element.toNode el)
+          Node.appendChild (HTMLCanvasElement.toNode scopeEl2) (Element.toNode el)
+        pure $ toRoars antialiased
+      destroyLastSynth stopSynth
 
   startSynth
+  void $ River.subscribe valueSet if _
+    then void startSynth
+    else destroyLastSynth mempty
 
   let
     -- Transform a `KeyEvent` into a note value
@@ -167,8 +187,12 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
 
   pure $ D.Fragment
     [ D.button
-      [ D.onClick =:= \_ -> setValue unit
+      [ D.onClick =:= \_ -> setValue true
       ] $ D.text "Play"
+    , D.button
+      [ D.onClick =:= \_ -> setValue false
+      ] $ D.text "Pause"
+    , D.div [ D.Self =:= \el -> mempty <$ sendScopeParent el ] mempty
     , D.svg
       [ D.stylish =:= smarts
         { "width": "200px"

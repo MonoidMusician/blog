@@ -106,6 +106,16 @@ type CreateNodeType name source options read write params =
     FFI (Record given) (Record ffi) =>
   AudioContext -> Record given -> Effect (AudioNode name source read write params)
 
+type AnalyserNode =
+  AudioNode "AnalyserNode" False
+    ( frequencyBinCount :: Int
+    )
+    ( fftSize :: FFTSize
+    , maxDecibels :: Number
+    , minDecibels :: Number
+    , smoothingTimeConstant :: Number
+    )
+    ()
 createAnalyserNode ::
   CreateNodeType "AnalyserNode" False
     ( fftSize :: FFTSize
@@ -125,6 +135,15 @@ createAnalyserNode ::
     ()
 createAnalyserNode = unsafeCreateNode
 
+type BiquadFilterNode =
+  AudioNode "BiquadFilterNode" False
+    ()
+    ( type :: BiquadFilterType )
+    ( "Q" :: ARate
+    , detune :: ARate
+    , frequency :: ARate
+    , gain :: ARate
+    )
 createBiquadFilterNode ::
   CreateNodeType "BiquadFilterNode" False
     ( type :: BiquadFilterType
@@ -142,31 +161,41 @@ createBiquadFilterNode ::
     )
 createBiquadFilterNode = unsafeCreateNode
 
+type ChannelMergerNode =
+  AudioNode "ChannelMergerNode" False () () ()
 createChannelMergerNode ::
   CreateNodeType "ChannelMergerNode" False
     ( numberOfInputs :: Int
     ) () () ()
 createChannelMergerNode = unsafeCreateNode
 
+type ChannelSplitterNode =
+  AudioNode "ChannelSplitterNode" False () () ()
 createChannelSplitterNode ::
   CreateNodeType "ChannelSplitterNode" False
     ( numberOfOutputs :: Int
     ) () () ()
 createChannelSplitterNode = unsafeCreateNode
 
+type ConstantSourceNode =
+  AudioNode "ConstantSourceNode" True () () ( offset :: ARate )
 createConstantSourceNode ::
   CreateNodeType "ConstantSourceNode" True
     ( offset :: Float ) () () ( offset :: ARate )
 createConstantSourceNode = unsafeCreateNode
 
+type ConvolverNode =
+  AudioNode "ConvolverNode" False () () ()
 createConvolverNode ::
   CreateNodeType "ConvolverNode" False
     ( buffer :: AudioBuffer
     , disableNormalization :: Boolean
     )
-    () () ( offset :: ARate )
+    () () ()
 createConvolverNode = unsafeCreateNode
 
+type DelayNode =
+  AudioNode "DelayNode" False () () ( delayTime :: ARate )
 createDelayNode ::
   CreateNodeType "DelayNode" False
     ( delayTime :: Duration
@@ -174,6 +203,16 @@ createDelayNode ::
     ) () () ( delayTime :: ARate )
 createDelayNode = unsafeCreateNode
 
+type DynamicsCompressorNode =
+  AudioNode "DynamicsCompressorNode" False
+    ( reduction :: Float )
+    ()
+    ( attack :: KRate
+    , knee :: KRate
+    , ratio :: KRate
+    , release :: KRate
+    , threshold :: KRate
+    )
 createDynamicsCompressorNode ::
   CreateNodeType "DynamicsCompressorNode" False
     ( attack :: Maybe Float
@@ -192,6 +231,8 @@ createDynamicsCompressorNode ::
     )
 createDynamicsCompressorNode = unsafeCreateNode
 
+type GainNode =
+  AudioNode "GainNode" False () () ( gain :: ARate )
 createGainNode ::
   CreateNodeType "GainNode" False
     ( gain :: Maybe Float )
@@ -199,6 +240,8 @@ createGainNode ::
     ( gain :: ARate )
 createGainNode = unsafeCreateNode
 
+type IIRFilterNode =
+  AudioNode "IIRFilterNode" False () () ()
 createIIRFilterNode ::
   CreateNodeType "IIRFilterNode" False
     ( feedforward :: SequenceFloat
@@ -206,6 +249,12 @@ createIIRFilterNode ::
     ) () () ()
 createIIRFilterNode = unsafeCreateNode
 
+type OscillatorNode =
+  AudioNode "OscillatorNode" True
+    () ()
+    ( detune :: ARate
+    , frequency :: ARate
+    )
 createOscillatorNode ::
   CreateNodeType "OscillatorNode" True
     ( type :: OscillatorType
@@ -228,6 +277,25 @@ foreign import _setOscillatorType :: forall source read write params.
   { type :: String, periodicWave :: PeriodicWave } ->
   Effect Unit
 
+type PannerNode rate =
+  AudioNode "PannerNode" False
+    ()
+    ( panningModel :: PanningModelType
+    , distanceModel :: DistanceModelType
+    , refDistance :: Number
+    , maxDistance :: Number
+    , rolloffFactor :: Number
+    , coneInnerAngle :: Number
+    , coneOuterAngle :: Number
+    , coneOuterGain :: Number
+    )
+    ( positionX :: rate -- TODO
+    , positionY :: rate -- TODO
+    , positionZ :: rate -- TODO
+    , orientationX :: rate -- TODO
+    , orientationY :: rate -- TODO
+    , orientationZ :: rate -- TODO
+    )
 createPannerNode :: forall rate.
   CreateNodeType "PannerNode" False
     ( panningModel :: PanningModelType
@@ -264,6 +332,8 @@ createPannerNode :: forall rate.
     )
 createPannerNode = unsafeCreateNode
 
+type StereoPannerNode =
+  AudioNode "StereoPannerNode" False () () ( pan :: ARate )
 createStereoPannerNode ::
   CreateNodeType "StereoPannerNode" False
     ( pan :: Float
@@ -274,6 +344,8 @@ createStereoPannerNode ::
     )
 createStereoPannerNode = unsafeCreateNode
 
+type WaveShaperNode =
+  AudioNode "WaveShaperNode" False () () ()
 createWaveShaperNode ::
   CreateNodeType "WaveShaperNode" False
     ( curve :: SequenceFloat

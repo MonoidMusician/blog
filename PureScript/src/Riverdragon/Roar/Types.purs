@@ -21,7 +21,7 @@ import Web.Audio.Node as AudioNode
 import Web.Audio.Param as AudioParam
 import Web.Audio.Types (ARate, AudioContext, AudioNode, AudioParamCmd, Float, OscillatorType(..), SequenceFloat, Time, currentTime)
 import Web.Audio.Types as Audio
-import Web.Audio.Worklet (mkAudioWorkletteNode)
+import Web.Audio.Worklet (AudioWorkletNode, mkAudioWorkletteNode)
 
 type Roar = AudioSrc
 
@@ -94,7 +94,7 @@ pinkNoise ::
   AudioContext -> Aff
     (Allocar
       { output :: RoarO
-      , node :: AudioNode "AudioWorkletNode" False () () ()
+      , node :: AudioWorkletNode ()
       , destroy :: Effect Unit
       }
     )
@@ -147,7 +147,7 @@ rescalePower ::
       , pow :: RoarP
       } -> Allocar
       { output :: RoarO
-      , node :: AudioNode "AudioWorkletNode" False () () ( pow :: ARate )
+      , node :: AudioWorkletNode ( pow :: ARate )
       , destroy :: Effect Unit
       }
     )

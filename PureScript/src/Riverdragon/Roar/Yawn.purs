@@ -254,6 +254,9 @@ filter input config = yaaawn \{ ctx } -> liftEffect do
     , ready: mempty
     }
 
+-- | Convert a MIDI note number to a pitch frequency, based upon the currently
+-- | set temperament (e.g. equal temperament or Kirnberger III) and pitch
+-- | reference (e.g. 440.0 Hz)
 mtf :: Int -> YawnM Frequency
 mtf note = do
   { temperament, pitch: reference } <- ask >>= \{ iface } -> liftEffect do
@@ -266,7 +269,7 @@ mtf note = do
     freq = fromMaybe 440.0 reference * Number.pow 2.0 octaves
   pure freq
 
-mtf_ :: forall flow flowInt. ToLake flowInt Int => flowInt -> YawnM (Stream flow Number)
+mtf_ :: forall flow flowInt. ToLake flowInt Int => flowInt -> YawnM (Stream flow Frequency)
 mtf_ notes = do
   { temperament, pitch } <- asks _.iface
   yawnOnDemand ado
