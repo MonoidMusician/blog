@@ -11,10 +11,11 @@ import Data.Maybe (Maybe(..))
 import Effect.Aff (Milliseconds(..))
 import Effect.Class (liftEffect)
 import Effect.Ref as Ref
+import Riverdragon.Dragon (Dragon)
 import Riverdragon.Dragon.Bones (smarts, ($~~), (=:=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (eggy)
-import Riverdragon.River (River, createRiver, createRiverStore)
+import Riverdragon.Dragon.Wings (Shell, eggy)
+import Riverdragon.River (Allocar, River, Stream(..), createRiver, createRiverStore)
 import Riverdragon.River as River
 import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (KeyPhase(..), delay, keyEvents)
@@ -99,6 +100,18 @@ type Env =
   , sineEnv :: Envelope
   }
 
+envelopeComponent :: Shell -> Envelope -> Allocar { ui :: Dragon, stream :: Stream _ Envelope }
+envelopeComponent shell init = do
+  { send, stream } <- shell.track $ createRiverStore $ Just init
+  let ui = D.svg [ D.stylish =:= smarts
+    { "width": "100px"
+    , "height": "100px"
+    , "stroke": "currentColor"
+    , "stroke-width": "2px"
+    , "border": "1px solid currentColor"
+    } ] $~~ []
+  pure { ui, stream }
+
 oneVoice :: Env -> Int -> River Unit -> YawnM { value :: Array Roar, leave :: River Unit }
 oneVoice { pinkEnv, sineEnv } semitones release = do
   -- Console.logShow semitones
@@ -119,10 +132,10 @@ widgetHarpsynthorg :: Widget
 widgetHarpsynthorg _ = pure $ eggy \shell -> do
   { send: setValue, stream: valueSet } <- shell.track createRiver
   { send: sendNote, stream: noteStream } <- shell.track createRiver
-  { send: sendPinkEnv, stream: pinkEnvStream } <- shell.track $
-    createRiverStore $ Just { attack: 0.10, decay: 0.95, sustain: 0.0, release: 0.1 }
-  { send: sendSineEnv, stream: sineEnvStream } <- shell.track $
-    createRiverStore $ Just { attack: 0.05, decay: 0.95, sustain: 0.8, release: 0.3 }
+  { ui: pinkEnvUi, stream: pinkEnvStream } <- envelopeComponent shell
+    { attack: 0.10, decay: 0.95, sustain: 0.0, release: 0.1 }
+  { ui: sineEnvUi, stream: sineEnvStream } <- envelopeComponent shell
+    { attack: 0.05, decay: 0.95, sustain: 0.8, release: 0.3 }
   { send: sendScopeParent, stream: scopeParent } <- shell.track $ createRiverStore Nothing
 
   destroyLastSynth <- Bed.rolling
@@ -226,4 +239,6 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
       [ D.path [ D.d =:= "M 0 15 L 100 50 L 200 100" ]
       , D.circleW' circlePos [] mempty
       ]
+    , pinkEnvUi
+    , sineEnvUi
     ]
