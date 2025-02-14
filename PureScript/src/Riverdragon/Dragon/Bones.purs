@@ -19,7 +19,7 @@ import Data.Symbol (class IsSymbol, reflectSymbol)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Heterogeneous.Folding (class FoldingWithIndex, class HFoldlWithIndex, hfoldlWithIndex)
-import Idiolect (type (-!>), (>==))
+import Idiolect (type (-!>), intercalateMap, (>==))
 import Prelude as Prelude
 import Prim.Row as Row
 import Prim.RowList (class RowToList, RowList)
@@ -507,6 +507,8 @@ svg_ name attrs = Element (Just svgNS) name (dam (oneStream attrs))
 svg = svg_"svg" :: forall flow. Array (Stream flow AttrProp) -> Dragon -> Dragon
 g = svg_"g" :: forall flow. Array (Stream flow AttrProp) -> Dragon -> Dragon
 
+viewBox = attr "viewBox" <<< intercalateMap " " Prelude.show :: Array Number -> AttrProp
+
 -- `path` can have non-graphics children
 path = svg_"path" <@> mempty :: forall flow. Array (Stream flow AttrProp) -> Dragon
 d = attr "d" :: String -> AttrProp
@@ -524,11 +526,11 @@ circleW' :: forall flow1 flow2.
     , r :: Number
     } ->
   Array (Stream flow2 AttrProp) ->
-  Dragon -> Dragon
+  Dragon
 circleW' measurements attrs = svg_"circle"
   [ dam measurements <#> attrsM
   , dam (oneStream attrs)
-  ]
+  ] mempty
 
 --------------------------------------------------------------------------------
 -- | ## More typeclasses                                                    | --

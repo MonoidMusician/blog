@@ -4,33 +4,37 @@ import Prelude
 
 import Control.Monad.Reader (asks)
 import Data.Array as Array
-import Data.Filterable (filter)
+import Data.Foldable (fold, traverse_)
 import Data.HeytingAlgebra (ff)
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
+import Data.Tuple (Tuple(..))
+import Effect (Effect)
 import Effect.Aff (Milliseconds(..))
 import Effect.Class (liftEffect)
+import Effect.Class.Console as Console
 import Effect.Ref as Ref
 import Riverdragon.Dragon (Dragon)
-import Riverdragon.Dragon.Bones (smarts, ($~~), (=:=))
+import Riverdragon.Dragon.Bones (smarts, ($~~), (<:>), (=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (Shell, eggy)
-import Riverdragon.River (Allocar, River, Stream(..), createRiver, createRiverStore)
+import Riverdragon.River (Allocar, Lake, River, Stream, createRiver, createRiverStore, (/?*\))
 import Riverdragon.River as River
 import Riverdragon.River.Bed as Bed
-import Riverdragon.River.Beyond (KeyPhase(..), delay, keyEvents)
+import Riverdragon.River.Beyond (KeyPhase(..), delay, documentEvent, keyEvents)
 import Riverdragon.Roar.Dimensions (temperaments)
-import Riverdragon.Roar.Knob (Envelope)
+import Riverdragon.Roar.Knob (Envelope, linearEase)
 import Riverdragon.Roar.Sugar (Noise(..), toNode)
 import Riverdragon.Roar.Synth (notesToNoises)
 import Riverdragon.Roar.Types (Roar, toRoars)
 import Riverdragon.Roar.Viz (oscilloscope, spectrogram)
-import Riverdragon.Roar.Yawn (YawnM, biiigYawn, mtf_)
+import Riverdragon.Roar.Yawn (YawnM, biiigYawn, mtf, mtf_)
 import Riverdragon.Roar.Yawn as Y
 import Web.Audio.Types (BiquadFilterType(..))
-import Web.DOM.Element (getBoundingClientRect)
+import Web.DOM.Element (Element, getBoundingClientRect)
 import Web.DOM.Element as Element
 import Web.DOM.Node as Node
+import Web.Event.Event (EventType(..))
 import Web.HTML.HTMLCanvasElement as HTMLCanvasElement
 import Web.UIEvent.MouseEvent as MouseEvent
 import Widget (Widget)
@@ -87,10 +91,26 @@ keymap =
   , "BracketRight"
   ]
 
+type Pt d = { x :: d, y :: d }
 data Interval = Interval Number Number
 
 linmap :: Interval -> Interval -> Number -> Number
 linmap (Interval a0 a1) (Interval b0 b1) a = b0 + (a - a0) * (b1 - b0) / (a1 - a0)
+
+linmapClamp :: Interval -> Interval -> Number -> Number
+linmapClamp from to pt = clamp to (linmap from to pt)
+
+clamp :: Interval -> Number -> Number
+clamp (Interval lower upper) pt = min (max lower upper) (max (min upper lower) pt)
+
+clamp2D :: Pt Interval -> Pt Number -> Pt Number
+clamp2D bounds pt = { x: clamp bounds.x pt.x, y: clamp bounds.y pt.y }
+
+linmap2D :: Pt Interval -> Pt Interval -> Pt Number -> Pt Number
+linmap2D from to pt =
+  { x: linmap from.x to.x pt.x
+  , y: linmap from.y to.y pt.y
+  }
 
 pitchGain :: Int -> Number
 pitchGain semitones = linmap (Interval 48.0 84.0) (Interval 1.0 0.1) $ Int.toNumber semitones
@@ -98,18 +118,156 @@ pitchGain semitones = linmap (Interval 48.0 84.0) (Interval 1.0 0.1) $ Int.toNum
 type Env =
   { pinkEnv :: Envelope
   , sineEnv :: Envelope
+  -- , wibbleWobble :: Lake Number
   }
 
-envelopeComponent :: Shell -> Envelope -> Allocar { ui :: Dragon, stream :: Stream _ Envelope }
+bbInterval ::
+  Element ->
+  Effect
+    { x :: Interval
+    , y :: Interval
+    }
+bbInterval svg = do
+  bb <- getBoundingClientRect svg
+  pure
+    { x: Interval bb.left bb.right
+    , y: Interval bb.top bb.bottom
+    }
+
+envelopeComponent :: Shell -> Envelope -> Allocar { ui :: Dragon, stream :: Stream _
+ Envelope }
 envelopeComponent shell init = do
   { send, stream } <- shell.track $ createRiverStore $ Just init
-  let ui = D.svg [ D.stylish =:= smarts
-    { "width": "100px"
-    , "height": "100px"
-    , "stroke": "currentColor"
-    , "stroke-width": "2px"
-    , "border": "1px solid currentColor"
-    } ] $~~ []
+  svgRef <- Ref.new Nothing
+
+  let
+    width = 200.0
+    height = 100.0
+    padding = 40.0
+    pudding = 2.0 * padding
+    external = { x: Interval 0.0 (width + pudding), y: Interval 0.0 (height + pudding) }
+    graphExternal = { x: Interval padding (width + padding), y: Interval (height + padding) padding }
+
+  { send: mouseDown, stream: dragging } <- shell.track $ createRiverStore
+    (Nothing :: Maybe (Pt Number -> Effect Unit))
+  shell.destructor =<< River.subscribe (stream /?*\ dragging) \(Tuple _current selected) -> do
+    unsubs <- Bed.accumulator
+    unsub1 <- documentEvent (EventType "mousemove") MouseEvent.fromEvent \event -> do
+      Ref.read svgRef >>= traverse_ \svg -> do
+        bb <- bbInterval svg
+        let
+          ptExternal = linmap2D bb external $ clamp2D bb
+            { x: Int.toNumber (MouseEvent.clientX event)
+            , y: Int.toNumber (MouseEvent.clientY event)
+            }
+        selected ptExternal
+    unsubs.put unsub1
+    unsub2 <- documentEvent (EventType "mouseup") Just \_ -> do
+      -- TODO: confirm or cancel? stuff like that
+      join unsubs.get
+    -- TODO: listen for escape key to cancel?
+    unsubs.put unsub2
+    pure unit
+
+  let
+    ui = D.svg
+      [ D.stylish =:= smarts
+        { "width": show (width + pudding) <> "px"
+        , "height": show (height + pudding) <> "px"
+        , "stroke": "currentColor"
+        , "stroke-width": "2px"
+        , "border": "1px solid currentColor"
+        , "fill": "none"
+        }
+      , D.Self =:= \el -> Ref.write Nothing svgRef <$ Ref.write (Just el) svgRef
+      ] $~~
+      [ D.pathW' $ stream <#> \current ->
+          let
+            adr = current.attack + current.decay + current.release
+            sustain = adr
+            totalTime = adr + sustain
+            graphInternal = { x: Interval 0.0 totalTime, y: Interval 0.0 1.0 }
+            display = linmap2D graphInternal graphExternal
+            pt { time, volume } =
+              let
+                displayPt = display { x: time, y: volume }
+              in show displayPt.x <> " " <> show displayPt.y
+          in fold
+            -- M is for Move: set the cursor
+            [ "M" <> pt { time: 0.0, volume: 0.0 }
+            -- L is for Line: line to the next point
+            , "L" <> pt { time: current.attack, volume: 1.0 }
+            , "L" <> pt { time: current.attack + current.decay, volume: current.sustain }
+            , "L" <> pt { time: totalTime - current.release, volume: current.sustain }
+            , "L" <> pt { time: totalTime, volume: 0.0 }
+            ]
+      , D.g
+        [ D.stylish =:= smarts
+            { "font-family": "inherit"
+            , "font-size": "30px"
+            , "fill": "currentColor"
+            , "stroke": "none"
+            }
+        ] $~~
+        [ D.svg_"text"
+            [ D.attr "x" =:= 100.0
+            , D.attr "y" =:= 170.0
+            ] $ D.text "Time ->"
+        , D.svg_"text"
+            [ D.attr "transform" =:= "rotate(-90)"
+            , D.attr "transform-origin" =:= "center"
+            , D.attr "x" =:= 80.0
+            , D.attr "y" =:= -20.0
+            ] $ D.text "Volume ->"
+        ]
+      , D.g [] $~~
+        [ D.circleW'
+          ( stream <#> \current -> do
+              let
+                adr = current.attack + current.decay + current.release
+                sustain = adr
+                totalTime = adr + sustain
+                graphInternal = { x: Interval 0.0 totalTime, y: Interval 0.0 1.0 }
+                display = linmap2D graphInternal graphExternal
+                pt { time, volume } =
+                  let
+                    displayPt = display { x: time, y: volume }
+                  in { cx: displayPt.x, cy: displayPt.y, r: 5.0 }
+              pt { time: current.attack + current.decay, volume: current.sustain }
+          ) []
+        , D.circleW'
+          ( stream <#> \current -> do
+              let
+                adr = current.attack + current.decay + current.release
+                sustain = adr
+                totalTime = adr + sustain
+                graphInternal = { x: Interval 0.0 totalTime, y: Interval 0.0 1.0 }
+                display = linmap2D graphInternal graphExternal
+                pt { time, volume } =
+                  let
+                    displayPt = display { x: time, y: volume }
+                  in { cx: displayPt.x, cy: displayPt.y, r: 10.0 }
+              pt { time: current.attack + current.decay, volume: current.sustain }
+          )
+          [ D.stylish =:= smarts
+            { "fill": "transparent"
+            , "stroke": "transparent"
+            }
+          , D.on_"mousedown" <:> stream <#> \current _mousedown -> do
+              -- TODO: graph initial coordinates? maybe?
+              mouseDown \ptExternal -> do
+                let
+                  adr = current.attack + current.decay + current.release
+                  totalTime = adr + adr
+                  graphInternal = { x: Interval 0.0 totalTime, y: Interval 0.0 1.0 }
+                  -- decay = linmap graphExternal.x graphInternal.x ptExternal.x
+                  sustain = linmapClamp graphExternal.y graphInternal.y ptExternal.y
+                  new = current { sustain = sustain }
+                Console.logShow new
+                send new
+          ]
+        ]
+      ]
   pure { ui, stream }
 
 oneVoice :: Env -> Int -> River Unit -> YawnM { value :: Array Roar, leave :: River Unit }
@@ -117,11 +275,12 @@ oneVoice { pinkEnv, sineEnv } semitones release = do
   -- Console.logShow semitones
   let volume = pitchGain semitones
   pink <- toNode PinkNoise
-  pinkGain <- Y.gain pink { adsr: pinkEnv, volume: 0.03, release }
+  pinkGain <- Y.gain pink { adsr: pinkEnv, volume: 0.5, release }
+  defaultFreq <- mtf semitones
   frequency <- mtf_ semitones -- this live updates if tuning or temperament changes
   sine <- Y.osc
     { detune: 0
-    , frequency: frequency
+    , frequency: frequency -- + map (52.0 * _) wibbleWobble
     , type: { sines: [0.4, 0.5, 0.1] }
     }
   sineGain <- Y.gain sine { adsr: sineEnv, volume, release }
@@ -146,6 +305,7 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
         activeSynths <- notesToNoises
           { pinkEnv: pinkEnvStream
           , sineEnv: sineEnvStream
+          -- , wibbleWobble: pure $ pinkEnvStream <#> _.sustain
           } noteStream oneVoice
 
         -- Set the tuning of the instrument
@@ -154,7 +314,7 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
         liftEffect $ iface.pitch.send 441.0
 
         -- Mix them and reduce their volume
-        melody <- Y.gain activeSynths 0.3
+        melody <- Y.gain activeSynths 0.1
         -- Take the edge off slightly ... not a substitute for proper synth design
         antialiased <- Y.filter melody
           { type: Lowpass
@@ -198,6 +358,8 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
     Just { r: 5.0, cx: 25.0, cy: 80.0 }
   svgRef <- Ref.new Nothing
 
+  Console.log "TEST"
+
   pure $ D.Fragment
     [ D.button
       [ D.onClick =:= \_ -> setValue true
@@ -215,13 +377,13 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
         , "border": "1px solid currentColor"
         , "fill": "rebeccapurple"
         }
+      , D.viewBox =:= [ -20.0, -20.0, 240.0, 140.0 ]
       , D.Self =:= \el -> Ref.write Nothing svgRef <$ Ref.write (Just el) svgRef
       {-
         There are a lot of things wrong with this:
         - It should be a mousemove event on document, installed during mousedown
         - mousedown should also record the initial position as a reference for dragging
-        - this does not take into account the viewBox (there is an API for this?)
-        - maybe you want escape to cancel a movement, before mouseup
+        (- maybe you want escape to cancel a movement, before mouseup)
         But the basic idea is sound, and I think client coordinates are the right play here
       -}
       , D.on_"mousemove" =:= \e -> do
@@ -230,14 +392,18 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
               bb <- getBoundingClientRect svg
               let mx = Int.toNumber (MouseEvent.clientX ev)
               let my = Int.toNumber (MouseEvent.clientY ev)
-              let cx = 200.0 * (mx - bb.left) / bb.width
-              let cy = 100.0 * (my - bb.top) / bb.height
+              -- External x in [0, 200], y in [0, 100]
+              let cx_ext = 200.0 * (mx - bb.left) / bb.width
+              let cy_ext = 100.0 * (my - bb.top) / bb.height
+              -- Internal x in [-20, 220], y in [-20, 120]
+              let cx = linmap (Interval 0.0 200.0) (Interval (-40.0) (240.0)) cx_ext
+              let cy = linmap (Interval 0.0 100.0) (Interval (-20.0) (120.0)) cy_ext
               -- Console.logShow { bb, cx, cy, mx, my }
               sendCirclePos { r: 5.0, cx, cy }
             _, _ -> pure unit
       ] $~~
       [ D.path [ D.d =:= "M 0 15 L 100 50 L 200 100" ]
-      , D.circleW' circlePos [] mempty
+      , D.circleW' circlePos []
       ]
     , pinkEnvUi
     , sineEnvUi

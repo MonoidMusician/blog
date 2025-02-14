@@ -62,6 +62,15 @@ directValue :: forall flow. Number -> Stream flow Number -> Knob
 directValue default stream = KCmd default $ dam stream <#> \target now ->
   pure [ CmdTarget { ramp: NoRamp, target, time: now } ]
 
+linearEase :: forall flow. Number -> Number -> Stream flow Number -> Knob
+linearEase default duration stream = KAware (Just default) \getValue -> do
+  pure $ KCmd default $ dam stream <#> \target now -> do
+    value <- getValue
+    pure
+      [ CmdTarget { ramp: NoRamp, target: value, time: now }
+      , CmdTarget { ramp: LinRamp, target, time: now + duration }
+      ]
+
 type Envelope =
   { attack :: Duration
   , decay :: Duration
