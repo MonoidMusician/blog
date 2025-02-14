@@ -6,17 +6,19 @@ import Control.Plus (empty, (<|>))
 import Data.Array as Array
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
+import Effect (Effect)
 import Effect.Aff (Milliseconds(..), launchAff_)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
+import Prim.Boolean (False)
 import Riverdragon.Dragon.Bones ((=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy)
-import Riverdragon.River (bursting, createRiver, dam, mapAl)
+import Riverdragon.River (River, bursting, createRiver, dam, mapAl)
 import Riverdragon.River.Beyond (delay, documentEvent, fallingLeaves)
-import Riverdragon.Roar.Types (createGainNode, createSines, fixed, pinkNoise, roaring)
+import Riverdragon.Roar.Types (RoarO, createGainNode, createSines, fixed, pinkNoise, roaring)
 import Web.Audio.Node as AudioNode
-import Web.Audio.Types (AudioParamCmd(..), Ramp(..), currentTime)
+import Web.Audio.Types (ARate, AudioContext, AudioNode, AudioParamCmd(..), Duration, Ramp(..), Time, currentTime)
 import Web.Event.Event (EventType(..))
 import Web.Event.Event as Event
 import Web.UIEvent.KeyboardEvent as KeyboardEvent
@@ -74,6 +76,45 @@ keymap =
   , "BracketRight"
   ]
 
+type Envelope
+  = { attack :: Duration
+    , decay :: Duration
+    , sustain :: Number
+    , release :: Duration
+    }
+
+type GainNode
+  = { output :: RoarO
+    , node :: AudioNode "GainNode" False () () ( gain :: ARate )
+    , destroy :: Effect Unit
+    }
+
+applyGain :: AudioContext -> Number -> Envelope -> River Time -> RoarO -> Effect GainNode
+applyGain ctx gain e releaseTime output = do
+  t0 <- currentTime ctx
+  createGainNode
+    { ctx
+    , input: pure [ output ]
+    , gain:
+      { default: Just 0.0
+      , ctl: const $ pure $ { srcs: empty, cmds: _ } $
+        bursting
+        [ CmdTarget { ramp: LinRamp, target: gain, time: t0 + e.attack }
+        , CmdTarget { ramp: LinRamp, target: gain * e.sustain, time: t0 + e.attack + e.decay }
+        ]
+        <|> (\t1 -> CmdTarget { ramp: LinRamp, target: 0.0, time: t1 + e.release })
+        <$> dam releaseTime
+      }
+    }
+
+data Interval = Interval Number Number
+
+linmap :: Interval -> Interval -> Number -> Number
+linmap (Interval a0 a1) (Interval b0 b1) a = b0 + (a - a0) * (b1 - b0) / (a1 - a0)
+
+pitchGain :: Int -> Number
+pitchGain semitones = linmap (Interval 48.0 84.0) (Interval 1.0 0.1) $ Int.toNumber semitones
+
 widgetHarpsynthorg :: Widget
 widgetHarpsynthorg _ = pure $ eggy \shell -> do
   { send: setValue, stream: valueSet } <- shell.track createRiver
@@ -84,45 +125,19 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
       let
         activeSynths = fallingLeaves noteStream \semitones release -> do
           let releaseTime = mapAl (const (currentTime ctx)) release
-          let range = (Int.toNumber semitones - 48.0) / 36.0
-          let acrossRange low high = low + range * (high - low)
-          let adjustedVolume = acrossRange 1.0 0.1
+          let volume = pitchGain semitones
+          let pinkEnv = { attack: 0.05, decay: 0.95, sustain: 0.0, release: 0.1 }
+          let sineEnv = { attack: 0.05, decay: 0.95, sustain: 0.0, release: 0.3 }
           t0 <- liftEffect $ currentTime ctx
           pink <- createPinkNoise
-          gain2 <- liftEffect $ createGainNode
-            { ctx
-            , input: pure [ pink.output ]
-            , gain:
-              { default: Just 0.0
-              , ctl: const $ pure $ { srcs: empty, cmds: _ } $
-                  bursting
-                    [ CmdTarget { ramp: LinRamp, target: 0.1, time: t0 + 0.05 }
-                    , CmdTarget { ramp: LinRamp, target: 0.0, time: t0 + 1.0 }
-                    ]
-                  <|> (\t1 -> CmdTarget { ramp: LinRamp, target: 0.0, time: t1 + 0.1 })
-                    <$> dam releaseTime
-              }
-            }
+          gain2 <- liftEffect $ applyGain ctx 0.1 pinkEnv releaseTime pink.output
           sine <- liftEffect $ createSines
             { ctx
             , detune: fixed $ Int.toNumber $ 100 * (semitones - 69)
             , frequency: fixed 440.0
             , sines: [0.4, 0.5, 0.1]
             }
-          gain <- liftEffect $ createGainNode
-            { ctx
-            , input: pure [ sine.output ]
-            , gain:
-              { default: Just 0.0
-              , ctl: const $ pure $ { srcs: empty, cmds: _ } $
-                  bursting
-                    [ CmdTarget { ramp: LinRamp, target: 1.0 * adjustedVolume, time: t0 + 0.05 }
-                    , CmdTarget { ramp: LinRamp, target: 0.0, time: t0 + 1.0 }
-                    ]
-                  <|> (\t1 -> CmdTarget { ramp: LinRamp, target: 0.0, time: t1 + 0.3 })
-                    <$> dam releaseTime
-              }
-            }
+          gain <- liftEffect $ applyGain ctx volume sineEnv releaseTime sine.output
           AudioNode.start sine.node (t0 + 0.0)
           pure
             { value: [ gain.output, gain2.output ]
