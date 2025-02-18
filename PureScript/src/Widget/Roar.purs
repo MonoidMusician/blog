@@ -290,10 +290,11 @@ oneVoice { pinkEnv, sineEnv } semitones release = do
     , frequency: frequency -- + map (52.0 * _) wibbleWobble
     , type: { sines: [0.4, 0.5, 0.1] }
     }
-  sineGain <- Y.gain sine { adsr: sineEnv, volume, release }
-  let leave = delay (500.0 # Milliseconds) release
+  let gainKnob = toKnob { decay: 0.7, impulse: pure volume, damp: 0.05, dampen: release }
+  sineGain <- Y.gain sine gainKnob
+  let leave = delay (100.0 # Milliseconds) release
   { ctx: _ctx } <- ask
-  pure { value: [{ audio: [ sineGain ], gain: toKnob { adsr: sineEnv, volume, release } }], leave }
+  pure { value: [{ audio: [ sineGain ], gain: gainKnob }], leave }
 
 widgetHarpsynthorg :: Widget
 widgetHarpsynthorg _ = pure $ eggy \shell -> do

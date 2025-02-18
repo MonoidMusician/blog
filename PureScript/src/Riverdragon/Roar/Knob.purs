@@ -16,7 +16,7 @@ import Data.Tuple (Tuple(..), uncurry)
 import Prim.Row as Row
 import Prim.RowList as RL
 import Record as Record
-import Riverdragon.River (Allocar, Lake, Stream, dam)
+import Riverdragon.River (Allocar, Lake, Stream, dam, oneStream)
 import Riverdragon.River as River
 import Riverdragon.River.Bed (cleanup)
 import Riverdragon.Roar.Types (RoarO, Roar, connecting)
@@ -58,13 +58,37 @@ impulse k stream = KCmd 0.0 $ dam stream <#> \target now -> pure
   , CmdTarget { ramp: DecayRamp k, target: 0.0, time: now }
   ]
 
-directValue :: forall flow. Number -> Stream flow Number -> Knob
+impulseDampen :: forall flow1 flow2.
+  { decay :: Number
+  , damp :: Number
+  , impulse :: Stream flow1 Number
+  , dampen :: Stream flow2 Unit
+  } -> Knob
+impulseDampen config = KCmd 0.0 $ oneStream
+  [ dam config.impulse <#> \target now -> pure
+    [ CmdTarget { ramp: NoRamp, target, time: now }
+    , CmdTarget { ramp: DecayRamp config.decay, target: 0.0, time: now }
+    ]
+  , dam config.dampen $> \now -> pure
+    [ CmdTarget { ramp: LinRamp, target: 0.0, time: now + config.damp } ]
+  ]
+
+directValue :: forall flow. Float -> Stream flow Float -> Knob
 directValue default stream = KCmd default $ dam stream <#> \target now ->
   pure [ CmdTarget { ramp: NoRamp, target, time: now } ]
 
-linearEase :: forall flow. Number -> Number -> Stream flow Number -> Knob
+linearEase :: forall flow. Float -> Number -> Stream flow Float -> Knob
 linearEase default duration stream = KAware (Just default) \getValue -> do
   pure $ KCmd default $ dam stream <#> \target now -> do
+    value <- getValue
+    pure
+      [ CmdTarget { ramp: NoRamp, target: value, time: now }
+      , CmdTarget { ramp: LinRamp, target, time: now + duration }
+      ]
+
+linear :: forall flow. Float -> Stream flow { target :: Float, duration :: Number } -> Knob
+linear default stream = KAware (Just default) \getValue -> do
+  pure $ KCmd default $ dam stream <#> \{ target, duration } now -> do
     value <- getValue
     pure
       [ CmdTarget { ramp: NoRamp, target: value, time: now }
@@ -120,7 +144,9 @@ instance ToKnob (Stream flow (Maybe Roar)) where toKnob = KAudio <<< dam <<< map
 
 type KnobOverloads flow =
   ( impulse :: { decay :: Number, impulse :: Stream flow Number } -> Knob
+  , impulseDampen :: { decay :: Number, impulse :: Stream flow Number, damp :: Number, dampen :: Stream flow Unit } -> Knob
   , directValue :: { default :: Number, value :: Stream flow Number } -> Knob
+  , linear :: { default :: Number, linear :: Stream flow { target :: Float, duration :: Number } } -> Knob
   , adsr :: { adsr :: Envelope, attackRelease :: Stream flow Boolean } -> Knob
   , adsrSplit :: { adsr :: Envelope, attack :: Stream flow Unit, release :: Stream flow Unit } -> Knob
   , adsrNow :: { adsr :: Envelope, release :: Stream flow Unit } -> Knob
@@ -132,6 +158,8 @@ type KnobOverloads flow =
 instance (RecordOverloads (KnobOverloads flow) tgt Knob) => ToKnob (Record tgt) where
   toKnob = overloads @(KnobOverloads flow)
     { impulse: \r -> impulse r.decay r.impulse
+    , impulseDampen
+    , linear: \r -> linear r.default r.linear
     , directValue: \r -> directValue r.default r.value
     , adsr: \r -> adsr 1.0 r.adsr r.attackRelease
     , adsrSplit: \r -> adsr 1.0 r.adsr (true <$ r.attack <|> false <$ r.release)
