@@ -8,7 +8,7 @@ import Data.Array as Array
 import Data.Bifunctor (bimap)
 import Data.Foldable (sequence_, sum, traverse_)
 import Data.Int as Int
-import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Maybe (Maybe(..), maybe)
 import Data.RecordOverloads (class RecordOverloads, overloads)
 import Data.Symbol (class IsSymbol)
 import Data.Traversable (class Traversable, traverse)
@@ -177,7 +177,8 @@ renderKnob knob ctx = case knob of
 knobToAudio :: AudioContext -> Knob -> Allocar (Tuple RoarO (Allocar Unit))
 knobToAudio ctx knob = do
   let { default, apply: applyKnob } = renderKnob knob ctx
-  node <- createConstantSourceNode ctx { offset: fromMaybe 0.0 default }
+  node <- createConstantSourceNode ctx { offset: default }
+  Node.startNow node
   unsub <- applyKnob (Audio.getParam node (Proxy :: Proxy "offset"))
   pure $ Tuple (Node.outOfNode node 0) unsub
 

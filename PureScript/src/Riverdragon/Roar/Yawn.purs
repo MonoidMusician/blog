@@ -221,6 +221,21 @@ osc config@{ frequency, detune } = yaaawn \{ ctx } -> liftEffect do
     , ready: liftEffect $ Node.startNow node
     }
 
+offset ::
+  forall offsetKnob.
+    ToKnob offsetKnob =>
+  { offset :: offsetKnob
+  } -> YawnM Roar
+offset config = yaaawn \{ ctx } -> liftEffect do
+  let { defaults, apply: applyKnobs } = renderKnobs config ctx
+  node <- AudioNode.createConstantSourceNode ctx defaults
+  destroy1 <- applyKnobs node
+  pure
+    { result: outOfNode node 0
+    , destroy: destroy1
+    , ready: liftEffect $ Node.startNow node
+    }
+
 filter ::
   forall roar flowBiquadFilterType knobQ knobDetune knobFrequency knobGain.
     ToRoars roar =>

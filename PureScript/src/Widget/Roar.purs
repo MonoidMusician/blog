@@ -2,13 +2,14 @@ module Widget.Roar where
 
 import Prelude
 
-import Control.Monad.Reader (asks)
+import Control.Monad.Reader (ask, asks)
 import Data.Array as Array
 import Data.Foldable (fold, traverse_)
 import Data.HeytingAlgebra (ff)
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple(..))
+import Data.Traversable (traverse)
+import Data.Tuple (Tuple(..), fst)
 import Effect (Effect)
 import Effect.Aff (Milliseconds(..))
 import Effect.Class (liftEffect)
@@ -18,13 +19,12 @@ import Riverdragon.Dragon (Dragon)
 import Riverdragon.Dragon.Bones (smarts, ($~~), (<:>), (=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (Shell, eggy)
-import Riverdragon.River (Allocar, Lake, River, Stream, createRiver, createRiverStore, (/?*\))
+import Riverdragon.River (Allocar, River, Stream, Lake, createRiver, createRiverStore, mapAl, (/?*\))
 import Riverdragon.River as River
 import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (KeyPhase(..), delay, documentEvent, keyEvents)
 import Riverdragon.Roar.Dimensions (temperaments)
-import Riverdragon.Roar.Knob (Envelope, linearEase)
-import Riverdragon.Roar.Sugar (Noise(..), toNode)
+import Riverdragon.Roar.Knob (Envelope, Knob, knobToAudio, toKnob)
 import Riverdragon.Roar.Synth (notesToNoises)
 import Riverdragon.Roar.Types (Roar, toRoars)
 import Riverdragon.Roar.Viz (oscilloscope, spectrogram)
@@ -135,6 +135,7 @@ bbInterval svg = do
     }
 
 envelopeComponent :: Shell -> Envelope -> Allocar { ui :: Dragon, stream :: Stream _
+
  Envelope }
 envelopeComponent shell init = do
   { send, stream } <- shell.track $ createRiverStore $ Just init
@@ -270,12 +271,18 @@ envelopeComponent shell init = do
       ]
   pure { ui, stream }
 
-oneVoice :: Env -> Int -> River Unit -> YawnM { value :: Array Roar, leave :: River Unit }
+oneVoice :: Env -> Int -> River Unit -> YawnM
+  { value :: Array
+    { audio :: Array Roar
+    , gain :: Knob
+    }
+  , leave :: River Unit
+  }
 oneVoice { pinkEnv, sineEnv } semitones release = do
   -- Console.logShow semitones
   let volume = pitchGain semitones
-  pink <- toNode PinkNoise
-  pinkGain <- Y.gain pink { adsr: pinkEnv, volume: 0.5, release }
+  -- pink <- toNode PinkNoise
+  -- pinkGain <- Y.gain pink { adsr: pinkEnv, volume: 0.2, release }
   defaultFreq <- mtf semitones
   frequency <- mtf_ semitones -- this live updates if tuning or temperament changes
   sine <- Y.osc
@@ -285,7 +292,8 @@ oneVoice { pinkEnv, sineEnv } semitones release = do
     }
   sineGain <- Y.gain sine { adsr: sineEnv, volume, release }
   let leave = delay (500.0 # Milliseconds) release
-  pure { value: [ sineGain, pinkGain ], leave }
+  { ctx: _ctx } <- ask
+  pure { value: [{ audio: [ sineGain ], gain: toKnob { adsr: sineEnv, volume, release } }], leave }
 
 widgetHarpsynthorg :: Widget
 widgetHarpsynthorg _ = pure $ eggy \shell -> do
@@ -307,6 +315,9 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
           , sineEnv: sineEnvStream
           -- , wibbleWobble: pure $ pinkEnvStream <#> _.sustain
           } noteStream oneVoice
+        let
+          activeAudio :: Lake (Array Roar)
+          activeAudio = join <<< map _.audio <$> activeSynths
 
         -- Set the tuning of the instrument
         iface <- asks _.iface
@@ -314,7 +325,7 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
         liftEffect $ iface.pitch.send 441.0
 
         -- Mix them and reduce their volume
-        melody <- Y.gain activeSynths 0.1
+        melody <- Y.gain activeAudio 0.1
         -- Take the edge off slightly ... not a substitute for proper synth design
         antialiased <- Y.filter melody
           { type: Lowpass
@@ -323,7 +334,12 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
           , "Q": 0.3
           , gain: unit
           }
-        scopeEl1 <- oscilloscope { width: 1024, height: 512 } antialiased
+        let
+          debug :: Lake (Array Roar)
+          debug = activeSynths # mapAl do
+            traverse \{ gain: k } ->
+              liftEffect $ fst <$> knobToAudio _ctx k
+        scopeEl1 <- oscilloscope { width: 1024, height: 512 } debug
         scopeEl2 <- spectrogram { height: 512, width: 400 } antialiased
         void $ liftEffect $ River.subscribe scopeParent \el -> do
           Node.appendChild (HTMLCanvasElement.toNode scopeEl1) (Element.toNode el)

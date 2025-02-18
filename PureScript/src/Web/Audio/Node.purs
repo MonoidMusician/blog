@@ -11,6 +11,7 @@ import Prelude (class Eq, Unit)
 import Prim.Boolean (False, True)
 import Prim.Row as Row
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 import Unsafe.Coerce (unsafeCoerce)
 import Web.Audio.FFI (class FFI, _unsafeGetProperty, toFFI)
 
@@ -99,10 +100,16 @@ unsafeCreateNode ::
   AudioContext -> Record given -> Effect (AudioNode name source read write params)
 unsafeCreateNode ctx opts = _unsafeCreateNode (reflectSymbol (Proxy :: Proxy name)) ctx (toFFI opts)
 
+type UniversalNodeOptions r =
+  ( channelCount :: ChannelCountMode
+  , channelInterpretation :: ChannelInterpretation
+  | r
+  )
+
 type CreateNodeType name source options read write params =
   forall given unused ffi.
     IsSymbol name =>
-    Row.Union given unused options =>
+    Row.Union given unused (UniversalNodeOptions + options) =>
     FFI (Record given) (Record ffi) =>
   AudioContext -> Record given -> Effect (AudioNode name source read write params)
 
@@ -122,8 +129,6 @@ createAnalyserNode ::
     , maxDecibels :: Number
     , minDecibels :: Number
     , smoothingTimeConstant :: Number
-    , channelCountMode :: ChannelCountMode
-    , channelInterpretation :: ChannelInterpretation
     )
     ( frequencyBinCount :: Int
     )
@@ -181,7 +186,7 @@ type ConstantSourceNode =
   AudioNode "ConstantSourceNode" True () () ( offset :: ARate )
 createConstantSourceNode ::
   CreateNodeType "ConstantSourceNode" True
-    ( offset :: Float ) () () ( offset :: ARate )
+    ( offset :: Maybe Float ) () () ( offset :: ARate )
 createConstantSourceNode = unsafeCreateNode
 
 type ConvolverNode =

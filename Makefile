@@ -102,7 +102,7 @@ trypurescript : PureScript/src sources.txt
 .PHONY : watch-ps
 watch-ps : $(BUILDIR)
 	rm -f $(BUILDIR)/widgets.js.gz
-	watchexec -w PureScript/src -f 'PureScript/src/**/*.purs' -r --shell=bash 'spago bundle --bundle-type app --module Main --outfile ../$(BUILDIR)/widgets.js && make assets-ps >/dev/null'
+	watchexec -w PureScript/src -f 'PureScript/src/**/*.{purs,js}' -r --shell=bash 'spago bundle --bundle-type app --module Main --outfile ../$(BUILDIR)/widgets.js && make assets-ps >/dev/null'
 
 .PHONY : docs-ps
 docs-ps :

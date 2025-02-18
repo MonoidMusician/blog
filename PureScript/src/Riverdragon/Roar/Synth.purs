@@ -5,7 +5,6 @@ import Prelude
 import Data.Either (Either(..))
 import Data.SequenceRecord (class SequenceRecord, sequenceRecord)
 import Data.Tuple.Nested ((/\))
-import Effect.Aff (launchAff_)
 import Effect.Class (liftEffect)
 import Riverdragon.River (Stream, Lake, stillRiver, (/?*\))
 import Riverdragon.River as River

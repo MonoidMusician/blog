@@ -18,9 +18,10 @@ export const _oscilloscope =
       if (!max) max = 1;
       const h2 = canvas.height/2;
       const points = Array.from(samples, offset =>
-        h2 + offset * h2/max
+        h2 - offset * h2/max
       ).reverse();
       ctx.strokeStyle = 'currentColor';
+      ctx.lineWidth = 2;
       ctx.fillStyle = 'none';
       ctx.beginPath();
       ctx.moveTo(canvas.width, points[0]);
