@@ -204,7 +204,6 @@ renderKnob knob ctx = case knob of
 -- | and vice-versa.
 knobToAudio :: AudioContext -> Knob -> Allocar (Tuple RoarO (Allocar Unit))
 knobToAudio ctx knob = do
-  -- TODO: default
   let { default, apply: applyKnob } = renderKnob knob ctx
   node <- createConstantSourceNode ctx { offset: default }
   Node.startNow node

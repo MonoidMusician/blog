@@ -470,43 +470,6 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
       [ D.onClick =:= \_ -> setValue false
       ] $ D.text "Pause"
     , D.div [ D.Self =:= \el -> mempty <$ sendScopeParent el ] mempty
-    , D.svg
-      [ D.stylish =:= smarts
-        { "width": "200px"
-        , "height": "100px"
-        , "stroke": "currentColor"
-        , "stroke-width": "2px"
-        , "border": "1px solid currentColor"
-        , "fill": "rebeccapurple"
-        }
-      , D.viewBox =:= [ -20.0, -20.0, 240.0, 140.0 ]
-      , D.Self =:= \el -> Ref.write Nothing svgRef <$ Ref.write (Just el) svgRef
-      {-
-        There are a lot of things wrong with this:
-        - It should be a mousemove event on document, installed during mousedown
-        - mousedown should also record the initial position as a reference for dragging
-        (- maybe you want escape to cancel a movement, before mouseup)
-        But the basic idea is sound, and I think client coordinates are the right play here
-      -}
-      , D.on_"mousemove" =:= \e -> do
-          Ref.read svgRef >>= case MouseEvent.fromEvent e, _ of
-            Just ev, Just svg -> do
-              bb <- getBoundingClientRect svg
-              let mx = Int.toNumber (MouseEvent.clientX ev)
-              let my = Int.toNumber (MouseEvent.clientY ev)
-              -- External x in [0, 200], y in [0, 100]
-              let cx_ext = 200.0 * (mx - bb.left) / bb.width
-              let cy_ext = 100.0 * (my - bb.top) / bb.height
-              -- Internal x in [-20, 220], y in [-20, 120]
-              let cx = linmap (Interval 0.0 200.0) (Interval (-40.0) (240.0)) cx_ext
-              let cy = linmap (Interval 0.0 100.0) (Interval (-20.0) (120.0)) cy_ext
-              -- Console.logShow { bb, cx, cy, mx, my }
-              sendCirclePos { r: 5.0, cx, cy }
-            _, _ -> pure unit
-      ] $~~
-      [ D.path [ D.d =:= "M 0 15 L 100 50 L 200 100" ]
-      , D.circleW' circlePos []
-      ]
-    , pinkEnvUi
-    , sineEnvUi
+    -- , pinkEnvUi
+    -- , sineEnvUi
     ]
