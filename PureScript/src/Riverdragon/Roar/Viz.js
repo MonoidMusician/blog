@@ -16,6 +16,7 @@ export const _oscilloscope =
       let max = 0;
       for (const s of samples) max = Math.max(Math.abs(s), max);
       if (!max) max = 1;
+      // max = 1;
       const h2 = canvas.height/2;
       const points = Array.from(samples, offset =>
         h2 - offset * h2/max

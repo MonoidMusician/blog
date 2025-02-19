@@ -3,7 +3,7 @@ module Riverdragon.Roar.Dimensions where
 import Prelude
 
 import Data.Number as Number
-import Web.Audio.Types (Frequency, Cents)
+import Web.Audio.Types (Cents, Frequency, Float)
 
 -- TIME -> TEMPO
 -- TUNING
@@ -24,10 +24,15 @@ temperaments =
   , comma1_7 :: Array Cents
   }
 
-loudnessCorrection :: Frequency -> Number
-loudnessCorrection freq =
+aWeighting :: Frequency -> Number
+aWeighting freq =
   let
     f2 = freq*freq
     g r = f2 + r*r
     c1 = 12194.0*12194.0
-  in (c1 + f2*f2) / do g 20.6 * g 12194.0 * Number.sqrt(g 107.7 + g 737.9)
+  in (c1 * f2*f2) / do g 20.6 * g 12194.0 * Number.sqrt(g 107.7 * g 737.9)
+
+loudnessCorrection :: forall r.
+  { freq :: Frequency, gain :: Float | r } ->
+  { freq :: Frequency, gain :: Float | r }
+loudnessCorrection r@{ freq, gain } = r { gain = gain / aWeighting freq }

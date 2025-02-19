@@ -74,7 +74,7 @@ spectrogram config audio = yaaawn \{ ctx } -> do
   destroy1 <- River.subscribe (toLake config.width) (Canvas.setWidth <@> element)
   destroy2 <- River.subscribe (toLake config.height) (Canvas.setHeight <@> element)
 
-  node <- createAnalyserNode ctx { fftSize: FFT1024 }
+  node <- createAnalyserNode ctx { fftSize: FFT1024, smoothingTimeConstant: 0.0 }
   destroy3 <- connecting (toRoars audio) (intoNode node 0)
   let render = _spectrogram node element
   destroy4 <- River.subscribe everyFrame $ const render

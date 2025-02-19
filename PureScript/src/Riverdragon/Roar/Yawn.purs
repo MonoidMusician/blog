@@ -26,7 +26,7 @@ import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Riverdragon.River (Lake, Stream, alwaysBurst, dam, unsafeRiver, (>>~))
 import Riverdragon.River as River
-import Riverdragon.River.Bed (cleanup)
+import Riverdragon.River.Bed (cleanup, runningAff)
 import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (affToLake)
 import Riverdragon.Roar.Dimensions (temperaments)
@@ -35,6 +35,7 @@ import Riverdragon.Roar.Types (class ToLake, class ToOther, class ToRoars, Roar,
 import Type.Proxy (Proxy(..))
 import Type.Row (type (+))
 import Web.Audio.Context (createAudioContext)
+import Web.Audio.Context as Context
 import Web.Audio.Node (destination, intoNode, outOfNode)
 import Web.Audio.Node as AudioNode
 import Web.Audio.Node as Node
@@ -93,14 +94,14 @@ biiigYawn options creator = do
       }
   written <- Ref.new mempty
   Tuple _state outputs <- runReaderT (runMutStateT state0 (creator ctx)) { ctx, written, iface }
-  { destroy: Dual destroy1, ready } <- Ref.read written
+  { destroy: Dual destroy1, ready } <- Ref.read written <* Ref.write mempty written
   destroy2 <- liftEffect $ connecting (dam outputs) (destination ctx)
-  destroy <- liftEffect $ cleanup $ destroy1 <> destroy2
-  fiber <- launchAff $ unit <$ sequential ready
+  destroy <- liftEffect $ cleanup $ destroy1 <> destroy2 <> Context.close ctx
+  waitUntilReady <- runningAff $ unit <$ sequential ready
   pure
     { ctx
     , destroy
-    , waitUntilReady: Aff.joinFiber fiber
+    , waitUntilReady
     }
 
 
@@ -159,11 +160,11 @@ type RunYawn =
 -- | bracketed so you can destroy all of them at once, or individually.
 -- | If you need to wait for asynchronous availability (e.g. of worklettes),
 -- | you may use `waitForReady`, but this is not necessary.
-yawnytime :: YawnM { run :: RunYawn, destroyAll :: Effect Unit }
+yawnytime :: YawnM { run :: RunYawn, destroyScoped :: Effect Unit }
 yawnytime = MutStateT $ ReaderT \state -> ReaderT \upper@{ ctx } -> do
-  destroyAll <- Bed.accumulator
+  destroyScoped <- Bed.accumulator
   upper.written # Ref.modify_ \s -> s <>
-    { destroy: Dual $ join destroyAll.get
+    { destroy: Dual $ join destroyScoped.get
     , ready: mempty
     }
   let
@@ -171,12 +172,23 @@ yawnytime = MutStateT $ ReaderT \state -> ReaderT \upper@{ ctx } -> do
     run (MutStateT (ReaderT creator)) = do
       writing <- Ref.new mempty
       r <- runReaderT (creator state) { ctx, written: writing, iface: upper.iface }
-      written <- Ref.read writing
+      written <- Ref.read writing <* Ref.write mempty writing
       destroy <- liftEffect $ cleanup $ unwrap written.destroy
-      liftEffect $ destroyAll.put destroy
-      fiber <- launchAff $ sequential written.ready
-      pure { result: r, destroy, waitForReady: Aff.joinFiber fiber }
-  pure ({ run, destroyAll: join destroyAll.get } :: { run :: RunYawn | _ })
+      liftEffect $ destroyScoped.put destroy
+      waitForReady <- runningAff $ unit <$ sequential written.ready
+      pure { result: r, destroy, waitForReady }
+  pure ({ run, destroyScoped: join destroyScoped.get } :: { run :: RunYawn | _ })
+
+putYawn ::
+  { destroy :: Effect Unit
+  , ready :: Aff Unit
+  } -> YawnM Unit
+putYawn eep = do
+  { written } <- ask
+  liftEffect $ written # Ref.modify_ \s -> s <>
+    { destroy: Dual eep.destroy
+    , ready: parallel eep.ready
+    }
 
 
 roars :: Array Roar -> YawnM Roar
@@ -217,7 +229,7 @@ osc config@{ frequency, detune } = yaaawn \{ ctx } -> liftEffect do
     (Node.setOscillatorType node)
   pure
     { result: outOfNode node 0
-    , destroy: destroy1 <> destroy2
+    , destroy: destroy1 <> destroy2 <> Node.stopNow node
     , ready: liftEffect $ Node.startNow node
     }
 
@@ -232,7 +244,7 @@ offset config = yaaawn \{ ctx } -> liftEffect do
   destroy1 <- applyKnobs node
   pure
     { result: outOfNode node 0
-    , destroy: destroy1
+    , destroy: destroy1 <> Node.stopNow node
     , ready: liftEffect $ Node.startNow node
     }
 

@@ -36,6 +36,10 @@ instance FFI Boolean Boolean where
   toFFI = identity
   fromFFI = identity
 
+instance FFI t d => FFI (Array t) (Array d) where
+  toFFI = map toFFI
+  fromFFI = map fromFFI
+
 instance (RL.RowToList tr tl, FFIRL tr tl dl dr) => FFI (Record tr) (Record dr) where
   toFFI = toFFIRecord (Proxy :: Proxy tl)
   fromFFI = fromFFIRecord (Proxy :: Proxy tl)

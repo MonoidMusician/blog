@@ -18,7 +18,7 @@ import Record as Record
 import Record.Unsafe.Union as RU
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
-import Web.Audio.FFI (toFFI)
+import Web.Audio.FFI (class FFI, toFFI)
 import Web.Audio.Types (AudioContext, AudioNode, Float, Rate)
 
 type AudioWorkletNode =
@@ -78,7 +78,7 @@ instance
 
 mkAudioWorkletteNode ::
   forall
-    given unused
+    given unused ffi
     send receive -- Structured Clone
     parameterOptions il parameterData defaultParams paramVals params
     processorOptions. -- Structured Clone
@@ -90,6 +90,7 @@ mkAudioWorkletteNode ::
       , parameterData :: Record parameterData
       , processorOptions :: processorOptions
       ) =>
+    FFI (Record given) ffi =>
     RL.RowToList parameterOptions il =>
     MkParamDescs parameterOptions il params paramVals =>
     Row.Union parameterData defaultParams paramVals =>
@@ -116,7 +117,7 @@ mkAudioWorkletteNode { name, function, parameters } ctx = do
   r <- Aff.makeAff \cb ->
     mempty <$ _loadAudioWorkletNode ctx source name (cb <<< Right) (cb <<< Left)
   -- liftEffect $ revokeObjectURL url
-  pure r
+  pure \given -> r (toFFI given)
 
 sourceWrapping :: String /\ String /\ String /\ String
 sourceWrapping =

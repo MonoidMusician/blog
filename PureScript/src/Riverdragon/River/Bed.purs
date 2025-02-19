@@ -38,6 +38,7 @@ import Control.Monad.ST.Internal (STRef)
 import Control.Monad.ST.Internal as STRef
 import Data.Array as Array
 import Data.Array.ST as STA
+import Data.Either (Either(..))
 import Data.List as List
 import Data.Map (Map)
 import Data.Map as Map
@@ -48,6 +49,9 @@ import Data.Set as Set
 import Data.Tuple (Tuple(..), fst, uncurry)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect, foreachE)
+import Effect.Aff (Aff, launchAff)
+import Effect.Aff as Aff
+import Effect.Class (liftEffect)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Idiolect (type (-!>))
@@ -187,6 +191,27 @@ cleanupFn' act = do
           act d
     , running: isNothing <$> getSTR cleanupArg
     , finished: getSTR cleanupArg
+    }
+
+
+postHocDestructors ::
+  Allocar
+    { running :: Allocar Boolean
+    , destructor :: Allocar Unit -> Allocar Unit
+    , finalize :: Allocar Unit
+    }
+postHocDestructors = do
+  running <- newSTR true
+  destructors <- accumulator
+  pure
+    { running: getSTR running
+    , finalize: do
+        setSTR running false
+        join destructors.reset
+    , destructor: \d -> do
+        iteM (getSTR running)
+          do destructors.put d
+          do d
     }
 
 
@@ -489,3 +514,13 @@ requestAnimationFrame :: Effect Unit -> Effect (Effect Unit)
 requestAnimationFrame cb = do
   w <- HTML.window
   Window.cancelAnimationFrame <$> Window.requestAnimationFrame cb w <@> w
+
+runningAff :: forall a. Aff a -> Effect (Aff a)
+runningAff act = do
+  launchAff act >>= Left >>> prealloc >>= \settled -> pure do
+      liftEffect settled.get >>= case _ of
+        Left fiber -> do
+          result <- Aff.joinFiber fiber
+          liftEffect $ settled.set (Right result)
+          pure result
+        Right result -> pure result

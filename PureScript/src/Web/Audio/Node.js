@@ -1,5 +1,9 @@
 export const disConnect = dis => ({ src, outputIndex }) => ({ dest, inputIndex }) => () => {
-  src[dis ? 'disconnect' : 'connect'](dest, outputIndex, inputIndex);
+  if (dest instanceof AudioParam) {
+    src[dis ? 'disconnect' : 'connect'](dest, outputIndex);
+  } else {
+    src[dis ? 'disconnect' : 'connect'](dest, outputIndex, inputIndex);
+  }
 };
 
 export const start = node => time => () => node.start(time);

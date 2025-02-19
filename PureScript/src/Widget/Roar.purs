@@ -2,35 +2,40 @@ module Widget.Roar where
 
 import Prelude
 
+import Control.Alt ((<|>))
 import Control.Monad.Reader (ask, asks)
 import Data.Array as Array
 import Data.Foldable (fold, traverse_)
 import Data.HeytingAlgebra (ff)
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
-import Data.Traversable (traverse)
+import Data.Number as Number
+import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..), fst)
+import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Aff (Milliseconds(..))
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
+import Effect.Random (randomRange)
 import Effect.Ref as Ref
 import Riverdragon.Dragon (Dragon)
 import Riverdragon.Dragon.Bones (smarts, ($~~), (<:>), (=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (Shell, eggy)
-import Riverdragon.River (Allocar, River, Stream, Lake, createRiver, createRiverStore, mapAl, (/?*\))
+import Riverdragon.River (Lake, River, Stream, Allocar, createRiver, createRiverStore, mapAl, oneStream, (/?*\))
 import Riverdragon.River as River
 import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (KeyPhase(..), delay, documentEvent, keyEvents)
-import Riverdragon.Roar.Dimensions (temperaments)
-import Riverdragon.Roar.Knob (Envelope, Knob, knobToAudio, toKnob)
+import Riverdragon.Roar.Dimensions (aWeighting, loudnessCorrection, temperaments)
+import Riverdragon.Roar.Knob (Envelope, Knob(..), adsr, audioToKnob, knobToAudio, toKnob)
+import Riverdragon.Roar.Roarlette as YY
 import Riverdragon.Roar.Synth (notesToNoises)
 import Riverdragon.Roar.Types (Roar, toRoars)
 import Riverdragon.Roar.Viz (oscilloscope, spectrogram)
 import Riverdragon.Roar.Yawn (YawnM, biiigYawn, mtf, mtf_)
 import Riverdragon.Roar.Yawn as Y
-import Web.Audio.Types (BiquadFilterType(..))
+import Web.Audio.Types (BiquadFilterType(..), OscillatorType(..))
 import Web.DOM.Element (Element, getBoundingClientRect)
 import Web.DOM.Element as Element
 import Web.DOM.Node as Node
@@ -115,6 +120,9 @@ linmap2D from to pt =
 pitchGain :: Int -> Number
 pitchGain semitones = linmap (Interval 48.0 84.0) (Interval 1.0 0.1) $ Int.toNumber semitones
 
+random :: Interval -> Allocar Number
+random (Interval lo hi) = randomRange lo hi
+
 type Env =
   { pinkEnv :: Envelope
   , sineEnv :: Envelope
@@ -134,9 +142,12 @@ bbInterval svg = do
     , y: Interval bb.top bb.bottom
     }
 
-envelopeComponent :: Shell -> Envelope -> Allocar { ui :: Dragon, stream :: Stream _
-
- Envelope }
+envelopeComponent ::
+  Shell -> Envelope ->
+  Allocar
+    { ui :: Dragon
+    , stream :: River Envelope
+    }
 envelopeComponent shell init = do
   { send, stream } <- shell.track $ createRiverStore $ Just init
   svgRef <- Ref.new Nothing
@@ -296,6 +307,79 @@ oneVoice { pinkEnv, sineEnv } semitones release = do
   { ctx: _ctx } <- ask
   pure { value: [{ audio: [ sineGain ], gain: gainKnob }], leave }
 
+harpsynthorgVoiceV1 :: forall env. env -> Int -> River Unit -> YawnM
+  { value :: Array
+    { audio :: Array Roar
+    , gain :: Knob
+    }
+  , leave :: River Unit
+  }
+harpsynthorgVoiceV1 _env semitones release = do
+  let
+    rangeScaled lo hi = linmap (Interval 20.0 83.0) (Interval lo hi) (Int.toNumber semitones)
+    rangeScaled' lo hi = linmap (Interval 36.0 83.0) (Interval lo hi) (Int.toNumber semitones)
+    duration = rangeScaled' 6.0 3.5
+  { ctx: _ctx } <- ask
+  baseRamp /\ destroyRamp <- liftEffect $ knobToAudio _ctx $ toKnob
+    { adsr:
+      { attack: 0.0002
+      , decay: duration
+      , sustain: 0.0
+      , release: 0.1
+      }
+    , release
+    }
+  ramp0 <- pure baseRamp -- TODO: `scale~ 8. 8.`
+  ramp1 <- YY.pow ramp0 $ 8.0
+  ramp2 <- YY.pow ramp0 $ 8.0 * 2.0
+  ramp3 <- YY.pow ramp0 $ 8.0 * 4.5
+  ramp4 <- YY.pow ramp0 $ 8.0 * 4.5 * 4.0
+  freq <- mtf semitones
+  let
+    waves =
+      [ { freq: freq * 1.0, gain: rangeScaled 0.45 1.0, ramp: ramp1 }
+      , { freq: freq * 2.005, gain: rangeScaled 0.5 0.2, ramp: ramp1 }
+      , { freq: freq * 3.004, gain: 0.28, ramp: ramp2 }
+      , { freq: freq * 2.005 * 2.005, gain: 0.05, ramp: ramp3 }
+      , { freq: freq * 5.0, gain: 0.04, ramp: ramp3 }
+      ] <#> loudnessCorrection
+  overtones <- for waves \wave -> do
+    sine <- Y.osc { type: Sine, frequency: wave.freq, detune: 0 }
+    scaled <- Y.gain sine 0.5 -- wave.gain
+    decaying <- Y.gain scaled (KStartFrom 0.0 $ toKnob wave.ramp)
+    pure decaying
+  -- Console.logShow $ waves <#> \{ freq, gain } -> { freq, gain, duration }
+  let twang = freq
+  square <- do
+    -- TODO: 0.379 duty cycle
+    -- https://github.com/pendragon-andyh/WebAudio-PulseOscillator
+    square <- Y.osc { type: Square, frequency: twang, detune: 0 }
+    scaled <- Y.gain square $ Number.pow (1.0 / aWeighting freq) 0.25
+    decaying <- Y.gain scaled ramp3
+    defanged <- Y.filter decaying
+      { type: Lowpass
+      , frequency: freq * 34.0
+      , detune: 0.0
+      , "Q": 0.1 -- ??
+      , gain: unit
+      }
+    pure defanged
+  hammer <- do
+    hammer <- YY.pinkNoise
+    scaled <- Y.gain hammer $ 90.0 * rangeScaled' 0.15 0.04
+    decaying <- Y.gain scaled ramp4
+    defanged <- Y.filter decaying
+      { type: Lowpass
+      , frequency: freq
+      , detune: 0.0
+      , "Q": 0.3 -- ??
+      , gain: unit
+      }
+    pure defanged
+  joined <- Y.gain [ overtones, [ square, hammer ] ] 1.0
+  let leave = delay (150.0 # Milliseconds) release
+  pure { value: [{ audio: [ joined ], gain: toKnob ramp1 }], leave }
+
 widgetHarpsynthorg :: Widget
 widgetHarpsynthorg _ = pure $ eggy \shell -> do
   { send: setValue, stream: valueSet } <- shell.track createRiver
@@ -315,7 +399,7 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
           { pinkEnv: pinkEnvStream
           , sineEnv: sineEnvStream
           -- , wibbleWobble: pure $ pinkEnvStream <#> _.sustain
-          } noteStream oneVoice
+          } noteStream harpsynthorgVoiceV1
         let
           activeAudio :: Lake (Array Roar)
           activeAudio = join <<< map _.audio <$> activeSynths
@@ -338,9 +422,10 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
         let
           debug :: Lake (Array Roar)
           debug = activeSynths # mapAl do
-            traverse \{ gain: k } ->
+            traverse \{ gain: k } -> do
+              -- Console.log "Knob incoming!"
               liftEffect $ fst <$> knobToAudio _ctx k
-        scopeEl1 <- oscilloscope { width: 1024, height: 512 } debug
+        scopeEl1 <- oscilloscope { width: 1024, height: 512 } melody -- debug
         scopeEl2 <- spectrogram { height: 512, width: 400 } antialiased
         void $ liftEffect $ River.subscribe scopeParent \el -> do
           Node.appendChild (HTMLCanvasElement.toNode scopeEl1) (Element.toNode el)

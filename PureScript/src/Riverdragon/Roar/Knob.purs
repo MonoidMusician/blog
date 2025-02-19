@@ -19,7 +19,7 @@ import Record as Record
 import Riverdragon.River (Allocar, Lake, Stream, dam, oneStream)
 import Riverdragon.River as River
 import Riverdragon.River.Bed (cleanup)
-import Riverdragon.Roar.Types (RoarO, Roar, connecting)
+import Riverdragon.Roar.Types (class ToRoars, Roar, RoarO, connecting, toRoars)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Web.Audio.Node (createConstantSourceNode, intoParam)
@@ -182,7 +182,7 @@ renderKnob knob ctx = case knob of
     River.subscribe cmds \fire -> do
       cmdArray <- fire =<< currentTime ctx
       traverse_ (AudioParam.applyCmd param) cmdArray
-  KAudio srcs -> { default: Nothing, apply: _ } \param -> do
+  KAudio srcs -> { default: Just 0.0, apply: _ } \param -> do
     connecting srcs (intoParam param)
   KAdd items ->
     let knobs = renderKnob <$> items <@> ctx in
@@ -204,6 +204,7 @@ renderKnob knob ctx = case knob of
 -- | and vice-versa.
 knobToAudio :: AudioContext -> Knob -> Allocar (Tuple RoarO (Allocar Unit))
 knobToAudio ctx knob = do
+  -- TODO: default
   let { default, apply: applyKnob } = renderKnob knob ctx
   node <- createConstantSourceNode ctx { offset: default }
   Node.startNow node
@@ -213,6 +214,9 @@ knobToAudio ctx knob = do
 knobsToAudios :: forall f. Traversable f => AudioContext -> f Knob -> Allocar (Tuple (f RoarO) (Allocar Unit))
 knobsToAudios ctx knobs = runWriterT do
   traverse (WriterT <<< knobToAudio ctx) knobs
+
+audioToKnob :: forall roar. ToRoars roar => roar -> Knob
+audioToKnob = KAudio <<< toRoars
 
 class KnobsRL
   (ir :: Row Type)
