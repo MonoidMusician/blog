@@ -482,7 +482,8 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
       Console.log $ "Input " <> (MIDI.getInfo input).name
       shell.destructor =<< MIDI.onmidimessage input midiMessages.send
   shell.destructor =<< River.subscribe midiMessages.stream case _ of
-    [144, note, velocity] -> sendNote { key: note, pressed: velocity > 0 }
+    [0x90, note, velocity] -> sendNote { key: note, pressed: velocity > 0 }
+    [0x80, note, _velocity] -> sendNote { key: note, pressed: false }
     _ -> pure unit
 
   pure $ D.Fragment
