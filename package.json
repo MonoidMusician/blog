@@ -19,7 +19,7 @@
     "spago": "^0.93.40"
   },
   "devDependencies": {
-    "purs-backend-es": "^1.1.0",
+    "purs-backend-es": "^1.4.3",
     "purs-tidy": "^0.9.2",
     "sass": "^1.54.8"
   }
