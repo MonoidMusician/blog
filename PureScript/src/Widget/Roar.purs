@@ -5,7 +5,7 @@ import Prelude
 import Control.Alt ((<|>))
 import Control.Monad.Reader (ask, asks)
 import Data.Array as Array
-import Data.Foldable (fold, traverse_)
+import Data.Foldable (fold, for_, traverse_)
 import Data.HeytingAlgebra (ff)
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
@@ -14,7 +14,7 @@ import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
-import Effect.Aff (Milliseconds(..))
+import Effect.Aff (Milliseconds(..), launchAff_)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Effect.Random (randomRange)
@@ -23,7 +23,7 @@ import Riverdragon.Dragon (Dragon)
 import Riverdragon.Dragon.Bones (smarts, ($~~), (<:>), (=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (Shell, eggy)
-import Riverdragon.River (Lake, River, Stream, Allocar, createRiver, createRiverStore, mapAl, oneStream, (/?*\))
+import Riverdragon.River (Allocar, Lake, River, Stream, createRiver, createRiverStore, mapAl, oneStream, (/?*\))
 import Riverdragon.River as River
 import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (KeyPhase(..), delay, documentEvent, keyEvents)
@@ -35,6 +35,10 @@ import Riverdragon.Roar.Types (Roar, toRoars)
 import Riverdragon.Roar.Viz (oscilloscope, spectrogram)
 import Riverdragon.Roar.Yawn (YawnM, biiigYawn, mtf, mtf_)
 import Riverdragon.Roar.Yawn as Y
+import Unsafe.Coerce (unsafeCoerce)
+import Web.Audio.Context (LatencyHint(..))
+import Web.Audio.MIDI (PermissionStatus(..))
+import Web.Audio.MIDI as MIDI
 import Web.Audio.Types (BiquadFilterType(..), OscillatorType(..))
 import Web.DOM.Element (Element, getBoundingClientRect)
 import Web.DOM.Element as Element
@@ -294,7 +298,6 @@ oneVoice { pinkEnv, sineEnv } semitones release = do
   let volume = pitchGain semitones
   -- pink <- toNode PinkNoise
   -- pinkGain <- Y.gain pink { adsr: pinkEnv, volume: 0.2, release }
-  defaultFreq <- mtf semitones
   frequency <- mtf_ semitones -- this live updates if tuning or temperament changes
   sine <- Y.osc
     { detune: 0
@@ -393,7 +396,7 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
   destroyLastSynth <- Bed.rolling
   let
     startSynth = do
-      { destroy: stopSynth } <- biiigYawn {} \_ctx -> do
+      { destroy: stopSynth } <- biiigYawn { latencyHint: Interactive, sampleRate: 48000 } \_ctx -> do
         -- This triggers synthesizers and shuts them down when they are released
         activeSynths <- notesToNoises
           { pinkEnv: pinkEnvStream
@@ -462,6 +465,26 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
 
   Console.log "TEST"
 
+  midiAccess <- shell.track $ createRiverStore Nothing
+  let
+    grabMIDI = launchAff_ do
+      Console.log "Requesting"
+      { access } <- MIDI.requestMIDI {}
+      Console.log $ unsafeCoerce access
+      liftEffect $ midiAccess.send access
+  launchAff_ $ MIDI.getPermissionStatusMIDI {} >>= case _ of
+    Granted -> liftEffect grabMIDI
+    _ -> pure unit
+  midiMessages <- shell.track createRiver
+  shell.destructor =<< River.subscribe midiAccess.stream \access -> do
+    { inputs } <- MIDI.access access
+    for_ inputs \input -> do
+      Console.log $ "Input " <> (MIDI.getInfo input).name
+      shell.destructor =<< MIDI.onmidimessage input midiMessages.send
+  shell.destructor =<< River.subscribe midiMessages.stream case _ of
+    [144, note, velocity] -> sendNote { key: note, pressed: velocity > 0 }
+    _ -> pure unit
+
   pure $ D.Fragment
     [ D.button
       [ D.onClick =:= \_ -> setValue true
@@ -469,6 +492,9 @@ widgetHarpsynthorg _ = pure $ eggy \shell -> do
     , D.button
       [ D.onClick =:= \_ -> setValue false
       ] $ D.text "Pause"
+    , D.button
+      [ D.onClick =:= \_ -> grabMIDI
+      ] $ D.text "MIDI"
     , D.div [ D.Self =:= \el -> mempty <$ sendScopeParent el ] mempty
     -- , pinkEnvUi
     -- , sineEnvUi

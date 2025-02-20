@@ -24,6 +24,7 @@ import Effect.Aff as Aff
 import Effect.Class (liftEffect)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
+import Prim.Row as Row
 import Riverdragon.River (Lake, Stream, alwaysBurst, dam, unsafeRiver, (>>~))
 import Riverdragon.River as River
 import Riverdragon.River.Bed (cleanup, runningAff)
@@ -34,8 +35,9 @@ import Riverdragon.Roar.Knob (class ToKnob, Knob(..), renderKnobs)
 import Riverdragon.Roar.Types (class ToLake, class ToOther, class ToRoars, Roar, RoarO, connecting, thingy, toLake, toRoars)
 import Type.Proxy (Proxy(..))
 import Type.Row (type (+))
-import Web.Audio.Context (createAudioContext)
+import Web.Audio.Context (LatencyHint, createAudioContext)
 import Web.Audio.Context as Context
+import Web.Audio.FFI (class FFI)
 import Web.Audio.Node (destination, intoNode, outOfNode)
 import Web.Audio.Node as AudioNode
 import Web.Audio.Node as Node
@@ -72,8 +74,14 @@ type YawnLive =
   , pitch :: Interface Frequency
   }
 
-biiigYawn :: forall flow.
-  {} ->
+biiigYawn ::
+  forall options unused ffi flow.
+    Row.Union options unused
+      ( latencyHint :: LatencyHint
+      , sampleRate :: Int
+      ) =>
+    FFI (Record options) ffi =>
+  Record options ->
   (AudioContext -> YawnM (Stream flow (Array RoarO))) ->
   Effect
     { ctx :: AudioContext
