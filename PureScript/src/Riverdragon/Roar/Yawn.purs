@@ -7,6 +7,7 @@ import Control.Monad.Reader (ReaderT(..), asks, runReaderT)
 import Control.Monad.Reader.Class (ask)
 import Control.Monad.State (get)
 import Data.Array ((!!))
+import Data.Array as Array
 import Data.Compactable (compact)
 import Data.Int as Int
 import Data.Map (Map)
@@ -41,7 +42,7 @@ import Web.Audio.FFI (class FFI)
 import Web.Audio.Node (destination, intoNode, outOfNode)
 import Web.Audio.Node as AudioNode
 import Web.Audio.Node as Node
-import Web.Audio.Types (AudioContext, BiquadFilterType, Frequency, OscillatorType(..))
+import Web.Audio.Types (AudioContext, BiquadFilterType, Float, Frequency, OscillatorType(..))
 import Web.Audio.Types as Audio
 import Widget (Interface, storeInterface)
 
@@ -315,3 +316,37 @@ mtf_ notes = do
 
 freqs :: forall flow knob. ToKnob knob => Stream flow (Array knob) -> YawnM Roar
 freqs = roarings <=< yawnOnDemand <<< map (traverse \frequency -> osc { type: Sine, frequency, detune: 0 })
+
+waveshape :: forall roar. ToRoars roar => roar -> Array Float -> YawnM Roar
+waveshape input curve = yaaawn \{ ctx } -> liftEffect do
+  node <- AudioNode.createWaveShaperNode ctx { curve }
+  destroy <- connecting (toRoars input) (intoNode node 0)
+  pure { result: outOfNode node 0, destroy: destroy, ready: mempty }
+
+wavesample :: Int -> (Float -> Float) -> Array Float
+wavesample nsamples shaping =
+  let maxsample = Int.toNumber nsamples - 1.0 in
+  Array.replicate nsamples unit
+    # Array.mapWithIndex \i _ -> shaping $
+        (Int.toNumber i / maxsample) * 2.0 - 1.0
+
+binarize :: forall roar. ToRoars roar => roar -> YawnM Roar
+binarize = waveshape <@> wavesample 1024 \v -> case compare v 0.0 of
+  LT -> -1.0
+  EQ -> 0.0
+  GT -> 1.0
+
+pwm ::
+  forall width frequency detune.
+    ToKnob width =>
+    ToKnob frequency =>
+    ToKnob detune =>
+  { width :: width
+  , frequency :: frequency
+  , detune :: detune
+  } -> YawnM Roar
+pwm { width, frequency, detune } = do
+  timing <- osc { type: Sawtooth, frequency, detune }
+  undefault <- offset { offset: -0.5 }
+  widthOffset <- offset { offset: width }
+  binarize [ timing, undefault, widthOffset ]

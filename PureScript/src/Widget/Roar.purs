@@ -28,7 +28,7 @@ import Riverdragon.River as River
 import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (KeyPhase(..), delay, documentEvent, keyEvents)
 import Riverdragon.Roar.Dimensions (aWeighting, loudnessCorrection, temperaments)
-import Riverdragon.Roar.Knob (Envelope, Knob(..), adsr, audioToKnob, knobToAudio, toKnob)
+import Riverdragon.Roar.Knob (Envelope, Knob(..), adsr, audioToKnob, knobToAudio, planned, toKnob)
 import Riverdragon.Roar.Roarlette as YY
 import Riverdragon.Roar.Synth (notesToNoises)
 import Riverdragon.Roar.Types (Roar, toRoars)
@@ -352,11 +352,16 @@ harpsynthorgVoiceV1 _env semitones release = do
     decaying <- Y.gain scaled (KStartFrom 0.0 $ toKnob wave.ramp)
     pure decaying
   -- Console.logShow $ waves <#> \{ freq, gain } -> { freq, gain, duration }
-  let twang = freq
+  twangLow <- liftEffect $ randomRange 0.991 0.999
+  twangHigh <- liftEffect $ randomRange 1.005 1.015
+  let
+    twang = planned
+      (twangLow * freq)
+      [ { target: twangHigh * freq, after: 0.1 }
+      , { target: 1.0 * freq,       after: 0.08 }
+      ]
   square <- do
-    -- TODO: 0.379 duty cycle
-    -- https://github.com/pendragon-andyh/WebAudio-PulseOscillator
-    square <- Y.osc { type: Square, frequency: twang, detune: 0 }
+    square <- Y.pwm { width: 0.379, frequency: twang, detune: 0 }
     scaled <- Y.gain square $ Number.pow (1.0 / aWeighting freq) 0.25
     decaying <- Y.gain scaled ramp3
     defanged <- Y.filter decaying

@@ -11,7 +11,7 @@ import Data.Int as Int
 import Data.Maybe (Maybe(..), maybe)
 import Data.RecordOverloads (class RecordOverloads, overloads)
 import Data.Symbol (class IsSymbol)
-import Data.Traversable (class Traversable, traverse)
+import Data.Traversable (class Traversable, mapAccumL, traverse)
 import Data.Tuple (Tuple(..), uncurry)
 import Prim.Row as Row
 import Prim.RowList as RL
@@ -94,6 +94,14 @@ linear default stream = KAware (Just default) \getValue -> do
       [ CmdTarget { ramp: NoRamp, target: value, time: now }
       , CmdTarget { ramp: LinRamp, target, time: now + duration }
       ]
+
+planned :: Float -> Array { target :: Float, after :: Number } -> Knob
+planned default targets = KCmd default $ pure \now -> pure $
+  stagger targets <#> CmdTarget <<< \{ target, time } ->
+    { ramp: LinRamp, target, time: now + time }
+  where
+  stagger = _.value <<< mapAccumL staggering 0.0
+  staggering time { target, after } = { value: { target, time: after + time }, accum: time + after }
 
 type Envelope =
   { attack :: Duration
