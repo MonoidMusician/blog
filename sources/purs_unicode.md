@@ -317,7 +317,7 @@ I have already implemented this.
 - Remove `Prim.Char`{.haskell} and char literals
 - Add `Prim.CodePoint`{.haskell} and code point literals
   - This means that code point literals are not restricted to BMP
-  - However, lone surrogates will not be allowed in literals … but who would be using that in the first place??
+  - However, lone surrogates will not be allowed in literals&nbsp;… but who would be using that in the first place??
     (It required escape codes to even write!)
   - It will be represented with integers
 - Define strings to be any encoding, based on the backend (UTF-8, UTF-16, UTF-32)

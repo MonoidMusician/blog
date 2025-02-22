@@ -95,7 +95,7 @@ But thereʼs a few issues:
 
 1. We arenʼt making it any easier on ourselves
 2. Mainstream languages love to ignore everything weʼve learned in computer science
-3. Uhh Iʼm sure I had a third point, I mustʼve …
+3. Uhh Iʼm sure I had a third point, I mustʼve&nbsp;…
 
 Code collaboration tools suck.
 Git CLI sucks.
@@ -217,7 +217,7 @@ It would be great to have a world where devices worked as a unified, cohesive wh
 As one example, I want to be able to control my laptop from my phone, since I sometimes want to be running media on it while Iʼm going to bed or something.
 I had to set up a custom web server application on the laptop to let me do the most basic things, such as controlling volume and screen brightness.
 I also embedded a very basic [VLC](https://www.videolan.org/) control interface, but now that YouTube support is broken yet again I canʼt really use it as I would like to.
-(I can only use it for the bit of media, and I would need to make a better interface to find those files … sigh.)
+(I can only use it for the bit of media, and I would need to make a better interface to find those files&nbsp;… sigh.)
 I might just have to develop my own Chromium puppeteer interface to the YouTube website itself.
 
 Related to this, itʼs just so hard to remote control computers (I donʼt think this is just a Mac problem – maybe it is).
@@ -246,7 +246,7 @@ It does mean that you have to rerender the whole stack of further edits, but del
 
 But Iʼm also talking about the meta game here: it only lets you compare edits _vertically_, but as an artist, I often want to compare edits _horizontally_, applying two different filters (or the same filter with different settings) and seeing which I prefer, especially after further edits stacked on top.
 I donʼt know of a single image editing app that implements this!
-Not GIMP, not Inkscape, not … uh … Adobe Fresco … and uh I donʼt really use other apps (but I donʼt think itʼs a FOSS problem, pretty sure MS paint doesnʼt do what Iʼm talking about either).
+Not GIMP, not Inkscape, not&nbsp;… uh&nbsp;… Adobe Fresco&nbsp;… and uh I donʼt really use other apps (but I donʼt think itʼs a FOSS problem, pretty sure MS paint doesnʼt do what Iʼm talking about either).
 Please tell me if Iʼm wrong, but Iʼve never heard of it being implemented, even though it is an obvious thing that artists and designers want to do!
 [Related: devs often want to work on tests and code somewhat separately, not in lockstep, and git does not make this a pleasant workflow since it isnʼt convenient to modify just tests or just code, especially when they are syntactically tied together due to like renaming functions or whatnot, but semantically the same tests could apply in theory.]
 We are forced to workaround the lack of meta-editing by playing weird games with the editor history, which is a risky business since it is linear and may delete our edits if we mess up.

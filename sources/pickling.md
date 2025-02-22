@@ -25,7 +25,7 @@ This post has spent a long time marinating in my mind, so Iʼm happy to finally 
 Iʼve identified some basic aspects of data:
 
 #. Pure (immutable) data
-    - Either acyclic …
+    - Either acyclic&nbsp;…
     - … or allowed to be cyclic
 #. Mutable data (say, in-memory)
     - Youʼre basically forced to allow cyclic references!^[Except in Rust, I think?]
@@ -34,7 +34,7 @@ Iʼve identified some basic aspects of data:
     - External is relative – as it should be!
     - Your need to think about capturing intent
       - [e.g.]{t=} file paths are probably your best indicator of intent – but if it was a temporary file, you could probably create a new temporary file instead!
-        but oh now what if a different string is storing the path of the file, now you donʼt know how those pieces of data relate anymore and cannot update that string …
+        but oh now what if a different string is storing the path of the file, now you donʼt know how those pieces of data relate anymore and cannot update that string&nbsp;…
 #. Functions? *Are* functions data?? (Iʼm including closures and procedures and routines and all that stuff in my definition of functions, btw.)
 #. Quotiented data (Agda, Lean, Rocq)
     - see [Subtypes/Quotients: Lies Told in Defense of the Truth](adt_lies_for_truth.html) ([WIP]{t=})
@@ -218,7 +218,7 @@ Mutable data cares about its referential **identity**, on the other hand.
 
 The thing about pure data is that it essentially doesnʼt really care if it is a tree or a DAG.
 I mean, it matters in terms of efficiency and storage space!
-(Though this is rarely exposed at a useful level.^[Sighs in [tmTTmt](tmttmt.html) …])
+(Though this is rarely exposed at a useful level.^[Sighs in [tmTTmt](tmttmt.html)&nbsp;…])
 But the results of an algorithm wonʼt be changed just by sharing more or less internal structure among the immutable data.
 
 Mutable data pretty obviously cares about sharing.
@@ -330,7 +330,7 @@ However, a _reference_ to a process *is* “just” data still, and can be compa
 
 And interestingly, the dynamic, asynchronous nature of processes means that they *must* expose mutation.
 
-Indeed, one way to implement a mutable reference is to spin up a process that holds the “current” value^[inasmuch as a concurrent system can have a current state …] and returns it when queried and purely updates it in its state.
+Indeed, one way to implement a mutable reference is to spin up a process that holds the “current” value^[inasmuch as a concurrent system can have a current state&nbsp;…] and returns it when queried and purely updates it in its state.
 That is, its state is immutable, but external callers can see fresh data whenever they query the process.
 
 
@@ -418,7 +418,7 @@ As will be the theme, references to foreign data (not strings, numbers, objects,
 
 Global object types are worth thinking about.
 They are opaque to code, but in theory they live in predictable places in the global namespace each time, so the proper reference to them can be reconstructed.
-However, thereʼs still complications, such as that different runtimes will expose different ones (Chromium, Firefox, Node, Deno, …).
+However, thereʼs still complications, such as that different runtimes will expose different ones (Chromium, Firefox, Node, Deno,&nbsp;…).
 
 By far the most common types of foreign objects will be from the DOM.
 Some can be serialized pretty directly – at least snapshotted if they arenʼt immutable (like all the little attribute list or node list types, or bounding box type).
@@ -459,7 +459,7 @@ This would give you your own faithful, accurate slice of the runtime heap as vie
 The resulting reconstructed value would behave the same with regards to mutability of its children.
 It just would not compare equal with `===`{.javascript}, since it is a newly allocated value (and all of its children are too).
 
-However, if nobody else remembered the old object, and you substituted in the new object very sneakily … nobody would know 🤫
+However, if nobody else remembered the old object, and you substituted in the new object very sneakily&nbsp;… nobody would know 🤫
 
 #### Python
 
@@ -525,7 +525,7 @@ Good luck.
 Pointers “are” numbers?
 What the fuck?!
 
-Clearly thereʼs nothing much we can say about coherent semantics …
+Clearly thereʼs nothing much we can say about coherent semantics&nbsp;…
 without getting really deep into the weeds of what is and isnʼt undefined behavior and why.
 
 However, it does reinforce the point: at a very very basic level, OSes and memory management and stuff are about managing the graph of live pointers – it is just very very hard to determine what bytes are actually live pointers at any given point in a C program, and what bytes are other kinds of data.
@@ -549,7 +549,7 @@ It returns a string representation of the (stable) pointer for any object!
 >>> id([])
 'vec:0x7fea11014c40'
 ```
-I mean, I guess it is like the `id()`{.python} function in Python …
+I mean, I guess it is like the `id()`{.python} function in Python&nbsp;…
 Yeah, both use mark/sweep GCs, so pointers are stable.
 
 Anyways, the other great thing about Nasal is that objects donʼt have constructors!
@@ -602,7 +602,7 @@ After that, you should just be able to compare your resulting files and use that
 Alternatively, you could write out a direct algorithm: take two objects at runtime and walk them recursively with the same kind of hashmap trick, comparing at which paths you see the objects, and then just make sure the shared references appear at the same minimal-paths from the root across their sharings.
 (You want to avoid cyclic recursions, of course, which does mean you will only look at minimal paths.)
 
-Iʼll call this … “graph equality”?
+Iʼll call this&nbsp;… “graph equality”?
 “Stable equality”?
 It is what Iʼve meant by “equivalence” all along.
 
@@ -913,7 +913,7 @@ The main difference is that, in Haskell, the infinite `JSON`{.haskell} could be 
 :::
 
 <!--
-I should do a blog post on why [pickling](https://docs.python.org/3/library/pickle.html#what-can-be-pickled-and-unpickled) (in the sense of Python) is so cool and important, and what “data” means in general (to Pythoners, to JavaScripters, to Haskellers, to Agdaers, …)
+I should do a blog post on why [pickling](https://docs.python.org/3/library/pickle.html#what-can-be-pickled-and-unpickled) (in the sense of Python) is so cool and important, and what “data” means in general (to Pythoners, to JavaScripters, to Haskellers, to Agdaers,&nbsp;…)
 
 pickling is cool because it forces you to acknowledge that—
 

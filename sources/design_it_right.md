@@ -28,7 +28,7 @@ Indented multiline strings are just a thing that you can put a few extra hours o
 ### Relative file paths
 
 File paths should be relative to the file theyʼre in, or to a well defined project root.
-This mostly applies to configuration, less so running programs (for which a working directory is usually fine), but like … imports should be predictable.
+This mostly applies to configuration, less so running programs (for which a working directory is usually fine), but like&nbsp;… imports should be predictable.
 
 Notably, configuration files for both [Docker Compose](https://docs.docker.com/compose/how-tos/multiple-compose-files/extends/#understanding-multiple-compose-files) and [Rustʼs Cargo](https://doc.rust-lang.org/cargo/reference/config.html#config-relative-paths) get this wrong.
 
@@ -53,7 +53,7 @@ And so on.
 
 ### Commas
 
-Another solved problem: allow trailing commas! (And possibly leading commas, if you feel like that … or actual bullet points.)
+Another solved problem: allow trailing commas! (And possibly leading commas, if you feel like that&nbsp;… or actual bullet points.)
 
 ### Extensible syntax
 
@@ -68,7 +68,7 @@ Do you *really* think youʼll get the perfect set of keywords right the first ti
 
 ### Developer experience vs Released code
 
-iterating on code as youʼre developing it, versus having a nice clean, pristine released version … theyʼre quite different things, and I think these workflows should be respected!
+iterating on code as youʼre developing it, versus having a nice clean, pristine released version&nbsp;… theyʼre quite different things, and I think these workflows should be respected!
 
 e.g. when developing, we often put web servers on different ports and/or LAN hosts, and use HTTP or self-signed HTTPS (or even `file:///` in the few cases we can get away with it!), whereas in production it might be behind a reverse proxy under some specific route, and so on.
 

@@ -8,7 +8,7 @@ date: 2024/02/07
 
 Some email services like Gmailʼs Google Takeout will export your files in a `.mbox` file format.^[`.mbox` stands for “mailbox”, and it is actually a [very ugly format](https://en.wikipedia.org/wiki/Mbox#Mbox_family) under the hood, which is probably why nobody really supports or advertises it.]
 
-Iʼve looked several times to find decent ways to view these archives, since me and my friends lose access to our G Suite emails after we graduate school. (Sigh …)
+Iʼve looked several times to find decent ways to view these archives, since me and my friends lose access to our G Suite emails after we graduate school. (Sigh&nbsp;…)
 
 [Thunderbird](https://www.thunderbird.net/) is the best software to view `.mbox` files, especially since it is free and open source software!
 [Several](https://documentation.its.umich.edu/mbox-thunderbird) [universities](https://computing.sas.upenn.edu/importingtakeoutthunderbird) [recommend](https://itsupport.umd.edu/itsupport?id=kb_article_view&sysparm_article=KB0011941) [it](https://td.ucmo.edu/TDClient/34/Portal/KB/ArticleDet?ID=353).
@@ -110,7 +110,7 @@ Hmph.
 
 We will be using a feature called “Local Folders”, which is a local account that Thunderbird maintains, not tied to any external servers.
 
-Unfortunately we need to set up a fake account first to get access to Local Folders.^[It was not always this way, as far as I can tell …]
+Unfortunately we need to set up a fake account first to get access to Local Folders.^[It was not always this way, as far as I can tell&nbsp;…]
 
 When it says “Set up your existing email address”, weʼll do our best to decline its offer:
 
@@ -288,4 +288,4 @@ Just be warned that they are out of date in several ways.
 
 Feel free to ping me if this goes out of date, I am happy to maintain it.
 
-Arguably this is the wrong place for the information to live, but eh … Iʼm trying.
+Arguably this is the wrong place for the information to live, but eh&nbsp;… Iʼm trying.

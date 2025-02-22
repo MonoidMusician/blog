@@ -161,7 +161,7 @@ I think Iʼm ready to make it happen!
 - Functors! I love functors.
 - Encourage healthy abstractions.
   I think thatʼs a great word: _healthy_ abstractions.
-- I have this idea for a type system and I donʼt know if it will pan out …
+- I have this idea for a type system and I donʼt know if it will pan out&nbsp;…
   Something like TypeScript done better (or similar sorts of ad-hoc type systems).
 - Easy debugging and decent dev UX.
   Being able to dump terms in a representable/inspectable format.
@@ -185,7 +185,7 @@ I think Iʼm ready to make it happen!
   - :::Key_Idea
     In particular, by committing ourselves to _this_ logic of **literals as ground truth for comparing _across types_**, we can generate automatic coercions between subsets of complex types.
 
-    I understand why a lot of languages want literals to have distinct types ([e.g.]{t=} Haskell ADTs all have distinct, named constructors), but it just poses a barrier to the fluidity I want to have in this system for language design of all things. If you name something `["if" _ "then" _ "else" _]`{.js} then you know what it represents! No matter if it is in the source CST, the desugared AST, or a final core pass …
+    I understand why a lot of languages want literals to have distinct types ([e.g.]{t=} Haskell ADTs all have distinct, named constructors), but it just poses a barrier to the fluidity I want to have in this system for language design of all things. If you name something `["if" _ "then" _ "else" _]`{.js} then you know what it represents! No matter if it is in the source CST, the desugared AST, or a final core pass&nbsp;…
     :::
 
     In some target runtimes, if they are faithful to the literals, these will be actual zero-cost coercions.
@@ -200,7 +200,7 @@ I think Iʼm ready to make it happen!
 
     In concrete terms, this means that inclusion in the grab bag is the only sensible constraint you get to ask for; you donʼt really get to “delete fields” or “merge” or such.
 
-  - Avoiding row types … idk.
+  - Avoiding row types&nbsp;… idk.
     Row types are great but I think there are enough alternatives in this type theory that they would not be so important.
     In particular, having union types (and maybe restriction types) means that you can talk about parts of the AST.
 
@@ -266,10 +266,10 @@ https://cohost.org/monoidmusician/post/3252802-first-class-patterns
     (One-hole contexts are possible to derive generically with typeclass machinery.
     But the conversions get super annoying...)
   - Functional Reactive Programming (FRP).
-    Existing FRP frameworks are … alright.
+    Existing FRP frameworks are&nbsp;… alright.
     But none really capture the right logic/linguistics to make it easy.
   - Incremental computation.
-    I mean … just imagine an incremental compiler, where trivial refactors donʼt cost any time, changing constants in the source code changes them directly in the compiled artefacts, and other tasks scale proportionally to the amount of things they actually affect.
+    I mean&nbsp;… just imagine an incremental compiler, where trivial refactors donʼt cost any time, changing constants in the source code changes them directly in the compiled artefacts, and other tasks scale proportionally to the amount of things they actually affect.
   - “Free” constructions (I mean, minus laws, since we donʼt have quotients).
     These are just so difficult to make, with a lot of boilerplate.
   - Codecs. Parsing.
@@ -303,7 +303,7 @@ https://cohost.org/monoidmusician/post/3252802-first-class-patterns
     tokenPrec = tokenPrecA <@> NoAssoc
     ```
 
-    Does reifying the arguments as a datatype with super lightweight syntax do what we need? maybe …
+    Does reifying the arguments as a datatype with super lightweight syntax do what we need? maybe&nbsp;…
   - Would be nice to have ways to say “add a precedence to *this* (whatever it is)” or “add a name to *that*”.
     Idk.
 
@@ -316,7 +316,7 @@ https://cohost.org/monoidmusician/post/3252802-first-class-patterns
 - Similarly: not interested in baking in unification.
   That can (and should) be provided by users; the goal is to make the syntax lightweight enough to facilitate it.
 - Probably not going to have Rank-N types for a while, if ever.
-  I mean, I like Rank-N types, especially for APIs, but most things end up being better expressed by inductive data types, and this way I have a type inference algorithm that is actually tractable …
+  I mean, I like Rank-N types, especially for APIs, but most things end up being better expressed by inductive data types, and this way I have a type inference algorithm that is actually tractable&nbsp;…
 
 ## More Details
 
@@ -332,7 +332,7 @@ Worship the shape of data and the structure of code ...
   - :::{.Bonus box-name="Aside"}
     The other, silly solution, is to commit to only having one binder: lambda, and phrasing pi in terms of lambda.
     I convinced myself it works out on paper but I got a little stuck trying to prove it to Agda.
-    Heh heh heh …
+    Heh heh heh&nbsp;…
     :::
 - Container functors, the building blocks of an AST.
   - `traverseWithIndex :: (i -> a -> m b) -> (f a -> m (f b))`{.haskell}

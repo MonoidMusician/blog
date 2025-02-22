@@ -98,7 +98,7 @@ You can bug or help me write more ^^
 - Generate example inputs for each state, especially to diagnose conflicts^[currently it only generates example inputs for nonterminals/productions]
 - Explain [Earley parsing](https://en.wikipedia.org/wiki/Earley_parser) using a similar approach
 - Better errors!
-- Hm maybe I can uhh suggest fixes to grammars, has that been done before …
+- Hm maybe I can uhh suggest fixes to grammars, has that been done before&nbsp;…
   - at least precedence
   - other ambiguity fixes are harder, but maybe factoring
 - Whitespace

@@ -33,7 +33,7 @@ In rough order of difficulty the distinct uses of grammars are:
     Obviously it requires a bit more than mere recognition, since you want more substantial data back from it, but
     what do you actually need out of syntax highlighting?
     And more importantly: how do you deal with errors and partial inputs?
-    Weʼll get into that later …
+    Weʼll get into that later&nbsp;…
 4. Parsing: Find an unambiguous parse tree for all inputs that belong to the grammar, and errors for inputs that do not belong to the grammar.
 
     Weʼre talking about parsing it to the level that you can run a compiler or interpreter.
@@ -169,7 +169,7 @@ Might as well talk about it while we have a nice context to discuss it.
 Feel free to skip this section if you want.
 
 Is “nondeterminism” a buzzword?
-Not really …
+Not really&nbsp;…
 
 You can make an arbitrary choice (random or pseudorandom or otherwise), or you can keep a (potentially infinite) list of all possible choices that you could have made.
 (Of course you can later pick an arbitrary item from the list.)

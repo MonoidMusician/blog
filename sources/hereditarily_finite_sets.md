@@ -100,7 +100,7 @@ This is one of the strengths of set theory: the ability to keep dissecting sets 
 
 ## How do you model HFSes?
 
-This is what I mean when I say I canʼt tell you what a set is: I donʼt know of a concrete model I can point to and say, “this captures the totality of sets”.^[Synthetic, analytic, …]
+This is what I mean when I say I canʼt tell you what a set is: I donʼt know of a concrete model I can point to and say, “this captures the totality of sets”.^[Synthetic, analytic,&nbsp;…]
 
 The situation is much different for hereditarily finite sets.
 We can definitely do this!
@@ -111,13 +111,13 @@ Hereʼs a graphic model Iʼve developed!
 Visualizing the brackets of the textual representation as slopes in the visual representation.
 
 But more importantly, you need to learn how to model HFSes in terms of familiar data types.
-Lists, sets … and even plain numbers will do the trick!
+Lists, sets&nbsp;… and even plain numbers will do the trick!
 
 ### Lists all the way down
 
 As an appetizer, letʼs consider the simplest system of semistructured data a programmer (say a LISPer) would invent.
 Lists are great, so why not create a type system of only lists?
-Lists of lists of lists of lisps of lists of …
+Lists of lists of lists of lisps of lists of&nbsp;…
 
 Of course when we are programming, we consider finite lists, and since thatʼs all we have, we end up with hereditarily finite lists by default.
 
@@ -217,7 +217,7 @@ This is **great**, weʼll talk more about what it means later.
 
 I also derived `Ord HFS`{.purescript}.
 You can think of it as an implementation detail, for now!
-Sets arenʼt supposed to be inherently ordered^[In both senses: (1) having their members given in a structural order that can be varied, which is very bad, and (2) being globally ordered with respect to each other, which is alright but not always something you can assume in set theories.] … but we _can_ order them, and we _will_.
+Sets arenʼt supposed to be inherently ordered^[In both senses: (1) having their members given in a structural order that can be varied, which is very bad, and (2) being globally ordered with respect to each other, which is alright but not always something you can assume in set theories.]&nbsp;… but we _can_ order them, and we _will_.
 
 We are forced to order them because of how `Data.Set`{.purescript} works.
 In return, this nice implementation ensures that we really have canonical representations of our sets, so that `Eq HFS`{.purescript} works exactly how we want.
@@ -335,7 +335,7 @@ If two sets have the same members, they are equal sets!
 Two sets should be equal when we cannot distinguish between them.
 An since we can only talk about membership in sets, set extensionality is exactly the thing.
 
-Although we might ask why only one direction of the membership relation …
+Although we might ask why only one direction of the membership relation&nbsp;…
 
 ### Constructions
 

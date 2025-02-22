@@ -119,7 +119,7 @@ I will call them “High BMP”.
 
 In UTF-16, this High BMP region will compare as _greater than_ the astral characters.
 
-Things get worse if you allow unpaired surrogates …
+Things get worse if you allow unpaired surrogates&nbsp;…
 
 <!-- “^ Unicode range E000–F8FF is used as a private use area, which is reserved for private use.” (https://en.wikibooks.org/wiki/Unicode/Character_reference/E000-EFFF#ref_PUA , https://en.wikibooks.org/wiki/Unicode/Character_reference/F000-FFFF) -->
 
@@ -190,7 +190,7 @@ exactlyOneOf _ = unsafeCrashWith "Too many options in exactlyOneOf"
 
 ### Endianness
 
-I am hoping I do not have to cover endianness here …
+I am hoping I do not have to cover endianness here&nbsp;…
 
 ### Unpaired Surrogates
 

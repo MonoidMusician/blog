@@ -108,7 +108,7 @@ This is how the parser makes progress.
 ### Closure
 
 But wait: how does a parser advance on a _nonterminal_?
-The input only consists of terminals …
+The input only consists of terminals&nbsp;…
 
 There are two components that work in tandem to achieve what we need:
 

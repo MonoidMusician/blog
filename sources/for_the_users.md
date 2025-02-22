@@ -128,7 +128,7 @@ I use TamperMonkey extension on Chromium.
 I made a script to apply the above generic dark mode to any page that has no styles.
 This is particularly common for 404 pages and other things.
 
-It will mostly still flash on page load though …
+It will mostly still flash on page load though&nbsp;…
 
 <details class="Details">
 

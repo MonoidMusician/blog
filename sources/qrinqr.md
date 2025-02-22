@@ -98,7 +98,7 @@ Although `d`{.js} has a lot of extra junk `NaN`{.js}s that we also copy over, th
 And because `z[0] = 1/0 = Infinity`{.js}, on the loop iterations when `Z=+r[0]=0`{.js}, it just shifts all relevant items leftwards by one index, removing leading zeros one at a time.
 
 The array `[251,67,46,61,118,70,64,94,32,45][i]`{.js} is encoded as `'\xFBC.=vF@^\x20-'.charCodeAt(i)`{.js}, and it represents the logarithm of the coefficients of the error correction polynomial, minus its leading term (the polynomial is monic, so its leading coefficient is `1`{.js}, whose logarithm is `0`{.js}).
-(The polynomial is the multiplication of `(x-0)...(x-9)`{.js}, which we *could* compute … but it is shorter to just embed the coefficients directly, since we do not use polynomial multiplication anywhere else.)
+(The polynomial is the multiplication of `(x-0)...(x-9)`{.js}, which we *could* compute&nbsp;… but it is shorter to just embed the coefficients directly, since we do not use polynomial multiplication anywhere else.)
 By taking the antilogarithm of the addition of the logarithms, we compute multiplication in \(\operatorname{GF}(256)\). This is where the doubled length of `a`{.js} saves us one modulo operation, and awkward parenthesization to boot.
 Altogether, this computes the remainder of dividing the data (represented as a polynomial in \(\operatorname{GF}(256)\)) by the error correction polynomial.
 ```javascript

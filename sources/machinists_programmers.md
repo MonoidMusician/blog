@@ -10,7 +10,7 @@ The central theme of my thoughts here is what dealing with metal in the physical
 
 ## An Ode to Machining
 
-One thing I love about machining is like … people say math is precise, but with math you still think you can argue with it, and if not argue with it directly, at least argue around it, disclaim itʼs practical implications …– but Steel? not so much.
+One thing I love about machining is like&nbsp;… people say math is precise, but with math you still think you can argue with it, and if not argue with it directly, at least argue around it, disclaim itʼs practical implications&nbsp;…– but Steel? not so much.
 What is so powerful to me is what occurs when youʼre dealing with physical objects and operations that have physical consequences, on top of the aesthetic and practical considerations – your artistry _and_ your fallability.
 The machinists are dealing with thousandths and ten-thousandths of an inch not to show off, but because it matters to how well parts work together, and you cannot argue with steel!!
 

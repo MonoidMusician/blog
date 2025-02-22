@@ -71,7 +71,7 @@ In the commands that create these things, `ln -s`{.sh} (symlink), `ln`{.sh} (har
 
 That is, the argument order is similar to `cp`{.sh} or `cp -r`{.sh}.
 
-The “to”/“from” terminology just gets really confusing, since the link points **back *to*** the original file that it acts like it was copied **from** …
+The “to”/“from” terminology just gets really confusing, since the link points **back *to*** the original file that it acts like it was copied **from**&nbsp;…
 :::
 
 ## Symlinks
@@ -223,7 +223,7 @@ The mount point already must exist on the filesystem.
 Too often I create a mount in `/etc/fstab`{.path}, reload it with `mount -a`{.sh} and `sudo systemctl daemon-reload`{.sh} and then I find that I forgot to `mkdir`{.sh} the mount point first.
 
 The flip side is that any contents that are already at the mount point get shadowed until the bind mount disappears.
-(Can you save them? Probably! Definitely not with symlinks, but maybe with hardlinks, maybe with bind mounts … I really do not know.)
+(Can you save them? Probably! Definitely not with symlinks, but maybe with hardlinks, maybe with bind mounts&nbsp;… I really do not know.)
 
 ## Bind Mounts
 
@@ -247,7 +247,7 @@ You wouldnʼt even know that youʼre looking at a bind mount.
 Difficult.
 You canʼt just inspect the location it was mounted to and see that it is special.
 
-You can look through the output of `findmnt`{.sh}, but it doesnʼt directly tell you what the `mount --bind`{.sh} command was, exactly …
+You can look through the output of `findmnt`{.sh}, but it doesnʼt directly tell you what the `mount --bind`{.sh} command was, exactly&nbsp;…
 
 See: https://unix.stackexchange.com/questions/18048/list-only-bind-mounts
 

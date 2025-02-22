@@ -26,7 +26,7 @@ Some examples to get you started:
 - `.x ~ .b`{.css}, `.y ~ .c`{.css} []{.widget widget="Parser.Main.CSS.Example" widget-datakey="default" widget-data-example="[&quot;.x ~ .b&quot;,&quot;.y ~ .c&quot;]"}
 - `a ~ c`{.css}, `a + b + c`{.css} []{.widget widget="Parser.Main.CSS.Example" widget-datakey="default" widget-data-example="[&quot;a ~ c&quot;,&quot;a + b + c&quot;]"}
   <br/>
-  (actually not optimal, oops …)
+  (actually not optimal, oops&nbsp;…)
 - `.a ~ .c`{.css}, `.a + .b + .c`{.css} []{.widget widget="Parser.Main.CSS.Example" widget-datakey="default" widget-data-example="[&quot;.a ~ .c&quot;,&quot;.a + .b + .c&quot;]"}
   <br/>
   (whatʼs the difference? why? but this is also not optimal)

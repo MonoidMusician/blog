@@ -1,5 +1,5 @@
 ---
-title: What Means …
+title: What Means&nbsp;…
 subtitle: My definitions of various terms
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"

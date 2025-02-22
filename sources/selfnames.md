@@ -22,7 +22,7 @@ For work Iʼve been working on packaging our multiple layers of products into a 
 For my blog, Iʼve kept the directory structure very predictable so far so it doesnʼt matter where it is hosted: there are no absolute references, even to `assets/` and so on.
 But if I want to have articles that are nested under directories, either I need to add a `../` to all of these relative URLs, or I need to commit to having it hosted at the root of the domain.
 
-There are some ways to work around this … unfortunately [`<base>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base) is a particularly bad one, since it cannot leave relative URLs unaffected, for example.
+There are some ways to work around this&nbsp;… unfortunately [`<base>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base) is a particularly bad one, since it cannot leave relative URLs unaffected, for example.
 (It would be great if it was able to just rename absolute URLs that start with a slash, for example.)
 
 Idk, you basically just have to commit to caring about it in *some* place, passing along information to handle it where you can (and hopefully not break down too many abstraction boundaries).

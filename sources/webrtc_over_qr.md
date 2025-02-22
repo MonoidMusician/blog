@@ -208,7 +208,7 @@ This is an alright solution for that in a local situation.
 
 And for [WAN]{t=} connections, it needs the public [IP]{t=} address and public port from the [STUN]{t=} candidate(s).
 I donʼt really have a great way to return this information yet: itʼs just a bit ugly to write the guest code, it really should be a dedicated mode with a separate template.
-([TURN]{t=} servers^[which act as relays, especially when one peer is behind symmetric NAT/CGNAT, which prevents P2P connections from being established with the help of STUN] are basically out of scope for this, though it would be possible to add support … but at that point you should almost always set up your own signaling server and use standard solutions, especially since [TURN]{t=} servers require passwords and are not publicly available because of the bandwidth considerations.)
+([TURN]{t=} servers^[which act as relays, especially when one peer is behind symmetric NAT/CGNAT, which prevents P2P connections from being established with the help of STUN] are basically out of scope for this, though it would be possible to add support&nbsp;… but at that point you should almost always set up your own signaling server and use standard solutions, especially since [TURN]{t=} servers require passwords and are not publicly available because of the bandwidth considerations.)
 
 Smaller details include:
 

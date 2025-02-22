@@ -31,7 +31,7 @@ type Nominal f = forall a b. a ~ b => Coercible (f a) (f b)
 
 roles are used for setting up what coercible instances there are, but within the system, you cannot actually distinguish between a particular role and these quantified constraints, I believe
 
-then the idea is that for representational types, the instances are like … the simplest thing
+then the idea is that for representational types, the instances are like&nbsp;… the simplest thing
 
 you can read it right off the datatype
 
@@ -41,7 +41,7 @@ you just coerce all the corresponding fields, and you don't have to reduce the 
 
 this might require the other thing I was saying where instances need to be bi-implications: it would be great if `Coercible (CoEnvT x m a) (CoEnvT y n b)`{.haskell} would also imply `Coercible (m a) (n b)`{.haskell} for example
 
-things are a little trickier for recursive things: `data Free f a = Pure a | Wrap (f (Free f a))`{.haskell} mechanically would have instance `(Coercible a b, Coercible (f (Free f a)) (g (Free g b))) => Coercible (Free f a) (Free g b)`{.haskell}, but I think for representational `f`{.haskell} and `g`{.haskell} there might be problems with infinite instances … but note that you can reduce it to `(Coercible a b, (forall x y. Coercible x y => Coercible (f x) (g y))) => Coercible (Free f a) (Free g b)`{.haskell} to break the cycle
+things are a little trickier for recursive things: `data Free f a = Pure a | Wrap (f (Free f a))`{.haskell} mechanically would have instance `(Coercible a b, Coercible (f (Free f a)) (g (Free g b))) => Coercible (Free f a) (Free g b)`{.haskell}, but I think for representational `f`{.haskell} and `g`{.haskell} there might be problems with infinite instances&nbsp;… but note that you can reduce it to `(Coercible a b, (forall x y. Coercible x y => Coercible (f x) (g y))) => Coercible (Free f a) (Free g b)`{.haskell} to break the cycle
 
 (this might not be a problem in Haskell, but I would definitely worry about it in PureScript)
 

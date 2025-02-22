@@ -222,7 +222,7 @@ Once we have the modules of each component grouped together, we need to render i
 
 Like the naïve approach, we will use SVG elements with fill and no stroke, and very conveniently, SVG provides a way to cut out the interiors of connected components^[so that we do not have to render white on top of the black modules to cancel them out – that just feels conceptually ugly]: the default [`fill-rule="nonzero"`{.svg}](https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/fill-rule) is sufficient to allow this cookie cutter approach.
 
-For both horizontal and vertical movements, we *could* specify them as a bunch of single-module movements … but we might as well put in the effort to coalesce them, and this will generate a much smaller SVG source as well.
+For both horizontal and vertical movements, we *could* specify them as a bunch of single-module movements&nbsp;… but we might as well put in the effort to coalesce them, and this will generate a much smaller SVG source as well.
 
 ### Outer Path
 

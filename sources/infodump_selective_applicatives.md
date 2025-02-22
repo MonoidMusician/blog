@@ -177,7 +177,7 @@ that determination, which is absolutely forbidden
 
 (basically it works by saying that each branch “could” be run, and
 shuffling around data to ensure that the right branch gets chosen or
-skipped each time … it is really annoying and inelegant)
+skipped each time&nbsp;… it is really annoying and inelegant)
 
 ------------------------------------------------------------------------
 
@@ -241,7 +241,7 @@ never taken are always ignored
 but there is a huge problem with that: to obey the law, an
 implementation either needs to (1) inspect arbitrary functions to
 determine if the next computation could possibly run, or (2) actually
-execute the one or many possibilities and keep track of the results …
+execute the one or many possibilities and keep track of the results&nbsp;…
 [i.e.]{t=} run/simulate the computation.
 
 both of those are non-starters for static analysis, it simply ruins the
@@ -270,7 +270,7 @@ like, you can take the product of two selective applicative functors,
 
 so you can just tuple up your over-approximation, your
 under-approximation, and your actual execution context into one functor,
-simply because they all worked on their own …
+simply because they all worked on their own&nbsp;…
 
 … or you can find ways to interleave them like Haxl did
 
@@ -391,4 +391,4 @@ unfortunately the desugaring will be a lot more complicated: the
 compiler essentially needs to pick a strategy for pattern matching and
 expose it during desugaring
 
-thereʼs also details in branching in the middle vs at the end, yeah …
+thereʼs also details in branching in the middle vs at the end, yeah&nbsp;…

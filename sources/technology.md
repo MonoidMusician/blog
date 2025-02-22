@@ -113,7 +113,7 @@ The source can be found at [MonoidMusician/blog](https://github.com/MonoidMusici
   : I spent a while trying to find a nice sans-serif font that had character to use for UI accents, like the info boxes I sprinkled into the [Eudoxus real numbers post](Eudoxus.html) and the input boxes on the [parsing posts](parser.html).
     I really love Amaranth because it meets these goals: almost all characters have a little extra flair and curve to them, so it remains distinctive and legible.
     I just wish it was available as a [variable font](https://fonts.google.com/knowledge/introducing_type/introducing_variable_fonts), itʼs a bit heavy for my liking.
-    Of course, it doesnʼt help that Cormorant is so feather-light …
+    Of course, it doesnʼt help that Cormorant is so feather-light&nbsp;…
 
 ## Pandoc
 [Pandoc](https://pandoc.org/) is cool because itʼs written in Haskell and does what I need.
@@ -226,9 +226,9 @@ Some weird quirks and anti-quirks Iʼve run into while implementing stuff:
 1. Good news: Iʼm so happy that `:focus-visible`{.css} is actually supported now.
   I swear the last time I was doing this stuff I was going to have to implement it myself.
 1. Bugbear: I like using the `<label><input></label>`{.html} pattern, to avoid having to generate an `id`{.er} for the `<input>`{.html}, but that doesnʼt work when the `<input>`{.html} needs to control the visibility of elements with its `:checked`{.css} status.
-  Nobody else seems to like doing this anyways …
+  Nobody else seems to like doing this anyways&nbsp;…
 1. Workaround: Safari on iOS wanted to open the background image^[In light theme, I have a subtle background texture.] on long-press^[Erm, I think itʼs actually called 3D Touch].
-  It was very annoying when scrolling and pausing, so I had to have a fake `{background-image: linear-gradient(transparent, transparent), …}`{.css} appear before the actual background image, since iOS does not want to open up a `linear-gradient`{.fu} image.
+  It was very annoying when scrolling and pausing, so I had to have a fake `{background-image: linear-gradient(transparent, transparent),&nbsp;…}`{.css} appear before the actual background image, since iOS does not want to open up a `linear-gradient`{.fu} image.
 1. Firefox bug: https://aileenrae.co.uk/blog/firefox-scroll-padding-bug/
 
 ### TODO

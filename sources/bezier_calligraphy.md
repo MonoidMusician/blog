@@ -55,7 +55,7 @@ Plus, not only are there the mistakes of my hand being jostled by the car going 
 
 Iʼve done this for many years, since before I could drive.
 As long as Iʼve done that, Iʼve also wanted to digitize the shapes, maybe to make them into a computer font so I donʼt have to manually write things out when I want to see how full sentences look.
-(ʼTwould also be a great way to explore ligatures and open type features to really make a natural flowing calligraphic font …)
+(ʼTwould also be a great way to explore ligatures and open type features to really make a natural flowing calligraphic font&nbsp;…)
 
 As I mentioned above, the precisely stated mathematical problem says the curves we are looking for arenʼt the type of curves supported by graphics programs today.
 But why let the mathematical impossibilities get in the way of actually quite good enough?
@@ -150,7 +150,7 @@ Basically if the pen nib wasnʼt made of perfectly straight lines, the composite
 Essentially this process is simulating what you would get by stamping the pen nib in certain points, and then drawing a rake through the path to connect them with curves.
 (The rake only touching the paper at the segmentation points of the pen nib.)
 
-It appeared that anything more complex would require algorithmic help, and oh was I right …
+It appeared that anything more complex would require algorithmic help, and oh was I right&nbsp;…
 There were more issues lurking with curved segments.
 
 ### Point of no return
@@ -167,7 +167,7 @@ That is, the cross-over is a symptom of the issue but not the part the delimits 
 Looking at it more closely (literally) I realized that the separation occurs precisely when the path of the pen parallels the endpoint tangent of one of the curvy segments of the pen nib.
 
 My first thought was to stamp out the problem: insert more stamps of the pen nib at these problematic tangent points where it wants to detach from the real path.
-Little did I know this was only the start of unraveling a long thread … it was not enough!
+Little did I know this was only the start of unraveling a long thread&nbsp;… it was not enough!
 For longer curvy segments, it was clear that the extra stamps only masked the problem and did not account for what lay between them.
 
 <div id="simple-calligraphy-demo"></div>
@@ -374,7 +374,7 @@ Weʼll need the derive of this equation soon, so letʼs calculate it while weʼr
 
 My first thought was great, we have a quadratic equation, so we know the formula and can just take the derivative of it!
 
-This was … naïve, oh so naïve.
+This was&nbsp;… naïve, oh so naïve.
 Letʼs see why.
 
 We have our solution here:
@@ -383,7 +383,7 @@ We have our solution here:
 q = q(p) = \frac{-b\pm\sqrt{b^2 - 4ac}}{2a}.
 \]
 
-So we can take its derivative \(q' = q'(p)\), using the chain rule, quotient rule, product rule … oh Iʼll spare you the gory details.
+So we can take its derivative \(q' = q'(p)\), using the chain rule, quotient rule, product rule&nbsp;… oh Iʼll spare you the gory details.
 
 \[
 \begin{aligned}
@@ -704,7 +704,7 @@ And the full algorithm is put together (with visualization) in [`minkowski.js`](
 
 ### Hacks
 
-Uhhh … I allowed the control points to go backwards (\(\delta_0 * \delta_1 < 0\)) and I perturbed the tangential splits due to numeric issues.
+Uhhh&nbsp;… I allowed the control points to go backwards (\(\delta_0 * \delta_1 < 0\)) and I perturbed the tangential splits due to numeric issues.
 The latter could be fixed by actually remembering those splits and not trying to solve \(q(p)\) there.
 
 ## Symmetries

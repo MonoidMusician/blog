@@ -125,7 +125,7 @@ Thereʼs no magic of infinity happening.
 What if we say that $f$ is an integer function?
 Here we have to be careful: integer division isnʼt necessarily well-defined, **but** if we know $m$ is an integer, then it happens to work out in this case: the denominator will always evenly divide the numerator, and out pops $m$.
 This seems like an even worse situation, getting stuck with integers!
-But wait …
+But wait&nbsp;…
 
 We need a little wiggle room.
 Having a constant slope is too restrictive!
@@ -140,7 +140,7 @@ Hereʼs the thing: consider a graphing calculator, or a graphing app on a comput
 What happens when we ask it to graph $f(x) = (1/\pi) * x$?
 (Pick your favorite irrational-but-[computable](https://en.wikipedia.org/wiki/Computable_number) real number there.)
 
-It does some math, and shows us a line on a screen …
+It does some math, and shows us a line on a screen&nbsp;…
 but wait, that line isnʼt a perfect mathematical function from real numbers to real numbers, itʼs a pixelated entity:
 _itʼs an **integer** function that approximates the **real** function_.^[Okay, thereʼs some slight details here, like [antialiasing](https://en.wikipedia.org/wiki/Spatial_anti-aliasing) and the fact it could draw several pixels stacked vertically.
 But for the sake of simplification letʼs assume that it only renders one pixel in each column, making it an honest-to-goodness integer function.]
@@ -235,7 +235,7 @@ We hit a roadblock with irrational slopes, though.
 If we donʼt have a period to work with, how can we get our hands on a slope from an integer function??
 :::
 
-The answer is … [drumroll] … **we donʼt!!!!**
+The answer is&nbsp;… [drumroll]&nbsp;… **we donʼt!!!!**
 
 ### Step 4: Maybe we donʼt need slopes
 
@@ -364,7 +364,7 @@ Multiplying the functions pointwise is the wrong move: that would produce someth
 
 That is a sad looking parabola indeed ☹️.
 
-Hmm … oh wait! What about _composing_ functions?
+Hmm&nbsp;… oh wait! What about _composing_ functions?
 
 If you compose two functions, you multiply their slopes!
 So we have $(f*g)(x) = f(g(x))$.
@@ -493,7 +493,7 @@ $$((f+g)*h)(x) = (f+g)(h(x)) = f(h(x)) + g(h(x)).$$
 Thatʼs right, it falls out for free based on how we defined multiplication and addition, just because of how functions work!
 Isnʼt that so cool?
 
-But … thereʼs a catch.
+But&nbsp;… thereʼs a catch.
 
 Proving that multiplication _on the left_ distributes over addition is not so straightforward:
 $$(h*(f+g))(x) = h((f+g)(x)) = h(f(x) + g(x)) =\ ??$$
@@ -646,7 +646,7 @@ $$(2|p| + |f(p)| + |g(p)| + 2)C < (2+A+A)C|p| + (B + B + 2)C.$$
 We can squash all that nonsense behind two new constants $D$ and $E$, reaching our next conclusion:
 $$|pf(g(p)) - pg(f(p))| = |p|w(p) < D|p| + E.$$
 
-Take a breath … One last step.
+Take a breath&nbsp;… One last step.
 
 Both sides now behave like $|p|$.
 If you look really closely, this actually implies that $w(p)$ is bounded:

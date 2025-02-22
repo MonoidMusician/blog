@@ -17,7 +17,7 @@ Yup. Thought so.^[The Elm version solver has [network errors](https://github.com
 :::
 
 
-And so the feature creep started … but the journey was _so_ worth it.
+And so the feature creep started&nbsp;… but the journey was _so_ worth it.
 
 How did I get here and what did I come up with?
 
@@ -240,7 +240,7 @@ Thatʼs all the user would get from the errors anyways, since thatʼs really all
 It started with an essentially random package, committed to a version of it immediately, tried other things as a consequence, and eventually reported that nothing worked.
 
 So, since my goal was better errors, [my next idea](https://github.com/purescript/registry-dev/pull/496#issuecomment-1225145757) was to try to patch it to _run_ the depth-first backtracking algorithm, but create a post-mortem analysis to _report_ more sensible errors.
-For example, from the Boolean algebra perspective, you can do basic tricks to factor out common sub-expressions, which you can combine with what you know about comparing versions to ranges.^[Foreshadowing …]
+For example, from the Boolean algebra perspective, you can do basic tricks to factor out common sub-expressions, which you can combine with what you know about comparing versions to ranges.^[Foreshadowing&nbsp;…]
 
 I couldnʼt bring myself to write that.
 So I just wrote a novel breadth-first algorithm.

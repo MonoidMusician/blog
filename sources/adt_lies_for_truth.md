@@ -7,7 +7,7 @@ author:
 
 Hm can we just take a second to appreciate how beautiful the long stroke on the “Q” in “Quotients” is?
 
-Ah …
+Ah&nbsp;…
 
 Anyways. Hi!
 

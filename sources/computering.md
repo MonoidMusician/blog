@@ -26,7 +26,7 @@ Stuff that you need to know.
 Like how to `cd`{.bash} around directories.
 When to use `sudo`{.bash} (and when not to!).
 
-Of course, itʼs only ambient if you already know it …
+Of course, itʼs only ambient if you already know it&nbsp;…
 
 ### Realm of possibilities, space of actions you can take
 
@@ -49,7 +49,7 @@ A lot of the joy of using a console is that you can just do thing.
 But making is repeatable is hard.
 Needlessly hard.
 “Oh, I just execute the same commands again.”
-It is rarely that simple …
+It is rarely that simple&nbsp;…
 
 If you want the `mount`{.bash} command to re-apply every time the system boots, you need to add it to `/etc/fstab`{.file}, which has different syntax!
 

@@ -48,7 +48,7 @@ I have some vague notion that maybe we can split the recursor `rec a (\b, f (f b
 
 A lot of these things can be generalized to arbitrary inductive types.
 
-Not sure of the behavior of these rules as an actual rewrite system …
+Not sure of the behavior of these rules as an actual rewrite system&nbsp;…
 
 Anyways, still doesn't get judgmental commutativity, but we can get the next best thing (at least for addition): constructors compute on both sides.
 

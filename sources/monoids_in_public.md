@@ -235,7 +235,7 @@ QuickCheck is happy! I will just have to consider tomorrow whether this
 actually buys me anything…
 
 specifically I want it to help me delineate precedence for pretty
-printing … *and* parsing? idk yet
+printing&nbsp;… *and* parsing? idk yet
 
 the specific idea is that it will explain why reduction rules can be
 assigned precedence in Happy (this is necessary for the implicit

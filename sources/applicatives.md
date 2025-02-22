@@ -140,7 +140,7 @@ applyGroupoid :: FreeApply f r <-> FreeGroupoid (Arrp f) () r
 
 <summary>Long Proof</summary>
 
-… two hours of pain later …
+… two hours of pain later&nbsp;…
 
 (yes I did just make up my own syntax for isomorphisms)
 

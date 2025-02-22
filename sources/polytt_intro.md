@@ -137,7 +137,7 @@ Polynomials are “just” coproducts of representables.
 
 
 ## Polynomials in PolyTT
-_… skipping some steps …_
+_… skipping some steps&nbsp;…_
 
 The essential data underlying a polynomial functor `P`{.agda data-lang=PolyTT} is:
 
