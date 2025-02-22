@@ -61,6 +61,11 @@ datatypes = Map.fromFoldable
                   [ D.span [ D.className =:= "abbreviation", D.aria_"hidden" =:= "true" ] embed
                   , D.span [ D.className =:= "tooltip abbreviation" ] $ nobreak expanded
                   ]
+              Described expanded ->
+                D.span [ D.className =:= "tooltipped" ] $ D.Fragment
+                  [ D.span [ D.className =:= "" ] embed
+                  , D.span [ D.className =:= "tooltip", D.aria_"hidden" =:= "true" ] $ nobreak expanded
+                  ]
               Jargon short fmt desc ->
                 let
                   shortFmtDesc = case if desc == "" then FormatNone else fmt of
@@ -153,6 +158,7 @@ data Abbreviation
   = Acronym String
   | Jargon String InfoFormat String
   | Foreign String String (Maybe String) (Array String)
+  | Described String
 
 data InfoFormat
   = FormatNone
@@ -214,6 +220,16 @@ abbreviations = Map.fromFoldable
   , "URI" /\ Acronym "Uniform Resource Indicator"
   , "URL" /\ Acronym "Uniform Resource Locator"
   , "NAT" /\ Jargon "Network Address Translation" FormatColon "routes private IPs to public internet"
+  , "FRP" /\ Acronym "Functional Reactive Programming"
+  , "FP" /\ Acronym "Functional Programming"
+  , "OOP" /\ Acronym "Object-Oriented Programming"
+  , "LR(1)" /\ Jargon "LtR, Rightmost Deriv., lookahead 1 token" FormatParen "Automaton parser to handle left-recursion"
+  , "DOM" /\ Jargon "Document Object Model" FormatComma "Represents HTML at runtime"
+  , "VDOM" /\ Jargon "Virtual DOM" FormatComma "Abstract DOM to render to real DOM"
+  , "ADT" /\ Jargon "Algebraic Data Type" FormatComma "Data as a sum of products; Haskell"
+  , "MIDI" /\ Acronym "Musical Instrument Digital Interface"
+  , "Haskell" /\ Described "Pure & lazy functional programming, native codegen"
+  , "PureScript" /\ Described "Strict & pure functional programming, JavaScript codegen"
   ]
 
 matching :: String -> Array String

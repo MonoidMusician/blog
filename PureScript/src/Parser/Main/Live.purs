@@ -5,27 +5,24 @@ import Prelude
 import Ansi.Codes as Ansi
 import Control.Plus ((<|>))
 import Data.Either (Either(..))
-import Data.Filterable (filterMap)
 import Data.Foldable (fold, foldMap)
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.String as String
 import Data.Tuple.Nested ((/\))
 import Dodo as Dodo
 import Effect (Effect)
-import Idiolect (intercalateMap, tripleQuoted, (<#?>))
-import JSURI (encodeURIComponent)
+import Idiolect (tripleQuoted)
 import Parser.Comb.Comber (Comber, Printer, parse, printGrammarWsn)
 import PureScript.CST.Parser as CST.Parser
 import PureScript.CST.Types as CST.T
 import Riverdragon.Dragon (Dragon, renderId)
-import Riverdragon.Dragon.Bones (($$), (.$), (.$$), (.$$~), (:.), (=:=), (>@))
+import Riverdragon.Dragon.Bones ((.$), (.$$), (.$$~), (:.), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (eggy, sourceCode, tabSwitcher)
-import Riverdragon.River (Lake, createRiverStore, makeLake)
-import Riverdragon.River.Beyond (counter)
+import Riverdragon.River (Lake, createRiverStore, dam, makeLake)
 import Runtime (aSideChannel)
 import Runtime as Runtime
-import Runtime.Live (Status(..), fetchHighlight, highlighting)
+import Runtime.Live (Status, fetchHighlight)
 import Runtime.Live as Runtime.Live
 import Type.Proxy (Proxy(..))
 import Web.DOM.ElementId (ElementId(..))
@@ -104,32 +101,8 @@ pipeline = Runtime.Live.pipeline
 embed :: Lake String -> Dragon
 embed incomingRaw = eggy \shell -> do
   incoming <- shell.store do incomingRaw
-  pipelined <- shell.store do pipeline incoming
+  pipelined <- shell.track do Runtime.Live.ofPipeline (pipeline incoming)
   gotParser <- shell.store $ makeLake \cb -> mempty <$ _sideChannel.installChannel cb
-  let
-    preScroll = D.pre [ D.style =:= "overflow-x: auto" ]
-    -- the browser does not want to eval the same JavaScript script tag again,
-    -- so we prepend a unique int
-    bundled = map (\(code /\ i) -> "/*"<>show i<>"*/" <> code) $
-      counter $ pipelined <#?> case _ of
-        Compiled result -> Just result
-        _ -> Nothing
-    status = mempty <$ gotParser <|> do
-      pipelined <#> case _ of
-        Fetching _ -> D.text "Fetching ..."
-        ParseErrors inTemplate errors -> preScroll $ errors #
-          intercalateMap (D.br[]) (D.text <<< Runtime.Live.printPositionedError)
-        Compiling _ -> D.text "Compiling ..."
-        CompileErrors errs -> preScroll $ errs #
-          intercalateMap (D.br[]) D.text
-        Compiled _ -> D.text "Loading ..."
-        Crashed err -> preScroll $$ err
-  templated <- shell.store $ pipelined # filterMap case _ of
-    Compiling code -> Just code
-    _ -> Nothing
-  compiled <- shell.store $ pipelined # filterMap case _ of
-    Compiled code -> Just code
-    _ -> Nothing
   codeURL <- Runtime.configurable "codeURL" "https://tryps.veritates.love/assets/purs"
   let
     assetFrame asset = D.html_"iframe"
@@ -139,12 +112,13 @@ embed incomingRaw = eggy \shell -> do
       mempty
     sourceCodeOf moduleName = fetchHighlight (codeURL <> "/" <> moduleName <> "/source.purs")
   pure $ D.Fragment
-    [ D.div [ D.style =:= "white-space: pre" ] $ D.Replacing status
+    [ D.div [ D.style =:= "white-space: pre" ] $ D.Replacing $
+        mempty <$ gotParser <|> dam pipelined.compileStatus
     , D.html_"style".$$ tripleQuoted """
         #grammar .meta { font-size: 0.85em; margin: 0 }
         #grammar .non-terminal { font-size: 0.9em; margin: 0 }
       """
-    , bundled >@ \latestBundle -> fold
+    , pipelined.asScript >@ \latestScript -> fold
       [ D.div [ D.id =:= "grammar" ] mempty
       , gotParser >@ \parser -> D.Egg do
           { send: setValue, stream: getValue } <- createRiverStore Nothing
@@ -154,18 +128,12 @@ embed incomingRaw = eggy \shell -> do
                   [ D.onInputValue =:= setValue
                   , D.value =:= ""
                   , D.style =:= "height: 15vh"
+                  , D.asCodeInput
                   ]
             , sourceCode "Out" :."sourceCode unicode".$$~
                 _.result <<< parser.parser <$> getValue
             ]
-      , D.script
-          -- We need to set `type="module"` before `src` in Riverdragon, because
-          -- it applies attributes in order!
-          [ D.prop "type" =:= "module"
-          , D.attr "src" =:= do
-              fromMaybe "" $ encodeURIComponent latestBundle <#> \escaped ->
-                "data:text/javascript;utf8," <> escaped
-          ]
+      , latestScript
       ]
     , D.html_"h2".$$ "Help"
     , tabSwitcher (Just "Docs")
@@ -190,8 +158,8 @@ embed incomingRaw = eggy \shell -> do
         ]
       , "Live Code" /\ tabSwitcher (Just "Template")
         [ "Template" /\ sourceCodeOf "Parser.Parserlude"
-        , "Templated" /\ highlighting templated
-        , "Compiled" /\ sourceCode "JavaScript" [] (D.Text compiled)
+        , "Templated" /\ pipelined.highlighted
+        , "Compiled" /\ sourceCode "JavaScript" [] (D.Text (dam pipelined.compiled))
         ]
       ]
     ]
@@ -213,6 +181,7 @@ widget _ = pure $ eggy \shell -> do
         [ D.onInputValue =:= setValue
         , D.value =:= df
         , D.style =:= "height: 40vh"
+        , D.asCodeInput
         ]
     , D.div.$ D.buttonW "" "Compile!" (compileNow =<< lastValue)
     , embed compiling

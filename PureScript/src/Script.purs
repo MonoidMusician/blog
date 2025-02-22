@@ -26,7 +26,9 @@ import Node.Stream (onDataString, onEnd, onError, writeString)
 import Parser.Comb.Comber ((<|>))
 import Parser.Comb.Comber as Comber
 import Parser.Languages.ShowFast (mkReShow)
-import PureScript.Highlight (highlight, highlightPandoc)
+import PureScript.CST.Lexer as CST.Lexer
+import PureScript.Highlight (classify, highlight, highlightPandoc, highlightPandocInline)
+import Runtime.Live (lexemes, lexemes')
 
 noArgs :: (String -> Aff (Either String String)) -> (Array String -> Either String (String -> Aff (Either String String)))
 noArgs = const <<< Right
@@ -52,6 +54,10 @@ scripts = Map.fromFoldable
   , Tuple "echo" $ simplest identity
   , Tuple "highlight" $ simplest highlight
   , Tuple "highlightPandoc" $ simplest highlightPandoc
+  , Tuple "highlightPandocInline" $ simplest highlightPandocInline
+  , Tuple "lexemes" $ simplest $
+      let f tok str = str <> " " <> show (classify tok)
+      in intercalate "\n" <<< lexemes' f <<< CST.Lexer.lex
   -- , Tuple "assembleParser" $ simpler $ lmap printErrors <<< assemble
   -- , Tuple "compileParser" $ noArgs $
   --     assemble >>> do

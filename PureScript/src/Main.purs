@@ -13,6 +13,7 @@ import Parser.Main.HFS as Parser.Main.HFS
 import Parser.Main.Live as Parser.Main.Live
 import Parser.Main.TMTTMT as TMTTMT
 import Riverdragon.Main.Live as Riverdragon.Main.Live
+import Riverdragon.Roar.Live as Riverdragon.Roar.Live
 import Riverdragon.Test as Riverdragon.Test
 import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
 import Web.HTML (window)
@@ -42,6 +43,7 @@ widgets = foldl Object.union Object.empty
     , "Parser.Main.HFS" /\ Parser.Main.HFS.widget
     , "Parser.Main.Live" /\ Parser.Main.Live.widget
     , "Riverdragon.Main.Live" /\ Riverdragon.Main.Live.widget
+    , "Riverdragon.Roar.Live" /\ Riverdragon.Roar.Live.widget
     , "Riverdragon.Test" /\ Riverdragon.Test.widget
     , "" /\ Widget.Datatypes.widget
     ]

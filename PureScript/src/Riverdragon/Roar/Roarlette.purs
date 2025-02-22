@@ -61,13 +61,13 @@ pinkNoise = do
     liftEffect $ destr.destructor $ send unit <> destroy
     pure $ outOfNode node 0
   Y.putYawn { destroy: destr.finalize, ready: void creating }
-  output <- Y.gain creating 1
+  output <- Y.gain 1 creating
   pure output
 
 -- runningAffUntil
 
-pow :: forall roar knob. ToRoars roar => ToKnob knob => roar -> knob -> YawnM Roar
-pow input knob = do
+pow :: forall knob roar. ToKnob knob => ToRoars roar => knob -> roar -> YawnM Roar
+pow knob input = do
   { ctx } <- ask
   destr <- liftEffect postHocDestructors
   { stream: whenDestroyed, send: destroyOutput } <- liftEffect $ createRiverStore Nothing
@@ -118,6 +118,6 @@ pow input knob = do
     liftEffect $ destr.destructor $ destroy2 <> destroy1 <> send unit <> destroy
     pure $ outOfNode node 0
   Y.putYawn { destroy: destr.finalize, ready: void creating }
-  output <- Y.gain (affToLake creating <|> whenDestroyed) 1
+  output <- Y.gain 1 (affToLake creating <|> whenDestroyed)
   pure output
 

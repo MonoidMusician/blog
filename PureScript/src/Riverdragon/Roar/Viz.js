@@ -46,7 +46,7 @@ export const _spectrogram =
     }
     return () => {
       // Shift everything left by 1 pixel
-      tmpImgData = ctx.getImageData(1, 0, canvas.width - 1, canvas.height);
+      const tmpImgData = ctx.getImageData(1, 0, canvas.width - 1, canvas.height);
       ctx.putImageData(tmpImgData, 0, 0);
       ctx.clearRect(canvas.width - 1, 0, 1, canvas.height);
 

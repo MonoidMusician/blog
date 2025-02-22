@@ -142,6 +142,7 @@ widget _ = pure $ eggy \shell -> do
               [ D.onInputValue =:= setValue <<< Tuple false
               , D.onChangeValue =:= setValue <<< Tuple true
               , D.style =:= "height: 20vh"
+              , D.asCodeInput
               ]
       , D.div [ D.style =:= "flex: 0 0 50%; overflow: auto; font-size: 70%" ] $
           gateSuccess identity done >@

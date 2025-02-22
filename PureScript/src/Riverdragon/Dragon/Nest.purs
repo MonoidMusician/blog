@@ -1,7 +1,7 @@
 module Riverdragon.Dragon.Nest ( module ReExports ) where
 
 import Prelude
--- import Prelude as ReExports
+import Prelude as ReExports
 
 import Riverdragon.Dragon.Bones (class AttrType, class Attrable, class AttrableRecord, class AutoDOM, class PropType, AttrProp(..), Dragon(..), MultiAttrs(..), MultiProps(..), PropVal(..), __checked, __date, __int, __number, __open, __textcursor, __value, ($$), ($$~), ($<), ($<>), ($~~), (&#), (&%), (&.), (&@), (&~), (.$), (.$$), (.$$~), (.$~~), (.<>), (:!), (:#), (:%), (:.), (:@), (:~), (<!>), (<&>), (<:>), (<>$), (<>.), (<?#>), (<?$>), (<??>), (<?|>), (=!=), (=!?=), (=&=), (=:=), (=?#=), (=?$=), (=?=), (=??=), (=?|=), (>$), (>@), (>~~), (?.), (?~>), (@<), (~~<))
 import Riverdragon.Dragon.Bones (class AttrType, class Attrable, class AttrableRecord, class AutoDOM, class PropType, AttrProp(..), Dragon(..), MultiAttrs(..), MultiProps(..), PropVal(..), __checked, __date, __int, __number, __open, __textcursor, __value, ($$), ($$~), ($<), ($<>), ($~~), (&#), (&%), (&.), (&@), (&~), (.$), (.$$), (.$$~), (.$~~), (.<>), (:!), (:#), (:%), (:.), (:@), (:~), (<!>), (<&>), (<:>), (<>$), (<>.), (<?#>), (<?$>), (<??>), (<?|>), (=!=), (=!?=), (=&=), (=:=), (=?#=), (=?$=), (=?=), (=??=), (=?|=), (>$), (>@), (>~~), (?.), (?~>), (@<), (~~<)) as ReExports
@@ -9,15 +9,15 @@ import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon (Dragon(..), renderId, renderEl, snapshot)
 import Riverdragon.Dragon (Dragon(..), renderId, renderEl, snapshot) as ReExports
 import Riverdragon.Dragon as Dragon
-import Riverdragon.Dragon.Wings (eggy)
-import Riverdragon.Dragon.Wings (eggy) as ReExports
+import Riverdragon.Dragon.Wings (eggy, Shell)
+import Riverdragon.Dragon.Wings (eggy, Shell) as ReExports
 import Riverdragon.Dragon.Wings as Wings
-import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, store, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, statefulStream, stillRiver, subscribe, subscribeIsh, unsafeCopyFlowing, unsafeRiver, (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~))
-import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, store, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, statefulStream, stillRiver, subscribe, subscribeIsh, unsafeCopyFlowing, unsafeRiver, (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~)) as ReExports
+import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), alLake, alLake', allStreams, allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, cumulate, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapAl, mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, singleShot, statefulStream, stillRiver, store, subscribe, subscribeIsh, tupleOnLeft, tupleOnRight, unsafeCopyFlowing, unsafeRiver, withInstantiated, (/*?\), (/?*\), (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~))
+import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), alLake, alLake', allStreams, allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, cumulate, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapAl, mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, singleShot, statefulStream, stillRiver, store, subscribe, subscribeIsh, tupleOnLeft, tupleOnRight, unsafeCopyFlowing, unsafeRiver, withInstantiated, (/*?\), (/?*\), (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~)) as ReExports
 import Riverdragon.River as River
 import Riverdragon.River.Bed as Bed
-import Riverdragon.River.Beyond (affToLake, animationLoop, counter, debounce, dedup, dedupBy, dedupOn, delay, delayAnim, delayMicro, delayWith, interval, mkAnimFrameBuffer)
-import Riverdragon.River.Beyond (affToLake, animationLoop, counter, debounce, dedup, dedupBy, dedupOn, delay, delayAnim, delayMicro, delayWith, interval, mkAnimFrameBuffer) as ReExports
+import Riverdragon.River.Beyond (KeyEvent, KeyPhase(..), affToLake, animationLoop, counter, debounce, dedup, dedupBy, dedupOn, delay, delayAnim, delayMicro, delayWith, documentEvent, everyFrame, fallingLeaves, fallingLeavesAff, interval, joinLeave, keyEvents, keyPhase, mkAnimFrameBuffer, mkBufferedDelayer, risingFalling, withLast)
+import Riverdragon.River.Beyond (KeyEvent, KeyPhase(..), affToLake, animationLoop, counter, debounce, dedup, dedupBy, dedupOn, delay, delayAnim, delayMicro, delayWith, documentEvent, everyFrame, fallingLeaves, fallingLeavesAff, interval, joinLeave, keyEvents, keyPhase, mkAnimFrameBuffer, mkBufferedDelayer, risingFalling, withLast) as ReExports
 import Riverdragon.River.Beyond as Beyond
 import Riverdragon.Main.Live as Riverdragon.Main.Live
 
@@ -27,9 +27,6 @@ import Data.Array.NonEmpty as NEA
 import Data.List (List)
 import Data.List (List) as ReExports
 import Data.List as List
-import Data.Map as Map
-import Data.Int as Int
-import Data.Set as Set
 import Data.String as String
 import Data.String.CodePoints as CP
 import Data.String.CodeUnits as CU
@@ -76,11 +73,14 @@ import Data.Identity (Identity(..)) as ReExports
 import Data.Int (hexadecimal, decimal, base36, binary)
 import Data.Int (hexadecimal, decimal, base36, binary) as ReExports
 import Data.Int as Int
+import Data.Int.Bits ((.&.), (.^.), (.|.))
+import Data.Int.Bits ((.&.), (.^.), (.|.)) as ReExports
+import Data.Int.Bits as Int.Bits
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map (Map, SemigroupMap(..)) as ReExports
 import Data.Map as Map
-import Data.Maybe (Maybe(..), maybe, fromMaybe, optional)
-import Data.Maybe (Maybe(..), maybe, fromMaybe, optional) as ReExports
+import Data.Maybe (Maybe(..), maybe, fromMaybe, optional, isNothing, isJust)
+import Data.Maybe (Maybe(..), maybe, fromMaybe, optional, isNothing, isJust) as ReExports
 import Data.Monoid (power)
 import Data.Monoid (power) as ReExports
 import Data.Monoid.Additive (Additive(..))
@@ -130,10 +130,13 @@ import Effect (Effect)
 import Effect (Effect) as ReExports
 import Effect.Aff (Aff)
 import Effect.Aff (Aff) as ReExports
+import Effect.Class (liftEffect)
+import Effect.Class (liftEffect) as ReExports
 import Effect.Class.Console (log, logShow)
 import Effect.Class.Console (log, logShow) as ReExports
-import Idiolect (type (-!>), type (/\/), EffectArrow, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterSnd, intercalateMap, morph, multiplexing, nonEmpty, only, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/))
-import Idiolect (type (-!>), type (/\/), EffectArrow, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterSnd, intercalateMap, morph, multiplexing, nonEmpty, only, theseing, tupling, (/\\/), (/|\), (<#?>), (<$?>), (<==<), (==<), (>==), (>==>), (\|/)) as ReExports
+import Effect.Class.Console as Console
+import Idiolect (type (/\/), CommonPrefix(..), EffectArrow, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterMapFlipped, filterSnd, foldMapFlipped, foldMapWithIndexFlipped, intercalateMap, mapWithIndexFlipped, morph, multiplexing, nonEmpty, only, partitionMapFlipped, theseing, tripleQuoted, tupling, (#..), (#:..), (..$), (..:$), (/#?\), (/$?\), (/\\/), (/|\), (:<$>), (<#..>), (<#:..>), (<#>:), (<#?>), (<$?>), (<..$>), (<..:$>), (<==<), (==<), (>==), (>==>), (\|/))
+import Idiolect (type (/\/), CommonPrefix(..), EffectArrow, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterMapFlipped, filterSnd, foldMapFlipped, foldMapWithIndexFlipped, intercalateMap, mapWithIndexFlipped, morph, multiplexing, nonEmpty, only, partitionMapFlipped, theseing, tripleQuoted, tupling, (#..), (#:..), (..$), (..:$), (/#?\), (/$?\), (/\\/), (/|\), (:<$>), (<#..>), (<#:..>), (<#>:), (<#?>), (<$?>), (<..$>), (<..:$>), (<==<), (==<), (>==), (>==>), (\|/)) as ReExports
 import Riverdragon.Dragon.Bones ((.<>), (<>.))
 import Prim.Row as Row
 import Prim.RowList as RL
@@ -145,6 +148,8 @@ import Type.Equality (class TypeEquals, proof)
 import Type.Equality (class TypeEquals, proof) as ReExports
 import Type.Proxy (Proxy(..))
 import Type.Proxy (Proxy(..)) as ReExports
+import Unsafe.Coerce (unsafeCoerce)
+import Unsafe.Coerce (unsafeCoerce) as ReExports
 
 main :: Effect Unit
 main = Riverdragon.Main.Live.mainForDragon dragon

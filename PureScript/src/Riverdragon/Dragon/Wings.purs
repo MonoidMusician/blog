@@ -120,7 +120,7 @@ inputValidated cls label placeholder initialValue valid onInput =
 -- this is opinionated, so it does not live in Bones
 sourceCode :: forall flow. String -> Array (Stream flow AttrProp) -> Dragon -> Dragon
 sourceCode lang attrs content =
-  D.div :."sourceCode "<>String.toLower lang :~
+  D.div :."sourceCode side-label "<>String.toLower lang :~
     [ D.data_"lang" =:= lang, oneStream attrs ] $
       D.pre.$ D.code.$ content
 
@@ -129,6 +129,7 @@ tabSwitcher :: Maybe String -> Array (String /\ Dragon) -> Dragon
 tabSwitcher initial tabs = eggy \shell -> do
   destroyLast <- rolling
   { stream: mounted, send: sendMounted } <- shell.track $ createRiverStore Nothing
+  { stream: selected, send: select } <- shell.track $ createRiverStore initial
   let
     onMounted el = do
       sendMounted el
@@ -138,7 +139,8 @@ tabSwitcher initial tabs = eggy \shell -> do
   pure $ D.div :."tab-switcher".$ D.Fragment
     [ D.div :."tab-switcher-header".$ D.Fragment $ tabs <#> \(name /\ content) -> do
         D.button :."tab-switcher-tab":~
-          [ D.onClick =!= destroyLast =<< renderElSt mounted content
+          [ D.onClick =!= destroyLast =<< renderElSt mounted content <* select name
+          , D.data_"selected" <:> eq name <$> selected
           ] $$ name
     , D.div :."tab-switcher-contents":~ [ D.Self =:= \el -> mempty <$ onMounted el ] $ mempty
     ]

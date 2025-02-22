@@ -201,6 +201,8 @@ type Id = Int
 -- | Using `map` on a `River` will memoize it to share the mapped values
 -- | among all subscribers.
 instance functorStream :: Functor (Stream flow) where
+  -- TODO: wait until there are multiple downstreams to memoize? could
+  -- that be performant?
   map f (Stream t g) = mayMemoize $ Stream t \cbs -> do
     r <- g cbs { receive = \a -> cbs.receive (f a) }
     pure r { burst = map f r.burst }
@@ -599,6 +601,7 @@ instantiate ::
     , destroy :: Allocar Unit
     }
 instantiate (Stream Flowing stream) = pure
+  -- FIXME: burst from flowing?
   { burst: [], stream: Stream Flowing stream, destroy: pure unit }
 instantiate strm@(Stream _ stream) = do
   { send, commit, stream: streamDependingOn, destroy } <- createProxy' (burstOf strm)

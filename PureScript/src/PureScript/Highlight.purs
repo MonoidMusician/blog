@@ -32,6 +32,13 @@ highlightPandoc = fold
   , const """</code></pre></div>"""
   ]
 
+highlightPandocInline :: String -> String
+highlightPandocInline = fold
+  [ const """<code class="sourceCode purescript">"""
+  , highlight
+  , const """</code>"""
+  ]
+
 
 data Category
   = CKeyword

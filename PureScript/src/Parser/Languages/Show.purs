@@ -14,7 +14,7 @@ import Data.List (List(..))
 import Data.List.NonEmpty as NEL
 import Data.Maybe (Maybe(..), fromMaybe)
 import Dodo (Doc)
-import Dodo as D
+import Dodo as T
 import Parser.Comb.Comber (Comber, choices, many1SepBy, rawr, thawWith, token, (#->))
 import Parser.Lexing as L
 
@@ -33,7 +33,7 @@ sep = rawr """[,]\s*"""
 parseShown :: Comber (Doc Void)
 parseShown = "stuff" #-> \more -> do
   choices
-    [ D.text <$> (string <|> char <|> boring)
+    [ T.text <$> (string <|> char <|> boring)
     , matched "(" more ")"
     , matched "[" more "]"
     , matched "{" more "}"
@@ -41,33 +41,33 @@ parseShown = "stuff" #-> \more -> do
   where
   matched :: String -> Comber (Doc Void) -> String -> Comber (Doc Void)
   matched o more c =
-    D.flexGroup <<< D.alignCurrentColumn <$> fold
-      [ D.text <$> token o
+    T.flexGroup <<< T.alignCurrentColumn <$> fold
+      [ T.text <$> token o
       , choices
           [ fold
-            [ pure D.space
+            [ pure T.space
             , layers more
-            , pure D.spaceBreak
+            , pure T.spaceBreak
             ]
           , pure mempty
           ]
-      , D.text <$> token c
+      , T.text <$> token c
       ]
 
 layers :: Comber (Doc Void) -> Comber (Doc Void)
 layers more =
-  separated "commas" (D.text ",") (rawr """[,]\s*""") $
-    separated' "spaces" D.spaceBreak (rawr "\\s+") $
+  separated "commas" (T.text ",") (rawr """[,]\s*""") $
+    separated' "spaces" T.spaceBreak (rawr "\\s+") $
       more
 
 indentAfter :: Array (Doc Void) -> Doc Void
 indentAfter = A.uncons >>> foldMap
-  \{ head, tail } -> head <> D.indent (A.fold tail)
+  \{ head, tail } -> head <> T.indent (A.fold tail)
 
 separated :: forall x. String -> Doc Void -> Comber x -> Comber (Doc Void) -> Comber (Doc Void)
 separated name docSep parseSep item = many1SepBy name parseSep item <#>
-  (\items -> D.flexGroup <$> items)
-  >>> NEA.toArray >>> intercalate (D.flexAlt docSep (D.break <> docSep) <> D.space)
+  (\items -> T.flexGroup <$> items)
+  >>> NEA.toArray >>> intercalate (T.flexAlt docSep (T.break <> docSep) <> T.space)
 
 separated' :: forall x. String -> Doc Void -> Comber x -> Comber (Doc Void) -> Comber (Doc Void)
 separated' name docSep parseSep item = manySurBy name parseSep item <#>
@@ -75,7 +75,7 @@ separated' name docSep parseSep item = manySurBy name parseSep item <#>
     Nothing -> mempty
     Just { head, tail: [] } -> head
     Just { head, tail } ->
-      head <> docSep <> D.indent (intercalate docSep tail)
+      head <> docSep <> T.indent (intercalate docSep tail)
 
 manySurBy :: forall x a. String -> Comber x -> Comber a -> Comber (Array a)
 manySurBy n s p = ([] <$ s) <|> map NEA.toArray (many1SurBy n (map Just s <|> pure Nothing) p)
@@ -88,7 +88,7 @@ many1SurBy n s p = (\ps -> s *> ps) $
 lazyTop :: Comber (Doc Void)
 lazyTop = layers parseShown <|> pure mempty
 
-mkReShow :: Maybe String -> String -> D.PrintOptions -> String
+mkReShow :: Maybe String -> String -> T.PrintOptions -> String
 mkReShow json =
   thawWith { best: L.lazyBest } lazyTop (Json.parseJson (fromMaybe "" json))
-    >>> either const (flip (D.print D.plainText))
+    >>> either const (flip (T.print T.plainText))

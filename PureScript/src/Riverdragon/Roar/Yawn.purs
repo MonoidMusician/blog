@@ -20,8 +20,7 @@ import Data.SequenceRecord (sequenceRecord)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
-import Effect.Aff (Aff, ParAff, launchAff, parallel, sequential)
-import Effect.Aff as Aff
+import Effect.Aff (Aff, ParAff, parallel, sequential)
 import Effect.Class (liftEffect)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
@@ -32,7 +31,7 @@ import Riverdragon.River.Bed (cleanup, runningAff)
 import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (affToLake)
 import Riverdragon.Roar.Dimensions (temperaments)
-import Riverdragon.Roar.Knob (class ToKnob, Knob(..), renderKnobs)
+import Riverdragon.Roar.Knob (class ToKnob, renderKnobs)
 import Riverdragon.Roar.Types (class ToLake, class ToOther, class ToRoars, Roar, RoarO, connecting, thingy, toLake, toRoars)
 import Type.Proxy (Proxy(..))
 import Type.Row (type (+))
@@ -201,18 +200,18 @@ putYawn eep = do
 
 
 roars :: Array Roar -> YawnM Roar
-roars = gain <@> KConst 1.0
+roars = gain 1.0
 
 roaring :: forall flow. Stream flow Roar -> YawnM Roar
-roaring = gain <@> KConst 1.0
+roaring = gain 1.0
 
 roarings :: forall flow. Stream flow (Array Roar) -> YawnM Roar
-roarings = gain <@> KConst 1.0
+roarings = gain 1.0
 
 
 
-gain :: forall roar knob. ToRoars roar => ToKnob knob => roar -> knob -> YawnM Roar
-gain input knob = yaaawn \{ ctx } -> liftEffect do
+gain :: forall knob roar. ToKnob knob => ToRoars roar => knob -> roar -> YawnM Roar
+gain knob input = yaaawn \{ ctx } -> liftEffect do
   let { defaults, apply: applyKnobs } = renderKnobs { gain: knob } ctx
   node <- AudioNode.createGainNode ctx defaults
   destroy1 <- applyKnobs node
@@ -258,21 +257,21 @@ offset config = yaaawn \{ ctx } -> liftEffect do
     }
 
 filter ::
-  forall roar flowBiquadFilterType knobQ knobDetune knobFrequency knobGain.
-    ToRoars roar =>
+  forall flowBiquadFilterType knobQ knobDetune knobFrequency knobGain roar.
     ToLake flowBiquadFilterType BiquadFilterType =>
     ToKnob knobQ =>
     ToKnob knobDetune =>
     ToKnob knobFrequency =>
     ToKnob knobGain =>
-  roar ->
+    ToRoars roar =>
   { type :: flowBiquadFilterType
   , "Q" :: knobQ
   , detune :: knobDetune
   , frequency :: knobFrequency
   , gain :: knobGain
-  } -> YawnM Roar
-filter input config = yaaawn \{ ctx } -> liftEffect do
+  } ->
+  roar -> YawnM Roar
+filter config input = yaaawn \{ ctx } -> liftEffect do
   let
     { defaults, apply: applyKnobs } = renderKnobs
       { "Q": config."Q"
@@ -317,8 +316,8 @@ mtf_ notes = do
 freqs :: forall flow knob. ToKnob knob => Stream flow (Array knob) -> YawnM Roar
 freqs = roarings <=< yawnOnDemand <<< map (traverse \frequency -> osc { type: Sine, frequency, detune: 0 })
 
-waveshape :: forall roar. ToRoars roar => roar -> Array Float -> YawnM Roar
-waveshape input curve = yaaawn \{ ctx } -> liftEffect do
+waveshape :: forall roar. ToRoars roar => Array Float -> roar -> YawnM Roar
+waveshape curve input = yaaawn \{ ctx } -> liftEffect do
   node <- AudioNode.createWaveShaperNode ctx { curve }
   destroy <- connecting (toRoars input) (intoNode node 0)
   pure { result: outOfNode node 0, destroy: destroy, ready: mempty }
@@ -331,7 +330,7 @@ wavesample nsamples shaping =
         (Int.toNumber i / maxsample) * 2.0 - 1.0
 
 binarize :: forall roar. ToRoars roar => roar -> YawnM Roar
-binarize = waveshape <@> wavesample 1024 \v -> case compare v 0.0 of
+binarize = waveshape $ wavesample 1024 \v -> case compare v 0.0 of
   LT -> -1.0
   EQ -> 0.0
   GT -> 1.0

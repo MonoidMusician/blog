@@ -453,6 +453,15 @@ textCursor tc = Self \e -> do
   traverse_ (TC.setTextCursor tc) (TextCursorElement.read e)
   pure mempty
 
+-- | `autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"`
+asCodeInput :: forall flow. Stream flow AttrProp
+asCodeInput = pure $ fold
+  [ attr "autocomplete" "off"
+  , attr "autocorrect" "off"
+  , attr "autocapitalize" "off"
+  , attr "spellcheck" "false"
+  ]
+
 --------------------------------------------------------------------------------
 -- | ## Standard listeners                                                  | --
 --------------------------------------------------------------------------------

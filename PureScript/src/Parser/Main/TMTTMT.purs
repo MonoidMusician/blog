@@ -207,6 +207,7 @@ component setGlobal resetting = eggy \shell -> do
         , D.onChangeValue =:= setGlobal
         , D.value <:> resetting
         , D.style =:= "height: 50vh"
+        , D.asCodeInput
         ]
     , D.pre [ D.style =:= "white-space: break-spaces;" ] $ D.code[] $
         Text $ result <$> getParser <*> map snd currentRaw
@@ -222,11 +223,13 @@ widgetTypeSplit _ = pure $ eggy \shell -> do
         [ D.onInputValue =:= pushUpdate
         , D.value =:= dfTy
         , D.style =:= "height: 100px"
+        , D.asCodeInput
         ]
     , sourceCode "tmTTmt" .$ D.textarea
           [ D.onInputValue =:= pushPat
           , D.value =:= dfPat
           , D.style =:= "height: 100px"
+          , D.asCodeInput
           ]
     , D.pre [ D.style =:= "white-space: break-spaces; min-height: 150px" ] $ D.code[] $
         Text $ typeResult <$> getParser <*> pushedRaw <*> pushedPat
@@ -258,11 +261,13 @@ widgetSubType _ = pure $ eggy \shell -> do
         [ D.onInputValue =:= pushUpdate
         , D.value =:= dfTy
         , D.style =:= "height: 100px"
+        , D.asCodeInput
         ]
     , sourceCode "tmTTmt" .$ D.textarea
         [ D.onInputValue =:= pushPat
         , D.value =:= dfPat
         , D.style =:= "height: 100px"
+        , D.asCodeInput
         ]
     , D.pre [ D.className =:= "css", D.style =:= "white-space: break-spaces; min-height: 150px" ] $
         Text $ typeResult <$> getParser <*> pushedRaw <*> pushedPat

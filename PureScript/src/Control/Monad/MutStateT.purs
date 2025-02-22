@@ -47,3 +47,6 @@ instance monadReaderMutStateT :: MonadReader r m => MonadReader r (MutStateT s m
 instance monadStateMutStateT :: MonadEffect m => MonadState s (MutStateT s m) where
   state f = MutStateT $ ReaderT \ref -> liftEffect do
     Ref.modify' (\s -> let Tuple value state = f s in { state, value }) ref
+
+derive newtype instance semigroupMutStateT :: (Semigroup a, Apply m) => Semigroup (MutStateT s m a)
+derive newtype instance monoidMutStateT :: (Monoid a, Applicative m) => Monoid (MutStateT s m a)

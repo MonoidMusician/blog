@@ -14,9 +14,9 @@ import Data.String.Regex (regex, source, flags, test, match, replace, replace', 
 import Data.String.Regex.Flags (dotAll, global, ignoreCase, multiline, noFlags, sticky, unicode) as Re
 import Data.String.Regex.Unsafe (unsafeRegex) as Re
 import Dodo (Doc)
-import Dodo as D
+import Dodo as T
 import Dodo as Dodo
-import Dodo.Common as DC
+import Dodo.Common as T
 import Effect.Aff (Aff)
 import Effect.Aff as Aff
 import Parser.Comb.Comber (choices)

@@ -1,9 +1,63 @@
-module Parser.Parserlude ( module ReExports ) where
+module Riverdragon.Roar.Sky ( module ReExports ) where
+
+import Prelude
+import Prelude as ReExports
+
+import Riverdragon.Roar.Types
+import Riverdragon.Roar.Types as ReExports
+import Riverdragon.Roar.Knob
+import Riverdragon.Roar.Knob as ReExports
+import Riverdragon.Roar.Yawn
+import Riverdragon.Roar.Yawn as Y
+import Riverdragon.Roar.Yawn as ReExports
+import Riverdragon.Roar.Roarlette
+import Riverdragon.Roar.Roarlette as YY
+import Riverdragon.Roar.Roarlette as ReExports
+import Riverdragon.Roar.Dimensions
+import Riverdragon.Roar.Viz
+import Riverdragon.Roar.Viz as Viz
+import Riverdragon.Roar.Viz as ReExports
+import Riverdragon.Roar.Synth
+import Riverdragon.Roar.Synth as ReExports
+
+import Web.Audio.Types (ARate, AudioBuffer, AudioContext, AudioNode, AudioParam, AudioParamCmd(..), BiquadFilterType(..), Cancel(..), Cents, ChannelCountMode(..), ChannelInterpretation(..), DistanceModelType(..), Duration, FFTSize(..), Float, Frequency, KRate, Norm, OscillatorType(..), Oversample(..), PanningModelType(..), PeriodicWave, Ramp(..), Rate(..), SequenceFloat, Time, Volume)
+import Web.Audio.Types (ARate, AudioBuffer, AudioContext, AudioNode, AudioParam, AudioParamCmd(..), BiquadFilterType(..), Cancel(..), Cents, ChannelCountMode(..), ChannelInterpretation(..), DistanceModelType(..), Duration, FFTSize(..), Float, Frequency, KRate, Norm, OscillatorType(..), Oversample(..), PanningModelType(..), PeriodicWave, Ramp(..), Rate(..), SequenceFloat, Time, Volume) as ReExports
+import Web.Audio.FFI (class FFI, toFFI, fromFFI)
+import Web.Audio.FFI (class FFI, toFFI, fromFFI) as ReExports
+import Web.Audio.Context (LatencyHint(..))
+import Web.Audio.Context (LatencyHint(..)) as ReExports
+import Web.Audio.Context as Context
+import Web.Audio.Context as AudioContext
+import Web.Audio.Param as Param
+import Web.Audio.Param as AudioParam
+import Web.Audio.MIDI as MIDI
+
+import Riverdragon.Dragon.Bones (class AttrType, class Attrable, class AttrableRecord, class AutoDOM, class PropType, AttrProp(..), Dragon(..), MultiAttrs(..), MultiProps(..), PropVal(..), __checked, __date, __int, __number, __open, __textcursor, __value, ($$), ($$~), ($<), ($<>), ($~~), (&#), (&%), (&.), (&@), (&~), (.$), (.$$), (.$$~), (.$~~), (.<>), (:!), (:#), (:%), (:.), (:@), (:~), (<!>), (<&>), (<:>), (<>$), (<>.), (<?#>), (<?$>), (<??>), (<?|>), (=!=), (=!?=), (=&=), (=:=), (=?#=), (=?$=), (=?=), (=??=), (=?|=), (>$), (>@), (>~~), (?.), (?~>), (@<), (~~<))
+import Riverdragon.Dragon.Bones (class AttrType, class Attrable, class AttrableRecord, class AutoDOM, class PropType, AttrProp(..), Dragon(..), MultiAttrs(..), MultiProps(..), PropVal(..), __checked, __date, __int, __number, __open, __textcursor, __value, ($$), ($$~), ($<), ($<>), ($~~), (&#), (&%), (&.), (&@), (&~), (.$), (.$$), (.$$~), (.$~~), (.<>), (:!), (:#), (:%), (:.), (:@), (:~), (<!>), (<&>), (<:>), (<>$), (<>.), (<?#>), (<?$>), (<??>), (<?|>), (=!=), (=!?=), (=&=), (=:=), (=?#=), (=?$=), (=?=), (=??=), (=?|=), (>$), (>@), (>~~), (?.), (?~>), (@<), (~~<)) as ReExports
+import Riverdragon.Dragon.Bones as D
+import Riverdragon.Dragon (Dragon(..), renderId, renderEl, snapshot)
+import Riverdragon.Dragon (Dragon(..), renderId, renderEl, snapshot) as ReExports
+import Riverdragon.Dragon as Dragon
+import Riverdragon.Dragon.Wings (eggy, Shell)
+import Riverdragon.Dragon.Wings (eggy, Shell) as ReExports
+import Riverdragon.Dragon.Wings as Wings
+import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), alLake, alLake', allStreams, allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, cumulate, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapAl, mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, singleShot, statefulStream, stillRiver, store, subscribe, subscribeIsh, tupleOnLeft, tupleOnRight, unsafeCopyFlowing, unsafeRiver, withInstantiated, (/*?\), (/?*\), (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~))
+import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), alLake, alLake', allStreams, allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, cumulate, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapAl, mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, singleShot, statefulStream, stillRiver, store, subscribe, subscribeIsh, tupleOnLeft, tupleOnRight, unsafeCopyFlowing, unsafeRiver, withInstantiated, (/*?\), (/?*\), (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~)) as ReExports
+import Riverdragon.River as River
+import Riverdragon.River.Bed as Bed
+import Riverdragon.River.Beyond (KeyEvent, KeyPhase(..), affToLake, animationLoop, counter, debounce, dedup, dedupBy, dedupOn, delay, delayAnim, delayMicro, delayWith, documentEvent, everyFrame, fallingLeaves, fallingLeavesAff, interval, joinLeave, keyEvents, keyPhase, mkAnimFrameBuffer, mkBufferedDelayer, risingFalling, withLast)
+import Riverdragon.River.Beyond (KeyEvent, KeyPhase(..), affToLake, animationLoop, counter, debounce, dedup, dedupBy, dedupOn, delay, delayAnim, delayMicro, delayWith, documentEvent, everyFrame, fallingLeaves, fallingLeavesAff, interval, joinLeave, keyEvents, keyPhase, mkAnimFrameBuffer, mkBufferedDelayer, risingFalling, withLast) as ReExports
+import Riverdragon.River.Beyond as Beyond
+import Riverdragon.Roar.Live as Riverdragon.Roar.Live
 
 import Parser.Comb.Comber
 import Parser.Comb.Comber as ReExports
-import Prelude
-import Prelude as ReExports
+import Parser.Comb (Comb(..))
+import Parser.Comb (Comb(..)) as ReExports
+import Parser.Languages (digit, int, json, string, digit, int, number)
+import Parser.Languages (digit, int, json, string, digit, int, number) as ReExports
+import Dodo as T
+import Dodo.Common as T
 
 import Data.Array as A
 import Data.Array as Array
@@ -11,17 +65,12 @@ import Data.Array.NonEmpty as NEA
 import Data.List (List)
 import Data.List (List) as ReExports
 import Data.List as List
-import Data.Map as Map
-import Data.Int as Int
-import Data.Set as Set
 import Data.String as String
 import Data.String.CodePoints as CP
 import Data.String.CodeUnits as CU
 import Data.String.Regex (regex, source, flags, test, match, replace, replace', search, split) as Re
 import Data.String.Regex.Flags (dotAll, global, ignoreCase, multiline, noFlags, sticky, unicode) as Re
 import Data.String.Regex.Unsafe (unsafeRegex) as Re
-import Dodo as T
-import Dodo.Common as T
 
 import Control.Alt (class Alt, (<|>))
 import Control.Alt (class Alt, (<|>)) as ReExports
@@ -105,6 +154,8 @@ import Data.String.Regex.Flags (dotAll, global, ignoreCase, multiline, noFlags, 
 import Data.String.Regex.Unsafe (unsafeRegex) as Re
 import Data.Symbol (class IsSymbol, reflectSymbol, reifySymbol)
 import Data.Symbol (class IsSymbol, reflectSymbol, reifySymbol) as ReExports
+import Data.Time.Duration (Milliseconds(..))
+import Data.Time.Duration (Milliseconds(..)) as ReExports
 import Data.These (These(..), these)
 import Data.These (These(..), these) as ReExports
 import Data.Traversable (class Traversable, traverse, traverse_, for, for_, sequence, sequence_, scanl, scanr, mapAccumL, mapAccumR)
@@ -117,19 +168,14 @@ import Effect (Effect)
 import Effect (Effect) as ReExports
 import Effect.Aff (Aff)
 import Effect.Aff (Aff) as ReExports
+import Effect.Class (liftEffect)
+import Effect.Class (liftEffect) as ReExports
 import Effect.Class.Console (log, logShow)
 import Effect.Class.Console (log, logShow) as ReExports
 import Effect.Class.Console as Console
 import Idiolect (type (/\/), CommonPrefix(..), EffectArrow, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterMapFlipped, filterSnd, foldMapFlipped, foldMapWithIndexFlipped, intercalateMap, mapWithIndexFlipped, morph, multiplexing, nonEmpty, only, partitionMapFlipped, theseing, tripleQuoted, tupling, (#..), (#:..), (..$), (..:$), (/#?\), (/$?\), (/\\/), (/|\), (:<$>), (<#..>), (<#:..>), (<#>:), (<#?>), (<$?>), (<..$>), (<..:$>), (<==<), (==<), (>==), (>==>), (\|/))
 import Idiolect (type (/\/), CommonPrefix(..), EffectArrow, composeMap, composeMapFlipped, composeTraverse, composeTraverseFlipped, filterFst, filterKey, filterMapFlipped, filterSnd, foldMapFlipped, foldMapWithIndexFlipped, intercalateMap, mapWithIndexFlipped, morph, multiplexing, nonEmpty, only, partitionMapFlipped, theseing, tripleQuoted, tupling, (#..), (#:..), (..$), (..:$), (/#?\), (/$?\), (/\\/), (/|\), (:<$>), (<#..>), (<#:..>), (<#>:), (<#?>), (<$?>), (<..$>), (<..:$>), (<==<), (==<), (>==), (>==>), (\|/)) as ReExports
-import Parser.Comb (Comb(..))
-import Parser.Comb (Comb(..)) as ReExports
-import Parser.Languages (digit, int, json, string, digit, int, number)
-import Parser.Languages (digit, int, json, string, digit, int, number) as ReExports
-import Parser.Languages.CSS (combinator, escape, ident, many1Comma, newline, percentage, url)
-import Parser.Languages.CSS (combinator, escape, ident, many1Comma, newline, percentage, url) as ReExports
 import Riverdragon.Dragon.Bones ((.<>), (<>.))
-import Parser.Main.Live as Parser.Main.Live
 import Prim.Row as Row
 import Prim.RowList as RL
 import Prim.TypeError (class Fail, Beside, Quote, Text)
@@ -140,19 +186,19 @@ import Type.Equality (class TypeEquals, proof)
 import Type.Equality (class TypeEquals, proof) as ReExports
 import Type.Proxy (Proxy(..))
 import Type.Proxy (Proxy(..)) as ReExports
+import Unsafe.Coerce (unsafeCoerce)
+import Unsafe.Coerce (unsafeCoerce) as ReExports
 
 main :: Effect Unit
-main = Parser.Main.Live.mainForParser parser
+main = Riverdragon.Roar.Live.mainForRoar \shell -> do
+  r <- dragonVoice shell
+  pure
+    { dragon: r.dragon
+    , voice: \note leave ->
+        r.voice note (stillRiver leave) <#> \{ value, leave } ->
+          { value: value <#> toRoars, leave: dam leave }
+    }
 
-parser :: Comber (T.Doc Void)
-parser = empty
+dragonVoice :: Shell -> Effect { dragon :: Dragon, voice :: Int -> Stream _ Unit -> YawnM { value :: Array Roar, leave :: Stream _ Unit } }
+dragonVoice = pure $ pure { dragon: mempty, voice: mempty }
 
-class StringOrDoc t where
-  toDoc :: t -> T.Doc Void
-
-instance StringOrDoc String where
-  toDoc = T.text
-else instance TypeEquals ann Void => StringOrDoc (T.Doc ann) where
-  toDoc = proof
-else instance Fail (Beside (Text "Parser must produce String or Doc, not ") (Quote t)) => StringOrDoc t where
-  toDoc = mempty

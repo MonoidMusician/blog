@@ -196,6 +196,7 @@ component setGlobal resetting = eggy \shell -> do
         , D.on_"select" =:= updateTA taCb
         , D.on_"selectionchange" =:= updateTA taCb
         , D.value <:> resetting
+        , D.asCodeInput
         ]
     , D.div [ D.className =:= "full-width h-scroll" ] $ D.div [ st, D.className =:= "code-points unicode" ] $
         taAllCPs >@ foldMap \cp ->
@@ -391,6 +392,7 @@ widgetShow _ = pure $ eggy \shell -> do
         [ D.onInputValue =:= set
         , D.value <:> valueSet
         , D.style =:= "height: 40vh"
+        , D.asCodeInput
         ]
     , slider "adjust-indent" "Indent"
       [ D.onInputInt =:= indent.send

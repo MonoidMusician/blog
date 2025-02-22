@@ -22,7 +22,7 @@ instance
   ( ToKnob knob
   , ToRoars signal
   ) => RecordToNode "gain,signal" ( gain :: knob, signal :: signal ) Roar where
-  recordToNode = proof >>> \tgt -> Yawn.gain (toRoars tgt.signal) (toKnob tgt.gain)
+  recordToNode = proof >>> \tgt -> Yawn.gain (toKnob tgt.gain) (toRoars tgt.signal)
 
 data Noise = PinkNoise
 

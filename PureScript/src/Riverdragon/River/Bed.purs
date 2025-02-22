@@ -199,19 +199,25 @@ postHocDestructors ::
     { running :: Allocar Boolean
     , destructor :: Allocar Unit -> Allocar Unit
     , finalize :: Allocar Unit
+    , track :: forall r.
+      Allocar { destroy :: Allocar Unit | r } -!> { destroy :: Allocar Unit | r }
     }
 postHocDestructors = do
   running <- newSTR true
   destructors <- accumulator
+  let
+    destructor d = do
+      iteM (getSTR running)
+        do destructors.put d
+        do d
   pure
     { running: getSTR running
     , finalize: do
         setSTR running false
         join destructors.reset
-    , destructor: \d -> do
-        iteM (getSTR running)
-          do destructors.put d
-          do d
+    , destructor
+    , track: ((=<<) \r -> r <$ destructor r.destroy) :: forall r.
+      Allocar { destroy :: Allocar Unit | r } -!> { destroy :: Allocar Unit | r }
     }
 
 

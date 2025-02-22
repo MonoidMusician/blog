@@ -13,7 +13,7 @@ import Data.Foldable (foldMap, oneOf)
 import Data.Maybe (Maybe(..))
 import Data.String.Regex.Flags (dotAll, unicode)
 import Dodo (Doc)
-import Dodo as D
+import Dodo as T
 import Parsing as Parsing
 import Parsing.Combinators.Array as Parsing.Array
 import Parsing.String as Parsing.String
@@ -47,38 +47,38 @@ parseShown = fix \more -> do
     [ matched "(" more ")"
     , matched "[" more "]"
     , matched "{" more "}"
-    , D.text <$> (string <|> char <|> boring)
+    , T.text <$> (string <|> char <|> boring)
     ]
   where
   matched :: String -> Parser (Doc Void) -> String -> Parser (Doc Void)
   matched o more c =
-    D.flexGroup <<< D.alignCurrentColumn <$> fold
-      [ D.text <$> token o
+    T.flexGroup <<< T.alignCurrentColumn <$> fold
+      [ T.text <$> token o
       , oneOf
           [ fold
-            [ pure D.space
+            [ pure T.space
             , layers more
-            , pure D.spaceBreak
+            , pure T.spaceBreak
             ]
           , pure mempty
           ]
-      , D.text <$> token c
+      , T.text <$> token c
       ]
 
 layers :: Parser (Doc Void) -> Parser (Doc Void)
 layers more =
-  separated "commas" (D.text ",") (rawr """[,]\s*""") $
-    separated' "spaces" D.spaceBreak (rawr "\\s+") $
+  separated "commas" (T.text ",") (rawr """[,]\s*""") $
+    separated' "spaces" T.spaceBreak (rawr "\\s+") $
       more
 
 indentAfter :: Array (Doc Void) -> Doc Void
 indentAfter = A.uncons >>> foldMap
-  \{ head, tail } -> head <> D.indent (A.fold tail)
+  \{ head, tail } -> head <> T.indent (A.fold tail)
 
 separated :: forall x. String -> Doc Void -> Parser x -> Parser (Doc Void) -> Parser (Doc Void)
 separated name docSep parseSep item = many1SepBy name parseSep item <#>
-  (\items -> D.flexGroup <$> items)
-  >>> NEA.toArray >>> intercalate (D.flexAlt docSep (D.break <> docSep) <> D.space)
+  (\items -> T.flexGroup <$> items)
+  >>> NEA.toArray >>> intercalate (T.flexAlt docSep (T.break <> docSep) <> T.space)
 
 separated' :: forall x. String -> Doc Void -> Parser x -> Parser (Doc Void) -> Parser (Doc Void)
 separated' name docSep parseSep item = manySurBy name parseSep item <#>
@@ -86,7 +86,7 @@ separated' name docSep parseSep item = manySurBy name parseSep item <#>
     Nothing -> mempty
     Just { head, tail: [] } -> head
     Just { head, tail } ->
-      head <> docSep <> D.indent (intercalate docSep tail)
+      head <> docSep <> T.indent (intercalate docSep tail)
 
 manySurBy :: forall x a. String -> Parser x -> Parser a -> Parser (Array a)
 manySurBy n s p = map NEA.toArray (many1SurBy n (map Just s <|> pure Nothing) p) <|> ([] <$ s)
@@ -100,7 +100,7 @@ many1SepBy n s p = lift2 NEA.cons' p (Parsing.Array.many (s *> p))
 lazyTop :: Parser (Doc Void)
 lazyTop = layers parseShown <|> pure mempty
 
-mkReShow :: Maybe String -> String -> D.PrintOptions -> String
+mkReShow :: Maybe String -> String -> T.PrintOptions -> String
 mkReShow json =
   flip Parsing.runParser lazyTop
-    >>> either (Parsing.parseErrorMessage >>> const) (flip (D.print D.plainText))
+    >>> either (Parsing.parseErrorMessage >>> const) (flip (T.print T.plainText))

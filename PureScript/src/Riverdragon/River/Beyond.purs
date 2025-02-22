@@ -11,7 +11,8 @@ import Data.Filterable (compact, partitionMap)
 import Data.Foldable (fold)
 import Data.Int as Int
 import Data.Map as Map
-import Data.Maybe (Maybe(..), isJust)
+import Data.Maybe (Maybe(..), isJust, maybe)
+import Data.Newtype (unwrap)
 import Data.Set as Set
 import Data.Time.Duration (Milliseconds(..))
 import Data.Tuple (snd)
@@ -26,6 +27,7 @@ import Partial.Unsafe (unsafePartial)
 import Riverdragon.Dragon.Breath (microtask)
 import Riverdragon.River (Allocar, Lake, River, Stream, allStreams, dam, fixPrjBurst, foldStream, mailboxRiver, makeLake, makeLake', mapAl, oneStream, singleShot, statefulStream, subscribeIsh, unsafeCopyFlowing, withInstantiated, (<?*>), (>>~))
 import Riverdragon.River.Bed (breaker, eventListener, freshId, ordMap, prealloc, pushArray, requestAnimationFrame)
+import Web.DOM.Element as Element
 import Web.Event.Event (EventType(..))
 import Web.Event.Event as Event
 import Web.Event.EventPhase (EventPhase(..))
@@ -206,8 +208,8 @@ dedup = dedupBy eq
 
 
 affToLake :: forall a. Aff a -> Lake (Maybe a)
-affToLake aff = makeLake \cb -> do
-  fiber <- Aff.runAff (cb <<< hush) aff
+affToLake aff = makeLake' \finished cb -> do
+  fiber <- Aff.runAff (\result -> cb (hush result) <* finished) aff
   pure $ Aff.launchAff_ $ Aff.killFiber (Aff.error "event unsubscribed") fiber
 
 interval :: Milliseconds -> Lake Int
@@ -354,7 +356,9 @@ type KeyEvent =
   , location :: KeyboardEvent.KeyLocation
   , composing :: Boolean
   , event :: KeyboardEvent.KeyboardEvent
+  , baseEvent :: Event.Event
   , mod :: { ctrl :: Boolean, alt :: Boolean, shift :: Boolean, meta :: Boolean }
+  , targetType :: String
   , preventDefault :: Effect Unit
   , stopPropagation :: Effect Unit
   , stopImmediatePropagation :: Effect Unit
@@ -373,6 +377,7 @@ keyEvents ::
 keyEvents cb =
   [ "keydown", "keyup" ] #.. \ty ->
     documentEvent (EventType ty) KeyboardEvent.fromEvent \event -> do
+      let baseEvent = KeyboardEvent.toEvent event
       cb
         { phase: keyPhase event
         , key: KeyboardEvent.key event
@@ -380,13 +385,15 @@ keyEvents cb =
         , location: unsafePartial KeyboardEvent.location event
         , composing: KeyboardEvent.isComposing event
         , event
+        , baseEvent
         , mod:
           { ctrl: KeyboardEvent.ctrlKey event
           , alt: KeyboardEvent.altKey event
           , shift: KeyboardEvent.shiftKey event
           , meta: KeyboardEvent.metaKey event
           }
-        , preventDefault: Event.preventDefault (KeyboardEvent.toEvent event)
-        , stopPropagation: Event.stopPropagation (KeyboardEvent.toEvent event)
-        , stopImmediatePropagation: Event.stopImmediatePropagation (KeyboardEvent.toEvent event)
+        , targetType: Event.target baseEvent >>= Element.fromEventTarget # maybe "" (unwrap <<< Element.localName)
+        , preventDefault: Event.preventDefault baseEvent
+        , stopPropagation: Event.stopPropagation baseEvent
+        , stopImmediatePropagation: Event.stopImmediatePropagation baseEvent
         }

@@ -35,9 +35,6 @@
       box-shadow: 1px 1px 0.5px 0.5px color.change($color, $alpha: 0.26), inset 1px 1px 0px 1.5px #0002
     @else
       box-shadow: 1px 1px 0.5px 0.5px color.change($color, $alpha: 0.26), inset 1px 1px 0px 1.5px #0001
-    &:hover
-      transition: border-color 0.1s, color 0.1s, box-shadow 0.1s ease-out, transform 0.1s ease-out
-      color: color.change($color, $alpha: 1)
     &:not(:hover)
       @media (hover: hover) and (pointer: fine)
         box-shadow: 1px 1px 0.5px 0.5px transparent, inset 1px 1px 0px 1.5px transparent
@@ -45,6 +42,12 @@
           border-color: color.change($color, $alpha: 0.33)
         @else
           border-color: color.change($color, $alpha: 0.45)
+    &[data-selected=true]
+      color: color.change($color, $alpha: 0.8)
+      border-color: color.change($color, $alpha: 0.8)
+    &:hover
+      transition: border-color 0.1s, color 0.1s, box-shadow 0.1s ease-out, transform 0.1s ease-out
+      color: color.change($color, $alpha: 1)
 
     &:active
       color: color.change($color, $alpha: 1)
@@ -83,6 +86,21 @@ button:not(.icon)
     @include button(#1dca24)
   &.bonus
     @include button(#e86db7)
+
+.tab-switcher-header
+  // FIXME magic numbers
+  text-indent: -0.65em
+  padding-left: 0.65em
+
+  > button.tab-switcher-tab
+    margin-left: 0
+    margin-right: 0
+    &:not(:last-child)
+      border-top-right-radius: 0
+      border-bottom-right-radius: 0
+    &:not(:first-child)
+      border-top-left-radius: 0
+      border-bottom-left-radius: 0
 
 label:not([for]):not(.sidenote-number):not(.margin-toggle)
   //@extend .input-wrapper
@@ -233,6 +251,9 @@ label:not([for]):not(.sidenote-number):not(.margin-toggle)
 
   position: relative
 
+  nav &
+    cursor: unset
+
   & > .tooltip
     position: absolute
     font-size: 14px
@@ -284,7 +305,7 @@ label:not([for]):not(.sidenote-number):not(.margin-toggle)
     transform: translateX(-50%)
     opacity: 0
 
-  &:not(:hover)
+  &:not(:hover), nav &:hover
     & > .tooltip, &::before, &::after
       pointer-events: none
       /* Try to fix default triple-click text selection */

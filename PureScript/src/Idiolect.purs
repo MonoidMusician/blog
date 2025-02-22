@@ -11,6 +11,7 @@ import Data.Either (Either(..))
 import Data.Either.Nested (type (\/))
 import Data.Filterable (class Filterable, filterMap, partitionMap)
 import Data.Foldable (class Foldable, fold, foldMap, intercalate, oneOfMap)
+import Data.FoldableWithIndex (class FoldableWithIndex, foldMapWithIndex)
 import Data.Function (on)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
 import Data.Maybe (Maybe(..))
@@ -19,6 +20,7 @@ import Data.String as String
 import Data.Symbol (class IsSymbol)
 import Data.These (These(..))
 import Data.Traversable (class Traversable, for, traverse)
+import Data.TraversableWithIndex (forWithIndex, traverseWithIndex)
 import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
@@ -44,14 +46,19 @@ foldMapFlipped :: forall f a m. Foldable f => Monoid m => f a -> (a -> m) -> m
 foldMapFlipped = flip foldMap
 infixl 1 foldMapFlipped as #..
 
-infixl 4 traverse as <..$>
+infixr 0 foldMapWithIndex as ..:$
 
+foldMapWithIndexFlipped :: forall f i a m. FoldableWithIndex i f => Monoid m => f a -> (i -> a -> m) -> m
+foldMapWithIndexFlipped = flip foldMapWithIndex
+infixl 1 foldMapWithIndexFlipped as #:..
+
+infixl 4 traverse as <..$>
 infixl 1 for as <#..>
+infixl 4 traverseWithIndex as <..:$>
+infixl 1 forWithIndex as <#:..>
 
 -- ..<
 -- >..
--- ..:$
--- #:..
 
 infixl 4 mapWithIndex as :<$>
 
