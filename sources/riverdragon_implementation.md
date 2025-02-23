@@ -441,6 +441,65 @@ These are equivalent streams: `empty <*> upstream`{.ps} and `filter (const false
 Another important fussy little detail is that source IDs cannot be declared up-front, only after subscription.
 This is maybe the main divergence from the idealized “[FRP]{t=} graph is just a data structure” view, which would have static source IDs up front.
 
+#### Case Studies
+
+##### Global reactive values like device pixel ratio
+
+Alba pointed me to this recipe on MDN for [watching changes to `devicePixelRatio`{.js}](https://developer.mozilla.org/en-US/docs/Web/API/Window/devicePixelRatio#monitoring_screen_resolution_or_zoom_level_changes), so I quickly implemented it in `Riverdragon.River.Beyond`{.ps}.
+
+```javascript
+export const _devicePixelRatio = {
+  now: () => window.devicePixelRatio,
+  subscribe: cb => () => {
+    let active = true;
+    let rolling = () => {};
+    const untilNext = cb => {
+      const mediaQueried = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      mediaQueried.addEventListener('change', cb);
+      rolling = () => mediaQueried.removeEventListener('change', cb);
+    };
+    const onChange = () => {
+      rolling();
+      if (!active) return;
+      cb(window.devicePixelRatio)();
+      untilNext(onChange);
+    }
+    untilNext(onChange);
+    return () => { active=false; rolling() };
+  },
+};
+```
+
+```purescript
+foreign import _devicePixelRatio ::
+  { now :: Allocar Number
+  , subscribe :: (Number -> Allocar Unit) -> Allocar (Allocar Unit)
+  }
+
+devicePixelRatio :: River Number
+devicePixelRatio = River.mayMemoize $ River.unsafeRiver $ makeLake \cb -> do
+  cb =<< _devicePixelRatio.now
+  _devicePixelRatio.subscribe cb
+```
+
+The reason it is a river is because it is a single global value that we are listening to: all subscribers see the same events. But the call to `River.mayMemoize`{.ps} is the real magic there, it
+
+- ensures that we only subscribe to one media query at a time^[possibly better for efficiency?],
+- allowing the events to take place as a single source within the FRP graph, so we can remove the transient events
+
+Without `River.mayMemoize`{.ps} there, this snippet would produce transient events showing nonsense like “1.5789473684210527 = 1.3333333333333333” (as the user zooms in from `1.33` to `1.57`):
+
+```purescript
+D.ol[] $ D.Appending $ dam ado
+  l <- devicePixelRatio
+  r <- devicePixelRatio
+  in D.li[] $ D.show l <> D.text " = " <> D.show r
+```
+
+<!-- (TODO: add a run button to run this directly here??) -->
+
+You can paste that expression at [Live FRP DOM Coding](live_frp.html).^[Yeah, thatʼs all the code you need to try it out! it gets templated into a full module with a header, imports, declarations, and so on]
+
 ### Benefits of `IsFlowing`{.ps}
 
 The main benefit of `IsFlowing`{.ps} is that multiple subscribers know they are seeing the same values at, well, similar points in time (not exactly the same, but synchronously close together).

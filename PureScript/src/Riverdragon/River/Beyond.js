@@ -9,7 +9,6 @@ export const _devicePixelRatio = {
       rolling = () => mediaQueried.removeEventListener('change', cb);
     };
     const onChange = () => {
-      console.log('Changed!');
       rolling();
       if (!active) return;
       cb(window.devicePixelRatio)();
