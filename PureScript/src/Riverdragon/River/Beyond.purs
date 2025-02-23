@@ -26,6 +26,7 @@ import Idiolect ((#..))
 import Partial.Unsafe (unsafePartial)
 import Riverdragon.Dragon.Breath (microtask)
 import Riverdragon.River (Allocar, Lake, River, Stream, allStreams, dam, fixPrjBurst, foldStream, mailboxRiver, makeLake, makeLake', mapAl, oneStream, singleShot, statefulStream, subscribeIsh, unsafeCopyFlowing, withInstantiated, (<?*>), (>>~))
+import Riverdragon.River as River
 import Riverdragon.River.Bed (breaker, eventListener, freshId, ordMap, prealloc, pushArray, requestAnimationFrame)
 import Web.DOM.Element as Element
 import Web.Event.Event (EventType(..))
@@ -311,24 +312,6 @@ fallingLeaves p upstream f =
         f r x (waitFor r.key)
     in joinLeave tracked
 
-fallingLeavesAff ::
-  forall flow1 flow2 k r x y m. Ord k =>
-  ({ key :: k | r } -> Either x y) ->
-  Stream flow1 { key :: k | r } ->
-  ({ key :: k | r } -> x -> River y -> Aff { value :: m, leave :: Stream flow2 Unit }) ->
-  Lake (Array m)
-fallingLeavesAff p upstream f =
-  withInstantiated (risingFalling (isLeft <<< p) upstream) \_ edges ->
-    let
-      p' r = case p r of
-        Left x -> Left (r /\ x)
-        Right y -> Right { key: r.key, value: y }
-      { left: rising, right: falling } = partitionMap p' edges
-      waitFor = mailboxRiver falling
-      tracked = allStreams rising \(r /\ x) -> do
-        compact $ affToLake $ f r x $ waitFor r.key
-    in joinLeave tracked
-
 
 documentEvent :: forall e.
   EventType ->
@@ -397,3 +380,13 @@ keyEvents cb =
         , stopPropagation: Event.stopPropagation baseEvent
         , stopImmediatePropagation: Event.stopImmediatePropagation baseEvent
         }
+
+foreign import _devicePixelRatio ::
+  { now :: Allocar Number
+  , subscribe :: (Number -> Allocar Unit) -> Allocar (Allocar Unit)
+  }
+
+devicePixelRatio :: River Number
+devicePixelRatio = River.mayMemoize $ River.unsafeRiver $ makeLake \cb -> do
+  cb =<< _devicePixelRatio.now
+  _devicePixelRatio.subscribe cb
