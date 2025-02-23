@@ -18,11 +18,11 @@ import PureScript.CST.Types as CST.T
 import Riverdragon.Dragon (Dragon, renderId)
 import Riverdragon.Dragon.Bones ((.$), (.$$), (.$$~), (:.), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (eggy, sourceCode, tabSwitcher)
+import Riverdragon.Dragon.Wings (hatching, sourceCode, tabSwitcher)
 import Riverdragon.River (Lake, createRiverStore, dam, makeLake)
 import Runtime (aSideChannel)
 import Runtime as Runtime
-import Runtime.Live (Status, fetchHighlight)
+import Runtime.Live (Status, compileInterface, fetchHighlight)
 import Runtime.Live as Runtime.Live
 import Type.Proxy (Proxy(..))
 import Web.DOM.ElementId (ElementId(..))
@@ -91,7 +91,7 @@ pipeline = Runtime.Live.pipeline
   { templateURL: "/assets/purs/Parser.Parserlude/source.purs"
   , parseUser: Right CST.Parser.parseExpr
   , templating: \template parserExpr ->
-      Runtime.Live.renameModuleTo "Parser.Temp" $
+      Runtime.Live.renameModuleTo "Parser.Main.Live.Temp" $
         Runtime.Live.overrideValue
           { nameSearch: CST.T.Ident "parser"
           , exprReplace: parserExpr
@@ -99,7 +99,7 @@ pipeline = Runtime.Live.pipeline
   }
 
 embed :: Lake String -> Dragon
-embed incomingRaw = eggy \shell -> do
+embed incomingRaw = hatching \shell -> do
   incoming <- shell.store do incomingRaw
   pipelined <- shell.track do Runtime.Live.ofPipeline (pipeline incoming)
   gotParser <- shell.store $ makeLake \cb -> mempty <$ _sideChannel.installChannel cb
@@ -165,25 +165,11 @@ embed incomingRaw = eggy \shell -> do
     ]
 
 widget :: Widget
-widget _ = pure $ eggy \shell -> do
-  let df = tripleQuoted """
+widget _ = pure $ compileInterface "Parser.Main.Live" embed $ tripleQuoted """
     -- This parses JSON-style strings separated by whitespace
     -- (the parser needs a name to assign to the `many` parser)
     manySepBy "strings" ws string
       -- And pretty prints their values separated by new lines
       <#> map D.text >>> D.lines
   """
-  { stream: valueSet, send: setValue } <- shell.track $ createRiverStore Nothing
-  { stream: compiling, send: compileNow } <- shell.track $ createRiverStore Nothing
-  lastValue <- shell.storeLast df valueSet
-  pure $ D.Fragment
-    [ sourceCode "PureScript" .$ D.textarea
-        [ D.onInputValue =:= setValue
-        , D.value =:= df
-        , D.style =:= "height: 40vh"
-        , D.asCodeInput
-        ]
-    , D.div.$ D.buttonW "" "Compile!" (compileNow =<< lastValue)
-    , embed compiling
-    ]
 

@@ -15,7 +15,7 @@ import Effect.Random (randomRange)
 import Riverdragon.Dragon.Bones ((=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Components.Envelope (envelopeComponent)
-import Riverdragon.Dragon.Wings (eggy)
+import Riverdragon.Dragon.Wings (hatching)
 import Riverdragon.River (Lake, River, createRiverStore, mapAl)
 import Riverdragon.River as River
 import Riverdragon.River.Beyond (delay)
@@ -26,8 +26,8 @@ import Riverdragon.Roar.Roarlette as YY
 import Riverdragon.Roar.Synth (installSynth, notesToNoises)
 import Riverdragon.Roar.Types (Roar, toRoars)
 import Riverdragon.Roar.Viz (oscilloscope, spectrogram)
-import Riverdragon.Roar.Yawn (YawnM, mtf, mtf_)
-import Riverdragon.Roar.Yawn as Y
+import Riverdragon.Roar.Score (ScoreM, mtf, mtf_)
+import Riverdragon.Roar.Score as Y
 import Web.Audio.Types (BiquadFilterType(..), OscillatorType(..))
 import Web.DOM.Element as Element
 import Web.DOM.Node as Node
@@ -42,7 +42,7 @@ type Env =
 pitchGain :: Int -> Number
 pitchGain semitones = linmap (Interval 48.0 84.0) (Interval 1.0 0.1) $ Int.toNumber semitones
 
-oneVoice :: Env -> Int -> River Unit -> YawnM
+oneVoice :: Env -> Int -> River Unit -> ScoreM
   { value :: Array
     { audio :: Array Roar
     , gain :: Knob
@@ -66,7 +66,7 @@ oneVoice { pinkEnv, sineEnv } semitones release = do
   { ctx: _ctx } <- ask
   pure { value: [{ audio: [ sineGain ], gain: gainKnob }], leave }
 
-harpsynthorgVoiceV1 :: forall env. env -> Int -> River Unit -> YawnM
+harpsynthorgVoiceV1 :: forall env. env -> Int -> River Unit -> ScoreM
   { value :: Array
     { audio :: Array Roar
     , gain :: Knob
@@ -88,7 +88,7 @@ harpsynthorgVoiceV1 _env semitones release = do
       }
     , release
     }
-  Y.putYawn { destroy: destroyRamp, ready: mempty }
+  Y.putScore { destroy: destroyRamp, ready: mempty }
   ramp0 <- pure baseRamp -- TODO: `scale~ 8. 8.`
   ramp1 <- YY.pow (8.0) ramp0
   ramp2 <- YY.pow (8.0 * 2.0) ramp0
@@ -146,7 +146,7 @@ harpsynthorgVoiceV1 _env semitones release = do
   pure { value: [{ audio: [ joined ], gain: toKnob ramp1 }], leave }
 
 widgetHarpsynthorg :: Widget
-widgetHarpsynthorg _ = pure $ eggy \shell -> do
+widgetHarpsynthorg _ = pure $ hatching \shell -> do
   { ui: pinkEnvUi, stream: pinkEnvStream } <- envelopeComponent shell
     { attack: 0.10, decay: 0.95, sustain: 0.0, release: 0.1 }
   { ui: sineEnvUi, stream: sineEnvStream } <- envelopeComponent shell

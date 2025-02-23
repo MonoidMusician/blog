@@ -16,6 +16,7 @@ import Data.Function (on)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
+import Data.Number as Number
 import Data.String as String
 import Data.Symbol (class IsSymbol)
 import Data.These (These(..))
@@ -33,6 +34,7 @@ type EffectArrow a b = a -> Effect b
 -- | it's an arrow! that does! stuff!
 infixr 1 type EffectArrow as -!>
 
+infixr 8 Number.pow as **
 
 morph :: forall f g b. Foldable f => Plus g => Applicative g => f b -> g b
 morph = oneOfMap pure

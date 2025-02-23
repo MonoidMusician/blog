@@ -10,7 +10,7 @@ import Riverdragon.Dragon.Breath (removeSelf)
 import Riverdragon.River as River
 import Riverdragon.River.Beyond (everyFrame)
 import Riverdragon.Roar.Types (class ToLake, class ToRoars, connecting, toLake, toRoars)
-import Riverdragon.Roar.Yawn (YawnM, yaaawn)
+import Riverdragon.Roar.Score (ScoreM, scoreElement)
 import Web.Audio.Node (AnalyserNode, createAnalyserNode, intoNode)
 import Web.Audio.Types (FFTSize(..))
 import Web.DOM.Document (createElement)
@@ -30,8 +30,8 @@ oscilloscope ::
   , height :: flowHeight
   } ->
   roar ->
-  YawnM HTMLCanvasElement
-oscilloscope config audio = yaaawn \{ ctx } -> do
+  ScoreM HTMLCanvasElement
+oscilloscope config audio = scoreElement \{ ctx } -> do
   rawElement <- createElement (ElementName "canvas") <<<
     HTMLDocument.toDocument =<< document =<< window
   element <- case Canvas.fromElement rawElement of
@@ -63,8 +63,8 @@ spectrogram ::
   , height :: flowHeight
   } ->
   roar ->
-  YawnM HTMLCanvasElement
-spectrogram config audio = yaaawn \{ ctx } -> do
+  ScoreM HTMLCanvasElement
+spectrogram config audio = scoreElement \{ ctx } -> do
   rawElement <- createElement (ElementName "canvas") <<<
     HTMLDocument.toDocument =<< document =<< window
   element <- case Canvas.fromElement rawElement of

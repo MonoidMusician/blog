@@ -43,7 +43,7 @@ import Record as Record
 import Riverdragon.Dragon (AttrProp, Dragon)
 import Riverdragon.Dragon.Bones (__textcursor, ($$), ($~~), (.$), (.$$~), (.$~~), (:.), (<!>), (<:>), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (eggy, sourceCode)
+import Riverdragon.Dragon.Wings (hatching, sourceCode)
 import Riverdragon.River (Lake, Stream, createRiverStore, oneStream)
 import Riverdragon.River.Beyond (affToLake, dedup)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
@@ -159,7 +159,7 @@ st :: Lake AttrProp
 st = D.style =:= "font-variant-numeric: lining-nums tabular-nums"
 
 component :: (String -> Effect Unit) -> Lake String -> Dragon
-component setGlobal resetting = eggy \shell -> do
+component setGlobal resetting = hatching \shell -> do
   { stream: genned, send: genNew } <- shell.track $ createRiverStore Nothing
   { stream: taState', send: taCb } <- shell.track $ createRiverStore Nothing
   let
@@ -366,7 +366,7 @@ fetchParser :: Aff String
 fetchParser = _.text =<< fetch "assets/json/show-parser-states.json" {}
 
 widgetShow :: Widget
-widgetShow _ = pure $ eggy \shell -> do
+widgetShow _ = pure $ hatching \shell -> do
   reShow <- shell.store (mkReShow <$> affToLake fetchParser)
   { send: setValue, stream: valueSet } <- shell.track $ createRiverStore Nothing
   { send: set, stream: get } <- shell.track $ createRiverStore Nothing

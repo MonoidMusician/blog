@@ -46,7 +46,8 @@ import Web.DOM.NodeType (NodeType(..))
 import Web.DOM.ParentNode (QuerySelector(..), querySelectorAll)
 import Web.HTML (window)
 import Web.HTML.HTMLDocument as HTMLDocument
-import Web.HTML.Window (cancelAnimationFrame, document, requestAnimationFrame)
+import Web.HTML.Window (cancelAnimationFrame, document, requestAnimationFrame, sessionStorage)
+import Web.Storage.Storage as Storage
 
 -- | An interface to a mutable value, stored in one location. It may not have
 -- | a value at first, or ever.
@@ -114,6 +115,25 @@ makeKeyedInterface = allocLazy do
         log $ "Make interface " <> show k
         io <- storeInterface
         io <$ liftST (STO.poke k io interfaces)
+
+-- | TODO: make it truly tab-global? interconnect between different instances
+sessionStorageInterface :: Allocar (String -> Interface String)
+sessionStorageInterface = allocLazy do
+  storage <- window >>= sessionStorage
+  pure \key -> do
+    stream <- createRiverStore =<< Storage.getItem key storage
+    -- destroyed by upstream.destroy
+    { byKey } <- mailbox (map { key: _, value: unit } stream.stream)
+    pure $ stillInterface
+      { send: (Storage.setItem key <@> storage) <> stream.send
+      -- Here we don't have a notion of actors, so receive = loopback,
+      -- but downstream interfaces are able to adapt it to their needs
+      , receive: stream.stream
+      , loopback: stream.stream
+      , mailbox: byKey
+      , current: stream.current
+      , destroy: stream.destroy
+      }
 
 type KeyedInterface = String -> Interface Json
 -- We adjoin integers for tracking sources so we do not send to the source

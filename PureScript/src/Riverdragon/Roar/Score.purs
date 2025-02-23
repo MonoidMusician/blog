@@ -1,4 +1,4 @@
-module Riverdragon.Roar.Yawn where
+module Riverdragon.Roar.Score where
 
 import Prelude
 
@@ -45,36 +45,36 @@ import Web.Audio.Types (AudioContext, BiquadFilterType, Float, Frequency, Oscill
 import Web.Audio.Types as Audio
 import Widget (Interface, storeInterface)
 
-type YawnM = MutStateT YawnSt (ReaderT YawnRW Effect)
-type YawnSt = Record (YawnS + ())
-type YawnRW = Record (YawnR + ( written :: Ref (Record (YawnW + ())) ))
+type ScoreM = MutStateT ScoreSt (ReaderT ScoreRW Effect)
+type ScoreSt = Record (ScoreS + ())
+type ScoreRW = Record (ScoreR + ( written :: Ref (Record (ScoreW + ())) ))
 
 -- Reader state
-type YawnR r =
+type ScoreR r =
   ( ctx :: AudioContext
-  , iface :: YawnLive
+  , iface :: ScoreLive
   | r
   )
 -- Writer state
-type YawnW r =
+type ScoreW r =
   ( destroy :: Dual (Effect Unit)
   , ready :: ParAff Unit
   | r
   )
 -- Mutable state
 -- TODO: caching of knobs?
-type YawnS r =
+type ScoreS r =
   ( id :: Int
   , worklets :: Map String (Aff Unit) -- unused at the moment
   | r
   )
 -- Live variables that notify when they change
-type YawnLive =
+type ScoreLive =
   { temperament :: Interface (Array Number)
   , pitch :: Interface Frequency
   }
 
-biiigYawn ::
+perform ::
   forall options unused ffi flow.
     Row.Union options unused
       ( latencyHint :: LatencyHint
@@ -82,13 +82,13 @@ biiigYawn ::
       ) =>
     FFI (Record options) ffi =>
   Record options ->
-  (AudioContext -> YawnM (Stream flow (Array RoarO))) ->
+  (AudioContext -> ScoreM (Stream flow (Array RoarO))) ->
   Effect
     { ctx :: AudioContext
     , destroy :: Effect Unit
     , waitUntilReady :: Aff Unit
     }
-biiigYawn options creator = do
+perform options creator = do
   ctx <- createAudioContext options
   temperament <- storeInterface
   temperament.send temperaments.equal
@@ -113,18 +113,18 @@ biiigYawn options creator = do
     }
 
 
-type YawnFn result =
+type ScoreFn result =
   { ctx :: AudioContext
-  , state :: YawnSt
-  , ref :: Ref YawnSt
+  , state :: ScoreSt
+  , ref :: Ref ScoreSt
   } -> Effect
   { destroy :: Effect Unit
   , ready :: Aff Unit
   , result :: result
   }
 
-yaaawn :: forall result. YawnFn result -> YawnM result
-yaaawn f = do
+scoreElement :: forall result. ScoreFn result -> ScoreM result
+scoreElement f = do
   { ctx, written } <- ask
   state <- get
   ref <- MutStateT (ReaderT pure)
@@ -141,10 +141,10 @@ yaaawn f = do
     }
   pure r.result
 
-yawnOnDemand :: forall flow1 flow2 x. Stream flow1 (YawnM x) -> YawnM (Stream flow2 x)
-yawnOnDemand upstream = do
+scoreStream :: forall flow1 flow2 x. Stream flow1 (ScoreM x) -> ScoreM (Stream flow2 x)
+scoreStream upstream = do
   rollingDestroy <- liftEffect Bed.rolling
-  { run }  <- yawnytime
+  { run } <- scoreScope
   { destroy: destroyStream, stream } <- liftEffect $ River.instantiate $
     upstream >>~ \act -> compact $ affToLake do
       { destroy: newDestroy, waitForReady, result } <- liftEffect $ run act
@@ -157,26 +157,26 @@ yawnOnDemand upstream = do
     }
   pure stream
 
-type RunYawn =
-  forall x. YawnM x -> Effect
+type RunScore =
+  forall x. ScoreM x -> Effect
     { result :: x
     , destroy :: Effect Unit
     , waitForReady :: Aff Unit
     }
 
--- | `yawnytime` creates a localized runner for `Yawn`. This is basically
+-- | `scoreScope` creates a localized runner for `Score`. This is basically
 -- | bracketed so you can destroy all of them at once, or individually.
 -- | If you need to wait for asynchronous availability (e.g. of worklettes),
 -- | you may use `waitForReady`, but this is not necessary.
-yawnytime :: YawnM { run :: RunYawn, destroyScoped :: Effect Unit }
-yawnytime = MutStateT $ ReaderT \state -> ReaderT \upper@{ ctx } -> do
+scoreScope :: ScoreM { run :: RunScore, destroyScoped :: Effect Unit }
+scoreScope = MutStateT $ ReaderT \state -> ReaderT \upper@{ ctx } -> do
   destroyScoped <- Bed.accumulator
   upper.written # Ref.modify_ \s -> s <>
     { destroy: Dual $ join destroyScoped.get
     , ready: mempty
     }
   let
-    run :: RunYawn
+    run :: RunScore
     run (MutStateT (ReaderT creator)) = do
       writing <- Ref.new mempty
       r <- runReaderT (creator state) { ctx, written: writing, iface: upper.iface }
@@ -185,13 +185,13 @@ yawnytime = MutStateT $ ReaderT \state -> ReaderT \upper@{ ctx } -> do
       liftEffect $ destroyScoped.put destroy
       waitForReady <- runningAff $ unit <$ sequential written.ready
       pure { result: r, destroy, waitForReady }
-  pure ({ run, destroyScoped: join destroyScoped.get } :: { run :: RunYawn | _ })
+  pure ({ run, destroyScoped: join destroyScoped.get } :: { run :: RunScore | _ })
 
-putYawn ::
+putScore ::
   { destroy :: Effect Unit
   , ready :: Aff Unit
-  } -> YawnM Unit
-putYawn eep = do
+  } -> ScoreM Unit
+putScore eep = do
   { written } <- ask
   liftEffect $ written # Ref.modify_ \s -> s <>
     { destroy: Dual eep.destroy
@@ -199,19 +199,19 @@ putYawn eep = do
     }
 
 
-roars :: Array Roar -> YawnM Roar
+roars :: Array Roar -> ScoreM Roar
 roars = gain 1.0
 
-roaring :: forall flow. Stream flow Roar -> YawnM Roar
+roaring :: forall flow. Stream flow Roar -> ScoreM Roar
 roaring = gain 1.0
 
-roarings :: forall flow. Stream flow (Array Roar) -> YawnM Roar
+roarings :: forall flow. Stream flow (Array Roar) -> ScoreM Roar
 roarings = gain 1.0
 
 
 
-gain :: forall knob roar. ToKnob knob => ToRoars roar => knob -> roar -> YawnM Roar
-gain knob input = yaaawn \{ ctx } -> liftEffect do
+gain :: forall knob roar. ToKnob knob => ToRoars roar => knob -> roar -> ScoreM Roar
+gain knob input = scoreElement \{ ctx } -> liftEffect do
   let { defaults, apply: applyKnobs } = renderKnobs { gain: knob } ctx
   node <- AudioNode.createGainNode ctx defaults
   destroy1 <- applyKnobs node
@@ -227,8 +227,8 @@ osc ::
   { type :: flowOscillatorType
   , frequency :: frequencyKnob
   , detune :: detuneKnob
-  } -> YawnM Roar
-osc config@{ frequency, detune } = yaaawn \{ ctx } -> liftEffect do
+  } -> ScoreM Roar
+osc config@{ frequency, detune } = scoreElement \{ ctx } -> liftEffect do
   let { defaults, apply: applyKnobs } = renderKnobs { frequency, detune } ctx
   node <- AudioNode.createOscillatorNode ctx defaults
   destroy1 <- applyKnobs node
@@ -245,8 +245,8 @@ offset ::
   forall offsetKnob.
     ToKnob offsetKnob =>
   { offset :: offsetKnob
-  } -> YawnM Roar
-offset config = yaaawn \{ ctx } -> liftEffect do
+  } -> ScoreM Roar
+offset config = scoreElement \{ ctx } -> liftEffect do
   let { defaults, apply: applyKnobs } = renderKnobs config ctx
   node <- AudioNode.createConstantSourceNode ctx defaults
   destroy1 <- applyKnobs node
@@ -270,8 +270,8 @@ filter ::
   , frequency :: knobFrequency
   , gain :: knobGain
   } ->
-  roar -> YawnM Roar
-filter config input = yaaawn \{ ctx } -> liftEffect do
+  roar -> ScoreM Roar
+filter config input = scoreElement \{ ctx } -> liftEffect do
   let
     { defaults, apply: applyKnobs } = renderKnobs
       { "Q": config."Q"
@@ -292,7 +292,7 @@ filter config input = yaaawn \{ ctx } -> liftEffect do
 -- | Convert a MIDI note number to a pitch frequency, based upon the currently
 -- | set temperament (e.g. equal temperament or Kirnberger III) and pitch
 -- | reference (e.g. 440.0 Hz)
-mtf :: Int -> YawnM Frequency
+mtf :: Int -> ScoreM Frequency
 mtf note = do
   { temperament, pitch: reference } <- ask >>= \{ iface } -> liftEffect do
     sequenceRecord { temperament: iface.temperament.current, pitch: iface.pitch.current }
@@ -304,20 +304,20 @@ mtf note = do
     freq = fromMaybe 440.0 reference * Number.pow 2.0 octaves
   pure freq
 
-mtf_ :: forall flow flowInt. ToLake flowInt Int => flowInt -> YawnM (Stream flow Frequency)
+mtf_ :: forall flow flowInt. ToLake flowInt Int => flowInt -> ScoreM (Stream flow Frequency)
 mtf_ notes = do
   { temperament, pitch } <- asks _.iface
-  yawnOnDemand ado
+  scoreStream ado
     alwaysBurst (unsafeRiver temperament.loopback)
     alwaysBurst (unsafeRiver pitch.loopback)
     note <- toLake notes
     in mtf note
 
-freqs :: forall flow knob. ToKnob knob => Stream flow (Array knob) -> YawnM Roar
-freqs = roarings <=< yawnOnDemand <<< map (traverse \frequency -> osc { type: Sine, frequency, detune: 0 })
+freqs :: forall flow knob. ToKnob knob => Stream flow (Array knob) -> ScoreM Roar
+freqs = roarings <=< scoreStream <<< map (traverse \frequency -> osc { type: Sine, frequency, detune: 0 })
 
-waveshape :: forall roar. ToRoars roar => Array Float -> roar -> YawnM Roar
-waveshape curve input = yaaawn \{ ctx } -> liftEffect do
+waveshape :: forall roar. ToRoars roar => Array Float -> roar -> ScoreM Roar
+waveshape curve input = scoreElement \{ ctx } -> liftEffect do
   node <- AudioNode.createWaveShaperNode ctx { curve }
   destroy <- connecting (toRoars input) (intoNode node 0)
   pure { result: outOfNode node 0, destroy: destroy, ready: mempty }
@@ -329,7 +329,7 @@ wavesample nsamples shaping =
     # Array.mapWithIndex \i _ -> shaping $
         (Int.toNumber i / maxsample) * 2.0 - 1.0
 
-binarize :: forall roar. ToRoars roar => roar -> YawnM Roar
+binarize :: forall roar. ToRoars roar => roar -> ScoreM Roar
 binarize = waveshape $ wavesample 1024 \v -> case compare v 0.0 of
   LT -> -1.0
   EQ -> 0.0
@@ -343,7 +343,7 @@ pwm ::
   { width :: width
   , frequency :: frequency
   , detune :: detune
-  } -> YawnM Roar
+  } -> ScoreM Roar
 pwm { width, frequency, detune } = do
   timing <- osc { type: Sawtooth, frequency, detune }
   undefault <- offset { offset: -0.5 }

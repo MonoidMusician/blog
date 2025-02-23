@@ -58,7 +58,7 @@ import Partial.Unsafe (unsafePartial)
 import Random.LCG as LCG
 import Riverdragon.Dragon.Bones (AttrProp, Dragon, smarties, ($$), ($<), ($~~), (.$), (.$$), (.$$~), (.$~~), (:!), (:.), (:~), (<!>), (<:>), (=!=), (=!?=), (=:=), (=?=), (>@), (>~~), (@<))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (eggy, inputValidated)
+import Riverdragon.Dragon.Wings (hatching, inputValidated)
 import Riverdragon.River (Lake, createRiver, createRiverStore, foldStream, sampleOnRightOp, selfGating, subscribe, (<**>))
 import Riverdragon.River.Beyond (animationLoop, dedup, dedupOn, delay, delayMicro, interval)
 import Stylish.Types (Classy(..))
@@ -116,7 +116,7 @@ renderParseTable :: forall r.
   SGrammar ->
   SStates ->
   Dragon
-renderParseTable info (MkGrammar grammar) (States states) = eggy \_ -> do
+renderParseTable info (MkGrammar grammar) (States states) = hatching \_ -> do
   { stream: stateHighlighted, send: push } <- createRiverStore $ Just Nothing
   let
     terminals /\ nonTerminals = getHeader (States states)
@@ -558,7 +558,7 @@ grammarComponent ::
   (SAugmented -> Effect Unit) ->
   Dragon
 grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
-  (pure reallyInitialGrammar <|> forceGrammar) >@ \initialGrammar -> eggy \shell -> do
+  (pure reallyInitialGrammar <|> forceGrammar) >@ \initialGrammar -> hatching \shell -> do
     let
       initialTop =
         case Array.head (unwrap initialGrammar.augmented) of
@@ -656,7 +656,7 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
               ]
           , D.tbody[] $
               (oneOfMap pure initialRules <|> actions.addRule.stream) >~~
-              \(i /\ txt) -> eggy \_ -> do
+              \(i /\ txt) -> hatching \_ -> do
                 this <- createRiver
                 pure $ D.Replacing $
                   ( pure $ D.tr
@@ -796,7 +796,7 @@ explorerComponent ::
   SProducible ->
   (Array CodePoint -> Effect Unit) ->
   Dragon
-explorerComponent grammar sendUp = eggy \shell -> do
+explorerComponent grammar sendUp = hatching \shell -> do
   let { produced: producedRules, grammar: { augmented: MkGrammar rules, start: { pName: entry } } } = grammar
   actions <- sequenceRecord
     { focus: createRiver
@@ -877,7 +877,7 @@ randomComponent ::
   SProducible ->
   (Array CodePoint -> Effect Unit) ->
   Dragon
-randomComponent grammar sendUp = eggy \_ -> do
+randomComponent grammar sendUp = hatching \_ -> do
   let { produced: producedRules, grammar: { start: { pName: entry } } } = grammar
   let
     initialSize = 50
@@ -1174,7 +1174,7 @@ inputComponent :: forall r.
   | r
   } ->
   Dragon
-inputComponent initialInput inputStream sendInput current = eggy \shell -> do
+inputComponent initialInput inputStream sendInput current = hatching \shell -> do
   { send: pushInput, stream: localInput } <- shell.track $ createRiverStore Nothing
   currentValue <- shell.store (pure initialInput <|> inputStream <|> localInput)
   getCurrentValue <- shell.storeLast initialInput currentValue
@@ -1222,7 +1222,7 @@ inputComponent initialInput inputStream sendInput current = eggy \shell -> do
                 x <#> renderNTHere
           ]
       , D.div.$ D.span :."terminal".$ inputC' "Source text" "" currentValue' (pushInput <> sendInput)
-      , currentParseSteps >@ \todaysSteps -> eggy \_ -> do
+      , currentParseSteps >@ \todaysSteps -> hatching \_ -> do
           actions <- sequenceRecord
             { toggleL: createRiver -- Unit
             , toggleR: createRiver -- Unit

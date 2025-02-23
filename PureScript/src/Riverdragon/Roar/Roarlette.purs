@@ -11,13 +11,13 @@ import Riverdragon.River.Bed (cleanup, postHocDestructors, runningAff)
 import Riverdragon.River.Beyond (affToLake)
 import Riverdragon.Roar.Knob (class ToKnob, renderKnobs)
 import Riverdragon.Roar.Types (class ToRoars, Roar, connecting, toRoars)
-import Riverdragon.Roar.Yawn (YawnM)
-import Riverdragon.Roar.Yawn as Y
+import Riverdragon.Roar.Score (ScoreM)
+import Riverdragon.Roar.Score as Y
 import Web.Audio.Node (intoNode, outOfNode)
 import Web.Audio.Types (ARate)
 import Web.Audio.Worklet (AudioWorkletNode, mkAudioWorkletteNode)
 
-pinkNoise :: YawnM Roar
+pinkNoise :: ScoreM Roar
 pinkNoise = do
   { ctx } <- ask
   destr <- liftEffect postHocDestructors
@@ -60,13 +60,13 @@ pinkNoise = do
         }
     liftEffect $ destr.destructor $ send unit <> destroy
     pure $ outOfNode node 0
-  Y.putYawn { destroy: destr.finalize, ready: void creating }
+  Y.putScore { destroy: destr.finalize, ready: void creating }
   output <- Y.gain 1 creating
   pure output
 
 -- runningAffUntil
 
-pow :: forall knob roar. ToKnob knob => ToRoars roar => knob -> roar -> YawnM Roar
+pow :: forall knob roar. ToKnob knob => ToRoars roar => knob -> roar -> ScoreM Roar
 pow knob input = do
   { ctx } <- ask
   destr <- liftEffect postHocDestructors
@@ -117,7 +117,7 @@ pow knob input = do
     let destroy = destroy2 <> destroy1 <> destroy0
     liftEffect $ destr.destructor $ destroy2 <> destroy1 <> send unit <> destroy
     pure $ outOfNode node 0
-  Y.putYawn { destroy: destr.finalize, ready: void creating }
+  Y.putScore { destroy: destr.finalize, ready: void creating }
   output <- Y.gain 1 (affToLake creating <|> whenDestroyed)
   pure output
 

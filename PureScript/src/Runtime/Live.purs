@@ -26,7 +26,6 @@ import Dodo as Dodo
 import Effect (Effect)
 import Effect.Aff (Aff, error, launchAff_, message, runAff, throwError)
 import Effect.Aff as Aff
-import Effect.Console (log)
 import Fetch (Method(..), fetch)
 import Foreign (readArray, readString)
 import Foreign.Index (readProp)
@@ -44,11 +43,11 @@ import PureScript.CST.TokenStream as CST.TokenStream
 import PureScript.CST.Types as CST.T
 import PureScript.Highlight as PureScript.Highlight
 import Riverdragon.Dragon (Dragon)
-import Riverdragon.Dragon.Bones (($$), (=:=))
+import Riverdragon.Dragon.Bones (($$), (.$), (=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Breath (microtask)
-import Riverdragon.Dragon.Wings (sourceCode)
-import Riverdragon.River (Lake, Stream, River, dam, makeLake, subscribe)
+import Riverdragon.Dragon.Wings (hatching, sourceCode)
+import Riverdragon.River (Lake, River, Stream, dam, makeLake, subscribe)
 import Riverdragon.River as River
 import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (affToLake, counter)
@@ -57,6 +56,7 @@ import Runtime as Runtime
 import Tidy.Codegen as TC
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
+import Widget (sessionStorageInterface)
 
 fake :: CST.T.SourceRange
 fake =
@@ -174,6 +174,24 @@ fetchTemplate :: String -> Aff
 fetchTemplate templateURL =
   cacheAff (specialCache (Proxy :: Proxy (CST.T.Module _)) "templateCache") [templateURL] do
     runRecoveredParser (Left identity) <$> fetchText templateURL
+
+compileInterface :: forall flow. String -> (Stream flow String -> Dragon) -> String -> Dragon
+compileInterface sessionStorageName embed df = hatching \shell -> do
+  editorValue@{ send: setValue } <- sessionStorageInterface <@> sessionStorageName
+  let valueSet = fromMaybe df <$> River.alwaysBurst editorValue.loopback
+  defaultValue <- fromMaybe df <<< Array.last <$> River.burstOf valueSet
+  lastValue <- shell.storeLast defaultValue valueSet
+  { stream: compiling, send: compileNow } <- shell.track $ River.createRiverStore Nothing
+  pure $ D.Fragment
+    [ sourceCode "PureScript" .$ D.textarea
+        [ D.onInputValue =:= setValue
+        , D.value =:= defaultValue
+        , D.style =:= "height: 40vh"
+        , D.asCodeInput
+        ]
+    , D.div.$ D.buttonW "" "Compile!" (compileNow =<< lastValue)
+    , embed compiling
+    ]
 
 -- | Split off useful rivers from the main status stream.
 ofPipeline :: Lake Status -> Effect

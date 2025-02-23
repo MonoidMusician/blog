@@ -23,7 +23,7 @@ import Parser.Languages.CSS (mkCSSParser)
 import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones (($~~), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (eggy, inputValidated)
+import Riverdragon.Dragon.Wings (hatching, inputValidated)
 import Riverdragon.River (Lake, createRiver, foldStream)
 import Riverdragon.River.Beyond (affToLake)
 import Widget (Widget, adaptInterface)
@@ -68,7 +68,7 @@ fetchParser :: Aff String
 fetchParser = _.text =<< fetch "assets/json/css-parser-states.json" {}
 
 component :: Lake (Array String) -> Dragon
-component resetting = eggy \shell -> do
+component resetting = hatching \shell -> do
   { stream: pushedRaw, send: pushUpdate } <- shell.track createRiver
   getParser <- shell.store $ mkCSSParser <$> affToLake fetchParser
   currentRaw <- shell.store $

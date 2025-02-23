@@ -39,8 +39,8 @@ type Shell =
   , destructor :: Allocar Unit -> Allocar Unit
   }
 
-eggy :: (Shell -> Allocar Dragon) -> Dragon
-eggy cont = Egg do
+hatching :: (Shell -> Allocar Dragon) -> Dragon
+hatching cont = Egg do
   destructors <- accumulator
   let
     track :: forall r.
@@ -126,7 +126,7 @@ sourceCode lang attrs content =
 
 
 tabSwitcher :: Maybe String -> Array (String /\ Dragon) -> Dragon
-tabSwitcher initial tabs = eggy \shell -> do
+tabSwitcher initial tabs = hatching \shell -> do
   destroyLast <- rolling
   { stream: mounted, send: sendMounted } <- shell.track $ createRiverStore Nothing
   { stream: selected, send: select } <- shell.track $ createRiverStore initial

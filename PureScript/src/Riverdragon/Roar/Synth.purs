@@ -22,10 +22,9 @@ import Riverdragon.River.Bed (postHocDestructors)
 import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (KeyPhase(..), fallingLeaves, keyEvents)
 import Riverdragon.Roar.Types (Roar)
-import Riverdragon.Roar.Yawn (YawnM, biiigYawn, yawnytime)
+import Riverdragon.Roar.Score (ScoreM, perform, scoreScope)
 import Unsafe.Coerce (unsafeCoerce)
 import Web.Audio.Context (LatencyHint(..))
-import Web.Audio.Context as Context
 import Web.Audio.MIDI as MIDI
 
 notesToNoises ::
@@ -37,11 +36,11 @@ notesToNoises ::
   ( Record envValues ->
     key ->
     Stream flow2 Unit ->
-    YawnM { value :: Array roar, leave :: Stream flow3 Unit }
+    ScoreM { value :: Array roar, leave :: Stream flow3 Unit }
   ) ->
-  YawnM (Lake (Array roar))
+  ScoreM (Lake (Array roar))
 notesToNoises envStreams noteStream oneVoice = do
-  { run: startAudio } <- yawnytime
+  { run: startAudio } <- scoreScope
   let
     -- Passively listen the the environment streams and take their most recent
     -- values
@@ -114,7 +113,7 @@ keymap =
   ]
 
 installSynth ::
-  (River { key :: Int, pressed :: Boolean } -> YawnM (Lake (Array Roar))) ->
+  (River { key :: Int, pressed :: Boolean } -> ScoreM (Lake (Array Roar))) ->
   Effect
     { destroy :: Effect Unit
     , playPause :: Dragon
@@ -132,7 +131,7 @@ installSynth synthVoices = do
   let
     startSynth = do
       destroyLastSynth mempty
-      { destroy: stopSynth } <- biiigYawn { latencyHint: Interactive, sampleRate: 48000 } \_ctx -> do
+      { destroy: stopSynth } <- perform { latencyHint: Interactive, sampleRate: 48000 } \_ctx -> do
         synthVoices noteStream
       destroyLastSynth stopSynth
 

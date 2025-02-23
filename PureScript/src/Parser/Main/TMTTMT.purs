@@ -28,7 +28,7 @@ import Parser.Languages.TMTTMT.Types (Declaration(..))
 import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones ((.$), (:.), (<:>), (=:=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (eggy, sourceCode)
+import Riverdragon.Dragon.Wings (hatching, sourceCode)
 import Riverdragon.River (Lake, createRiver, createRiverStore, foldStream)
 import Riverdragon.River.Beyond (affToLake)
 import Widget (Widget, adaptInterface)
@@ -193,7 +193,7 @@ fetchTypeParser :: Aff String
 fetchTypeParser = _.text =<< fetch "assets/json/tmttmt-types-parser-states.json" {}
 
 component :: (String -> Effect Unit) -> Lake String -> Dragon
-component setGlobal resetting = eggy \shell -> do
+component setGlobal resetting = hatching \shell -> do
   { stream: pushedRaw, send: pushUpdate } <- shell.track createRiver
   getParser <- shell.store $ mkTMTTMTParser <$> affToLake fetchParser
   currentRaw <- shell.store $
@@ -214,7 +214,7 @@ component setGlobal resetting = eggy \shell -> do
     ]
 
 widgetTypeSplit :: Widget
-widgetTypeSplit _ = pure $ eggy \shell -> do
+widgetTypeSplit _ = pure $ hatching \shell -> do
   { stream: pushedRaw, send: pushUpdate } <- shell.track $ createRiverStore $ Just dfTy
   { stream: pushedPat, send: pushPat } <- shell.track $ createRiverStore $ Just dfPat
   getParser <- shell.store $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
@@ -252,7 +252,7 @@ widgetTypeSplit _ = pure $ eggy \shell -> do
       testPatternsResult $ testPatterns pats ty
 
 widgetSubType :: Widget
-widgetSubType _ = pure $ eggy \shell -> do
+widgetSubType _ = pure $ hatching \shell -> do
   { stream: pushedRaw, send: pushUpdate } <- shell.track $ createRiverStore $ Just dfTy
   { stream: pushedPat, send: pushPat } <- shell.track $ createRiverStore $ Just dfPat
   getParser <- shell.store $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser

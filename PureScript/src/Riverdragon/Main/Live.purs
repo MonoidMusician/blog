@@ -11,13 +11,13 @@ import Effect (Effect)
 import Idiolect (tripleQuoted)
 import PureScript.CST.Types as CST.T
 import Riverdragon.Dragon (Dragon, renderEl)
-import Riverdragon.Dragon.Bones ((.$), (.$$), (=:=), (>@))
+import Riverdragon.Dragon.Bones ((.$$), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (eggy, sourceCode, tabSwitcher)
-import Riverdragon.River (Lake, createRiverStore, dam, makeLake)
+import Riverdragon.Dragon.Wings (hatching, sourceCode, tabSwitcher)
+import Riverdragon.River (Lake, dam, makeLake)
 import Runtime (aSideChannel)
 import Runtime as Runtime
-import Runtime.Live (ImportsExprDecls(..), Status, fetchHighlight)
+import Runtime.Live (ImportsExprDecls(..), Status, compileInterface, fetchHighlight)
 import Runtime.Live as Runtime.Live
 import Type.Proxy (Proxy(..))
 import Web.DOM (Element)
@@ -45,7 +45,7 @@ pipeline = Runtime.Live.pipeline
   { templateURL: "/assets/purs/Riverdragon.Dragon.Nest/source.purs"
   , parseUser: Right Runtime.Live.importsExprDecls
   , templating: \template (ImportsExprDecls imports parserExpr decls) ->
-      Runtime.Live.renameModuleTo "Riverdragon.Temp" $
+      Runtime.Live.renameModuleTo "Riverdragon.Main.Live.Temp" $
       Runtime.Live.overrideValue
         { nameSearch: CST.T.Ident "dragon"
         , exprReplace: parserExpr
@@ -55,7 +55,7 @@ pipeline = Runtime.Live.pipeline
   }
 
 embed :: Lake String -> Dragon
-embed incomingRaw = eggy \shell -> do
+embed incomingRaw = hatching \shell -> do
   incoming <- shell.store do incomingRaw
   pipelined <- shell.track do Runtime.Live.ofPipeline (pipeline incoming)
   gotRenderer <- shell.store $ makeLake \cb -> mempty <$ _sideChannel.installChannel cb
@@ -101,13 +101,12 @@ embed incomingRaw = eggy \shell -> do
     ]
 
 widget :: Widget
-widget _ = pure $ eggy \shell -> do
-  let df = tripleQuoted """
+widget _ = pure $ compileInterface "Riverdragon.Main.Live" embed $ tripleQuoted """
     -- Center the output
     D.div :."centered".$
       -- A context where we can run some effects
       -- (really: lifecycle management)
-      eggy \shell -> do
+      hatching \shell -> do
         -- Create a stream that we will destroy when unloaded
         -- (not really necessary here, but good hygiene)
         { stream: clicked, send: onClick } <- shell.track $ createRiver
@@ -124,17 +123,3 @@ widget _ = pure $ eggy \shell -> do
                   (if n > 2 then "x" else "ce") <> "*"
           ]
   """
-  { stream: valueSet, send: setValue } <- shell.track $ createRiverStore Nothing
-  { stream: compiling, send: compileNow } <- shell.track $ createRiverStore Nothing
-  lastValue <- shell.storeLast df valueSet
-  pure $ D.Fragment
-    [ sourceCode "PureScript" .$ D.textarea
-        [ D.onInputValue =:= setValue
-        , D.value =:= df
-        , D.style =:= "height: 40vh"
-        , D.asCodeInput
-        ]
-    , D.div.$ D.buttonW "" "Compile!" (compileNow =<< lastValue)
-    , embed compiling
-    ]
-

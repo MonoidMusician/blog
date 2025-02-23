@@ -24,7 +24,7 @@ import Parser.Languages.HFS as HFS
 import Riverdragon.Dragon (Dragon)
 import Riverdragon.Dragon.Bones (($$), ($<), ($<>), ($~~), (.$), (.$$), (.$~~), (<:>), (<>$), (=:=), (>$), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (eggy, sourceCode)
+import Riverdragon.Dragon.Wings (hatching, sourceCode)
 import Riverdragon.River (createRiver)
 import Riverdragon.River.Beyond (debounce, dedup)
 import Web.DOM (Element)
@@ -106,7 +106,7 @@ half :: Dragon -> Dragon
 half = D.span [ D.style =:= "opacity:0.6" ]
 
 widget :: Widget
-widget _ = pure $ eggy \shell -> do
+widget _ = pure $ hatching \shell -> do
   { stream: valueSet, send: setValue } <- shell.track createRiver
   done <- shell.store $ pure (false /\ Right emptyEnv) <|>
     map HFS.parseAndRun' <$> debounce (100.0 # Milliseconds) (dedup valueSet)

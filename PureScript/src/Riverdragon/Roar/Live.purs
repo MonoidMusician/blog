@@ -10,23 +10,21 @@ import Data.Maybe (Maybe(..), maybe)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Class (liftEffect)
-import Effect.Class.Console as Console
-import Effect.Console (log)
 import Idiolect (tripleQuoted)
 import PureScript.CST.Types as CST.T
 import Riverdragon.Dragon (Dragon, renderEl)
-import Riverdragon.Dragon.Bones ((.$), (.$$), (=:=), (>@))
+import Riverdragon.Dragon.Bones ((.$$), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (Shell, eggy, sourceCode, tabSwitcher)
+import Riverdragon.Dragon.Wings (Shell, hatching, sourceCode, tabSwitcher)
 import Riverdragon.River (Lake, River, createRiverStore, dam, makeLake)
 import Riverdragon.River as River
 import Riverdragon.Roar.Synth (installSynth, notesToNoises)
 import Riverdragon.Roar.Types (Roar, toRoars)
 import Riverdragon.Roar.Viz (oscilloscope, spectrogram)
-import Riverdragon.Roar.Yawn (YawnM)
+import Riverdragon.Roar.Score (ScoreM)
 import Runtime (aSideChannel)
 import Runtime as Runtime
-import Runtime.Live (ImportsExprDecls(..), Status, fetchHighlight)
+import Runtime.Live (ImportsExprDecls(..), Status, compileInterface, fetchHighlight)
 import Runtime.Live as Runtime.Live
 import Type.Proxy (Proxy(..))
 import Web.DOM (Element)
@@ -38,13 +36,13 @@ import Widget (Widget)
 type DragonVoice =
   Shell -> Effect
   { dragon :: Dragon
-  , voice :: (Int -> River Unit -> YawnM { value :: Array (Lake (Array Roar)), leave :: Lake Unit })
+  , voice :: (Int -> River Unit -> ScoreM { value :: Array (Lake (Array Roar)), leave :: Lake Unit })
   }
 
 mainForRoar :: DragonVoice -> Effect Unit
 mainForRoar mkDragonVoice = do
   _sideChannel.messageInABottle
-    { renderToEl: renderEl <@> eggy \shell -> do
+    { renderToEl: renderEl <@> hatching \shell -> do
         { dragon, voice } <- mkDragonVoice shell
         { send: sendScopeParent, stream: scopeParent } <- shell.track $ createRiverStore Nothing
         synth <- shell.track $ installSynth \noteStream -> do
@@ -91,7 +89,7 @@ pipeline = Runtime.Live.pipeline
   { templateURL: "/assets/purs/Riverdragon.Roar.Sky/source.purs"
   , parseUser: Right Runtime.Live.importsExprDecls
   , templating: \template (ImportsExprDecls imports parserExpr decls) ->
-      Runtime.Live.renameModuleTo "Riverdragon.Temp" $
+      Runtime.Live.renameModuleTo "Riverdragon.Roar.Live.Temp" $
       Runtime.Live.overrideValue
         { nameSearch: CST.T.Ident "dragonVoice"
         , exprReplace: parserExpr
@@ -102,7 +100,7 @@ pipeline = Runtime.Live.pipeline
   }
 
 embed :: Lake String -> Dragon
-embed incomingRaw = eggy \shell -> do
+embed incomingRaw = hatching \shell -> do
   incoming <- shell.store do incomingRaw
   pipelined <- shell.track do Runtime.Live.ofPipeline (pipeline incoming)
   gotRenderer <- shell.store $ makeLake \cb -> mempty <$ _sideChannel.installChannel cb
@@ -148,8 +146,8 @@ embed incomingRaw = eggy \shell -> do
     ]
 
 widget :: Widget
-widget _ = pure $ eggy \shell -> do
-  let df = tripleQuoted """
+widget _ = pure $
+  compileInterface "Riverdragon.Roar.Live" embed $ tripleQuoted """
     \shell -> do
       let
         -- A gentle organ voice to start off with
@@ -203,7 +201,7 @@ widget _ = pure $ eggy \shell -> do
           D.div :."centered".$
             -- A context where we can run some effects
             -- (really: lifecycle management)
-            eggy \shell -> do
+            hatching \shell -> do
               -- Create a stream that we will destroy when unloaded
               -- (not really necessary here, but good hygiene)
               { stream: clicked, send: onClick } <- shell.track $ createRiver
@@ -221,17 +219,4 @@ widget _ = pure $ eggy \shell -> do
                 ]
       pure { voice, dragon }
   """
-  { stream: valueSet, send: setValue } <- shell.track $ createRiverStore Nothing
-  { stream: compiling, send: compileNow } <- shell.track $ createRiverStore Nothing
-  lastValue <- shell.storeLast df valueSet
-  pure $ D.Fragment
-    [ sourceCode "PureScript" .$ D.textarea
-        [ D.onInputValue =:= setValue
-        , D.value =:= df
-        , D.style =:= "height: 40vh"
-        , D.asCodeInput
-        ]
-    , D.div.$ D.buttonW "" "Compile!" (compileNow =<< lastValue)
-    , embed compiling
-    ]
 

@@ -7,9 +7,9 @@ import Riverdragon.Roar.Types
 import Riverdragon.Roar.Types as ReExports
 import Riverdragon.Roar.Knob
 import Riverdragon.Roar.Knob as ReExports
-import Riverdragon.Roar.Yawn
-import Riverdragon.Roar.Yawn as Y
-import Riverdragon.Roar.Yawn as ReExports
+import Riverdragon.Roar.Score
+import Riverdragon.Roar.Score as Y
+import Riverdragon.Roar.Score as ReExports
 import Riverdragon.Roar.Roarlette
 import Riverdragon.Roar.Roarlette as YY
 import Riverdragon.Roar.Roarlette as ReExports
@@ -38,8 +38,8 @@ import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon (Dragon(..), renderId, renderEl, snapshot)
 import Riverdragon.Dragon (Dragon(..), renderId, renderEl, snapshot) as ReExports
 import Riverdragon.Dragon as Dragon
-import Riverdragon.Dragon.Wings (eggy, Shell)
-import Riverdragon.Dragon.Wings (eggy, Shell) as ReExports
+import Riverdragon.Dragon.Wings (hatching, Shell)
+import Riverdragon.Dragon.Wings (hatching, Shell) as ReExports
 import Riverdragon.Dragon.Wings as Wings
 import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), alLake, alLake', allStreams, allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, cumulate, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapAl, mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, singleShot, statefulStream, stillRiver, store, subscribe, subscribeIsh, tupleOnLeft, tupleOnRight, unsafeCopyFlowing, unsafeRiver, withInstantiated, (/*?\), (/?*\), (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~))
 import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), alLake, alLake', allStreams, allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, cumulate, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapAl, mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, singleShot, statefulStream, stillRiver, store, subscribe, subscribeIsh, tupleOnLeft, tupleOnRight, unsafeCopyFlowing, unsafeRiver, withInstantiated, (/*?\), (/?*\), (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~)) as ReExports
@@ -199,6 +199,6 @@ main = Riverdragon.Roar.Live.mainForRoar \shell -> do
           { value: value <#> toRoars, leave: dam leave }
     }
 
-dragonVoice :: Shell -> Effect { dragon :: Dragon, voice :: Int -> Stream _ Unit -> YawnM { value :: Array Roar, leave :: Stream _ Unit } }
+dragonVoice :: Shell -> Effect { dragon :: Dragon, voice :: Int -> Stream _ Unit -> ScoreM { value :: Array Roar, leave :: Stream _ Unit } }
 dragonVoice = pure $ pure { dragon: mempty, voice: mempty }
 
