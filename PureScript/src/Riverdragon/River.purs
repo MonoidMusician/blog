@@ -652,9 +652,10 @@ mayMemoize (Stream Flowing upstream) = unsafeAllocate do
       sz <- size
       cs <- cachedStream.get
       case sz, cs of
-        0, Just { unsubscribe } -> unsubscribe
+        0, Just { unsubscribe } -> unsubscribe <* cachedStream.set Nothing
         _, _ -> pure unit
   pure $ Stream Flowing \cbs ->
+    -- fixme destroyed burst?
     iteM (not <$> running) (mempty <$ cbs.destroyed) do
       unsub <- push cbs
       { sources, burst } <- up
