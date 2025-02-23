@@ -29,7 +29,7 @@ import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones ((.$), (:.), (<:>), (=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (hatching, sourceCode)
-import Riverdragon.River (Lake, createRiver, createRiverStore, foldStream)
+import Riverdragon.River (Stream, createRiver, createRiverStore, foldStream)
 import Riverdragon.River.Beyond (affToLake)
 import Widget (Widget, adaptInterface)
 
@@ -192,7 +192,7 @@ fetchParser = _.text =<< fetch "assets/json/tmttmt-parser-states.json" {}
 fetchTypeParser :: Aff String
 fetchTypeParser = _.text =<< fetch "assets/json/tmttmt-types-parser-states.json" {}
 
-component :: (String -> Effect Unit) -> Lake String -> Dragon
+component :: forall flow. (String -> Effect Unit) -> Stream flow String -> Dragon
 component setGlobal resetting = hatching \shell -> do
   { stream: pushedRaw, send: pushUpdate } <- shell.track createRiver
   getParser <- shell.store $ mkTMTTMTParser <$> affToLake fetchParser

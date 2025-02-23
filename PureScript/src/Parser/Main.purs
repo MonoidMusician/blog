@@ -59,7 +59,8 @@ import Random.LCG as LCG
 import Riverdragon.Dragon.Bones (AttrProp, Dragon, smarties, ($$), ($<), ($~~), (.$), (.$$), (.$$~), (.$~~), (:!), (:.), (:~), (<!>), (<:>), (=!=), (=!?=), (=:=), (=?=), (>@), (>~~), (@<))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (hatching, inputValidated)
-import Riverdragon.River (Lake, createRiver, createRiverStore, foldStream, sampleOnRightOp, selfGating, subscribe, (<**>))
+import Riverdragon.River (Lake, River, Stream, createRiver, createRiverStore, foldStream, sampleOnRightOp, selfGating, subscribe, (<**>))
+import Riverdragon.River as River
 import Riverdragon.River.Beyond (animationLoop, dedup, dedupOn, delay, delayMicro, interval)
 import Stylish.Types (Classy(..))
 import Test.QuickCheck.Gen as QC
@@ -84,7 +85,7 @@ inputC label placeholder initialValue onInput =
         ]
     ]
 
-inputC' :: String -> String -> Lake String -> (String -> Effect Unit) -> Dragon
+inputC' :: forall flow. String -> String -> Stream flow String -> (String -> Effect Unit) -> Dragon
 inputC' label placeholder initialValue onInput =
   D.label :."input-wrapper text".$~~
     [ D.span.$$ label
@@ -379,7 +380,7 @@ renderTok c t = D.span
   , D.classy =:= D.smarts { "terminal": true, "clickable": isJust c }
   ] $$ String.singleton t
 
-renderTok' :: Lake Classy -> Lake (Maybe (Effect Unit)) -> CodePoint -> Dragon
+renderTok' :: forall flow. Stream flow Classy -> Stream flow (Maybe (Effect Unit)) -> CodePoint -> Dragon
 renderTok' cls c t = D.span
   [ D.Listener "click" <:> map const <$> c
   , D.classy <:> D.smarties { "terminal": true, "": cls }
@@ -391,7 +392,7 @@ renderNT c nt = D.span
   , D.classy =:= D.smarts { "non-terminal": true, "clickable": isJust c }
   ] $$ NES.toString nt
 
-renderNT' :: Lake Classy -> Lake (Maybe (Effect Unit)) -> NonEmptyString -> Dragon
+renderNT' :: forall flow. Stream flow Classy -> Stream flow (Maybe (Effect Unit)) -> NonEmptyString -> Dragon
 renderNT' cls c nt = D.span
   [ D.Listener "click" <:> map const <$> c
   , D.classy <:> D.smarties { "non-terminal": true, "": cls }
@@ -415,7 +416,7 @@ renderSt c x = D.span
   , D.classy =:= D.smarts { "state": true, "clickable": isJust c }
   ] $$ show x
 
-renderSt' :: Lake String -> Maybe (Effect Unit) -> Int -> Dragon
+renderSt' :: forall flow. Stream flow String -> Maybe (Effect Unit) -> Int -> Dragon
 renderSt' cls c x = D.span
   [ D.onClick =!?= c
   , D.classy <:> D.smarties { "state": true, "": cls }
@@ -551,10 +552,10 @@ parseGrammarError TopClash = [ D.text "Entry point must be different from the to
 parseGrammarError (RuleNamesUnique rules) =
   [ D.text "Rule names must be unique, but " ] <> list (map (\x -> D.Fragment [ renderMeta mempty "#", renderRule mempty x ]) rules) <> [ D.text " ", D.text (pl rules "was" "were"), D.text " duplicated" ]
 
-grammarComponent ::
+grammarComponent :: forall flow.
   String ->
   SAugmented ->
-  Lake SAugmented ->
+  Stream flow SAugmented ->
   (SAugmented -> Effect Unit) ->
   Dragon
 grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
@@ -1129,8 +1130,8 @@ withProducibleSendTokens component { interface } = do
   pure $ (flip component sendTokens) @< pure (withProducible sampleGrammar) <|> grammarLake
 
 -- TODO optimize with mailboxed
-spotlightBeh :: forall a f. Applicative f => Ord a => Lake a -> f (a -> Lake Boolean)
-spotlightBeh e = pure \k -> eq k <$> e
+spotlightBeh :: forall a f flow. Applicative f => Ord a => Stream flow a -> f (a -> Lake Boolean)
+spotlightBeh e = pure \k -> eq k <$> River.dam e
 
 widgetStateTable :: Widget
 widgetStateTable { interface } = do
@@ -1151,26 +1152,26 @@ widgetParseTable { interface } = do
     currentStatesAndGetState = (sampleOnRightOp currentGetCurrentState (map (/\) currentStates))
     currentGrammar = filterMap (hush <<< decode grammarCodec) (interface "grammar").receive
   initialGrammar <- fromMaybe sampleGrammar <<< join <<< map (hush <<< decode grammarCodec) <$> (interface "grammar").current
-  pure $ D.Replacing $ map
+  pure $ D.Replacing $ River.dam $ map
     (\(grammar /\ x /\ getCurrentState) -> renderParseTable { getCurrentState: getCurrentState } grammar x)
     (flip sampleOnRightOp ((/\) <<< _.augmented <$> (pure initialGrammar <|> currentGrammar)) (currentStatesAndGetState))
 
-inputComponent :: forall r.
+inputComponent :: forall r flow.
   String ->
-  Lake String ->
+  Stream flow String ->
   (String -> Effect Unit) ->
-  { grammar :: Lake SAugmented
-  , states :: Lake SStates
-  , tokens :: Lake (Maybe (List CodePoint))
-  , tokens' :: Lake (Maybe (List CodePoint))
-  , parseSteps :: Lake (Maybe SCParseSteps)
-  , stateId :: Lake Int
-  , state :: Lake Int
-  , allTokens :: Lake (Array CodePoint)
-  , allNTs :: Lake (Array NonEmptyString)
-  , validTokens :: Lake (Set CodePoint)
-  , validNTs :: Lake (Set NonEmptyString)
-  , producible :: Lake SProducible
+  { grammar :: Stream flow SAugmented
+  , states :: Stream flow SStates
+  , tokens :: Stream flow (Maybe (List CodePoint))
+  , tokens' :: Stream flow (Maybe (List CodePoint))
+  , parseSteps :: Stream flow (Maybe SCParseSteps)
+  , stateId :: Stream flow Int
+  , state :: Stream flow Int
+  , allTokens :: Stream flow (Array CodePoint)
+  , allNTs :: Stream flow (Array NonEmptyString)
+  , validTokens :: Stream flow (Set CodePoint)
+  , validNTs :: Stream flow (Set NonEmptyString)
+  , producible :: Stream flow SProducible
   | r
   } ->
   Dragon

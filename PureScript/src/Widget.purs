@@ -53,9 +53,9 @@ import Web.Storage.Storage as Storage
 -- | a value at first, or ever.
 type Interface a =
   { send :: a -> Effect Unit
-  , receive :: forall flow. Stream flow a
-  , loopback :: forall flow. Stream flow a
-  , mailbox :: a -> forall flow. Stream flow Unit
+  , receive :: River a
+  , loopback :: River a
+  , mailbox :: a -> River Unit
   , current :: Effect (Maybe a)
   , destroy :: Allocar Unit
   }

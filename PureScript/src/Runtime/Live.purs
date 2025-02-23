@@ -178,7 +178,7 @@ fetchTemplate templateURL =
 compileInterface :: forall flow. String -> (Stream flow String -> Dragon) -> String -> Dragon
 compileInterface sessionStorageName embed df = hatching \shell -> do
   editorValue@{ send: setValue } <- sessionStorageInterface <@> sessionStorageName
-  let valueSet = fromMaybe df <$> River.alwaysBurst editorValue.loopback
+  let valueSet = fromMaybe df <<< filter (notEq "") <$> River.alwaysBurst editorValue.loopback
   defaultValue <- fromMaybe df <<< Array.last <$> River.burstOf valueSet
   lastValue <- shell.storeLast defaultValue valueSet
   { stream: compiling, send: compileNow } <- shell.track $ River.createRiverStore Nothing

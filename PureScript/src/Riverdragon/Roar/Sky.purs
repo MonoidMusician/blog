@@ -19,6 +19,7 @@ import Riverdragon.Roar.Viz as Viz
 import Riverdragon.Roar.Viz as ReExports
 import Riverdragon.Roar.Synth
 import Riverdragon.Roar.Synth as ReExports
+import Riverdragon.River.Streamline as S
 
 import Web.Audio.Types (ARate, AudioBuffer, AudioContext, AudioNode, AudioParam, AudioParamCmd(..), BiquadFilterType(..), Cancel(..), Cents, ChannelCountMode(..), ChannelInterpretation(..), DistanceModelType(..), Duration, FFTSize(..), Float, Frequency, KRate, Norm, OscillatorType(..), Oversample(..), PanningModelType(..), PeriodicWave, Ramp(..), Rate(..), SequenceFloat, Time, Volume)
 import Web.Audio.Types (ARate, AudioBuffer, AudioContext, AudioNode, AudioParam, AudioParamCmd(..), BiquadFilterType(..), Cancel(..), Cents, ChannelCountMode(..), ChannelInterpretation(..), DistanceModelType(..), Duration, FFTSize(..), Float, Frequency, KRate, Norm, OscillatorType(..), Oversample(..), PanningModelType(..), PeriodicWave, Ramp(..), Rate(..), SequenceFloat, Time, Volume) as ReExports
@@ -41,8 +42,8 @@ import Riverdragon.Dragon as Dragon
 import Riverdragon.Dragon.Wings (hatching, Shell)
 import Riverdragon.Dragon.Wings (hatching, Shell) as ReExports
 import Riverdragon.Dragon.Wings as Wings
-import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), alLake, alLake', allStreams, allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, cumulate, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapAl, mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, singleShot, statefulStream, stillRiver, store, subscribe, subscribeIsh, tupleOnLeft, tupleOnRight, unsafeCopyFlowing, unsafeRiver, withInstantiated, (/*?\), (/?*\), (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~))
-import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), alLake, alLake', allStreams, allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, cumulate, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapAl, mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, singleShot, statefulStream, stillRiver, store, subscribe, subscribeIsh, tupleOnLeft, tupleOnRight, unsafeCopyFlowing, unsafeRiver, withInstantiated, (/*?\), (/?*\), (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~)) as ReExports
+import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), alLake, alLake', allStreams, allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, createStore, cumulate, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapAl, mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, singleShot, statefulStream, stillRiver, store, subscribe, subscribeIsh, tupleOnLeft, tupleOnRight, unsafeCopyFlowing, unsafeRiver, withInstantiated, (/*?\), (/?*\), (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~))
+import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), alLake, alLake', allStreams, allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, createStore, cumulate, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapAl, mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, singleShot, statefulStream, stillRiver, store, subscribe, subscribeIsh, tupleOnLeft, tupleOnRight, unsafeCopyFlowing, unsafeRiver, withInstantiated, (/*?\), (/?*\), (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~)) as ReExports
 import Riverdragon.River as River
 import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (KeyEvent, KeyPhase(..), affToLake, animationLoop, counter, debounce, dedup, dedupBy, dedupOn, delay, delayAnim, delayMicro, delayWith, documentEvent, everyFrame, fallingLeaves, interval, joinLeave, keyEvents, keyPhase, mkAnimFrameBuffer, mkBufferedDelayer, risingFalling, withLast)
@@ -133,6 +134,7 @@ import Data.Monoid.Multiplicative (Multiplicative(..))
 import Data.Monoid.Multiplicative (Multiplicative(..)) as ReExports
 import Data.Newtype (unwrap, wrap, un, class Newtype)
 import Data.Newtype (unwrap, wrap, un, class Newtype) as ReExports
+import Data.Number as Number
 import Data.Profunctor (dimap, lcmap)
 import Data.Profunctor (dimap, lcmap) as ReExports
 import Data.Profunctor.Choice ((|||), (+++))
@@ -190,15 +192,22 @@ import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Coerce (unsafeCoerce) as ReExports
 
 main :: Effect Unit
-main = Riverdragon.Roar.Live.mainForRoar \shell -> do
-  r <- dragonVoice shell
+main = Riverdragon.Roar.Live.mainForRoar \shell iface -> do
+  r <- dragonVoice shell iface
   pure
     { dragon: r.dragon
     , voice: \note leave ->
         r.voice note (stillRiver leave) <#> \{ value, leave } ->
           { value: value <#> toRoars, leave: dam leave }
+    , synthSetup
+    , synthParameters
     }
 
-dragonVoice :: Shell -> Effect { dragon :: Dragon, voice :: Int -> Stream _ Unit -> ScoreM { value :: Array Roar, leave :: Stream _ Unit } }
-dragonVoice = pure $ pure { dragon: mempty, voice: mempty }
+synthSetup :: ScoreM Unit
+synthSetup = mempty
+
+synthParameters = { pitch: 441.0, temperament: [0.0] }
+
+dragonVoice :: Shell -> ScoreLive -> Effect { dragon :: Dragon, voice :: Int -> Stream _ Unit -> ScoreM { value :: Array Roar, leave :: Stream _ Unit } }
+dragonVoice = const $ const $ pure { dragon: mempty, voice: mempty }
 

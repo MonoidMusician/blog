@@ -113,17 +113,21 @@ type Envelope =
 -- | Standard Attack-Decay-Sustain-Release envelope, where `true` events trigger
 -- | the attack and `false` events trigger the release.
 adsr :: forall flow. Float -> Envelope -> Stream flow Boolean -> Knob
-adsr volume env events = KCmd 0.0 $ dam events <#>
-  \attackOrRelease time ->
-    if attackOrRelease
-      then pure
-        [ CmdTarget { ramp: LinRamp, target: volume, time: time + env.attack }
-        , CmdTarget { ramp: LinRamp, target: volume * env.sustain, time: time + env.attack + env.decay }
-        ]
-      else pure
-        [ CmdCancel { time, hold: Revert } -- FIXME??
-        , CmdTarget { ramp: LinRamp, target: 0.0, time: time + env.release }
-        ]
+adsr volume env events = KAware (Just 0.0) \getValue -> pure do
+  KCmd 0.0 $ dam events <#>
+    \attackOrRelease time ->
+      if attackOrRelease
+        then pure
+          [ CmdTarget { ramp: NoRamp, target: 0.0, time: time }
+          , CmdTarget { ramp: LinRamp, target: volume, time: time + env.attack }
+          , CmdTarget { ramp: NoRamp, target: volume, time: time + env.attack }
+          , CmdTarget { ramp: LinRamp, target: volume * env.sustain, time: time + env.attack + env.decay }
+          ]
+        else getValue <#> \value ->
+          [ CmdCancel { time, hold: Revert } -- FIXME??
+          , CmdTarget { ramp: NoRamp, target: value, time }
+          , CmdTarget { ramp: LinRamp, target: 0.0, time: time + env.release }
+          ]
 
 
 class ToKnob knob where toKnob :: knob -> Knob

@@ -24,7 +24,7 @@ import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones (($~~), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (hatching, inputValidated)
-import Riverdragon.River (Lake, createRiver, foldStream)
+import Riverdragon.River (Stream, createRiver, foldStream)
 import Riverdragon.River.Beyond (affToLake)
 import Widget (Widget, adaptInterface)
 
@@ -67,7 +67,7 @@ data Update
 fetchParser :: Aff String
 fetchParser = _.text =<< fetch "assets/json/css-parser-states.json" {}
 
-component :: Lake (Array String) -> Dragon
+component :: forall flow. Stream flow (Array String) -> Dragon
 component resetting = hatching \shell -> do
   { stream: pushedRaw, send: pushUpdate } <- shell.track createRiver
   getParser <- shell.store $ mkCSSParser <$> affToLake fetchParser

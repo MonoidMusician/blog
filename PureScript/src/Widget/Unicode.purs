@@ -158,7 +158,7 @@ allsomenone p as bs = tallyComp tallier as bs
 st :: Lake AttrProp
 st = D.style =:= "font-variant-numeric: lining-nums tabular-nums"
 
-component :: (String -> Effect Unit) -> Lake String -> Dragon
+component :: forall flow. (String -> Effect Unit) -> Stream flow String -> Dragon
 component setGlobal resetting = hatching \shell -> do
   { stream: genned, send: genNew } <- shell.track $ createRiverStore Nothing
   { stream: taState', send: taCb } <- shell.track $ createRiverStore Nothing

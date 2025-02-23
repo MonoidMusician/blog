@@ -2,15 +2,18 @@ module Riverdragon.Roar.Viz where
 
 import Prelude
 
+import Data.Array as Array
+import Data.Enum (enumFromTo)
 import Data.Foldable (fold)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
 import Effect (Effect)
 import Partial.Unsafe (unsafeCrashWith)
 import Riverdragon.Dragon.Breath (removeSelf)
 import Riverdragon.River as River
 import Riverdragon.River.Beyond (everyFrame)
-import Riverdragon.Roar.Types (class ToLake, class ToRoars, connecting, toLake, toRoars)
 import Riverdragon.Roar.Score (ScoreM, scoreElement)
+import Riverdragon.Roar.Types (class ToLake, class ToRoars, connecting, toLake, toRoars)
+import Web.Audio.FFI (toFFI)
 import Web.Audio.Node (AnalyserNode, createAnalyserNode, intoNode)
 import Web.Audio.Types (FFTSize(..))
 import Web.DOM.Document (createElement)
@@ -41,7 +44,11 @@ oscilloscope config audio = scoreElement \{ ctx } -> do
   destroy1 <- River.subscribe (toLake config.width) (Canvas.setWidth <@> element)
   destroy2 <- River.subscribe (toLake config.height) (Canvas.setHeight <@> element)
 
-  node <- createAnalyserNode ctx { fftSize: FFT1024, smoothingTimeConstant: 0.2 }
+  fftSize <- map (fromMaybe FFT1024) $ River.burstOf (toLake config.width) <#> do
+    Array.last >=> \width ->
+      enumFromTo bottom top
+        # Array.find \candidate -> toFFI candidate >= width
+  node <- createAnalyserNode ctx { fftSize, smoothingTimeConstant: 0.2 }
   destroy3 <- connecting (toRoars audio) (intoNode node 0)
   let render = _oscilloscope node element
   destroy4 <- River.subscribe everyFrame $ const render

@@ -85,6 +85,7 @@ module Riverdragon.River
   , createRiver
   , createRiverBurst
   , createRiverStore
+  , createStore
   , createProxy'
   , makeLake
   , makeLake'
@@ -424,6 +425,24 @@ createRiverStore initialValue = do
   r <- createRiverBurst $ lastValue.get <#> case _ of
     Just a -> [a]
     _ -> []
+  pure
+    { send: \a -> lastValue.set a *> r.send a
+    , stream: r.stream
+    , destroy: r.destroy
+    , current: lastValue.get
+    }
+
+createStore ::
+  forall flow a.
+  a ->
+  Allocar
+    { send :: a -!> Unit
+    , stream :: Stream flow a
+    , destroy :: Allocar Unit
+    , current :: Effect a
+    }
+createStore = prealloc >=> \lastValue -> do
+  r <- createRiverBurst $ Array.singleton <$> lastValue.get
   pure
     { send: \a -> lastValue.set a *> r.send a
     , stream: r.stream
