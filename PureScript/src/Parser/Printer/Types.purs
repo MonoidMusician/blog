@@ -27,7 +27,7 @@ import Parser.Comb as Comb
 import Parser.Comb.Comber (Comber, lift2)
 import Parser.Comb.Comber as Comber
 import Parser.Comb.Types (Associativity(..))
-import Parser.Printer.Juxt (class Awajuxt, class Conjuxt, class Disjuxt, class GuideFlow, CaseTree(..), _Array, _NEA, casesSplit, cleaveCases, summarizeCaseTree, (!!!), (!>), (/!\), (<!), (\!/))
+import Parser.Printer.Juxt (class Subjuxt, class Conjuxt, class Disjuxt, class GuideFlow, CaseTree(..), _Array, _NEA, casesSplit, cleaveCases, summarizeCaseTree, (!!!), (!>), (/!\), (<!), (\!/))
 import Parser.Printer.Prec (Prec(..))
 import Parser.Selective (casingOn, cmapCaseTree, hoistCaseTree', secondCaseTree)
 import Riverdragon.Dragon (Dragon)
@@ -195,13 +195,13 @@ instance disjuxtPrinterParser :: Disjuxt PrinterParser where
     , parser: \p1 p2 -> Left <$> p1 <|> Right <$> p2
     }
 
-instance awajuxtPrinterParser :: Awajuxt PrinterParser where
-  awajuxt2 = _binn
+instance subjuxtPrinterParser :: Subjuxt PrinterParser where
+  subjuxt2 = _binn
     { printer: lift2 \p1 p2 -> these p1 p2 (\u v -> p1 u <> p2 v)
     , prec: \p1 p2 -> p1 * p2 + p1 + p2
     , parser: \p1 p2 -> Both <$> p1 <*> p2 <|> This <$> p1 <|> That <$> p2
     }
-  awajuxtSep2 (PrinterParser ux) (PrinterParser sep) (PrinterParser vy) = PrinterParser
+  subjuxtSep2 (PrinterParser ux) (PrinterParser sep) (PrinterParser vy) = PrinterParser
     { allOpts: ux.allOpts <> sep.allOpts <> vy.allOpts
     , printer: lift3 (\p1 p2 p3 -> these p1 p3 (\u v -> p1 u <> p2 unit <> p3 v)) ux.printer sep.printer vy.printer
     , prec: ux.prec * sep.prec * vy.prec + ux.prec + vy.prec

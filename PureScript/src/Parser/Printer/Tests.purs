@@ -8,7 +8,7 @@ import Data.Tuple.Nested (type (/\))
 import Effect (Effect)
 import Effect.Console (log)
 import Idiolect (type (/\/))
-import Parser.Printer.Juxt (class Awajuxt, class AwajuxtSepsN, Sentinel, _GenericTensor', awajuxtSepN, awajuxtSepsN, conjuxt2, conjuxtN, disjuxtN, ing, norm, (!!!), (!/), (/!), (/!\), (\!/))
+import Parser.Printer.Juxt (class Subjuxt, class SubjuxtSepsN, Sentinel, _GenericTensor', subjuxtSepN, subjuxtSepsN, conjuxt2, conjuxtN, disjuxtN, ing, norm, (!!!), (!/), (/!), (/!\), (\!/))
 import Parser.Printer.Types (PP)
 import Parser.Printer.Types as IO
 
@@ -25,16 +25,16 @@ main = log "Hi"
 conjuxtN_2 :: PP String -> PP Int -> PP ((Unit /\ String) /\ Int)
 conjuxtN_2 (x :: PP String) (y :: PP Int) = conjuxtN x y ing
 
-awajuxtSepN_2 :: PP String -> PP Unit -> PP Int -> PP ((Void /\/ String) /\/ Int)
-awajuxtSepN_2 (x :: PP String) (h :: PP Unit) (y :: PP Int) = awajuxtSepN h x y ing
+subjuxtSepN_2 :: PP String -> PP Unit -> PP Int -> PP ((Void /\/ String) /\/ Int)
+subjuxtSepN_2 (x :: PP String) (h :: PP Unit) (y :: PP Int) = subjuxtSepN h x y ing
 
-awajuxtSepsN_2 :: PP String -> PP Unit -> PP Int -> PP ((Void /\/ String) /\/ Int)
-awajuxtSepsN_2 (x :: PP String) (h :: PP Unit) (y :: PP Int) = awajuxtSepsN x h y ing
+subjuxtSepsN_2 :: PP String -> PP Unit -> PP Int -> PP ((Void /\/ String) /\/ Int)
+subjuxtSepsN_2 (x :: PP String) (h :: PP Unit) (y :: PP Int) = subjuxtSepsN x h y ing
 
-awajuxtSepsN_2' ::
+subjuxtSepsN_2' ::
   forall p.
-    Awajuxt p =>
-    AwajuxtSepsN p
+    Subjuxt p =>
+    SubjuxtSepsN p
       (Void /\/ String)
       (Void /\/ String)
       (p Unit Unit)
@@ -43,16 +43,16 @@ awajuxtSepsN_2' ::
   p Unit Unit ->
   p Int Int ->
   p ((Void /\/ String) /\/ Int) ((Void /\/ String) /\/ Int)
-awajuxtSepsN_2' x h y = awajuxtSepsN x h y ing
+subjuxtSepsN_2' x h y = subjuxtSepsN x h y ing
 
-awajuxtSepsf ::
+subjuxtSepsf ::
   forall p.
-    Awajuxt p =>
+    Subjuxt p =>
   p String String ->
   p Unit Unit ->
   p Int Int ->
   p (String /\/ Int) (String /\/ Int)
-awajuxtSepsf x h y = x /! h !/ y
+subjuxtSepsf x h y = x /! h !/ y
 
 _testAST = _GenericTensor' :: Iso' TestAST _
 

@@ -54,7 +54,7 @@ import Unsafe.Coerce (unsafeCoerce)
 infixr 4 identity as !!! -- for applying isos
 infixr 5 disjuxt2 as \!/
 infixr 6 conjuxt2 as /!\
-infixr 6 awajuxt2 as /!/
+infixr 6 subjuxt2 as /!/
 
 infix 7 dimap as >$<$>
 infix 7 dimapConst as ><>
@@ -63,7 +63,7 @@ infixr 7 conjuxtL as <!
 
 infixr 6 applyFlipped as /!
 infixr 6 conjuxtSep2Flipped as !\
-infixr 6 awajuxtSep2Flipped as !/
+infixr 6 subjuxtSep2Flipped as !/
 
 -- For annotating precedence *on rules*
 -- infixr 5 disjuxt2Prec as \:
@@ -148,44 +148,44 @@ instance disjuxtForget :: Disjuxt (Forget r) where
   disjuxt0 = Forget absurd
   disjuxt2 (Forget l) (Forget r) = Forget (either l r)
 
-class (Profunctor p, Disjuxt p, Conjuxt p) <= Awajuxt p where
-  awajuxt2 :: forall u v x y. p u x -> p v y -> p (u /\/ v) (x /\/ y)
-  awajuxtSep2 :: forall u v x y. p u x -> p Unit Unit -> p v y -> p (u /\/ v) (x /\/ y)
+class (Profunctor p, Disjuxt p, Conjuxt p) <= Subjuxt p where
+  subjuxt2 :: forall u v x y. p u x -> p v y -> p (u /\/ v) (x /\/ y)
+  subjuxtSep2 :: forall u v x y. p u x -> p Unit Unit -> p v y -> p (u /\/ v) (x /\/ y)
 
-instance awajuxtFunction :: Awajuxt (->) where
-  awajuxt2 = bimap
-  awajuxtSep2 ux _ vy = bimap ux vy
+instance subjuxtFunction :: Subjuxt (->) where
+  subjuxt2 = bimap
+  subjuxtSep2 ux _ vy = bimap ux vy
 
-instance awajuxtStar :: Applicative m => Awajuxt (Star m) where
-  awajuxt2 (Star ux) (Star vy) = Star $ these
+instance subjuxtStar :: Applicative m => Subjuxt (Star m) where
+  subjuxt2 (Star ux) (Star vy) = Star $ these
     (map This <<< ux)
     (map That <<< vy)
     \u v -> Both <$> ux u <*> vy v
-  awajuxtSep2 (Star ux) (Star h) (Star vy) = Star $ these
+  subjuxtSep2 (Star ux) (Star h) (Star vy) = Star $ these
     (map This <<< ux)
     (map That <<< vy)
     \u v -> Both <$> ux u <* h unit <*> vy v
 
-instance awajuxtJoker :: Alternative m => Awajuxt (Joker m) where
-  awajuxt2 ux vy = awajuxt2Default ux vy
-  awajuxtSep2 ux h vy = awajuxtSep2Default ux h vy
+instance subjuxtJoker :: Alternative m => Subjuxt (Joker m) where
+  subjuxt2 ux vy = subjuxt2Default ux vy
+  subjuxtSep2 ux h vy = subjuxtSep2Default ux h vy
 
-instance awajuxtClown :: Decidable m => Awajuxt (Clown m) where
-  awajuxt2 ux vy = awajuxt2Default ux vy
-  awajuxtSep2 ux h vy = awajuxtSep2Default ux h vy
+instance subjuxtClown :: Decidable m => Subjuxt (Clown m) where
+  subjuxt2 ux vy = subjuxt2Default ux vy
+  subjuxtSep2 ux h vy = subjuxtSep2Default ux h vy
 
-instance awajuxtForget :: Monoid r => Awajuxt (Forget r) where
-  awajuxt2 ux vy = awajuxt2Default ux vy
-  awajuxtSep2 ux h vy = awajuxtSep2Default ux h vy
+instance subjuxtForget :: Monoid r => Subjuxt (Forget r) where
+  subjuxt2 ux vy = subjuxt2Default ux vy
+  subjuxtSep2 ux h vy = subjuxtSep2Default ux h vy
 
-awajuxt2Default :: forall p u v x y. Disjuxt p => Conjuxt p => p u x -> p v y -> p (u /\/ v) (x /\/ y)
-awajuxt2Default ux vy = _These $ conjuxt2 ux vy `disjuxt2` disjuxt2 ux vy
+subjuxt2Default :: forall p u v x y. Disjuxt p => Conjuxt p => p u x -> p v y -> p (u /\/ v) (x /\/ y)
+subjuxt2Default ux vy = _These $ conjuxt2 ux vy `disjuxt2` disjuxt2 ux vy
 
-awajuxtSep2Default :: forall p u v x y. Disjuxt p => Conjuxt p => p u x -> p Unit Unit -> p v y -> p (u /\/ v) (x /\/ y)
-awajuxtSep2Default ux h vy = _These $ conjuxt2 ux (conjuxtR h vy) `disjuxt2` disjuxt2 ux vy
+subjuxtSep2Default :: forall p u v x y. Disjuxt p => Conjuxt p => p u x -> p Unit Unit -> p v y -> p (u /\/ v) (x /\/ y)
+subjuxtSep2Default ux h vy = _These $ conjuxt2 ux (conjuxtR h vy) `disjuxt2` disjuxt2 ux vy
 
-awajuxtSep2Flipped :: forall p u v x y. Awajuxt p => p Unit Unit -> p v y -> p u x -> p (u /\/ v) (x /\/ y)
-awajuxtSep2Flipped h vy ux = awajuxtSep2 ux h vy
+subjuxtSep2Flipped :: forall p u v x y. Subjuxt p => p Unit Unit -> p v y -> p u x -> p (u /\/ v) (x /\/ y)
+subjuxtSep2Flipped h vy ux = subjuxtSep2 ux h vy
 
 -- N-ary combination classes
 
@@ -301,80 +301,80 @@ else instance disjuxtNP ::
 disjuxtN :: forall p i o. DisjuxtN p Void Void i o => Disjuxt p => i -> o
 disjuxtN = disjuxtCons disjuxt0
 
-class AwajuxtN :: (Type -> Type -> Type) -> Type -> Type -> Type -> Type -> Constraint
-class AwajuxtN p u x i o | o -> p, p u x i -> o where
-  awajuxtCons :: p u x -> i -> o
-  awajuxtSepCons :: p Unit Unit -> p u x -> i -> o
+class SubjuxtN :: (Type -> Type -> Type) -> Type -> Type -> Type -> Type -> Constraint
+class SubjuxtN p u x i o | o -> p, p u x i -> o where
+  subjuxtCons :: p u x -> i -> o
+  subjuxtSepCons :: p Unit Unit -> p u x -> i -> o
 
-instance awajuxtN0 ::
+instance subjuxtN0 ::
   ( TypeEquals (pux) (p u x)
-  ) => AwajuxtN p u x Sentinel (pux) where
-    awajuxtCons :: p u x -> Sentinel -> pux
-    awajuxtCons acc EndChain = from acc
-    awajuxtSepCons :: p Unit Unit -> p u x -> Sentinel -> pux
-    awajuxtSepCons _sep acc EndChain = from acc
+  ) => SubjuxtN p u x Sentinel (pux) where
+    subjuxtCons :: p u x -> Sentinel -> pux
+    subjuxtCons acc EndChain = from acc
+    subjuxtSepCons :: p Unit Unit -> p u x -> Sentinel -> pux
+    subjuxtSepCons _sep acc EndChain = from acc
 
-else instance awajuxtNN ::
+else instance subjuxtNN ::
   ( TypeEquals (pux) (p u x)
   , Profunctor p
   , Normalize u' u
   , Normalize x' x
-  ) => AwajuxtN p u' x' AndNormalize (pux) where
-    awajuxtCons :: p u' x' -> AndNormalize -> pux
-    awajuxtCons acc EndChainAndNormalize = from (norm acc)
-    awajuxtSepCons :: p Unit Unit -> p u' x' -> AndNormalize -> pux
-    awajuxtSepCons _sep acc EndChainAndNormalize = from (norm acc)
+  ) => SubjuxtN p u' x' AndNormalize (pux) where
+    subjuxtCons :: p u' x' -> AndNormalize -> pux
+    subjuxtCons acc EndChainAndNormalize = from (norm acc)
+    subjuxtSepCons :: p Unit Unit -> p u' x' -> AndNormalize -> pux
+    subjuxtSepCons _sep acc EndChainAndNormalize = from (norm acc)
 
-else instance awajuxtNP ::
+else instance subjuxtNP ::
   ( TypeEquals (pvy) (p v y)
   , TypeEquals (io) (i -> o)
-  , Awajuxt p
-  , AwajuxtN p (u /\/ v) (x /\/ y) i o
-  ) => AwajuxtN p u x (pvy) (io) where
-    awajuxtCons :: p u x -> pvy -> io
-    awajuxtCons acc new = from \i ->
-      awajuxtCons (awajuxt2 acc (to new)) i
-    awajuxtSepCons :: p Unit Unit -> p u x -> pvy -> io
-    awajuxtSepCons sep acc new = from \i ->
-      awajuxtSepCons sep (awajuxtSep2 acc sep (to new)) i
+  , Subjuxt p
+  , SubjuxtN p (u /\/ v) (x /\/ y) i o
+  ) => SubjuxtN p u x (pvy) (io) where
+    subjuxtCons :: p u x -> pvy -> io
+    subjuxtCons acc new = from \i ->
+      subjuxtCons (subjuxt2 acc (to new)) i
+    subjuxtSepCons :: p Unit Unit -> p u x -> pvy -> io
+    subjuxtSepCons sep acc new = from \i ->
+      subjuxtSepCons sep (subjuxtSep2 acc sep (to new)) i
 
-awajuxtN :: forall p i o. AwajuxtN p Void Void i o => Awajuxt p => i -> o
-awajuxtN = awajuxtCons disjuxt0
+subjuxtN :: forall p i o. SubjuxtN p Void Void i o => Subjuxt p => i -> o
+subjuxtN = subjuxtCons disjuxt0
 
-awajuxtSepN :: forall p i o. AwajuxtN p Void Void i o => Awajuxt p => p Unit Unit -> i -> o
-awajuxtSepN sep = awajuxtSepCons sep disjuxt0
+subjuxtSepN :: forall p i o. SubjuxtN p Void Void i o => Subjuxt p => p Unit Unit -> i -> o
+subjuxtSepN sep = subjuxtSepCons sep disjuxt0
 
-class AwajuxtSepsN :: (Type -> Type -> Type) -> Type -> Type -> Type -> Type -> Constraint
-class AwajuxtSepsN p u x i o | o -> p, p u x i -> o where
-  awajuxtSepsCons :: p u x -> i -> o
+class SubjuxtSepsN :: (Type -> Type -> Type) -> Type -> Type -> Type -> Type -> Constraint
+class SubjuxtSepsN p u x i o | o -> p, p u x i -> o where
+  subjuxtSepsCons :: p u x -> i -> o
 
-instance awajuxtSepsN0 ::
+instance subjuxtSepsN0 ::
   ( TypeEquals (pux) (p u x)
-  ) => AwajuxtSepsN p u x Sentinel (pux) where
-    awajuxtSepsCons :: p u x -> Sentinel -> pux
-    awajuxtSepsCons acc EndChain = from acc
+  ) => SubjuxtSepsN p u x Sentinel (pux) where
+    subjuxtSepsCons :: p u x -> Sentinel -> pux
+    subjuxtSepsCons acc EndChain = from acc
 
-else instance awajuxtSepsNN ::
+else instance subjuxtSepsNN ::
   ( TypeEquals (pux) (p u x)
   , Profunctor p
   , Normalize u' u
   , Normalize x' x
-  ) => AwajuxtSepsN p u' x' AndNormalize (pux) where
-    awajuxtSepsCons :: p u' x' -> AndNormalize -> pux
-    awajuxtSepsCons acc EndChainAndNormalize = from (norm acc)
+  ) => SubjuxtSepsN p u' x' AndNormalize (pux) where
+    subjuxtSepsCons :: p u' x' -> AndNormalize -> pux
+    subjuxtSepsCons acc EndChainAndNormalize = from (norm acc)
 
-else instance awajuxtSepsNP ::
+else instance subjuxtSepsNP ::
   ( TypeEquals (h) (p Unit Unit)
   , TypeEquals (pvyio) (p v y -> i -> o)
-  , Awajuxt p
-  , AwajuxtSepsN p (u /\/ v) (x /\/ y) i o
-  ) => AwajuxtSepsN p u x (h) (pvyio) where
-    awajuxtSepsCons :: p u x -> h -> pvyio
-    awajuxtSepsCons acc sep = from \new i ->
-      awajuxtSepsCons (awajuxtSep2 acc (to sep) new) i
+  , Subjuxt p
+  , SubjuxtSepsN p (u /\/ v) (x /\/ y) i o
+  ) => SubjuxtSepsN p u x (h) (pvyio) where
+    subjuxtSepsCons :: p u x -> h -> pvyio
+    subjuxtSepsCons acc sep = from \new i ->
+      subjuxtSepsCons (subjuxtSep2 acc (to sep) new) i
 
-awajuxtSepsN :: forall p u x i o. Awajuxt p => AwajuxtSepsN p (Void /\/ u) (Void /\/ x) i o => p u x -> i -> o
-awajuxtSepsN = awajuxtSepsCons disjuxt0 conjuxt0
+subjuxtSepsN :: forall p u x i o. Subjuxt p => SubjuxtSepsN p (Void /\/ u) (Void /\/ x) i o => p u x -> i -> o
+subjuxtSepsN = subjuxtSepsCons disjuxt0 conjuxt0
 
 
 
@@ -755,9 +755,9 @@ instance (Plus m) => Disjuxt (Codec m a b) where
   disjuxt0 = Codec (pure empty) absurd
   disjuxt2 (Codec l1 r1) (Codec l2 r2) = Codec
     (lift2 multiplexing l1 l2) (either (Left ==< r1) (Right ==< r2))
-instance (Alternative m, Monoid b) => Awajuxt (Codec m a b) where
-  awajuxt2 l r = awajuxt2Default l r
-  awajuxtSep2 l h r = awajuxtSep2Default l h r
+instance (Alternative m, Monoid b) => Subjuxt (Codec m a b) where
+  subjuxt2 l r = subjuxt2Default l r
+  subjuxtSep2 l h r = subjuxtSep2Default l h r
 
 -- GuideFlow is not possible for Codec, gets stuck needing to produce an
 -- error for encoding, but it is producing `Tuple b` ...
