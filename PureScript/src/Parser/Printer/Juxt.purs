@@ -2,17 +2,30 @@ module Parser.Printer.Juxt where
 
 import Prelude
 
+import Control.Alternative (class Alternative)
+import Control.Apply (lift2)
+import Control.Plus (class Plus, empty)
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (class Bifunctor, bimap)
+import Data.Bitraversable (bifoldMap, bitraverse)
+import Data.Codec (Codec(..))
+import Data.Decidable (class Decidable, lost)
+import Data.Decide (chosen)
+import Data.Divide (divided)
+import Data.Divisible (class Divisible, conquer)
 import Data.Either (Either(..), blush, either, hush)
 import Data.Either.Nested (type (\/))
 import Data.Function (applyFlipped)
+import Data.Functor.Clown (Clown(..))
+import Data.Functor.Costar (Costar(..))
+import Data.Functor.Joker (Joker(..))
 import Data.Generic.Rep as G
 import Data.Int as Int
-import Data.Lens (Iso, Iso', review, view)
+import Data.Lens (Forget(..), Iso, Iso', Tagged(..), review, view)
 import Data.Lens as O
+import Data.Lens.Internal.Zipping (Zipping(..))
 import Data.List (List)
 import Data.List as List
 import Data.List.NonEmpty (NonEmptyList)
@@ -20,12 +33,13 @@ import Data.List.NonEmpty as NEL
 import Data.Maybe (Maybe, maybe)
 import Data.Profunctor (class Profunctor, dimap, lcmap)
 import Data.Profunctor.Choice ((+++))
+import Data.Profunctor.Star (Star(..))
 import Data.Profunctor.Strong ((&&&), (***))
 import Data.These (These(..), these)
 import Data.These as These
 import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
-import Idiolect (type (/\/))
+import Idiolect (type (/\/), multiplexing, tupling, (==<))
 import Parser.Selective as Sel
 import Prim.Coerce (class Coercible)
 import Safe.Coerce (coerce)
@@ -69,6 +83,35 @@ instance conjuxtFunction :: Conjuxt (->) where
   conjuxt0 = identity
   conjuxt2 = (***)
 
+instance conjuxtStar :: Applicative m => Conjuxt (Star m) where
+  conjuxt0 = Star pure
+  conjuxt2 (Star l) (Star r) = Star (bitraverse l r)
+
+instance conjuxtCostar :: Functor m => Conjuxt (Costar m) where
+  conjuxt0 = Costar mempty
+  conjuxt2 (Costar l) (Costar r) = Costar ((l <<< map fst) &&& (r <<< map snd))
+
+instance conjuxtJoker :: Applicative m => Conjuxt (Joker m) where
+  conjuxt0 = Joker (pure unit)
+  conjuxt2 (Joker l) (Joker r) = Joker (tupling l r)
+
+instance conjuxtClown :: Divisible m => Conjuxt (Clown m) where
+  conjuxt0 = Clown conquer
+  conjuxt2 (Clown l) (Clown r) = Clown (divided l r)
+
+instance conjuxtForget :: Monoid r => Conjuxt (Forget r) where
+  conjuxt0 = Forget mempty
+  conjuxt2 (Forget l) (Forget r) = Forget (bifoldMap l r)
+
+instance conjuxtTagged :: Conjuxt Tagged where
+  conjuxt0 = Tagged unit
+  conjuxt2 (Tagged l) (Tagged r) = Tagged (l /\ r)
+
+instance conjuxtZipping :: Conjuxt Zipping where
+  conjuxt0 = Zipping \_ _ -> unit
+  conjuxt2 (Zipping l) (Zipping r) = Zipping \(aL /\ aR) (bL /\ bR) ->
+    l aL bL /\ r aR bR
+
 conjuxtR :: forall p u v. Conjuxt p => p Unit Unit -> p u v -> p u v
 conjuxtR h uv = dimap (Tuple unit) snd $ conjuxt2 h uv
 
@@ -89,6 +132,22 @@ instance disjuxtFunction :: Disjuxt (->) where
   disjuxt0 = identity
   disjuxt2 = (+++)
 
+instance disjuxtStar :: Applicative m => Disjuxt (Star m) where
+  disjuxt0 = Star pure
+  disjuxt2 (Star l) (Star r) = Star (bitraverse l r)
+
+instance disjuxtJoker :: Plus m => Disjuxt (Joker m) where
+  disjuxt0 = Joker empty
+  disjuxt2 (Joker l) (Joker r) = Joker (multiplexing l r)
+
+instance disjuxtClown :: Decidable m => Disjuxt (Clown m) where
+  disjuxt0 = Clown lost
+  disjuxt2 (Clown l) (Clown r) = Clown (chosen l r)
+
+instance disjuxtForget :: Disjuxt (Forget r) where
+  disjuxt0 = Forget absurd
+  disjuxt2 (Forget l) (Forget r) = Forget (either l r)
+
 class (Profunctor p, Disjuxt p, Conjuxt p) <= Awajuxt p where
   awajuxt2 :: forall u v x y. p u x -> p v y -> p (u /\/ v) (x /\/ y)
   awajuxtSep2 :: forall u v x y. p u x -> p Unit Unit -> p v y -> p (u /\/ v) (x /\/ y)
@@ -96,6 +155,28 @@ class (Profunctor p, Disjuxt p, Conjuxt p) <= Awajuxt p where
 instance awajuxtFunction :: Awajuxt (->) where
   awajuxt2 = bimap
   awajuxtSep2 ux _ vy = bimap ux vy
+
+instance awajuxtStar :: Applicative m => Awajuxt (Star m) where
+  awajuxt2 (Star ux) (Star vy) = Star $ these
+    (map This <<< ux)
+    (map That <<< vy)
+    \u v -> Both <$> ux u <*> vy v
+  awajuxtSep2 (Star ux) (Star h) (Star vy) = Star $ these
+    (map This <<< ux)
+    (map That <<< vy)
+    \u v -> Both <$> ux u <* h unit <*> vy v
+
+instance awajuxtJoker :: Alternative m => Awajuxt (Joker m) where
+  awajuxt2 ux vy = awajuxt2Default ux vy
+  awajuxtSep2 ux h vy = awajuxtSep2Default ux h vy
+
+instance awajuxtClown :: Decidable m => Awajuxt (Clown m) where
+  awajuxt2 ux vy = awajuxt2Default ux vy
+  awajuxtSep2 ux h vy = awajuxtSep2Default ux h vy
+
+instance awajuxtForget :: Monoid r => Awajuxt (Forget r) where
+  awajuxt2 ux vy = awajuxt2Default ux vy
+  awajuxtSep2 ux h vy = awajuxtSep2Default ux h vy
 
 awajuxt2Default :: forall p u v x y. Disjuxt p => Conjuxt p => p u x -> p v y -> p (u /\/ v) (x /\/ y)
 awajuxt2Default ux vy = _These $ conjuxt2 ux vy `disjuxt2` disjuxt2 ux vy
@@ -663,3 +744,21 @@ else instance normalizeProduct :: (Normalize x' x, Normalize y' y) => Normalize 
 
 else instance normalized :: Normalize x x where
   norm' = identity
+
+-- Juxt instances for Codec
+
+instance (Applicative m, Monoid b) => Conjuxt (Codec m a b) where
+  conjuxt0 = Codec (pure $ pure unit) mempty
+  conjuxt2 (Codec l1 r1) (Codec l2 r2) =
+    Codec (lift2 tupling l1 l2) (bitraverse r1 r2)
+instance (Plus m) => Disjuxt (Codec m a b) where
+  disjuxt0 = Codec (pure empty) absurd
+  disjuxt2 (Codec l1 r1) (Codec l2 r2) = Codec
+    (lift2 multiplexing l1 l2) (either (Left ==< r1) (Right ==< r2))
+instance (Alternative m, Monoid b) => Awajuxt (Codec m a b) where
+  awajuxt2 l r = awajuxt2Default l r
+  awajuxtSep2 l h r = awajuxtSep2Default l h r
+
+-- GuideFlow is not possible for Codec, gets stuck needing to produce an
+-- error for encoding, but it is producing `Tuple b` ...
+-- maybe just needs a different order of parameters?
