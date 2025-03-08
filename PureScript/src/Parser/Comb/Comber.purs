@@ -58,8 +58,8 @@ import Parser.Comb.Types as CombT
 import Parser.Lexing (class ToString, type (~), FailReason(..), FailedStack(..), Rawr, Similar(..), toString, bestRegexOrString, errorName, len, userErrors)
 import Parser.Lexing (class ToString, type (~), Rawr) as ReExports
 import Parser.Selective (class Casing, class Select)
+import Parser.Types (ICST, OrEOF, ShiftReduce(..), unShift)
 import Parser.Types (OrEOF) as ReExports
-import Parser.Types (ShiftReduce(..), unShift)
 import Parser.Types as P
 import Partial.Unsafe (unsafeCrashWith)
 import Prim.Row as Row
@@ -68,7 +68,8 @@ import Record as Record
 import Safe.Coerce (coerce)
 import Type.Equality (class TypeEquals, to, from)
 import Type.Proxy (Proxy(..))
-import Whitespace (ParseWS)
+import Whitespace (MaybeWS, ParseWS, defaultWS)
+import Whitespace as WS
 
 type ParseError = String
 type UserError = String
@@ -158,7 +159,8 @@ piggyback ::
   Comber b -> Comber b
 piggyback { errors, name, pattern } dataParser =
   mapEither_ (lmap (\e -> errors <> [e])) $
-    withReparserFor name dataParser (sourceOf pattern) ($)
+    withReparserFor name dataParser (sourceOf pattern)
+      \parser input -> parser input
 
 topName :: String
 topName = "TOP"
@@ -195,7 +197,7 @@ convertParseError = case _ of
           UnknownState { state } -> "Internal parser error: Unknown state " <> show state
           Uhhhh { token: cat } -> "Internal parser error: Uhhhh " <> show cat
           UnknownReduction { reduction: nt /\ r } -> "Internal parser error: UnknownReduction " <> show nt <> "#" <> show r
-          MetaFailed {} -> "Internal parser error: Meta failed"
+          ExternalError msg -> "Internal parser error: " <> msg
 
           UserRejection { userErr } -> fold
             [ "Parse error: User rejection"
@@ -325,7 +327,7 @@ fetchAndThaw comber url =
 
 thaw' :: forall a. Comber a -> Json -> Either CA.JsonDecodeError (StateTable /\ (String -> Either ParseError a))
 thaw' (Comber comber) = C.decode stateTableCodec >>> map \states ->
-  Tuple states $ convertingParseError $ execute { best: bestRegexOrString }
+  Tuple states $ convertingParseError $ execute { best: bestRegexOrString, defaultSpace: defaultWS }
     { states
     , resultants: topName /\ resultantsOf comber
     , options: buildTree topName comber
@@ -372,18 +374,17 @@ type Rec = CombR.Rec UserError ParseWS String String (String ~ Rawr) String Stri
 type States = CombR.CStates ParseWS String (String ~ Rawr)
 type StateInfo = CombR.CStateInfo ParseWS String (String ~ Rawr)
 type State = CombR.CState ParseWS String (String ~ Rawr)
+type StateItem = CombR.CStateItem ParseWS String (String ~ Rawr)
 type Resultant = CombT.CResultant Rec UserError String String String
 type Options = CombT.COptions Rec UserError ParseWS String String (String ~ Rawr) String
+type CST = ICST String (Either String String /\ Maybe Int) (OrEOF String)
 type StateTable =
   { stateMap :: Map String Int
   , start :: Int
   , states :: States
   }
-type Compiled a =
-  { states :: StateTable
-  , options :: Options
-  , resultants :: String /\ Array (Resultant a)
-  }
+type Compiled a = CombR.FullCompiled Rec UserError Rational ParseWS String String (String ~ Rawr) String a
+type Grammar = P.Grammar ParseWS String Int (String ~ Rawr)
 
 --------------------------------------------------------------------------------
 
@@ -408,9 +409,11 @@ withReparserFor name (Comber aux) (Comber body) f =
   Comber $ CombR.withReparserFor name aux body $ f <<< convertingParseError
 
 
+-- | Soft rejection (prunes branches)
 mapEither :: forall a b. (a -> Either (Array UserError) b) -> Comber a -> Comber b
 mapEither f = over Comber $ Comb.mapEither f
 
+-- | Hard rejection (does not prune branches)
 mapEither_ :: forall a b. (a -> Either (Array UserError) b) -> Comber a -> Comber b
 mapEither_ f = over Comber $ Comb.mapEither_ f
 
@@ -490,6 +493,13 @@ wsws' a = choices
 
 wsOf :: ParseWS -> Comber Unit
 wsOf h = Comber $ Comb.space h
+
+
+instance WS.FromWSF Comber where
+  pureWSF = wsOf <<< WS.wsProps
+  infixWSF l h r = (/\) <$> l <* WS.pureWSF h <*> r
+  circumfixWSF h1 l h2 = WS.pureWSF h1 *> l <* WS.pureWSF h2
+  neverWSF = empty
 
 
 --------------------------------------------------------------------------------
@@ -587,11 +597,11 @@ printZipper :: PrintFn Zipper
 printZipper p (P.Zipper l r) =
   intercalate (p.meta " • ") [ printFragment' p l, printFragment' p r ]
 
-printZipper' :: PrintFn (P.Zipper ParseWS (Either String String) (P.OrEOF (String ~ Rawr)))
+printZipper' :: PrintFn (P.Zipper (MaybeWS ParseWS) (Either String String) (P.OrEOF (String ~ Rawr)))
 printZipper' p (P.Zipper l r) =
   intercalate (p.meta " • ") [ printFragment'' p l, printFragment'' p r ]
 
-printPart' :: PrintFn (P.Part ParseWS (Either String String) (P.OrEOF (String ~ Rawr)))
+printPart' :: PrintFn (P.Part (MaybeWS ParseWS) (Either String String) (P.OrEOF (String ~ Rawr)))
 printPart' p (P.NonTerminal (Left nt)) = p.nonTerminal nt <> p.meta "$"
 printPart' p (P.NonTerminal (Right nt)) = p.nonTerminal nt
 printPart' p (P.Terminal P.EOF) = p.meta "$"
@@ -599,7 +609,7 @@ printPart' p (P.Terminal (P.Continue (Similar (Left tok)))) = p.literal tok
 printPart' p (P.Terminal (P.Continue (Similar (Right r)))) = p.regex $ show r
 printPart' p (P.InterTerminal _) = unsafeCrashWith "printPart'"
 
-printFragment'' :: PrintFn (P.Fragment ParseWS (Either String String) (P.OrEOF (String ~ Rawr)))
+printFragment'' :: PrintFn (P.Fragment (MaybeWS ParseWS) (Either String String) (P.OrEOF (String ~ Rawr)))
 printFragment'' p = intercalate (p.meta " ") <<< map (printPart' p)
 
 

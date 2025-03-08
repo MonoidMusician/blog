@@ -11,6 +11,7 @@ import Data.Bifoldable (class Bifoldable)
 import Data.Bifunctor (class Bifunctor)
 import Data.Either (Either(..), hush)
 import Data.Filterable (partitionMap)
+import Data.Foldable (product)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.Map (Map, SemigroupMap)
@@ -27,7 +28,7 @@ import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Proto as Proto
 
-data OrEOF a = EOF | Continue a
+data OrEOF a = Continue a | EOF
 derive instance eqOrEOF :: Eq a => Eq (OrEOF a)
 derive instance ordOrEOF :: Ord a => Ord (OrEOF a)
 
@@ -51,6 +52,26 @@ type GrammarRule space nt r tok =
   , rName :: r -- each rule has a unique name
   , rule :: Fragment space nt tok -- sequence of nonterminals and terminals that make up the rule
   }
+
+-- | Why `Semiring`? Well, we *could* use `HeytingAlgebra`: we have conjunctive
+-- | and disjunctive operations, and because it is finite and distributive, it
+-- | is already a `HeytingAlgebra`: we can find a suitable `not` operation.
+-- | However, `HeytingAlgebra` requires `&&` to be commutative, and we might,
+-- | down the road, want a `Semiring` where `*` is not commutative: maybe a
+-- | parser does not allow trailing spaces on each line, for example.
+normalizeGrammar :: forall space nt r tok. Semiring space => Grammar space nt r tok -> Grammar space nt r tok
+normalizeGrammar (MkGrammar rules) = MkGrammar $ rules <#> \rule ->
+  rule { rule = normalizeFragment rule.rule }
+
+normalizeFragment :: forall space nt tok. Semiring space => Fragment space nt tok -> Fragment space nt tok
+normalizeFragment =
+  Array.groupBy (\x y -> isInterTerminal x == isInterTerminal y)
+    >=> \spacesOrNots -> case traverse fromInterTerminal spacesOrNots of
+      Just spaces -> [InterTerminal $ product spaces]
+      Nothing -> NEA.toArray spacesOrNots
+  where
+  fromInterTerminal (InterTerminal space) = Just space
+  fromInterTerminal _ = Nothing
 
 getRulesFor :: forall space nt r tok. Eq nt => Array (Produced space nt r tok) -> nt -> Array { rule :: Fragment space nt tok, produced :: Array tok }
 getRulesFor rules nt = rules # Array.mapMaybe \rule ->
@@ -137,6 +158,9 @@ noInterTerminals = Array.mapMaybe noInterTerminal
 
 noInterTerminalz :: forall space nt tok. Zipper space nt tok -> Zipper Void nt tok
 noInterTerminalz (Zipper before after) = Zipper (noInterTerminals before) (noInterTerminals after)
+
+trailingSpace :: forall space nt tok. Semiring space => Array (Part space nt tok) -> space
+trailingSpace rule = product $ Array.mapMaybe unInterTerminal $ Array.takeWhile isInterTerminal $ Array.reverse rule
 
 unSPart :: SPart -> String
 unSPart (Terminal t) = String.singleton t

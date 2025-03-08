@@ -54,6 +54,8 @@
 .AST ol.layer
   margin: 0
 
+.terminal.string
+  letter-spacing: -1px
 
 
 /* https://www.cssscript.com/clean-tree-diagram/ */
@@ -171,7 +173,10 @@ $AST-outline: #7a6565
 .AST > li > .node:before
   outline: none
 
-
+.AST .layer .leaf.node.whitespace
+  border-color: transparent !important
+  margin: 0
+  padding: 0
 
 
 
@@ -204,6 +209,7 @@ $AST-outline: #7a6565
     content: "•"
     font-family: "Fira Code"
     line-height: 1em
+    margin: 0 3px
     @if not $light
       color: cyan
     @else
@@ -213,6 +219,7 @@ $AST-outline: #7a6565
     content: "•"
     font-family: "Fira Code"
     line-height: 1em
+    margin: 0 3px
     color: #ce4e7a
 
 .reducible > .terminal

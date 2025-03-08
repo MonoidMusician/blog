@@ -43,15 +43,19 @@
   color: #918b8e
 
 .terminal, .input-wrapper > input.terminal
-  font-weight: bolder
   font-family: "Fira Code"
   @if not $light
     color: #c2d3d3
   @else
     color: #8093a6
-
-.terminal:not(:last-child)
-  letter-spacing: 1.5px
+    &.string
+      color: #1e3d5b
+  &:not(.string):not(.regex)
+    font-weight: bolder
+    &:not(:last-child)
+      letter-spacing: 1.5px
+  &.string, &.regex
+    font-weight: lighter
 
 .terminal.clickable
   padding: 0 0.2em
@@ -79,6 +83,7 @@
   font-weight: 200
   @if not $light
     color: #47cf6e
+    color: #44a25f
   @else
     color: #028928
   margin: 0 3.5px 0 2px
@@ -98,3 +103,24 @@
     color: #ccb11c
   @else
     color: #b39907
+
+.whitespace
+  font-family: "Cormorant"
+  font-style: italic
+  font-weight: lighter
+  font-feature-settings: "dlig" 1
+  margin-right: 1px
+  @if not $light
+    color: #b4d8ed
+  @else
+    color: #3281bb
+.terminal.regex
+  font-size: 90%
+  @if not $light
+    color: #769fff
+  @else
+    color: #145aff
+
+// Parser.Comb.Dragon.nicerShow
+pre.formatted-show
+  font-size: 75%

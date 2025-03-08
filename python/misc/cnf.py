@@ -4,6 +4,7 @@
 
 # Configuration variables
 debug = False
+debug = True
 max_size = 25 # max number of variables, conjunctions, and disjunctions
 
 # This is the denotation of what we are going for: each clause is a conjunction
@@ -130,13 +131,13 @@ def finish(r: bool) -> None:
     result = r
 
 # Cheaty
-def seekTo(*desbits: tuple[str, bool]) -> None:
-    while tape[ptr] not in desbits:
-        next()
+# def seekTo(*desbits: tuple[str, bool]) -> None:
+#     while tape[ptr] not in desbits:
+#         next()
 # Cheaty
-def backTo(*desbits: tuple[str, bool]) -> None:
-    while tape[ptr] not in desbits:
-        prev()
+# def backTo(*desbits: tuple[str, bool]) -> None:
+#     while tape[ptr] not in desbits:
+#         prev()
 # Cheating
 def delete(*desbits: tuple[str, bool | None]) -> None:
     global steps
@@ -165,9 +166,38 @@ def back(*desbits: tuple[str, bool | None]) -> bool:
     val = peek(*desbits)
     prev()
     return val
-# Assign the current pointer
+# Assign the current pointer and stay put
 def asgn(desbit: tuple[str, bool]) -> None:
+    global steps
     tape[ptr] = desbit
+    steps += 1
+# Assign the current pointer and move back
+def asgnBack(desbit: tuple[str, bool]) -> None:
+    tape[ptr] = desbit
+    prev()
+# Assign the current pointer and advance
+def asgnNext(desbit: tuple[str, bool]) -> None:
+    tape[ptr] = desbit
+    next()
+# Copy the current item back one address, move past its original position
+def waveCrest(*desbits: tuple[str, bool | None]) -> None:
+    global ptr
+    back(*desbits)
+    tape[ptr] = tape[ptr+1]
+    ptr += 2
+
+# Helpers for the particular data layout
+def seekFwdToSIGIL() -> None:
+    while not peek(("SIGIL", True), ("notSIGIL", False)):
+        skip(("notSIGIL", False))
+        skip(("mut mark", None))
+        skip(("const value", None))
+    peek(("SIGIL", True))
+def seekBwdToSIGIL() -> None:
+    while not back(("notEndOfNat", False), ("D", True)):
+        back(("accountedFor", True), ("latch accountedFor", True), ("negated", None))
+    back(("noEOF", False))
+    peek(("SIGIL", True))
 
 # Run the machine on the current `tape`
 def main() -> tuple[bool, int]:
@@ -179,7 +209,7 @@ def main() -> tuple[bool, int]:
 def loop() -> bool:
     global result
     # Start from the well known spot SIGIL
-    seekTo(("SIGIL", True))
+    seekFwdToSIGIL()
     while True:
         # Lookup the value of the variable of the first term we see.
         # This oscillates back and forth around SIGIL
@@ -223,10 +253,13 @@ def lookup() -> bool:
     10. read its <value>
     11. read forward to SIGIL, unmarking variables as you go, in O(nvar)
     """
-    peek(("notEndOfNat", False))
-    backTo(("SIGIL", True))
+    back(("notEndOfNat", False))
+    back(("negated", None))
+    back(("D", True))
+    back(("noEOF", False))
+    peek(("SIGIL", True))
     # Start at SIGIL and advance to the next successor in the <var:nat…> that
-    # needs to be marked off. Returns True if they have all been accounted for.
+    # needs to be marked off. Returns False if they have all been accounted for.
     def fromSigilToNextSucc() -> bool:
         skip(("SIGIL", True))
         skip(("noEOF", False))
@@ -235,13 +268,16 @@ def lookup() -> bool:
         while True:
             EON = read(("notEndOfNat", False), ("endOfNat", True))
             if EON:
-                backTo(("SIGIL", True))
+                back(("notSIGIL", False))
+                back(("endOfNat", True))
+                back(("accountedFor", True), ("latch accountedFor", True))
+                seekBwdToSIGIL()
                 return False
             accountedFor = peek(("accountedFor", True), ("latch accountedFor", None))
             if not accountedFor:
                 peek(("latch accountedFor", False))
-                asgn(("latch accountedFor", True))
-                backTo(("SIGIL", True))
+                asgnBack(("latch accountedFor", True))
+                seekBwdToSIGIL()
                 return True
             read(("accountedFor", True), ("latch accountedFor", True))
     # Walk backwards from SIGIL to mark off another variable, corresponding to
@@ -253,8 +289,9 @@ def lookup() -> bool:
             mark = back(("mut mark", None))
             if not mark:
                 skip(("notSIGIL", False))
-                asgn(("mut mark", True))
-                seekTo(("SIGIL", True))
+                asgnNext(("mut mark", True))
+                skip(("const value", None))
+                seekFwdToSIGIL()
                 return
             back(("notSIGIL", False))
     # Once every successor has been accounted for, we look at how many variables
@@ -275,8 +312,7 @@ def lookup() -> bool:
         while not peek(("SIGIL", True), ("notSIGIL", False)):
             skip(("notSIGIL", False))
             peek(("mut mark", True))
-            asgn(("mut mark", False))
-            skip(("mut mark", False))
+            asgnNext(("mut mark", False))
             skip(("const value", None))
         return value
     peek(("SIGIL", True))
@@ -291,8 +327,8 @@ def compress(value: bool) -> None:
     """
     1. start at SIGIL
     2. skip <noEOF=0><D=1> # we were just processing an atom
-    3. read <not>
-    4. result := value XOR not
+    3. read <negated>
+    4. result := value XOR negated
     """
     skip(("SIGIL", True))
     skip(("noEOF", False))
@@ -385,6 +421,7 @@ try:
                 [(1, False)],
             ])
             results.append(r)
+            break
     # print(results)
     if not debug:
         # import random

@@ -20,7 +20,7 @@ import Parser.Lexing (type (~), Rawr, unRawr)
 import Parser.Lexing as Lex
 import Parser.Types (OrEOF(..), Part(..), Zipper(..), notEOF)
 import Type.Proxy (Proxy(..))
-import Whitespace (ParseWS(..))
+import Whitespace (MaybeWS(..), ParseWS)
 
 type CStates = CombR.CStates ParseWS String (String ~ Rawr)
 type StateTable =
@@ -33,11 +33,11 @@ tokenCodec :: JsonCodec (OrEOF (String ~ Rawr))
 tokenCodec = dimap notEOF (maybe EOF Continue) $ CAC.maybe $
   _Newtype $ CAC.either CA.string $ dimap unRawr Lex.rawr CA.string
 
-fragmentCodec :: JsonCodec (Array (Part ParseWS (Either String String) (OrEOF (String ~ Rawr))))
+fragmentCodec :: JsonCodec (Array (Part (MaybeWS ParseWS) (Either String String) (OrEOF (String ~ Rawr))))
 fragmentCodec = CA.array $ CAV.variantMatch
   { "Terminal": Right tokenCodec
   , "NonTerminal": Right (CAC.either CA.string CA.string)
-  , "InterTerminal": Right parseWSCodec
+  , "InterTerminal": Right parseMaybeWSCodec
   } # dimap
     do
       case _ of
@@ -58,6 +58,26 @@ parseWSCodec = _n $ CAR.object "ParseWS"
   , required: _n CA.boolean
   }
 
+parseMaybeWSCodec :: JsonCodec (MaybeWS ParseWS)
+parseMaybeWSCodec =
+  CAV.variantMatch
+    { "DefaultWS": Right CA.null
+    , "SetWS": Right parseWSCodec
+    , "SetOrDefaultWS": Right parseWSCodec
+    } # dimap
+      do
+        case _ of
+          DefaultWS -> Variant.inj (Proxy :: Proxy "DefaultWS") unit
+          SetWS ws -> Variant.inj (Proxy :: Proxy "SetWS") ws
+          SetOrDefaultWS ws -> Variant.inj (Proxy :: Proxy "SetOrDefaultWS") ws
+      do
+        Variant.match
+          { "DefaultWS": const DefaultWS
+          , "SetWS": SetWS
+          , "SetOrDefaultWS": SetOrDefaultWS
+          }
+
+
 indexedCodec :: forall k a. Ord k => JsonCodec k -> JsonCodec a -> JsonCodec (Map.Map k a)
 indexedCodec k a = dimap Map.toUnfoldable Map.fromFoldable $ CA.array $ CAC.tuple k a
 
@@ -74,11 +94,11 @@ stateTableCodec = CAR.object "StateTable"
           , rule: CA.indexedArray "Zipper" $ Zipper
               <$> (\(Zipper before _) -> before) CA.~ CA.index 0 fragmentCodec
               <*> (\(Zipper _ after) -> after) CA.~ CA.index 1 fragmentCodec
-          , lookbehind: _n parseWSCodec
-          , lookahead: CA.array $ CAC.tuple parseWSCodec tokenCodec
+          , lookbehind: _n parseMaybeWSCodec
+          , lookahead: CA.array $ CAC.tuple parseMaybeWSCodec tokenCodec
           }
         , advance: _n $ indexedCodec tokenCodec $
-            CAC.tuple (_n parseWSCodec) $
+            CAC.tuple (_n parseMaybeWSCodec) $
               shiftReduceCodec CA.int $
                 CAC.tuple fragmentCodec $
                   CAC.tuple (CAC.either CA.string CA.string) (CAC.maybe CA.int)

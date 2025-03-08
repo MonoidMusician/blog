@@ -9,7 +9,8 @@ import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..))
-import Data.Foldable (class Foldable, foldMap, for_)
+import Data.Foldable (class Foldable, foldMap, for_, product)
+import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Identity (Identity)
 import Data.Lens (Lens', use, (%=), (+=), (.=))
@@ -21,7 +22,7 @@ import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..), isJust)
 import Data.Monoid.Additive (Additive(..))
-import Data.Newtype (class Newtype, un, unwrap)
+import Data.Newtype (class Newtype, over, un, unwrap)
 import Data.Semigroup.First (First(..))
 import Data.Symbol (class IsSymbol)
 import Data.Traversable (for, traverse)
@@ -29,7 +30,7 @@ import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Idiolect ((>==))
 import Parser.Optimized.Types (Grammar(..), Lookahead, State, StateInfo, StateItem, States(..), Reduction, fromItem, fromItem', fromOld, toItems, toOld, toOldState)
-import Parser.Types (Fragment, OrEOF(..), Part(..), ShiftReduce(..), Zipper(..), isNonTerminal, noInterTerminal, unNonTerminal, unTerminal)
+import Parser.Types (Fragment, OrEOF(..), Part(..), ShiftReduce(..), Zipper(..), isInterTerminal, isNonTerminal, noInterTerminal, unInterTerminal, unNonTerminal, unTerminal)
 import Parser.Types as Old
 import Partial.Unsafe (unsafeCrashWith)
 import Prim.Row as Row
@@ -88,8 +89,11 @@ statesNumberedMany initial entrief =
   in map (toOld grammar) $ closeStates grammar $ map fromItem <$> starts
 
 getReduction :: forall space nt tok. Semiring space => Ord tok => StateItem space nt tok -> SemigroupMap tok (Additive space /\ Reduction space nt tok)
-getReduction { pName, rName, rule: Zipper rule [], lookbehind: Additive lookbehind, lookahead } =
-  lookahead <#> unwrap >>> (Additive <<< if Array.null rule then (lookbehind * _) else identity) >>> (_ /\ (rule /\ pName /\ rName))
+getReduction { pName, rName, rule: Zipper rule finishing, lookbehind: Additive lookbehind, lookahead }
+  | Just spaceAhead <- product <$> traverse unInterTerminal finishing = -- TODO: not necessary? necessary for empty cases?
+  lookahead
+    <#> over Additive (if Array.null rule then (lookbehind * _) else identity <<< (spaceAhead * _))
+    >>> (_ /\ (rule /\ pName /\ rName))
 getReduction _ = SemigroupMap $ Map.empty
 
 getReductions :: forall space nt tok. Semiring space => Ord nt => Ord tok => Grammar space nt tok -> State space nt tok -> SemigroupMap tok (Additive space /\ NonEmptyArray (Reduction space nt tok))
@@ -143,8 +147,13 @@ continueOn (Tuple space continue) lookahead = case continue of
 startRules :: forall space nt tok. Semiring space => Ord space => Ord nt => Ord tok => Grammar space nt tok -> nt -> (Additive space -> Lookahead space tok -> State space nt tok)
 startRules (MkGrammar grammar) p
   | Just mrules <- Map.lookup p grammar =
-    \lookbehind lookahead -> foldMap fromItem' $ Array.catMaybes $ mrules # mapWithIndex \i mrule ->
-        mrule $> { pName: p, rName: Just i, rule: 0, lookbehind, lookahead }
+    \lookbehind lookahead0 ->
+      mrules # foldMapWithIndex \i mrule ->
+        mrule # foldMap \rule ->
+          let
+            lookahead = case product $ Array.mapMaybe unInterTerminal $ Array.takeWhile isInterTerminal $ Array.reverse rule of
+              spaceAhead -> lookahead0 <#> over Additive (spaceAhead * _)
+          in fromItem' { pName: p, rName: Just i, rule: 0, lookbehind, lookahead }
 startRules _ _ = unsafeCrashWith "startRules"
 
 closeItem :: forall space nt tok. Semiring space => Ord space => Ord nt => Ord tok => Grammar space nt tok -> Zipper space nt tok -> Lookahead space tok -> State space nt tok
@@ -199,7 +208,7 @@ nextSteps ::
   , nonTerminal :: SemigroupMap nt (Additive space /\ State space nt tok)
   }
 nextSteps grammar = toItems grammar
-  \{ pName, rName, rule: Zipper before after, lookbehind, lookahead } ->
+  \{ pName, rName, rule: Zipper before after, lookbehind, lookahead: lookahead0 } ->
     let
       go acc scanning = case Array.uncons scanning of
         Nothing ->
@@ -208,21 +217,28 @@ nextSteps grammar = toItems grammar
           }
         Just { head, tail } ->
           let
-            nextStateSeed = fromItem'
-              { pName, rName, rule: Array.length before + 1, lookbehind, lookahead }
+            nextStateSeed _ =
+              let
+                tailWS = product <$> traverse unInterTerminal tail
+                lookahead = case tailWS of
+                  Just spaceAhead -> lookahead0 <#> over Additive (spaceAhead * _)
+                  _ -> lookahead0
+                rule = Array.length before + (Array.length after - if isJust tailWS then 0 else Array.length tail)
+              in fromItem'
+                { pName, rName, rule, lookbehind, lookahead }
           in
             case head of
               NonTerminal nt ->
-                { nonTerminal: SemigroupMap (Map.singleton nt (Additive acc /\ nextStateSeed))
+                { nonTerminal: SemigroupMap (Map.singleton nt (Additive acc /\ nextStateSeed unit))
                 , terminal: SemigroupMap Map.empty
                 }
               Terminal tok ->
                 { nonTerminal: SemigroupMap Map.empty
-                , terminal: SemigroupMap (Map.singleton tok (Additive acc /\ nextStateSeed))
+                , terminal: SemigroupMap (Map.singleton tok (Additive acc /\ nextStateSeed unit))
                 }
               InterTerminal space ->
                 go (acc * space) tail
-    in go (one :: space) after
+    in go (if Array.null before then unwrap lookbehind else one :: space) after
 
 closeStates ::
   forall k space nt tok.
@@ -282,7 +298,7 @@ closeStates1 ::
   Knowing space nt tok (List (KnownState space nt tok))
 closeStates1 newly = do
   _m_rounds += 1
-  rounds <- use _m_rounds
+  -- rounds <- use _m_rounds
   -- when (mod rounds 5 == 0) do
   --   metrics <- gets (unwrap >>> _.metrics)
   --   spyWith "metrics" (const metrics) (pure unit)
@@ -305,7 +321,7 @@ closeStates1 newly = do
   pure missed
 
 
-closeSemilattice :: forall i m. Eq m => Monoid m => (m -> m) -> m -> m
+closeSemilattice :: forall m. Eq m => Monoid m => (m -> m) -> m -> m
 closeSemilattice f = join $ closeSemilattice2 f
 
 closeSemilattice2 :: forall m. Eq m => Monoid m => (m -> m) -> m -> m -> m

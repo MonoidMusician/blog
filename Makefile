@@ -104,6 +104,12 @@ watch-ps : $(BUILDIR)
 	rm -f $(BUILDIR)/widgets.js.gz
 	watchexec -w PureScript/src -f 'PureScript/src/**/*.{purs,js}' -r --shell=bash 'spago bundle --bundle-type app --module Main --outfile ../$(BUILDIR)/widgets.js && make assets-ps >/dev/null'
 
+.PHONY : watch-ps-ide
+watch-ps-ide : $(BUILDIR)
+	rm -f $(BUILDIR)/widgets.js.gz
+	rm -rf output/.full-build
+	watchexec -w output/cache-db.json --no-vcs-ignore --debounce 1500ms -r --shell=bash 'if test output/cache-db.json -nt output/.full-build; then spago bundle --bundle-type app --module Main --outfile ../$(BUILDIR)/widgets.js && touch output/.full-build; fi'
+
 .PHONY : docs-ps
 docs-ps :
 	spago docs -f markdown

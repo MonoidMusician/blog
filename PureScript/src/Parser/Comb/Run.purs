@@ -5,12 +5,17 @@ import Prelude
 import Control.Plus (empty, (<|>))
 import Data.Array ((!!))
 import Data.Array as Array
+import Data.Array.NonEmpty as NEA
+import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..), note)
 import Data.Filterable (filterMap)
+import Data.Foldable (product)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Newtype (unwrap)
+import Data.Monoid.Additive (Additive(..))
+import Data.Newtype (over, unwrap)
+import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Algorithms (getResultCM', getResultICM', revertCST', revertICST')
@@ -20,7 +25,8 @@ import Parser.Lexing (class Tokenize, Best, FailReason(..), FailedStack(..), Raw
 import Parser.Optimized.Algorithms (statesNumberedMany)
 import Parser.Optimized.Types (unsafeFromJust)
 import Parser.Proto (topOf)
-import Parser.Types (Fragment, Grammar(..), OrEOF(..), Part(..), State, StateInfo, States, notEOF)
+import Parser.Types (Fragment, Grammar(..), OrEOF(..), Part(..), State(..), StateInfo, StateItem, States(..), Zipper(..), isInterTerminal, normalizeFragment, normalizeGrammar, notEOF)
+import Whitespace (class HasDefaultWS, MaybeWS(..), defaultWS)
 
 type CBest :: forall k. Type -> k -> Type -> Type -> Type -> Type -> Type -> Type -> Type
 type CBest err prec space air nt cat i o =
@@ -28,13 +34,16 @@ type CBest err prec space air nt cat i o =
 type CConf :: forall k. Type -> k -> Type -> Type -> Type -> Type -> Type -> Type -> Type
 type CConf err prec space air nt cat i o =
   { best :: CBest err prec space air nt cat i o
+  , defaultSpace :: space
   }
 type CStates space nt cat =
-  States Int space (Either nt nt) (Maybe Int) (OrEOF cat)
+  States Int (MaybeWS space) (Either nt nt) (Maybe Int) (OrEOF cat)
 type CStateInfo space nt cat =
-  StateInfo Int space (Either nt nt) (Maybe Int) (OrEOF cat)
+  StateInfo Int (MaybeWS space) (Either nt nt) (Maybe Int) (OrEOF cat)
 type CState space nt cat =
-  State space (Either nt nt) (Maybe Int) (OrEOF cat)
+  State (MaybeWS space) (Either nt nt) (Maybe Int) (OrEOF cat)
+type CStateItem space nt cat =
+  StateItem (MaybeWS space) (Either nt nt) (Maybe Int) (OrEOF cat)
 
 type ParseError err space air nt cat i o =
   FailedStack err Int (Rec err space air nt cat i o) space air (Either nt nt) (Maybe Int) (OrEOF cat) (OrEOF i) (OrEOF o)
@@ -65,10 +74,12 @@ parse ::
     Monoid i =>
     Tokenize cat i o =>
     Tokenize space (OrEOF i) air =>
+    Monoid air =>
     Eq o =>
+    HasDefaultWS space =>
   nt -> Comb (Rec err space air nt cat i o) err prec space air nt cat o a ->
   (i -> Either (ParseError err space air nt cat i o) a)
-parse = parseWith { best: longest }
+parse = parseWith { best: longest, defaultSpace: defaultWS }
 
 -- | Parsing optimized for regexes and string literals, where the string
 -- | literals take precedence over the regexes always (and not just when they
@@ -81,9 +92,11 @@ parseRegex ::
     Ord prec =>
     Ord nt =>
     Tokenize space (OrEOF String) air =>
+    Monoid air =>
+    HasDefaultWS space =>
   nt -> Comb (Rec err space air nt (Similar String Rawr) String String) err prec space air nt (Similar String Rawr) String a ->
   (String -> Either (ParseError err space air nt (Similar String Rawr) String String) a)
-parseRegex = parseWith { best: bestRegexOrString }
+parseRegex = parseWith { best: bestRegexOrString, defaultSpace: defaultWS }
 
 parseWith ::
   forall err prec space air nt cat i o a.
@@ -96,6 +109,7 @@ parseWith ::
     Monoid i =>
     Tokenize cat i o =>
     Tokenize space (OrEOF i) air =>
+    Monoid air =>
     Eq o =>
   CConf err prec space air nt cat i o -> nt -> Comb (Rec err space air nt cat i o) err prec space air nt cat o a ->
   (i -> Either (ParseError err space air nt cat i o) a)
@@ -112,6 +126,7 @@ parseWith' ::
     Monoid i =>
     Tokenize cat i o =>
     Tokenize space (OrEOF i) air =>
+    Monoid air =>
     Eq o =>
   CConf err prec space air nt cat i o -> nt -> Comb (Rec err space air nt cat i o) err prec space air nt cat o a ->
   StateTable space nt cat /\ (i -> Either (ParseError err space air nt cat i o) a)
@@ -129,9 +144,62 @@ parseRegex' ::
     Ord prec =>
     Ord nt =>
     Tokenize space (OrEOF String) air =>
+    Monoid air =>
+    HasDefaultWS space =>
   nt -> Comb (Rec err space air nt (Similar String Rawr) String String) err prec space air nt (Similar String Rawr) String a ->
   StateTable space nt (Similar String Rawr) /\ (String -> Either (ParseError err space air nt (Similar String Rawr) String String) a)
-parseRegex' = parseWith' { best: bestRegexOrString }
+parseRegex' = parseWith' { best: bestRegexOrString, defaultSpace: defaultWS }
+
+type FullCompiled rec err prec space air nt cat o a =
+  { states :: StateTable space nt cat
+  , resultants :: nt /\ Array (CResultant rec err air nt o a)
+  , options :: COptions rec err space air nt cat o
+  , precedences :: Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
+  , grammar :: Grammar space nt Int cat
+  }
+
+normalizeWSGrammar :: forall space nt r tok. Semiring space => Grammar space nt r tok -> Grammar (MaybeWS space) nt r tok
+normalizeWSGrammar (MkGrammar rules) = MkGrammar $ rules <#> \rule ->
+  rule { rule = normalizeWSFragment rule.rule }
+
+normalizeWSFragment :: forall space nt tok. Semiring space => Fragment space nt tok -> Fragment (MaybeWS space) nt tok
+normalizeWSFragment =
+  -- Array.concatMap (\x -> [InterTerminal DefaultWS, inj x, InterTerminal DefaultWS])
+  map inj
+    >>> Array.groupBy (\x y -> isInterTerminal x == isInterTerminal y)
+    >=> \spacesOrNots -> case traverse fromInterTerminal spacesOrNots of
+      Just spaces -> [InterTerminal $ product spaces]
+      Nothing -> NEA.toArray spacesOrNots
+  where
+  fromInterTerminal (InterTerminal space) = Just space
+  fromInterTerminal _ = Nothing
+  inj = case _ of
+    InterTerminal space -> InterTerminal (SetWS space)
+    Terminal tok -> Terminal tok
+    NonTerminal nt -> NonTerminal nt
+
+mapWSStates :: forall s space space' nt r tok. Semiring space => (space -> space') -> States s space nt r tok -> States s space' nt r tok
+mapWSStates mapSpace (States states) = States $ states <#> \r -> r
+  { items = State $ mapItem <$> unwrap r.items, advance = mapAdvance r.advance }
+  where
+  mapItem item = item
+    { rule = case item.rule of
+        Zipper x y -> Zipper (mapFragment x) (mapFragment y)
+    , lookbehind = over Additive mapSpace item.lookbehind
+    , lookahead = map (lmap mapSpace) item.lookahead
+    }
+  mapFragment = map case _ of
+    InterTerminal space -> InterTerminal (mapSpace space)
+    Terminal tok -> Terminal tok
+    NonTerminal nt -> NonTerminal nt
+  mapAdvance = (map <<< bimap (over Additive mapSpace) <<< map <<< lmap) mapFragment
+
+
+fromMaybeWS :: forall space. Semiring space => space -> MaybeWS space -> space
+fromMaybeWS defaultSpace = case _ of
+  DefaultWS -> defaultSpace
+  SetOrDefaultWS space -> defaultSpace + space
+  SetWS space -> space
 
 -- | Compile the LR(1) state table for the grammar
 compile ::
@@ -142,21 +210,19 @@ compile ::
     Ord nt =>
     Ord cat =>
   nt -> Comb rec err prec space air nt cat o a ->
-  { states :: StateTable space nt cat
-  , resultants :: nt /\ Array (CResultant rec err air nt o a)
-  , options :: COptions rec err space air nt cat o
-  , precedences :: Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
-  }
+  FullCompiled rec err prec space air nt cat o a
 compile name parser = do
-  let Comb { grammar: MkGrammar initialWithPrec, entrypoints } = named name parser
-  let initial = initialWithPrec <#> \r -> r { rName = snd r.rName }
-  let grammar = MkGrammar (Array.nub initial)
-  let stateMap /\ generated = statesNumberedMany grammar $ Array.nub $ [ name ] <> entrypoints
-  let start = Map.lookup name stateMap # unsafeFromJust "Map.lookup name stateMap"
+  let
+    Comb { grammar: MkGrammar initialWithPrec, entrypoints } = named name parser
+    initial = initialWithPrec <#> \r -> r { rName = snd r.rName }
+    grammar = normalizeGrammar $ MkGrammar $ Array.nub initial
+    stateMap /\ generated = statesNumberedMany (normalizeWSGrammar grammar) $ Array.nub $ [ name ] <> entrypoints
+    start = Map.lookup name stateMap # unsafeFromJust "Map.lookup name stateMap"
   { states: { stateMap, start, states: generated }
   , options: buildTree name parser
   , resultants: name /\ resultantsOf parser
   , precedences: gatherPrecedences parser
+  , grammar
   }
 
 gatherPrecedences ::
@@ -191,9 +257,17 @@ lookupTuple _ _ = Nothing
 resultantsOf :: forall rec err prec space air nt cat o a. Comb rec err prec space air nt cat o a -> Array (CResultant rec err air nt o a)
 resultantsOf (Comb { rules: cases }) = cases <#> _.resultant
 
+type ExecuteCompiled rec err prec space air nt cat o a r =
+  { states :: StateTable space nt cat
+  , resultants :: nt /\ Array (CResultant rec err air nt o a)
+  , options :: COptions rec err space air nt cat o
+  , precedences :: Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
+  | r
+  }
+
 -- | Execute the parse.
 execute ::
-  forall err prec space air nt cat i o a.
+  forall err prec space air nt cat i o a r.
     Ord prec =>
     Semiring space =>
     Ord space =>
@@ -203,22 +277,21 @@ execute ::
     Monoid i =>
     Tokenize cat i o =>
     Tokenize space (OrEOF i) air =>
+    Monoid air =>
     Eq o =>
   CConf err prec space air nt cat i o ->
-  { states :: StateTable space nt cat
-  , resultants :: nt /\ Array (CResultant (Rec err space air nt cat i o) err air nt o a)
-  , options :: COptions (Rec err space air nt cat i o) err space air nt cat o
-  , precedences :: Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
-  } ->
+  ExecuteCompiled (Rec err space air nt cat i o) err prec space air nt cat o a r ->
   (i -> Either (ParseError err space air nt cat i o) a)
-execute conf0 { states: { stateMap, start, states }, resultants, options, precedences } = do
+execute conf0 { states: { stateMap, start, states: states0 }, resultants, options, precedences } = do
   let
+    states = mapWSStates (fromMaybeWS conf0.defaultSpace) states0
     xx = fullMapOptions
       { rec: identity
       , nt: pure
       , r: pure
       , cat: Continue
       , o: Continue
+      , rule: normalizeFragment
       , cst: note [] <<< revertICST'
       }
     options' ::
@@ -331,6 +404,7 @@ coll ::
     Monoid i =>
     Tokenize cat i o =>
     Tokenize space (OrEOF i) air =>
+    Monoid air =>
     Eq o =>
   nt -> Comb (Rec err space air nt cat i o) err prec space air nt cat o a -> Coll err prec space air nt cat i o (Parsing err space air nt cat i o a)
 coll name parser@(Comb c) = Coll
@@ -361,12 +435,13 @@ collect ::
     Monoid i =>
     Tokenize cat i o =>
     Tokenize space (OrEOF i) air =>
+    Monoid air =>
   CConf err prec space air nt cat i o -> Coll err prec space air nt cat i o parsers -> parsers
 collect conf (Coll { grammar: MkGrammar initialWithPrec, entrypoints, compilation, tokenPrecedence }) = do
   let initial = initialWithPrec <#> \r -> r { rName = snd r.rName }
   let grammar = MkGrammar (Array.nub initial)
   let names = Array.nub entrypoints
-  let entrypoints /\ states = statesNumberedMany grammar names
+  let entrypoints /\ states = statesNumberedMany (normalizeWSGrammar grammar) names
   compilation
     { entrypoints
     , states

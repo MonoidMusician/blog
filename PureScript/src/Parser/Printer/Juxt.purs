@@ -22,9 +22,10 @@ import Data.Functor.Clown (Clown(..))
 import Data.Functor.Costar (Costar(..))
 import Data.Functor.Joker (Joker(..))
 import Data.Generic.Rep as G
+import Data.HeytingAlgebra (ff, tt)
 import Data.Int as Int
 import Data.Lens (Forget(..), Iso, Iso', Tagged(..), review, view)
-import Data.Lens as O
+import Data.Lens as Q
 import Data.Lens.Internal.Zipping (Zipping(..))
 import Data.List (List)
 import Data.List as List
@@ -544,7 +545,7 @@ _coerce' = dimap coerce coerce
 -- Tensors
 
 _These :: forall a b c d. Iso (These a b) (These c d) ((a /\ b) \/ (a \/ b)) ((c /\ d) \/ (c \/ d))
-_These = O.iso (these (Right <<< Left) (Right <<< Right) (map Left <<< Tuple)) (either (uncurry Both) (either This That))
+_These = Q.iso (these (Right <<< Left) (Right <<< Right) (map Left <<< Tuple)) (either (uncurry Both) (either This That))
 
 _TheseL :: forall a b. Iso a b (These a Void) (These b Void)
 _TheseL = dimap This (these identity absurd (const absurd))
@@ -581,35 +582,38 @@ _MaybeR = dimap (maybe (Left unit) Right) hush
 
 -- Arrays and Lists
 
-_Array :: forall i o. O.Iso (Array i) (Array o) (Unit \/ (i /\ Array i)) (Unit \/ (o /\ Array o))
+_Array :: forall i o. Q.Iso (Array i) (Array o) (Unit \/ (i /\ Array i)) (Unit \/ (o /\ Array o))
 _Array = dimap
   do Array.uncons >>> maybe (Left unit) (Right <<< (Tuple <$> _.head <*> _.tail))
   do either (const []) (uncurry Array.cons)
 
-_Array' :: forall i o. O.Iso (Array i) (Array o) (Unit \/ NonEmptyArray i) (Unit \/ NonEmptyArray o)
+_Array' :: forall i o. Q.Iso (Array i) (Array o) (Unit \/ NonEmptyArray i) (Unit \/ NonEmptyArray o)
 _Array' = dimap
   do NEA.fromArray >>> maybe (Left unit) Right
   do either (const []) NEA.toArray
 
-_NEA :: forall i o. O.Iso (NonEmptyArray i) (NonEmptyArray o) (i /\ Array i) (o /\ Array o)
+_NEA :: forall i o. Q.Iso (NonEmptyArray i) (NonEmptyArray o) (i /\ Array i) (o /\ Array o)
 _NEA = dimap
   do NEA.uncons >>> (Tuple <$> _.head <*> _.tail)
   do uncurry NEA.cons'
 
-_List :: forall i o. O.Iso (List i) (List o) (Unit \/ (i /\ List i)) (Unit \/ (o /\ List o))
+_List :: forall i o. Q.Iso (List i) (List o) (Unit \/ (i /\ List i)) (Unit \/ (o /\ List o))
 _List = dimap
   do List.uncons >>> maybe (Left unit) (Right <<< (Tuple <$> _.head <*> _.tail))
   do either (const List.Nil) (uncurry List.Cons)
 
-_NEL :: forall i o. O.Iso (NonEmptyList i) (NonEmptyList o) (i /\ List i) (o /\ List o)
+_NEL :: forall i o. Q.Iso (NonEmptyList i) (NonEmptyList o) (i /\ List i) (o /\ List o)
 _NEL = dimap
   do NEL.uncons >>> (Tuple <$> _.head <*> _.tail)
   do uncurry NEL.cons'
 
 -- Other
 
-_IntNumber :: O.Iso' Number (Either Int Number)
+_IntNumber :: Q.Iso' Number (Either Int Number)
 _IntNumber = dimap (\n -> maybe (Right n) Left $ Int.fromNumber n) (either Int.toNumber identity)
+
+_Boolean :: Q.Iso' Boolean (Either Unit Unit)
+_Boolean = dimap (if _ then Right unit else Left unit) (either ff tt)
 
 
 -- Generic

@@ -2,14 +2,18 @@ module Whitespace where
 
 import Prelude
 
+import Control.Alt (class Alt, (<|>))
+import Control.Apply (lift2)
+import Control.Plus (class Plus)
 import Data.HeytingAlgebra (ff, tt)
-import Data.Lens as O
+import Data.Lens as Q
 import Data.Monoid.Conj (Conj(..))
 import Data.Monoid.Disj (Disj(..))
 import Data.Newtype (class Newtype, unwrap)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (type (/\))
 import Dodo as Dodo
+import Parser.Selective (class Select, select)
 import Safe.Coerce (coerce)
 
 -- | whitespace can be:
@@ -154,6 +158,11 @@ toDoc = case _ of
   SoftBreak -> Dodo.softBreak
   SpaceBreak -> Dodo.spaceBreak
   Break -> Dodo.break
+
+renderDoc :: forall ann. WSDoc ann -> Dodo.Doc ann
+renderDoc (JustWS r) = toDoc r
+renderDoc (WSDoc { before, doc, after }) = toDoc before <> doc <> toDoc after
+
 data WSDoc ann
   = JustWS RenderWS
   | WSDoc
@@ -175,8 +184,8 @@ instance semigroupWSDoc :: Semigroup (WSDoc ann) where
     }
 
 -- Not quite a lawful lens
-_wsDoc :: forall ann ann'. O.Lens (WSDoc ann) (WSDoc ann') (Dodo.Doc ann) (Dodo.Doc ann')
-_wsDoc = O.lens' case _ of
+_wsDoc :: forall ann ann'. Q.Lens (WSDoc ann) (WSDoc ann') (Dodo.Doc ann) (Dodo.Doc ann')
+_wsDoc = Q.lens' case _ of
   JustWS ws -> Tuple mempty (const (JustWS ws))
   WSDoc d -> Tuple d.doc \doc ->
     if Dodo.isEmpty doc
@@ -217,6 +226,7 @@ fromStuff = coerce >>> case _ of
     NoWS -> AllowedSpace
     _ -> SpacePreferred false
   where
+  -- FIXME
   isFailed ::
     { allowed_newline :: Boolean
     , allowed_space :: Boolean
@@ -228,32 +238,147 @@ fromStuff = coerce >>> case _ of
 
 instance semigroupWS :: Semigroup WS where
   append a b = fromStuff (wsProps a <> wsProps b) (wsRender a <> wsRender b)
+instance monoidWS :: Monoid WS where
+  mempty = Allowed
 
 class FromWSF :: (Type -> Type) -> Constraint
 class FromWSF f where
   infixWSF :: forall a b. f a -> WS -> f b -> f (a /\ b)
   circumfixWSF :: forall a. WS -> f a -> WS -> f a
+  pureWSF :: WS -> f Unit
+  neverWSF :: f Void
 
 class FromWSP :: (Type -> Type -> Type) -> Constraint
 class FromWSP p where
   infixWSP :: forall u v x y. p u x -> WS -> p v y -> p (u /\ v) (x /\ y)
   circumfixWSP :: forall u x. WS -> p u x -> WS -> p u x
+  pureWSP :: WS -> p Unit Unit
+  neverWSP :: p Void Void
 
 newtype Boundary = Bdry
   { left :: WS
   , right :: WS
   }
 
-newtype WithBoundaryF :: (Type -> Type) -> Type -> Type
-newtype WithBoundaryF f a = BddF
-  { left :: WS
-  , wrapped :: f a
-  , right :: WS
-  }
+wsF :: forall f. WS -> WithBoundaryF f Unit
+wsF ws = WSF ws identity identity
 
-newtype WithBoundaryP :: (Type -> Type -> Type) -> Type -> Type -> Type
-newtype WithBoundaryP p u x = BddP
-  { left :: WS
-  , wrapped :: p u x
-  , right :: WS
-  }
+noBoundaryF :: forall f a. f a -> WithBoundaryF f a
+noBoundaryF wrapped = BddF { left: mempty, wrapped, right: mempty }
+
+withBoundaryF :: forall f a. FromWSF f => WithBoundaryF f a -> f a
+withBoundaryF (WSF ws proof _) = proof (pureWSF ws)
+withBoundaryF (EmptyF proof) = proof neverWSF
+withBoundaryF (BddF r) = circumfixWSF r.left r.wrapped r.right
+
+_bddF :: forall f a b. Functor f => (f a -> f b) -> WithBoundaryF f a -> WithBoundaryF f b
+_bddF f (WSF ws proof _) = WSF ws (f <<< proof) void
+_bddF _ (EmptyF _) = EmptyF (map absurd)
+_bddF f (BddF r) = BddF r { wrapped = f r.wrapped }
+
+data WithBoundaryF :: (Type -> Type) -> Type -> Type
+data WithBoundaryF f a
+  = WSF WS (f Unit -> f a) (f a -> f Unit)
+  | EmptyF (f Void -> f a)
+  | BddF
+    { left :: WS
+    , wrapped :: f a
+    , right :: WS
+    }
+
+instance functorWithBoundaryF :: Functor f => Functor (WithBoundaryF f) where
+  map f (WSF ws proof _) = WSF ws (map f <<< proof) void
+  map _ (EmptyF _) = EmptyF (map absurd)
+  map f (BddF r) = BddF r { wrapped = map f r.wrapped }
+instance applyWithBoundaryF :: (FromWSF f, Applicative f) => Apply (WithBoundaryF f) where
+  apply (EmptyF _) _ = EmptyF (map absurd)
+  apply _ (EmptyF _) = EmptyF (map absurd)
+  apply (WSF ws1 proof1 _) (WSF ws2 proof2 _) =
+    WSF (ws1 <> ws2) ((<*>) <$> proof1 <*> proof2) void
+  apply (WSF ws proof _) (BddF r) = BddF r
+    { left = ws <> r.left
+    , wrapped = proof (pure unit) <*> r.wrapped
+    }
+  apply (BddF r) (WSF ws proof _) = BddF r
+    { right = r.right <> ws
+    , wrapped = r.wrapped <*> proof (pure unit)
+    }
+  apply (BddF r1) (BddF r2) = BddF
+    { left: r1.left
+    , wrapped: map (uncurry ($)) $ infixWSF r1.wrapped (r1.right <> r2.left) r2.wrapped
+    , right: r2.right
+    }
+instance applicativeWithBoundaryF :: (FromWSF f, Applicative f) => Applicative (WithBoundaryF f) where
+  pure a = WSF mempty (a <$ _) void
+instance altWithBoundaryF :: (FromWSF f, Alt f) => Alt (WithBoundaryF f) where
+  alt (EmptyF _) r = r
+  alt l (EmptyF _) = l
+  alt l r = noBoundaryF $ withBoundaryF l <|> withBoundaryF r -- FIXME
+instance plusWithBoundaryF :: (FromWSF f, Alt f) => Plus (WithBoundaryF f) where
+  empty = EmptyF (map absurd)
+instance selectWithBoundaryF :: (FromWSF f, Select f, Applicative f) => Select (WithBoundaryF f) where
+  select (EmptyF _) _ = EmptyF (map absurd)
+  select l (EmptyF _) = select l (noBoundaryF (map absurd neverWSF))
+  select (WSF ws1 proof1 _) (WSF ws2 proof2 _) = WSF (ws1 <> ws2) (lift2 select proof1 proof2) void
+  select (WSF ws proof _) (BddF r) = BddF r
+    { left = ws <> r.left
+    , wrapped = select (proof (pure unit)) r.wrapped
+    }
+  select (BddF r) (WSF ws proof _) = BddF r
+    { right = r.right <> ws
+    , wrapped = select r.wrapped (proof (pure unit))
+    }
+  select (BddF r1) (BddF r2) = BddF
+    { left: r1.left
+    , wrapped: select r1.wrapped r2.wrapped
+    , right: r2.right
+    }
+
+data WithBoundaryP :: (Type -> Type -> Type) -> Type -> Type -> Type
+data WithBoundaryP p u x
+  = WSP WS (forall q. q Unit Unit -> q u x)
+  | BddP
+    { left :: WS
+    , wrapped :: p u x
+    , right :: WS
+    }
+
+data MaybeWS space
+  = DefaultWS
+  | SetWS space
+  | SetOrDefaultWS space
+
+derive instance eqMaybeWS :: Eq space => Eq (MaybeWS space)
+derive instance ordMaybeWS :: Ord space => Ord (MaybeWS space)
+
+instance showMaybeWS :: Show space => Show (MaybeWS space) where
+  show DefaultWS = "DefaultWS"
+  show (SetWS space) = "(SetWS " <> show space <> ")"
+  show (SetOrDefaultWS space) = "(SetOrDefaultWS " <> show space <> ")"
+
+instance semiringMaybeWS :: Semiring space => Semiring (MaybeWS space) where
+  zero = SetWS zero
+  one = DefaultWS
+
+  add DefaultWS DefaultWS = DefaultWS
+  add DefaultWS (SetWS space) = SetOrDefaultWS space
+  add (SetWS space) DefaultWS = SetOrDefaultWS space
+  add DefaultWS (SetOrDefaultWS space) = SetOrDefaultWS space
+  add (SetOrDefaultWS space) DefaultWS = SetOrDefaultWS space
+  add (SetWS s1) (SetWS s2) = SetWS (s1 + s2)
+  add (SetOrDefaultWS s1) (SetWS s2) = SetOrDefaultWS (s1 + s2)
+  add (SetWS s1) (SetOrDefaultWS s2) = SetOrDefaultWS (s1 + s2)
+  add (SetOrDefaultWS s1) (SetOrDefaultWS s2) = SetOrDefaultWS (s1 + s2)
+
+  mul DefaultWS x = x
+  mul x DefaultWS = x
+  mul (SetWS s1) (SetWS s2) = SetWS (s1 * s2)
+  mul (SetOrDefaultWS s1) (SetWS s2) = SetOrDefaultWS (s1 * s2 + s2)
+  mul (SetWS s1) (SetOrDefaultWS s2) = SetOrDefaultWS (s1 + s1 * s2)
+  mul (SetOrDefaultWS s1) (SetOrDefaultWS s2) = SetOrDefaultWS (s1 + s2 + s1 * s2)
+
+class HasDefaultWS space where
+  defaultWS :: space
+
+instance defaultWSParseWS :: HasDefaultWS ParseWS where
+  defaultWS = mkParseWS ff

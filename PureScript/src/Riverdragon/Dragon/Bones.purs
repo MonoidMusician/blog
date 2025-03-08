@@ -163,6 +163,14 @@ show = text <<< Prelude.show
 texting :: forall flow. Stream flow String -> Dragon
 texting = Text <<< dam
 
+-- | Space
+space :: Dragon
+space = text " "
+
+-- | Non-breaking space
+nbsp :: Dragon
+nbsp = text "\x00A0"
+
 --------------------------------------------------------------------------------
 -- | ## Standard elements (attributes and children)                         | --
 --------------------------------------------------------------------------------

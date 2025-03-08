@@ -31,3 +31,32 @@ main = do
   let a_b = token "a" *> wsOf space <* token "b"
   log $ either identity show $ parse a_b "a b"
   pure unit
+
+{-
+space = wsOf $ WS.mkParseWS tt
+nospace = wsOf $ WS.mkParseWS ff
+spaceOpt = wsOf one
+
+map (D.code[] <<< D.show) $ sourceOf $ (token "x") *> space *> do sourceOf do "R"#: token "y"
+-}
+{-
+map (D.code[] <<< D.show) $ sourceOf $ (token "x") *> do
+  sourceOf do space *> token "z" <* nospace <|> nospace *> token "z" <* space
+-}
+{-
+map (D.code[] <<< D.show) $ sourceOf $ (\x -> spaceOpt *> x <* spaceOpt) $
+  "expr" #-> \rec -> rawr "\\d+" <|>
+    rec <> (spaceOpt *> (tokenPrecL "+" zero <|> tokenPrecR "*" one) <* spaceOpt) <> rec
+-}
+{-
+import Parser.Languages as L
+widget = livePrinterParser
+
+newtype J = J (Json.Json)
+instance Show J where
+  show (J j) = Json.stringify j
+dimap (\(J j) -> j) J $ IOL.json
+-- IOL.jsonString
+
+-- map (D.text <<< show) $ I.many "test" $ I.token "x"
+-}

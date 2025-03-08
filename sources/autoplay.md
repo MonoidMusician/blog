@@ -19,6 +19,8 @@ If that does not work, as of early 2025 these instructions seem to work:
   (You cannot *add* a site there, which is the purpose of this page to force the site to show up there.)
 - Safari on Desktop: Settings > Website > Auto-Play > blog.veritates.love > Allow All Auto-Play
 
+  <!-- Lack of Web MIDI: https://news.ycombinator.com/item?id=23676109 -->
+
 Then you can go <a id="back">back</a>.
 
 Here is a blank autoplay video:

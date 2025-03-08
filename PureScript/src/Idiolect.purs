@@ -9,7 +9,7 @@ import Data.Array as Array
 import Data.CodePoint.Unicode as U
 import Data.Either (Either(..))
 import Data.Either.Nested (type (\/))
-import Data.Filterable (class Filterable, filterMap, partitionMap)
+import Data.Filterable (class Filterable, filter, filterMap, partitionMap)
 import Data.Foldable (class Foldable, fold, foldMap, intercalate, oneOfMap)
 import Data.FoldableWithIndex (class FoldableWithIndex, foldMapWithIndex)
 import Data.Function (on)
@@ -69,10 +69,15 @@ mapWithIndexFlipped = flip mapWithIndex
 infixl 1 mapWithIndexFlipped as <#>:
 
 infixl 4 filterMap as <$?>
+infixl 4 filter as $?>
 
 filterMapFlipped :: forall f a b. Filterable f => f a -> (a -> Maybe b) -> f b
 filterMapFlipped = flip filterMap
 infixl 1 filterMapFlipped as <#?>
+
+filterFlipped :: forall f a. Filterable f => f a -> (a -> Boolean) -> f a
+filterFlipped = flip filter
+infixl 1 filterFlipped as <#?
 
 infixl 4 partitionMap as /$?\
 

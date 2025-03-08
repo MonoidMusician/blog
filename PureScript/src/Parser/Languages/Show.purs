@@ -17,6 +17,7 @@ import Dodo (Doc)
 import Dodo as T
 import Parser.Comb.Comber (Comber, choices, many1SepBy, rawr, thawWith, token, (#->))
 import Parser.Lexing as L
+import Whitespace (defaultWS)
 
 string :: Comber String
 string = rawr $ "\"" <> """([^"\\]+|\\.)*?""" <> "\""
@@ -90,5 +91,5 @@ lazyTop = layers parseShown <|> pure mempty
 
 mkReShow :: Maybe String -> String -> T.PrintOptions -> String
 mkReShow json =
-  thawWith { best: L.lazyBest } lazyTop (Json.parseJson (fromMaybe "" json))
+  thawWith { best: L.lazyBest, defaultSpace: defaultWS } lazyTop (Json.parseJson (fromMaybe "" json))
     >>> either const (flip (T.print T.plainText))

@@ -98,7 +98,7 @@ inputC' label placeholder initialValue onInput =
 
 type Header nt tok = Array tok /\ Array nt
 
-getHeader :: forall s nt r tok. Ord nt => Ord tok => States s Unit nt r tok -> Header nt tok
+getHeader :: forall s space nt r tok. Ord nt => Ord tok => States s space nt r tok -> Header nt tok
 getHeader (States states) = bimap Array.nub Array.nub $
   states # foldMap \{ items: State items } -> items # foldMap \item ->
     ([] /\ [ item.pName ]) <> foldZipper fromPart item.rule

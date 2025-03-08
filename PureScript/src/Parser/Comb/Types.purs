@@ -11,7 +11,7 @@ import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (class Bifunctor, bimap, lmap)
 import Data.Compactable (class Compactable, compact, separateDefault)
 import Data.Either (Either(..), blush, hush, note)
-import Data.Filterable (class Filterable, filterDefault, filterMapDefault, partitionDefault, partitionMapDefault)
+import Data.Filterable (class Filterable, filterDefault, partitionDefault, partitionMapDefault)
 import Data.Functor.Contravariant (class Contravariant, cmap)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Lazy (Lazy)
@@ -23,6 +23,7 @@ import Data.String (CodePoint)
 import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\))
+import Parser.Algorithms (dropAdjWhitespace, dropWhitespace)
 import Parser.Comb.Syntax (Syntax(..))
 import Parser.Selective (class Casing, class Select, casingOn)
 import Parser.Types (Fragment, Grammar(..), GrammarRule, ICST(..))
@@ -167,6 +168,9 @@ fullMapOptions :: forall rec rec' err space air nt nt' r r' cat cat' o o'.
   , r :: r -> r'
   , cat :: cat -> cat'
   , o :: o -> o'
+  , rule ::
+      Fragment space (Lazy (Options rec' err space air nt' r' cat' o') /\ nt') cat' ->
+      Fragment space (Lazy (Options rec' err space air nt' r' cat' o') /\ nt') cat'
   , cst :: ICST air (nt' /\ r') o' -> Either (Array err) (ICST air (nt /\ r) o)
   } -> Options rec err space air nt r cat o -> Options rec' err space air nt' r' cat' o'
 fullMapOptions fs =
@@ -185,7 +189,7 @@ fullMapOptions fs =
     go = over Options $ map \opt ->
       { pName: fs.nt opt.pName
       , rName: fs.r opt.rName
-      , rule: bimap (bimap (map go) fs.nt) fs.cat <$> opt.rule
+      , rule: fs.rule $ bimap (bimap (map go) fs.nt) fs.cat <$> opt.rule
       , logicParts: mapLogicParts opt.logicParts
       , advanced: bimap (bimap fs.nt fs.r) fs.o <$> opt.advanced
       }
@@ -288,12 +292,12 @@ instance plusComb :: Plus (Comb rec err prec space air nt cat o) where
 -- | Distributivity follows from distributivity of `Array`
 instance alternativeComb :: Alternative (Comb rec err prec space air nt cat o)
 instance compactableComb :: Compactable (Comb rec err prec space air nt cat o) where
-  compact (Comb c) = Comb c { rules = c.rules <#> \r -> r { resultant = compact r.resultant } }
+  compact = mapMaybe identity
   separate eta = separateDefault eta
 instance filterableComb :: Filterable (Comb rec err prec space air nt cat o) where
   partitionMap p = partitionMapDefault p
   partition p = partitionDefault p
-  filterMap p = filterMapDefault p
+  filterMap p = mapMaybe p
   filter p = filterDefault p
 instance semigroupComb :: Semigroup a => Semigroup (Comb rec err prec space air nt cat o a) where
   append = lift2 append
@@ -330,7 +334,7 @@ acceptResult length f = LogicParts
   { necessary: pure
     { start: 0
     , length
-    , logic: logicful \r i -> case f r i of
+    , logic: logicful \r i -> case f r $ dropAdjWhitespace i of
         Failed e -> Failed e
         _ -> Partial
     , parents: []
@@ -405,18 +409,72 @@ withRec f = withCST' \rec _ prev -> f rec <$> prev unit
 derive instance functorResultant :: Functor (Resultant err air r tok rec)
 derive instance profunctorResultant :: Profunctor (Resultant err air r tok)
 instance applyResultant :: Apply (Resultant err air r tok rec) where
+  apply (Resultant l@{ length: 0 }) (Resultant r@{ length: 0 }) = Resultant
+    { length: 0
+    , accepting: l.accepting <> r.accepting
+    , result: \rec i -> l.result rec [] <*> r.result rec []
+    }
+  apply (Resultant l@{ length: 0 }) (Resultant r) = Resultant
+    { length: r.length
+    , accepting: l.accepting <> r.accepting
+    , result: \rec i -> l.result rec [] <*> r.result rec i
+    }
+  apply (Resultant l) (Resultant r@{ length: 0 }) = Resultant
+    { length: l.length
+    , accepting: l.accepting <> shiftAccepting (l.length + 1) r.accepting
+    , result: \rec i -> l.result rec i <*> r.result rec []
+    }
   apply (Resultant l) (Resultant r) = Resultant
-    { length: l.length + r.length
-    , accepting: l.accepting <> shiftAccepting l.length r.accepting
+    { length: l.length + r.length + 1
+    , accepting: l.accepting <> shiftAccepting (l.length + 1) r.accepting
     , result: \rec i ->
-        let { before: li, after: ri } = splitAt l.length i in
-        l.result rec li <*> r.result rec ri
+        let { before: li, after: ri } = splitAt l.length (dropAdjWhitespace i) in
+        l.result rec li <*> r.result rec (Array.drop 1 ri)
     }
 instance applicativeResultant :: Applicative (Resultant err air r tok rec) where
   pure a = Resultant { length: 0, accepting: mempty, result: \_ _ -> pure a }
 instance compactableResultant :: Compactable (Resultant err air r tok rec) where
   compact (Resultant r) = Resultant r { result = map (map compact) r.result }
   separate eta = separateDefault eta
+
+adjResultant :: forall err air r tok rec a b c d.
+  (a -> b -> c -> d) ->
+  Resultant err air r tok rec a ->
+  Resultant err air r tok rec b ->
+  Resultant err air r tok rec c ->
+  Resultant err air r tok rec d
+adjResultant f (Resultant a) (Resultant b) (Resultant c) = Resultant
+  { length: a.length + b.length + c.length
+  , accepting: a.accepting <> shiftAccepting a.length b.accepting <> shiftAccepting (a.length + b.length) c.accepting
+  , result: \rec abci ->
+      let
+        { before: ai, after: bci } = splitAt a.length abci
+        { before: bi, after: ci } = splitAt b.length bci
+      in f <$> a.result rec ai <*> b.result rec bi <*> c.result rec ci
+  }
+
+adj :: forall rec err prec space air nt cat o a b c d.
+  (a -> b -> c -> d) ->
+  Comb rec err prec space air nt cat o a ->
+  Comb rec err prec space air nt cat o b ->
+  Comb rec err prec space air nt cat o c ->
+  Comb rec err prec space air nt cat o d
+adj f (Comb a) (Comb b) (Comb c) = Comb
+  { grammar: a.grammar <> b.grammar <> c.grammar
+  , entrypoints: a.entrypoints <|> b.entrypoints <|> c.entrypoints
+  , pretty: map Conj <<< Conj <$> a.pretty <*> b.pretty <*> c.pretty
+  , prettyGrammar: a.prettyGrammar <|> b.prettyGrammar <|> c.prettyGrammar
+  , tokenPrecedence: a.tokenPrecedence <|> b.tokenPrecedence <|> c.tokenPrecedence
+  , rules: ado
+      x <- a.rules
+      y <- b.rules
+      z <- c.rules
+      in
+        { rule: x.rule <|> y.rule <|> z.rule
+        , resultant: adjResultant f x.resultant y.resultant z.resultant
+        , prec: x.prec <> y.prec <> z.prec
+        }
+  }
 
 -- | Apply the resultant.
 resultFrom :: forall err air r tok rec a. Resultant err air r tok rec a -> rec -> Array (ICST air r tok) -> Either (Array err) a
@@ -430,7 +488,7 @@ component c = Resultant
   { length: 1
   , accepting: mempty
   , result: \r is ->
-      case head is of
+      case head (dropAdjWhitespace is) of
         Nothing -> Partial
         Just i -> case c r i of
           Left err -> Failed err
@@ -441,7 +499,8 @@ components :: forall err air r tok rec a. Array (rec -> ICST air r tok -> Either
 components cs = Resultant
   { length: length cs
   , accepting: mempty
-  , result: \r is ->
+  , result: \r is0 ->
+      let is = dropWhitespace is0 in
       if length is < length cs then Partial else
         case sequence (zipWith identity (cs <@> r) is) of
           Left err -> Failed err

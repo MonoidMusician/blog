@@ -31,6 +31,7 @@ import Data.Traversable (traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested ((/\), type (/\))
+import Debug (spy)
 import Idiolect ((>==))
 import Parser.Proto (Stack(..), topOf)
 import Parser.Proto as Proto
@@ -232,7 +233,8 @@ getResultC (Snoc (Snoc (Zero _) result@(Branch _ _) _) (Leaf _) _) = Just result
 getResultC _ = Nothing
 
 getResultIC :: forall air x y z. Stack x (ICST air y z) -> Maybe (ICST air y z)
-getResultIC (Snoc (Snoc (Zero _) result@(IBranch _ _) _) (ILeaf _) _) = Just result
+getResultIC (Snoc (Snoc (Snoc (Snoc (Zero _) (IAir before) _) (IBranch name children) _) (IAir after) _) (ILeaf _eof) _) =
+  Just (IBranch name ([ IAir before ] <> children <> [ IAir after ]))
 getResultIC _ = Nothing
 
 getResultCM :: forall w x y z. Stack w (CST (Maybe x /\ Maybe y) (OrEOF z)) -> Maybe (CST (x /\ y) z)
@@ -257,6 +259,18 @@ revertICST' (ILeaf t) = ILeaf <$> notEOF t
 revertICST' (IAir air) = Just (IAir air)
 revertICST' (IBranch r cs) = IBranch <$> bitraverse hush identity r <*> traverse revertICST' cs
 
+dropAdjWhitespace :: forall air y z. Array (ICST air y z) -> Array (ICST air y z)
+dropAdjWhitespace i =
+  let j = Array.length i - 1 in
+  case Array.index i 0, Array.index i j of
+    Just (IAir _), Just (IAir _) -> Array.slice 1 j i
+    _, Just (IAir _) -> Array.slice 0 j i
+    Just (IAir _), _ -> Array.slice 1 (j + 1) i
+    _, _ -> i
+dropWhitespace :: forall air y z. Array (ICST air y z) -> Array (ICST air y z)
+dropWhitespace = Array.filter case _ of
+  IAir _ -> false
+  _ -> true
 
 parseIntoGrammar
   :: forall space t
@@ -427,9 +441,10 @@ toAdvanceTo { advance, receive } = noInterTerminalz >>> toAdvance >=> case _ of
   InterTerminal vd -> absurd vd
 
 getReduction :: forall space nt r tok. Semiring space =>Ord tok => StateItem space nt r tok -> SemigroupMap tok (Additive space /\ Fragment space nt tok /\ nt /\ r)
-getReduction { pName, rName, rule: Zipper rule [], lookbehind: Additive lookbehind, lookahead } =
+getReduction { pName, rName, rule: Zipper rule finishing, lookbehind: Additive lookbehind, lookahead }
+  | Just spaceAhead <- product <$> traverse unInterTerminal finishing =
   SemigroupMap $ Map.fromFoldable $ lookahead <#> \(Tuple space tok) ->
-    tok /\ (Additive if Array.null rule then (lookbehind * space) else space) /\ rule /\ pName /\ rName
+    tok /\ (Additive if Array.null rule then (lookbehind * spaceAhead * space) else spaceAhead * space) /\ rule /\ pName /\ rName
 getReduction _ = SemigroupMap $ Map.empty
 
 getReductions :: forall space nt r tok. Ord tok => Semiring space => State space nt r tok -> SemigroupMap tok (Additive space /\ NonEmptyArray (Fragment space nt tok /\ nt /\ r))
@@ -480,12 +495,18 @@ continueOn continue lookahead = case continue of
   Tuple space (Just tok) -> [ Tuple space tok ]
   Tuple space Nothing -> lmap (coerce (space * _)) <$> lookahead
 
-startRules :: forall space nt r tok. Eq nt => Grammar space nt r tok -> nt -> (Additive space -> Lookahead space tok -> Array (StateItem space nt r tok))
+stateItemWS :: forall space nt r tok. Semiring space => StateItem space nt r tok -> StateItem space nt r tok
+stateItemWS item@{ rule: Zipper before finishing, lookahead }
+  | Just spaceAhead <- product <$> traverse unInterTerminal finishing
+  = item { rule = Zipper (before <> finishing) [], lookahead = lookahead <#> lmap (spaceAhead * _) }
+stateItemWS item = item
+
+startRules :: forall space nt r tok. Semiring space => Eq nt => Grammar space nt r tok -> nt -> (Additive space -> Lookahead space tok -> Array (StateItem space nt r tok))
 startRules (MkGrammar rules) p =
   let
     filtered = Array.filter (\{ pName } -> pName == p) rules
   in
-    \lookbehind lookahead -> filtered <#> \{ pName, rName, rule } -> { pName, rName, rule: Zipper [] rule, lookbehind, lookahead }
+    \lookbehind lookahead -> filtered <#> \{ pName, rName, rule } -> stateItemWS { pName, rName, rule: Zipper [] rule, lookbehind, lookahead }
 
 closeItem :: forall space nt r tok. Semiring space => Eq space => Eq nt => Eq tok => Grammar space nt r tok -> StateItem space nt r tok -> Array (StateItem space nt r tok)
 closeItem grammar item = case findNT item.rule of
@@ -538,7 +559,8 @@ nextStep
   -> { nonTerminal :: SemigroupMap nt (Additive space /\ Array (StateItem space nt r tok))
      , terminal :: SemigroupMap tok (Additive space /\ Array (StateItem space nt r tok))
      }
-nextStep item@{ rule: Zipper before after } = go (one :: space) after
+nextStep item@{ rule: Zipper before after } =
+  go (if Array.null before then unwrap item.lookbehind else one :: space) after
   where
   go acc scanning = case Array.uncons scanning of
     Nothing ->
@@ -547,7 +569,7 @@ nextStep item@{ rule: Zipper before after } = go (one :: space) after
       }
     Just { head, tail } ->
       let
-        nextStateSeed = pure
+        nextStateSeed = pure $ stateItemWS
           { pName: item.pName
           , rName: item.rName
           , rule: Zipper (before <> [ head ]) tail

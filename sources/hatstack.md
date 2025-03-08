@@ -34,7 +34,7 @@ The implementation consists of:
     They differ in [important ways](#data-and-stack-manipulation), make sure to read up!
   - `.0`{.hatstack}, `.1`{.hatstack}, [etc.]{t=} refer to ***a*** previous stack while `$0`{.hatstack}, `$1`{.hatstack}, [etc.]{t=} refer to the current stack.
     Nested brackets `[…]`{.hatstack} increment the stack that `.0`{.hatstack} [et al.]{t=} refer to, while nested braces `{…}`{.hatstack} keep it the same.
-- Functions (procedures) and variables.
+- Functions (procedures) and variables.^[It is more appropriate to call them procedures, since they are not higher-order functions.]
 - A control stack to keep track of constructs like `if…(else)…end`{.hatstack} and `begin…while…end`{.hatstack}.
 - Current error/skipping state, [etc.]{t=}
 
