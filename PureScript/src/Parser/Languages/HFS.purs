@@ -14,7 +14,6 @@ import Data.Lazy (Lazy, defer, force)
 import Data.List (List(..), (:))
 import Data.List as List
 import Data.Map as Map
-import Data.Maybe (isJust, isNothing)
 import Data.NonEmpty (NonEmpty, (:|))
 import Data.NonEmpty as NE
 import Data.Semigroup.Foldable (foldl1)
@@ -26,7 +25,6 @@ import Data.String.Regex.Flags (global)
 import Data.String.Regex.Unsafe (unsafeRegex)
 import Effect.Exception (message, try)
 import Effect.Unsafe (unsafePerformEffect)
-import Idiolect ((<#>:))
 import Parser.Comb as Comb
 
 -- | `HFList`: an `Array`-based representation for FFI
@@ -82,21 +80,24 @@ foreign import bnWidth :: BigNat -> BigNat
 foreign import bnCount :: BigNat -> BigNat
 foreign import bnUnpack :: BigNat -> Array BigNat
 
--- | Preferred based for a `HFS` as a number
+-- | Preferred base for a `HFS` as a number
 data Base = Bin | Dec | Hex
 derive instance eqBase :: Eq Base
 
 -- | Hereditarily Finite Sets
 data HFS
   = NumLike Base BigNat
-  | SetLike (Set HFS)
+  | SetLike Int (Set HFS)
 
 instance eqHFS :: Eq HFS where
   eq (NumLike _ n1) (NumLike _ n2) = n1 == n2
+  eq (SetLike d1 _) (SetLike d2 _) | d1 /= d2 = false
   eq l r = hfs l == hfs r
 
 instance ordHFS :: Ord HFS where
   compare (NumLike _ n1) (NumLike _ n2) = compare n1 n2
+  compare (SetLike d1 _) (SetLike d2 _)
+    | notEqual <- compare d1 d2, notEqual /= EQ = notEqual
   compare l0 r0 =
     -- Compare highest elements against highest elements
     -- (like a lexiocographic order)
@@ -113,7 +114,7 @@ instance ordHFS :: Ord HFS where
       Nil, Nil -> EQ
 
 instance monoidHFS :: Monoid HFS where
-  mempty = SetLike Set.empty
+  mempty = SetLike 0 Set.empty
 instance semigroupHFS :: Semigroup HFS where
   append = hfsUni
 instance semiringHFS :: Semiring HFS where
@@ -122,35 +123,30 @@ instance semiringHFS :: Semiring HFS where
   add = hfsAdd
   mul = hfsMul
 
+setLike :: Set HFS -> HFS
+setLike s = SetLike (setDepth s) s
+
 isEmpty :: HFS -> Boolean
 isEmpty (NumLike _ n) = n == zero
-isEmpty (SetLike members) = Set.isEmpty members
+isEmpty (SetLike d _) = d == zero
 
 isZero :: HFS -> Boolean
 isZero = isEmpty
 
 isOne :: HFS -> Boolean
 isOne (NumLike _ n) = n == one
-isOne (SetLike members)
-  | Set.size members == 1
-  , all isEmpty members = true
-isOne _ = false
+isOne (SetLike d _) = d == one
 
 isTwo :: HFS -> Boolean
 isTwo (NumLike _ n) = n == one + one
-isTwo (SetLike members)
-  | Set.size members == 1
-  , all isOne members = true
+isTwo (SetLike 2 members)
+  | Set.size members == 1 = true
 isTwo _ = false
 
 -- | `isZero || isOne`
 triv :: HFS -> Boolean
 triv (NumLike _ n) = n <= one
-triv (SetLike members) | Set.isEmpty members = true
-triv (SetLike members)
-  | Set.size members <= 1
-  , all isEmpty members = true
-triv _ = false
+triv (SetLike d _) = d <= one
 
 -- | Do the two `HFS`es have no members in common.
 disjoint :: HFS -> HFS -> Boolean
@@ -160,6 +156,8 @@ disjoint l r = Set.isEmpty (Set.intersection (hfs l) (hfs r))
 
 isSubsetOf :: HFS -> HFS -> Boolean
 isSubsetOf (NumLike _ n1) (NumLike _ n2) = bnInt n1 n2 == n2
+isSubsetOf (SetLike 0 _) _ = true
+isSubsetOf (SetLike d1 _) (SetLike d2 _) | d1 > d2 = false
 isSubsetOf l r = Set.subset (hfs l) (hfs r)
 
 
@@ -168,28 +166,35 @@ hfsFromInt :: Int -> HFS
 hfsFromInt = NumLike Dec <<< fromInt
 
 hfsFromFoldable :: forall f. Foldable f => f HFS -> HFS
-hfsFromFoldable = SetLike <<< Set.fromFoldable
+hfsFromFoldable = setLike <<< Set.fromFoldable
 
 -- | Number of members of the `HFS`, also: the number of bits set.
 hfsCount :: HFS -> HFS
-hfsCount (SetLike members) = NumLike Dec (fromInt (Set.size members))
+hfsCount (SetLike _ members) = NumLike Dec (fromInt (Set.size members))
 hfsCount (NumLike _ n) = NumLike Dec (bnCount n)
 
 -- | The bit width, number of bits to represent it. I think?
 hfsWidth :: HFS -> HFS
-hfsWidth (SetLike members) = sum (Set.findMax members)
+hfsWidth (SetLike _ members) = sum (Set.findMax members)
 hfsWidth (NumLike _ n) = NumLike Dec (bnWidth n)
 
--- | Recursive depth of the `HFS`. But also the bit width minus 1?
+-- | Recursive depth of the `HFS`.
 hfsDepth :: HFS -> HFS
-hfsDepth = sum <<< Set.findMax <<< Set.map (\x -> one + hfsDepth x) <<< hfs
+hfsDepth = hfsFromInt <<< depth
+
+depth :: HFS -> Int
+depth (SetLike d _) = d
+depth n = setDepth (hfs n)
+
+setDepth :: Set HFS -> Int
+setDepth = sum <<< Set.findMax <<< Set.map (\x -> one + depth x)
 
 isSingleton :: HFS -> Maybe HFS
 isSingleton (NumLike _ n1)
   | w <- bnWidth n1
   , n1 == bnShL one w
   = Just (NumLike Hex w)
-isSingleton (SetLike members)
+isSingleton (SetLike _ members)
   | Set.size members == 1
   = Set.findMax members
 isSingleton _ = Nothing
@@ -198,20 +203,21 @@ isSingleton _ = Nothing
 hfsAdd :: HFS -> HFS -> HFS
 hfsAdd l r | isZero r = l
 hfsAdd l r | isZero l = r
-hfsAdd l@(SetLike s1) r@(SetLike s2) | disjoint l r = SetLike (s1 <> s2)
+hfsAdd l@(SetLike d1 s1) r@(SetLike d2 s2) | disjoint l r =
+  SetLike (max d1 d2) (s1 <> s2)
 -- TODO: add from low order bits
 hfsAdd l r = hfsBase l r (bnAdd (bn l) (bn r))
 
 -- | Union, bitwise OR.
 hfsUni :: HFS -> HFS -> HFS
 hfsUni l@(NumLike _ n1) r@(NumLike _ n2) = hfsBase l r (bnUni n1 n2)
-hfsUni l r = SetLike (Set.union (hfs l) (hfs r))
+hfsUni l r = SetLike (max (depth l) (depth r)) (Set.union (hfs l) (hfs r))
 
 -- | Intersection, bitwise AND.
 hfsInt :: HFS -> HFS -> HFS
 hfsInt l@(NumLike _ n1) r@(NumLike _ n2) = hfsBase l r (bnInt n1 n2)
 -- TODO: truncate to number?
-hfsInt l r = SetLike (Set.intersection (hfs l) (hfs r))
+hfsInt l r = setLike (Set.intersection (hfs l) (hfs r))
 
 -- | Truncating division as numbers.
 hfsDiv :: HFS -> HFS -> HFS
@@ -237,23 +243,23 @@ hfsBase :: HFS -> HFS -> BigNat -> HFS
 hfsBase (NumLike b1 _) (NumLike b2 _) n | b1 == b2 = NumLike b1 n
 hfsBase l (NumLike b2 _) n | triv l = NumLike b2 n
 hfsBase (NumLike b1 _) r n | triv r = NumLike b1 n
-hfsBase (NumLike b1 _) (SetLike _) n = NumLike b1 n
-hfsBase (SetLike _) (NumLike b2 _) n = NumLike b2 n
+hfsBase (NumLike b1 _) (SetLike _ _) n = NumLike b1 n
+hfsBase (SetLike _ _) (NumLike b2 _) n = NumLike b2 n
 hfsBase _ _ n = NumLike Hex n
 
 -- | `HFS` as `BigNat`.
 bn :: HFS -> BigNat
 bn (NumLike _ n) = n
-bn (SetLike members) = members # foldMap (bn >>> bnShL one)
+bn (SetLike _ members) = members # foldMap (bn >>> bnShL one)
 
 -- | `HFS` as `Set HFS`.
 hfs :: HFS -> Set HFS
-hfs (SetLike members) = members
+hfs (SetLike _ members) = members
 hfs (NumLike _ n) = Set.fromFoldable $ NumLike Hex <$> bnUnpack n
 
 -- | Create a singleton set.
 hfsSingle :: HFS -> HFS
-hfsSingle = SetLike <<< Set.singleton
+hfsSingle = setLike <<< Set.singleton
 
 -- | Pull out the items of the second that are a subset of the first. Maybe.
 -- TODO: actually optimize
@@ -263,17 +269,20 @@ hfSubsetOf _ = hfs
 -- | Difference of sets.
 hfsDif :: HFS -> HFS -> HFS
 hfsDif l@(NumLike _ n1) r@(NumLike _ n2) = hfsBase l r (bnSub n1 (bnInt n1 n2))
-hfsDif l r = SetLike (Set.difference (hfs l) (hfSubsetOf l r))
+hfsDif l r = setLike (Set.difference (hfs l) (hfSubsetOf l r))
 
 -- | Subtract as numbers.
 hfsSub :: HFS -> HFS -> HFS
-hfsSub l@(SetLike _) r@(SetLike _) | isSubsetOf l r = hfsDif l r
+hfsSub l r | isZero r = l
+hfsSub (SetLike d1 _) (SetLike d2 _) | d1 < d2 = mempty
+hfsSub l@(SetLike _ _) r@(SetLike _ _) | isSubsetOf l r = hfsDif l r
 -- TODO: sub from high order bits
 hfsSub l r = hfsBase l r (bnSub (bn l) (bn r))
 
 -- | Is the first a member of the second?
 hfsMem :: HFS -> HFS -> Boolean
-hfsMem l (SetLike members) = Set.member l members
+hfsMem (SetLike d1 _) (SetLike d2 _) | d1 >= d2 = false
+hfsMem l (SetLike _ members) = Set.member l members
 hfsMem (NumLike _ n1) (NumLike _ n2)
   | n1 > bnWidth n2 = false
   | otherwise = bnInt (bnShL one n1) n2 /= zero
@@ -282,7 +291,7 @@ hfsMem l r = Set.member l (hfs r)
 -- | Symmetric difference, bitwise XOR.
 hfsSym :: HFS -> HFS -> HFS
 hfsSym l@(NumLike _ n1) r@(NumLike _ n2) = hfsBase l r (bnSym n1 n2)
-hfsSym l r = SetLike $
+hfsSym l r = setLike $
   (\x y -> Set.difference (Set.union x y) (Set.intersection x y)) (hfs l) (hfs r)
 
 -- | Power (exponent).
@@ -310,12 +319,12 @@ hfsShR l r = hfsBase l l {- sic. -} (bnShR (bn l) (bn r))
 -- | Unpack function.
 hfsUnpack :: HFS -> Array HFS
 hfsUnpack (NumLike _ n) = bnUnpack n <#> NumLike Hex
-hfsUnpack (SetLike members) = Set.toUnfoldable members
+hfsUnpack (SetLike _ members) = Set.toUnfoldable members
 
 -- Functions to set preferred
 
 hfsAsSet :: HFS -> HFS
-hfsAsSet = SetLike <<< hfs
+hfsAsSet = setLike <<< hfs
 hfsAsNat :: HFS -> HFS
 hfsAsNat h@(NumLike _ _) = h
 hfsAsNat h = NumLike Hex (bn h)
@@ -326,7 +335,7 @@ hfsAsDec = NumLike Dec <<< bn
 hfsAsHex :: HFS -> HFS
 hfsAsHex = NumLike Hex <<< bn
 hfsAsHFS :: HFS -> HFS
-hfsAsHFS = SetLike <<< Set.map (\x -> hfsAsHFS x) <<< hfs
+hfsAsHFS = setLike <<< Set.map (\x -> hfsAsHFS x) <<< hfs
 
 
 --------------------------------------------------------------------------------
@@ -815,6 +824,7 @@ fn :: Comber Fn
 fn = "fn"#: choices
   [ Count <$ token "count"
   , Width <$ token "width"
+  , Depth <$ token "depth"
   , Single <$ token "{.}"
   , Unpack <$ do token "unpack" <|> token "$#"
   , Pack <$ do token "pack" <|> token "{#}"
@@ -906,6 +916,16 @@ data Instr
   | Var String
   | Set String
 
+-- TODO:
+-- - stack variables `[.$]\d+`, with priority (cannot be a substring of another identifier)
+-- - global `[$]\w+` and lexical `[.]\w+` variables, with priority
+-- - reserved operators, like `#[` and `]`, with priority
+-- - number `\d+`
+-- - identifier characters and then a number, like `[\w_][\w_\d]*` (but with unicode)
+-- - operator characters and then a number?
+-- - so basically you cannot mix identifier characters and operator characters together,
+--   but you can mix them with numbers
+
 parser :: Comber (Array Instr)
 parser = pure [] <|> do
   map NEA.toArray $
@@ -926,7 +946,7 @@ showHFS (NumLike b n) = case b of
   Bin -> bnBin n
   Dec -> bnDec n
   Hex -> bnHex n
-showHFS (SetLike members) = (\m -> "{" <> m <> "}") $
+showHFS (SetLike _ members) = (\m -> "{" <> m <> "}") $
   intercalateMap ", " showHFS (Array.reverse (Array.fromFoldable members))
 
 type Stack = List HFS
