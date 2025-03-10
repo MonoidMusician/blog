@@ -12,7 +12,7 @@ import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Compactable (compact, separateDefault)
 import Data.Either (Either(..), either, isLeft)
 import Data.Filterable (class Compactable, class Filterable, filter, filterMap, partitionDefaultFilter, partitionMapDefault)
-import Data.Foldable (fold, foldMap)
+import Data.Foldable (foldMap)
 import Data.Functor.Compose (Compose(..))
 import Data.Lazy (Lazy)
 import Data.Lens as Q
@@ -26,7 +26,7 @@ import Data.Set (Set)
 import Data.These (These(..), these)
 import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.Tuple.Nested ((/\))
-import Debug (spy, spyWith)
+import Debug (spyWith)
 import Dodo as O
 import Parser.Comb as Comb
 import Parser.Comb.Comber (Comber, UserError, lift2)
@@ -37,27 +37,34 @@ import Parser.Printer.Prec (Prec(..))
 import Parser.Selective (casingOn, cmapCaseTree, hoistCaseTree', secondCaseTree)
 import Riverdragon.Dragon (Dragon)
 import Safe.Coerce (coerce)
+import Stylish.Types (Classy, Stylish)
 import Whitespace (class FromWSF, WS, WSDoc, WithBoundaryF(..), _bddF, _wsDoc, docWS, noBoundaryF, pureWSF, withBoundaryF, wsF)
 import Whitespace as WS
 
 -- TODO: standard syntactic categories
 newtype Ann = Ann
-  { classes :: Array String
+  { classes :: Classy
+  , styles :: Stylish
   , ansi :: Array GraphicsParam
   , dragon :: Endo (->) Dragon
+  , tooltip :: Maybe Dragon
   }
 derive instance newtypeAnn :: Newtype Ann _
 derive newtype instance semigroupAnn :: Semigroup Ann
 derive newtype instance monoidAnn :: Monoid Ann
 
 newAnn ::
-  ( { ansi :: Array GraphicsParam
-    , classes :: Array String
+  ( { classes :: Classy
+    , styles :: Stylish
+    , ansi :: Array GraphicsParam
     , dragon :: Endo (->) Dragon
+    , tooltip :: Maybe Dragon
     } ->
-    { ansi :: Array GraphicsParam
-    , classes :: Array String
+    { classes :: Classy
+    , styles :: Stylish
+    , ansi :: Array GraphicsParam
     , dragon :: Endo (->) Dragon
+    , tooltip :: Maybe Dragon
     }
   ) ->
   Ann

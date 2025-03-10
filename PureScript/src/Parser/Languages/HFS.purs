@@ -398,6 +398,7 @@ def unpair
   dup 1 == if
     drop
     unsingle
+    dup
     return
   end
   throw
@@ -729,8 +730,8 @@ chooseIdOp = case _ of
       _ -> zero
   Uni -> ZeroId hfsUni
   Int -> NoId hfsInt
-  Dif -> NoId \x y -> hfsSub x (hfsInt x y)
-  Fid -> NoId \y x -> hfsSub x (hfsInt x y)
+  Dif -> NoId hfsDif
+  Fid -> NoId (flip hfsDif)
   Sym -> ZeroId hfsSym
   Mem -> Transitively \x y -> hfsInt (hfsShL one x) y /= zero
   Rem -> Transitively \y x -> hfsInt (hfsShL one x) y /= zero

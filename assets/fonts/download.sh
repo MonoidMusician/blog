@@ -2,7 +2,9 @@
 cd "$(dirname "$0")"
 shopt -s globstar
 set -euxo pipefail
+
 FLAGS=--clobber
+
 curl $FLAGS -OL http://sourceforge.net/projects/freetengwar/files/TengwarFont/TengwarTelcontar.008.zip
 unzip -u -d TengwarTelcontar.008{,.zip}
 
@@ -35,12 +37,12 @@ if [[ -e /usr/local/opt/grep/bin/ggrep ]]; then
   ln -s /usr/local/opt/grep/bin/ggrep .bin/grep
 fi
 
-bash google-font-download --format woff2 -o Mulish.css "Mulish":{300,400,500,700}{,i} -l $(echo {latin,cyrillic}{,-ext} | tr ' ' ',')
-bash google-font-download --format woff2 -o Oswald.css "Oswald":{200,300,400,700} -l $(echo latin{,-ext} | tr ' ' ',')
+bash google-font-download --format woff2 -o Mulish.css "Mulish":{300,400,500,700}{,i} -l "$(echo {latin,cyrillic}{,-ext} | tr ' ' ',')"
+bash google-font-download --format woff2 -o Oswald.css "Oswald":{200,300,400,700} -l "$(echo latin{,-ext} | tr ' ' ',')"
 bash google-font-download --format woff2 -o Sofia.css "Sofia":400 -l latin
 bash google-font-download --format woff2 -o Amaranth.css "Amaranth":{400,700}{,i} -l latin
-bash google-font-download --format woff2 -o EB_Garamond_GR.css "EB Garamond":{400,700}{,i} -l $(echo greek{,-ext} | tr ' ' ',')
-bash google-font-download --format woff2 -o Fira_Sans_GR.css "Fira Sans":{400,700}{,i} -l $(echo greek{,-ext} | tr ' ' ',')
+bash google-font-download --format woff2 -o EB_Garamond_GR.css "EB Garamond":{400,700}{,i} -l "$(echo greek{,-ext} | tr ' ' ',')"
+bash google-font-download --format woff2 -o Fira_Sans_GR.css "Fira Sans":{400,700}{,i} -l "$(echo greek{,-ext} | tr ' ' ',')"
 
 
 popd

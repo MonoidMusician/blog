@@ -1,6 +1,7 @@
 @use "variables.sass" as *
 
 body, .mord.text
+  /* Greek font, Latin+Cyrillic font, Emoji font */
   @if $sans
     font-family: 'Fira Sans GR', 'Mulish', 'Apple Color Emoji'
   @else
@@ -28,7 +29,7 @@ pre, code, .code, .meta-code, .input-wrapper > input.code, .input-wrapper > inpu
   @import url('../assets/fonts/google/Mulish.css')
 
 @if not $sans
-  @import url('../assets/fonts/google/EB_Garamond_GR.css')
+  @import url('../assets/fonts/EB_Garamond_GR.css')
 @else
-  @import url('../assets/fonts/google/Fira_Sans_GR.css')
+  @import url('../assets/fonts/Fira_Sans_GR.css')
 

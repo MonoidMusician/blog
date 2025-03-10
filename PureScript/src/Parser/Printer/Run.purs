@@ -16,7 +16,7 @@ import Dodo.Ansi as Dodo.Ansi
 import Dodo.Internal as T
 import Parser.Comb as Comb
 import Parser.Comb.Comber as Comber
-import Parser.Comb.Dragon (renderParseError)
+import Parser.Comb.Dragon (annDragon, renderParseError)
 import Parser.Lexing as Lexing
 import Parser.Printer.Types (Ann(..), Opts, PrinterParser(..), applyBoundary)
 import Parser.Printer.Types as IO
@@ -71,7 +71,7 @@ type Renditions =
   , text :: Maybe T.PrintOptions -> Opts -> String
   , ansi :: Maybe T.PrintOptions -> Opts -> String
   -- , html :: Maybe T.PrintOptions -> Opts -> String
-  -- , dragon :: Maybe T.PrintOptions -> Opts -> Dragon
+  , dragon :: Maybe T.PrintOptions -> Opts -> Dragon
   }
 
 renditions :: (Opts -> T.Doc Ann) -> Renditions
@@ -79,6 +79,7 @@ renditions print =
   { doc: print
   , text: \style -> print >>> T.print T.plainText (fromMaybe T.twoSpaces style)
   , ansi: \style -> print >>> map (unwrap >>> _.ansi) >>> unravel >>> T.print Dodo.Ansi.ansiGraphics (fromMaybe T.twoSpaces style)
+  , dragon: \style -> print >>> T.print annDragon (fromMaybe T.twoSpaces style)
   }
 
 unravel :: forall ann. T.Doc (Array ann) -> T.Doc ann

@@ -7,6 +7,7 @@ import Data.Array (fold)
 import Data.Array as Array
 import Data.Enum (fromEnum, toEnum)
 import Data.Foldable (oneOf)
+import Data.HeytingAlgebra (ff)
 import Data.Int (hexadecimal)
 import Data.Int as Int
 import Data.Map (Map)
@@ -19,8 +20,11 @@ import Data.String as String
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested ((/\))
 import Effect.Class.Console (log)
-import Riverdragon.Dragon.Bones (Dragon, (.$~~), (=:=), (=?=))
+import Riverdragon.Dragon.Bones (Dragon, (.$~~), (<:>), (=:=), (=?=))
 import Riverdragon.Dragon.Bones as D
+import Riverdragon.Dragon.Wings (hatching)
+import Riverdragon.River as River
+import Riverdragon.River.Beyond as Beyond
 import Web.DOM.AttrName (AttrName(..))
 import Widget (Widget)
 
@@ -134,6 +138,27 @@ datatypes = Map.fromFoldable
                 , M.guard (not hide) $ D.span attrs $ D.text $ String.singleton cp
                 ]
     }
+  , "etym" /\
+    { recognize: ff
+    , widget: \{ content, rawAttr } -> do
+        mainContent <- content
+        replacement <- rawAttr (AttrName "data-etym")
+        pure $ hatching \shell -> do
+          { stream: upstream, send } <- shell.track $ River.createStore false
+          stream <- shell.store $ Beyond.dedup upstream
+          shell.destructor =<< Beyond.keyEvents \{ mod } -> do
+            let bti = if _ then 1 else 0
+            send (mod.shift && bti mod.ctrl + bti mod.alt + bti mod.meta >= 2)
+          let
+            display = if _ then "" else "none"
+            displayContent = display <$> not stream
+            displayEtym = display <$> stream
+          pure $ D.Fragment
+            [ D.span [ D.stylish <:> D.smarties { display: displayContent } ] mainContent
+            , D.span [ D.stylish <:> D.smarties { display: displayEtym } ]
+              (maybe mainContent D.text replacement)
+            ]
+    }
   ]
 
 parseUnicode :: String -> Maybe CodePoint
@@ -214,8 +239,14 @@ abbreviations = Map.fromFoldable
   , "TURN" /\ Jargon "Traversal Using Relays around NAT" FormatColon "relay server for when P2P fails"
   , "SDP" /\ Jargon "Session Description Protocol" FormatColon "data for WebRTC establishment"
   , "ICE" /\ Jargon "Interactive Connectivity Establishment" FormatNone ""
+  , "WebRTC" /\ Jargon "Web Real Time-Communication" FormatColon "between browsers or browser and server"
   , "HTML" /\ Acronym "Hypertext Markup Language"
   , "XML" /\ Acronym "Extensible Markup Language"
+  , "XHTML" /\ Acronym "XML-encoded HTML"
+  , "CSS" /\ Acronym "Cascading Style Sheets"
+  , "SCSS" /\ Jargon "CSS preprocessor" FormatNone ""
+  , "Sass" /\ Jargon "CSS preprocessor" FormatComma "whitespace-sensitive"
+  , "SVG" /\ Acronym "Scalable Vector Graphics"
   , "QR" /\ Jargon "Quick-Response code" FormatParen "a 2D Matrix Barcode"
   , "URI" /\ Acronym "Uniform Resource Indicator"
   , "URL" /\ Acronym "Uniform Resource Locator"
@@ -226,10 +257,17 @@ abbreviations = Map.fromFoldable
   , "LR(1)" /\ Jargon "LtR, Rightmost Deriv., lookahead 1 token" FormatParen "Automaton parser to handle left-recursion"
   , "DOM" /\ Jargon "Document Object Model" FormatComma "Represents HTML at runtime"
   , "VDOM" /\ Jargon "Virtual DOM" FormatComma "Abstract DOM to render to real DOM"
-  , "ADT" /\ Jargon "Algebraic Data Type" FormatComma "Data as a sum of products; Haskell"
+  , "ADT" /\ Jargon "Algebraic Data Type" FormatComma "Data as a sum of products; Haskell-style"
   , "MIDI" /\ Acronym "Musical Instrument Digital Interface"
+  , "ASCII" /\ Jargon "Basic character set" FormatNone ""
+  , "Unicode" /\ Jargon "Universal character set" FormatParen "fancy characters"
+  , "HoTT" /\ Acronym "Homotopy Type Theory"
   , "Haskell" /\ Described "Pure & lazy functional programming, native codegen"
   , "PureScript" /\ Described "Strict & pure functional programming, JavaScript codegen"
+  , "Dhall" /\ Described "Pure typed functional config language"
+  , "UI" /\ Acronym "User Interface"
+  , "UX" /\ Acronym "User Experience"
+  , "JSON" /\ Acronym "JavaScript Object Notation"
   ]
 
 matching :: String -> Array String

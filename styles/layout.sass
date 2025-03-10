@@ -410,6 +410,18 @@ label.sidenote-number
 label.margin-toggle:not(.sidenote-number)
   display: none
 
+label.sidenote-number + input + .sidenote
+  margin-top: -3px
+  padding-top: 2px
+  padding-left: 2px
+  border-top: 1px dotted transparent
+  border-left: 1px dotted transparent
+label.sidenote-number:hover
+  color: #77d9ff
+  + input + .sidenote
+    border-color: #77d9ff
+    &::before
+      color: #77d9ff
 
 @media (max-width: $breakpoint)
   label.margin-toggle:not(.sidenote-number)

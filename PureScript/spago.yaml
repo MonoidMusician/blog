@@ -91,3 +91,10 @@ package:
     - web-html
     - web-storage
     - web-uievents
+
+  build:
+    censorProjectWarnings:
+      - UnusedImport
+      - UnusedExplicitImport
+      - DuplicateImport
+      - ImplicitQualifiedImport

@@ -1,0 +1,36 @@
+@font-face {
+	font-family: 'EB Garamond GR';
+	font-style: normal;
+	font-weight: 400;
+	src:
+		/* from https://fonts.gstatic.com/s/ebgaramond/v30/SlGDmQSNjdsmc35JDF1K5E55YMjF_7DPuGi-6_RkCI9_.woff2 */
+		url('google/EB_Garamond_400.woff2') format('woff2');
+  unicode-range: U+0370-03FF, U+1F00-1FFF;
+}
+@font-face {
+	font-family: 'EB Garamond GR';
+	font-style: normal;
+	font-weight: 700;
+	src:
+		/* from https://fonts.gstatic.com/s/ebgaramond/v30/SlGDmQSNjdsmc35JDF1K5E55YMjF_7DPuGi-DPNkCI9_.woff2 */
+		url('google/EB_Garamond_700.woff2') format('woff2');
+  unicode-range: U+0370-03FF, U+1F00-1FFF;
+}
+@font-face {
+	font-family: 'EB Garamond GR';
+	font-style: italic;
+	font-weight: 400;
+	src:
+		/* from https://fonts.gstatic.com/s/ebgaramond/v30/SlGFmQSNjdsmc35JDF1K5GRwUjcdlttVFm-rI7e8QL9xU6g.woff2 */
+		url('google/EB_Garamond_400i.woff2') format('woff2');
+  unicode-range: U+0370-03FF, U+1F00-1FFF;
+}
+@font-face {
+	font-family: 'EB Garamond GR';
+	font-style: italic;
+	font-weight: 700;
+	src:
+		/* from https://fonts.gstatic.com/s/ebgaramond/v30/SlGFmQSNjdsmc35JDF1K5GRwUjcdlttVFm-rI7dbR79xU6g.woff2 */
+		url('google/EB_Garamond_700i.woff2') format('woff2');
+  unicode-range: U+0370-03FF, U+1F00-1FFF;
+}

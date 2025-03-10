@@ -244,10 +244,16 @@ label:not([for]):not(.sidenote-number):not(.margin-toggle)
 
 /* Adapted from https://codepen.io/notouchz33/pen/BayLyow */
 .tooltipped
-  $caret-height: 4px
-  $caret-width: 6px
+  $caret-height: 10px
+  $caret-width: 12px
   $distance: 10px
-  $tooltip-bg-color: rgba(39, 39, 39, 1)
+  $tooltip-bg-color: rgba(36, 36, 36, 1)
+  $tooltip-caret-color: rgb(28, 28, 28)
+  $tooltip-border: 1px solid rgb(24, 24, 24)
+  @if $light
+    $tooltip-bg-color: rgba(39, 39, 39, 1)
+    $tooltip-caret-color: rgba(39, 39, 39, 1)
+    $tooltip-border: none
   $min-width: 80px
 
   cursor: help
@@ -278,6 +284,7 @@ label:not([for]):not(.sidenote-number):not(.margin-toggle)
     opacity: 0
     background: $tooltip-bg-color
     border-radius: 4px
+    border: $tooltip-border
     padding: 6px
     color: #ffffff
     z-index: 1
@@ -288,16 +295,16 @@ label:not([for]):not(.sidenote-number):not(.margin-toggle)
     left: 50%
     width: 0
     height: 0
-    bottom: calc(100% + #{$distance - $caret-height})
+    bottom: calc(100% + #{$distance - $caret-height + 2px})
     margin-left: #{-$caret-width}
     border-style: solid
-    border-color: $tooltip-bg-color transparent transparent transparent
+    border-color: $tooltip-caret-color transparent transparent transparent
     border-width: $caret-height $caret-width 0
     opacity: 0
     z-index: 1
   // Extra padding to keep mouse captured during hover
   &::after
-    $overlap: 2px
+    $overlap: 4px
     content: ''
     position: absolute
     display: block

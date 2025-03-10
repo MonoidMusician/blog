@@ -6,20 +6,22 @@ author: "[@MonoidMusician](https://github.com/MonoidMusician)"
 I believe knowledge should be free & accessible.
 When I have the energy and time, I will contribute to putting more knowledge out there and sharing topics I am passionate about.
 
-Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/blog) and my account of the [technologies](technology.html) that go into this blog.
+Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/blog) and my account of the [[technologies]{t=etym etym=τεχνολογῐῶν}](technology.html) that go into this blog.
 
 ## Posts <a class="icon iconoir" href="rss.xml"><?xml version="1.0" encoding="UTF-8"?><svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
 
-- [Perfect Vector Graphics for a QR code](svgqr.html) [2025/01/29]{.dated}
+- [Implementing [FRP]{t=} and Why](riverdragon_implementation.html) [2025/02/22]{.dated}
+
+- [Perfect Vector Graphics for a [QR]{t=} code](svgqr.html) [2025/01/29]{.dated}
   <img class="sidenote" src="assets/images/qr_demo1.svg" style="max-height: min(100%, 100vh)">
 
-  > You would think that SVG would be a perfect medium for rendering QR codes, but iOS was having trouble rendering the SVGs for the complex, large QR codes I was using (nearly max size).
-  > We need to render adjacent modules as a single SVG path.
-  > There are two core steps: finding the connected components of the matrix, and rendering each component into the SVG as a single path.
+  > You would think that [SVG]{t=} would be a perfect medium for rendering [QR]{t=} codes, but iOS was having trouble rendering the [SVG]{t=}s for the complex, large [QR]{t=} codes I was using (nearly max size).
+  > We need to render adjacent modules as a single [SVG]{t=} path.
+  > There are two core steps: finding the connected components of the matrix, and rendering each component into the [SVG]{t=} as a single path.
 
-- [WebRTC over QR Connection Protocol](webrtc_over_qr.html) [2025/01/26]{.dated}
+- [[WebRTC]{t=} over [QR]{t=} Connection Protocol](webrtc_over_qr.html) [2025/01/26]{.dated}
 
-  > Details on the connection protocol for [WebRTC over QR](https://webrtc-over-qr.veritates.love/).
+  > Details on the connection protocol for [[WebRTC]{t=} over [QR]{t=}](https://webrtc-over-qr.veritates.love/).
   > How is it even possible, and how could you use it too?
   >
   > :::Warning
@@ -46,10 +48,10 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   > };
   > ```
 
-- [Code golf for computing a 32-byte QR code!](qrinqr.html) [2024/12/20]{.dated}
+- [Code golf for computing a 32-byte [QR]{t=} code!](qrinqr.html) [2024/12/20]{.dated}
 
-  > This JavaScript comes in at 512 ASCII characters when minified!
-  > Why would I do such a thing? Well, it helps me bootstrap a WebRTC connection over QR codes!
+  > This JavaScript comes in at 512 [ASCII]{t=} characters when minified!
+  > Why would I do such a thing? Well, it helps me bootstrap a [WebRTC]{t=} connection over [QR]{t=} codes!
   >
   > ```javascript{.wrap}
   > s=420+(U=f[F='replace'](/:/g,''))+0
@@ -129,7 +131,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 
 - [Interactive Parser Explanations](parser.html) [2022/07/20]{.dated}
 
-  > I have been building this framework for explaining, analyzing, and teaching about LR(1) grammars for a couple months now.
+  > I have been building this framework for explaining, analyzing, and teaching about [LR(1)]{t=} grammars for a couple months now.
   > The interactive widgets here will allow you to build and verify your intuition by clicking through examples, because I believe that once you are armed with the basic ideas and the right intuition, you can figure out the rest of details for yourself.
   > Alternatively, it can serve as a playground to test out hypotheses about grammars, see exactly where things go wrong when conflicts occur, and what to do to fix those errors.
 
@@ -141,6 +143,19 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   > The construction weʼll be talking about is my favorite esoteric construction of real numbers: the _[Eudoxus real numbers](https://ncatlab.org/nlab/show/Eudoxus+real+number)_.
 
 ## Series
+- Riverdragon [FRP]{t=} documentation
+  #. [Implementing [FRP]{t=} and Why](riverdragon_implementation.html) [2025/02/22]{.dated}
+- [Live PureScript editing](live.html) (custom front-end using TryPureScriptʼs API)
+  #. [live_parser.html](live_parser.html)
+  #. [live_frp.html](live_frp.html)
+  #. [live_synth.html](live_synth.html)
+  #. [live_playground.html](live_playground.html)
+- [Interactive Parser Explanations](parser.html) [2022/07/20]{.dated}
+  #. [TODO]{t=}: [Parsing By Example](parser_by_example.html)
+  #. [TODO]{t=}: [Terminology Reference](parser_terminology.html)
+  #. [WIP]{t=}: [Basics: What Are Grammars](parser_basics.html)
+  #. [WIP]{t=}: [Uses of Grammars](parser_applications.html)
+  #. [WIP]{t=}: [Basics of [LR(1)]{t=} Parsing](parser_lr1.html)
 - Tools
   #. [WIP]{t=}: [Unicode Explorer](unicode.html)
   #. [tiny tool to reformat output produced by `show`{.haskell}](show.html)
@@ -153,14 +168,8 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   #.
     [TODO]{t=}: Unit/base calculator and such ([cf.]{t=} [insect](https://github.com/sharkdp/insect) and [numbat](https://github.com/sharkdp/numbat))
     - Would be cool to have better precision than `Number`{.purescript}, or even use [Towards an API for the Real Numbers](https://dl.acm.org/doi/pdf/10.1145/3385412.3386037).
-  #. [TODO]{t=}: QR code generator and reader and formats and suchs, and bar code, and PDF417, ...
-  #. CSS → Sass
-- [Interactive Parser Explanations](parser.html)
-  #. [TODO]{t=}: [Parsing By Example](parser_by_example.html)
-  #. [TODO]{t=}: [Terminology Reference](parser_terminology.html)
-  #. [WIP]{t=}: [Basics: What Are Grammars](parser_basics.html)
-  #. [WIP]{t=}: [Uses of Grammars](parser_applications.html)
-  #. [WIP]{t=}: [Basics of LR(1) Parsing](parser_lr1.html)
+  #. [TODO]{t=}: [QR]{t=} code generator and reader and formats and suchs, and bar code, and PDF417, ...
+  #. [CSS]{t=} → [Sass]{t=}
 
 ### Miniseries
 - [Monoids in Public](monoids_in_public.html) – cool little monoids and uses for monoids [2023/01/02 – 2024/09/18]{.dated}
@@ -190,8 +199,8 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
   - [Type theory introduction?](https://gist.github.com/MonoidMusician/c42361964ece15c9a883c005282c9614) [2019/09/04 – 2020/07/24]{.dated}
     - [0](tt0.html) [1](tt1.html) [2](tt2.html) [3](tt3.html) [4](tt4.html) [5](tt5.html) [6](tt6.html) [7](tt7.html) [8](tt8.html)
   - [Trying extra reduction rules for induction (notes)](extra_induction.html) [2021/04/03 – 2021/04/10]{.dated}
-  - Idea for a tool for versioning Dhall configs
-    - Maintain a category whose objects are versions and whose morphisms are Dhall functions for upgrading between those versions
+  - Idea for a tool for versioning [Dhall]{t=} configs
+    - Maintain a category whose objects are versions and whose morphisms are [Dhall]{t=} functions for upgrading between those versions
     - Might require it to be a [thin category](https://ncatlab.org/nlab/show/thin+category), or at least have canonical resolutions
       - Could use normalization to check thinness
       - Probably want extra eta principles
@@ -201,7 +210,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 
   - Iʼve been thinking a lot about [selective applicative functors](https://dl.acm.org/doi/10.1145/3341694) lately.
     Mostly through the perspective of two contrasting applications: [selective applicative parsers](https://cohost.org/monoidmusician/post/2588944-more-more-more-seman), and functors for [typechecking with better errors](comprehensive_errors.html).
-  - [Algebra of CSS Selectors](css_selectors.html)
+  - [Algebra of [CSS]{t=} Selectors](css_selectors.html)
 
     The fun part of this work was how to interleave nested selectors.
 
@@ -212,7 +221,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 
     Infix, mixfix, distfix … but what about relfix?
 
-    I want `a < b < c`{.js} to stand for `a < b && b < c`{.js}!!
+    I want `a < b < c`{.js} to stand for `a < b && b < c`{.js}!!^[This is valid in Python!]
     (And this to be an extensible system that users can add their own operators and precedences to.)
 
     This is the main difference between how mathematicians (especially category theorists) treat \(X \to Y \to Z\) and how programmers treat `X -> Y -> Z`{.haskell}, by the way.
@@ -220,7 +229,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 
 ### Paradigms
 
-  - I should do a blog post on what “effects” mean in FP culture
+  - I should do a blog post on what “effects” mean in [FP]{t=} culture
 
     [tl;dr]{t=} is “effects are as effects do”
 
@@ -241,12 +250,12 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
     the main problem is that we donʼt have a good way to talk about them without invoking a metatheory of Haskell, with unification and possibly parametricity (Iʼll need to see if that comes up)
 
     actually, maybe parametricity is “just” the answer, and we can extract a free law from the stated laws!
-  - [WIP]{t=}: [Why you should believe in HoTT Path Induction as a (Haskell) Programmer](programming_paths.html)
+  - [WIP]{t=}: [Why you should believe in [HoTT]{t=} Path Induction as a (Haskell) Programmer](programming_paths.html)
   - Passive stability:
 
     > Imperative code has no passive stability: all global state is mutable, and small perturbations (say, modifying a prototype) can cause unpredictably large effects down the line, if not carefully managed. Untyped code is especially bad. Carefully managed imperative code may be stable, but this is active stability: it is not inherent to the framework but imposed on top.
     >
-    > Functional code on the other hand is not only passively stable, it is anchored down solid. Each building block is given a static, local denotation, and they compose together. You may still need nonlocal knowledge of the code to understand the intent of what everything represents (ahem, [boolean blindness](https://existentialtype.wordpress.com/2011/03/15/boolean-blindness/)), but the local meaning is denotationally clear.
+    > Functional code on the other hand is not only passively stable, it is anchored down solid. Each building block is given a static, local denotation, and they compose together. You may still need nonlocal knowledge of the code to understand the intent of what everything represents (ahem, [boolean mixup](https://existentialtype.wordpress.com/2011/03/15/boolean-blindness/)), but the local meaning is denotationally clear.
 
     - I wonder: can you define a safe subset of Python/JavaScript that cannot be hijacked by mutating globals?
       Surely it is possible at the bytecode level, but I mean in source syntax.
@@ -255,11 +264,21 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 
   - log levels considered harmful
 
+  - a guide to all the white space word break wrap text overflow [CSS]{t=} properties
+
+  - [UI]{t=}s should be integral and [UI]{t=}s should be optional:
+
+    every program should come with a [UI]{t=}
+
+    but you should be able to run the program without the [UI]{t=} to get the same data, [e.g.]{t=} in [JSON]{t=} form
+
+    (and I strongly strongly believe that commandline parsing should be transparent: there should be a dedicated flag to parse commandline arguments and return the parsed data as [JSON]{t=} so that callers can manipulate the behavior directly, without knowing and assuming details about how every option interacts with others)
+
 ### Data
 
 _data = information^[bits & bytes] + structure^[expectations of what the bits & bytes can be and what they mean]_
 
-  - The Anatomy of ADTs
+  - The Anatomy of [ADT]{t=}s
   - [WIP]{t=}: [Subtypes/Quotients: Lies Told in Defense of the Truth](adt_lies_for_truth.html)
   - Quotients: Lets us have nice cake and eat things too.
   - [Hereditarily Finite Sets (HFSes)](hereditarily_finite_sets.html)
@@ -279,5 +298,5 @@ _data = information^[bits & bytes] + structure^[expectations of what the bits & 
   - Fundeps: how they affect defining instances and instance resolution
   - Instances as biïmplications, and the unfortunate consequences
     (It is really hard to actually come up for a use for this, outside of specific reflection/reification contexts ... harrumph maybe it actually breaks that too.)
-    (Actually I think it is fine, but it needs to be opt-in for the sake of APIs/incremental builds.)
+    (Actually I think it is fine, but it needs to be opt-in for the sake of [API]{t=}s/incremental builds.)
   - [Redesigning `Coercible`{.purescript}](coercible.html)

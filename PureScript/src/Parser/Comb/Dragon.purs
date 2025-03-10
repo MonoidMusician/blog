@@ -2,9 +2,6 @@ module Parser.Comb.Dragon where
 
 import Prelude
 
-import Ansi.Codes (GraphicsParam)
-import Ansi.Codes as Ansi
-import Control.Comonad.Store (Store, store)
 import Control.Plus (empty)
 import Data.Array ((!!))
 import Data.Array as Array
@@ -12,14 +9,13 @@ import Data.Array.NonEmpty as NEA
 import Data.Bifoldable (bifoldMap)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either, isRight, note)
-import Data.Filterable (filterMap)
 import Data.Foldable (fold, foldMap)
 import Data.Functor.Compose (Compose(..))
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Lazy (force)
 import Data.List (List)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Monoid (guard)
 import Data.Monoid.Additive (Additive(..))
 import Data.Monoid.Endo (Endo(..))
@@ -37,21 +33,21 @@ import Parser.Comb.Run (Rec(..), combPrecedence, fromMaybeWS, mapWSStates, norma
 import Parser.Comb.Run as Comb.Run
 import Parser.Comb.Types as Comb
 import Parser.Languages.ShowFast as ShowFast
-import Parser.Lexing (FailReason(..), FailedStack(..), Rawr(..), Similar(..), bestRegexOrString, errorName, len, screenPrecedence, squintAt, unRawr, userErrors, (?), (??))
+import Parser.Lexing (FailReason(..), FailedStack(..), Rawr, Similar(..), bestRegexOrString, errorName, len, squintAt, unRawr, userErrors, (?), (??))
 import Parser.Lexing as Lexing
 import Parser.Main (Dragonss, Dragons)
 import Parser.Main as Parser.Main
 import Parser.Printer.Types (Ann(..))
 import Parser.Printer.Types as IO
 import Parser.Proto (Stack(..), topOf)
-import Parser.Types (ICST(..), ShiftReduce(..), State(..), Zipper(..), unShift)
+import Parser.Types (ICST(..), ShiftReduce(..), State(..), Zipper(..))
 import Parser.Types as P
-import Partial.Unsafe (unsafeCrashWith)
 import Riverdragon.Dragon (Dragon)
+import Riverdragon.Dragon.Ansi (ansiToAttrs)
 import Riverdragon.Dragon.Bones (smarties, ($$), ($~~), (.$), (.$$), (.$~~), (:.), (:~), (<:>), (=!=), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (hatching)
-import Riverdragon.River (River, Lake, bursting)
+import Riverdragon.River (Lake, River)
 import Riverdragon.River as River
 import Stylish.Types (Classy(..))
 import Whitespace (MaybeWS(..), defaultWS)
@@ -78,47 +74,24 @@ annDragon = T.Printer
   , writeBreak: \buff -> buff <> D.br[]
   , enterAnnotation: \_ _ buff -> buff
   , leaveAnnotation: \ann stack buff -> wrapAnn stack ann buff
-  , flushBuffer: identity -- D.pre [ D.className =:= "ansi-block", D.style =:= "color: white; background-color: black" ]
+  , flushBuffer: D.pre [ D.className =:= "ansi-block" ]
   }
   where
   wrapAnn :: List Ann -> Ann -> Dragon -> Dragon
-  wrapAnn stack (Ann { ansi, classes, dragon: Endo wrapDragon }) inner = wrapDragon do
-    let { classes: moreClasses, attrs: moreAttrs } = ansiToAttrs stack ansi
-    D.span
-      [ D.className =:= Array.intercalate " " (moreClasses <> classes)
-      , bursting moreAttrs
-      ] inner
+  wrapAnn stack (Ann { ansi, classes, styles, dragon: Endo wrapDragon, tooltip: maybeTooltip }) inner =
+    let
+      addTooltip = case maybeTooltip of
+        Nothing -> identity
+        Just desc -> tooltip desc
+      { classes: moreClasses, style: ansiStyle } =
+        ansiToAttrs (stack <#> \(Ann ann) -> ann.ansi) ansi
 
-ansiToAttrs ::
-  List Ann ->
-  Array Ansi.GraphicsParam ->
-  { classes :: Array String, attrs :: Array D.AttrProp }
-ansiToAttrs = mempty
--- ansiToAttrs stack = preprocess >>> map case _ of
---   Ansi.Reset -> D.MultiAttr []
---   Ansi.PMode mode -> case mode of
---     Ansi.Bold ->
---     Ansi.Dim ->
---     Ansi.Italic ->
---     Ansi.Underline ->
---     Ansi.Inverse ->
---     Ansi.Strikethrough ->
---   Ansi.PForeground color ->
---   Ansi.PBackground color ->
---   where
---   preprocess = Array.reverse
---     >>> Array.takeWhile (_ /= Ansi.Reset)
---     >>> Array.nubByEq graphicsConflict
---     >>> Array.reverse
---   where
---   graphicsConflict :: Ansi.GraphicsParam -> Ansi.GraphicsParam -> Boolean
---   graphicsConflict = case _, _ of
---     Ansi.Reset, Ansi.Reset -> true
---     Ansi.PForeground _, Ansi.PForeground _ -> true
---     Ansi.PBackground _, Ansi.PBackground _ -> true
---     Ansi.PMode a, Ansi.PMode b -> a == b
---     _, _ -> false
-
+      addAttrs | { moreClasses, classes, ansiStyle, styles } == mempty = identity
+      addAttrs = D.span
+        [ D.classy =:= moreClasses <> classes
+        , D.stylish =:= ansiStyle <> styles
+        ]
+    in addTooltip $ wrapDragon $ addAttrs inner
 
 renderParseError :: FullParseError -> Dragon
 renderParseError theError = case theError of
@@ -270,8 +243,8 @@ renderCatTok = case _, _ of
   P.EOF, P.EOF -> tooltip (D.text "EOF") $ renderMeta "$"
   P.Continue (Similar (Left s)), P.Continue s' | s == s' -> D.span:."terminal string".$$ show s
   P.Continue (Similar (Right r)), P.Continue s -> tooltip
-    do D.span:."terminal regex".$$ show r
-    do D.span:."terminal string".$$ show s
+    do D.span:."terminal regex match".$$ show r
+    do D.span:."terminal string match".$$ show s
   _, _ -> D.text "??"
 
 renderPart :: P.Part (WS.MaybeWS WS.ParseWS) (Either String String) (P.OrEOF (String ~ Rawr)) -> Dragon
@@ -452,16 +425,8 @@ executeLive conf0 { states: { stateMap, start, states: states0 }, resultants, op
 renderStack :: Stack (_ /\ Int) Comber.CST -> Dragon
 renderStack (Zero st) = D.sub.$ renderStackState st
 renderStack (Snoc more cst st) = renderStack more <> D.space <> renderCSTTree cst <> D.space <> (D.sub.$ renderStackState st)
+renderStackState :: forall a90. Tuple a90 Int -> Dragon
 renderStackState (_ /\ stateNumber) = renderSt stateNumber
-
-renderCST :: Comber.CST -> Dragon
-renderCST (ILeaf tok) = D.span:."cst-leaf".$ renderTok tok
-renderCST (IAir air) = D.span:."cst-air whitespace".$$ show air
-renderCST (IBranch rule children) =
-  D.details:."cst-branch".$~~
-    [ D.summary.$ uncurry renderNTR rule
-    , foldMap renderCST children
-    ]
 
 renderStateTable :: forall r. { getCurrentState :: Int -> Lake Boolean | r } -> Comber.States -> Dragon
 renderStateTable info (P.States states) = do
