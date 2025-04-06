@@ -16,7 +16,7 @@ Except we are sneaky, and it has multiple representations under the hood:
 data HFS
   = NumLike Base BigNat
   | SetLike (Set HFS)
-data Base = Bin | Dec | Hex
+data Base = Bin | Dec | Hex | Oct | Qua
 ```
 
 This is both good for preserving user intent (helping you remember if you intended a datum to be a number or set, maybe) and necessary for efficiency, indeed, feasibility.
@@ -172,7 +172,7 @@ As mentioned above, there is no compile-time checking for these constructs, they
 
 ### Builtins/stdlib
 
-`Set`{.hatstack}, `Nat`{.hatstack}/`Num`{.hatstack}, `Bin`{.hatstack}, `Dec`{.hatstack}, `Hex`{.hatstack}, `HFS`{.hatstack}
+`Set`{.hatstack}, `Nat`{.hatstack}/`Num`{.hatstack}, `Bin`{.hatstack}, `Qua`{.hatstack}, `Oct`{.hatstack}, `Dec`{.hatstack}, `Hex`{.hatstack}, `HFS`{.hatstack}
 :   Type hints: set a preferred display style for the HFS at the top of the stack.
     `Set`{.hatstack} is shallow while `HFS`{.hatstack} is deep.
     `Nat`{.hatstack}/`Num`{.hatstack} preserve the current base, but default to hexadecimal.

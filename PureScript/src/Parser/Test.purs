@@ -60,3 +60,10 @@ dimap (\(J j) -> j) J $ IOL.json
 
 -- map (D.text <<< show) $ I.many "test" $ I.token "x"
 -}
+
+
+{-
+T.text <$> "P2"#-> \p2 -> token "1" <|> (token "0" <> token "0" <> p2 <> p2) <|> (token "0" <> token "1" <> token "0" <> p2)
+
+0000
+-}

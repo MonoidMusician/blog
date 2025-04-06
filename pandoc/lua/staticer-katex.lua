@@ -3,7 +3,7 @@ local bin = false
 function Math(h)
   local display = (h.mathtype == 'DisplayMath')
   os.execute('mkdir -p cache')
-  local fname = 'cache/render-katex2-' .. pandoc.sha1(h.text .. h.mathtype)
+  local fname = 'cache/render-katex2-' .. pandoc.sha1(h.text .. h.mathtype .. io.open('assets/katex_macros.tex'):read("*all"))
   local output = io.open(fname .. '.html')
   if output == nil then
     if bin == false then
@@ -15,7 +15,7 @@ function Math(h)
     local input = io.open(fname .. '.tex', 'w')
     input:write(h.text)
     input:close()
-    os.execute('./cache/katex --no-throw-on-error -F mathml ' .. display_flag .. ' -i ' .. fname .. '.tex' .. ' -o ' .. fname .. '.html')
+    os.execute('./cache/katex --no-throw-on-error --macro-file assets/katex_macros.tex -F mathml ' .. display_flag .. ' -i ' .. fname .. '.tex' .. ' -o ' .. fname .. '.html')
     output = io.open(fname .. '.html')
   end
   -- Trim whitespace, particularly trailing newlines

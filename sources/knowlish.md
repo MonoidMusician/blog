@@ -55,6 +55,36 @@ _[Overflow](knowlish_overflow.html)_
   `HEAD` means to compare against the currently committed changes, not whatever files are in your working tree.
 
   </details>
+- `git show HEAD:.gitignore | cat`{.sh} get a file at a specific revision
+- Script to filter to tags that have changes between them:
+
+  <details class="Details">
+  <summary>Script</summary>
+  ```bash
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  # Specify paths to track changes
+  function get_release_versions() {
+    local -a mainReleaseTags
+    mainReleaseTags=($(\
+      git for-each-ref --sort=creatordate --format '%(refname)' refs/tags \
+        | grep '^refs/tags/v\?[0-9]\+\.[0-9]\+\.[0-9]\+\(-main\)\?$'
+    ))
+    local last=""
+    for tag in "${mainReleaseTags[@]}"; do
+      if [ -n "$last" ]; then
+        if ! git diff --quiet "$last" "$tag" -- "$@"; then
+          echo "$tag" | sed 's#^refs/tags/##'
+        fi
+      fi
+      last="$tag"
+    done
+  }
+
+  get_release_versions "$@"
+  ```
+  </details>
 
 ### tmux
 

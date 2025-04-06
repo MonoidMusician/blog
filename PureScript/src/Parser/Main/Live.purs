@@ -20,9 +20,10 @@ import Riverdragon.Dragon.Bones ((.$), (.$$), (.$$~), (:.), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (hatching, sourceCode, tabSwitcher)
 import Riverdragon.River (Lake, createRiverStore, dam, makeLake)
+import Riverdragon.Roar.Live (discardDecls)
 import Runtime (aSideChannel)
 import Runtime as Runtime
-import Runtime.Live (Status, compileInterface, fetchHighlight)
+import Runtime.Live (ImportsExprDecls(..), Status, compileInterface, fetchHighlight)
 import Runtime.Live as Runtime.Live
 import Type.Proxy (Proxy(..))
 import Web.DOM.ElementId (ElementId(..))
@@ -89,13 +90,16 @@ _sideChannel = aSideChannel (Proxy :: Proxy SideChannel) "Parser.Main.Live"
 pipeline :: Lake String -> Lake Status
 pipeline = Runtime.Live.pipeline
   { templateURL: "/assets/purs/Parser.Parserlude/source.purs"
-  , parseUser: Right CST.Parser.parseExpr
-  , templating: \template parserExpr ->
+  , parseUser: Right Runtime.Live.importsExprDecls
+  , templating: \template (ImportsExprDecls imports parserExpr decls) ->
       Runtime.Live.renameModuleTo "Parser.Main.Live.Temp" $
-        Runtime.Live.overrideValue
-          { nameSearch: CST.T.Ident "parser"
-          , exprReplace: parserExpr
-          } template
+      Runtime.Live.overrideValue
+        { nameSearch: CST.T.Ident "parser"
+        , exprReplace: parserExpr
+        } $
+      Runtime.Live.addImports imports $
+      Runtime.Live.addDecls decls $
+      discardDecls decls template
   }
 
 embed :: Lake String -> Dragon
@@ -170,6 +174,6 @@ widget _ = pure $ compileInterface "Parser.Main.Live" embed $ tripleQuoted """
     -- (the parser needs a name to assign to the `many` parser)
     manySepBy "strings" ws string
       -- And pretty prints their values separated by new lines
-      <#> map D.text >>> D.lines
+      <#> map T.text >>> T.lines
   """
 

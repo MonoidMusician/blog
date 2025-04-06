@@ -9,6 +9,8 @@ The idea is that all data will be easily serializable/transferable/sharable – 
 
 The word, pointer, and synchronization are the only really primitive notions to implement. Memory management and other things can be built on top.
 
+<!-- Maybe also pigworkerʼs notion of like reference pointers? for like skip lists? -->
+
 Immutability and reference semantics will be built into the language.
 
 There will be some simple language of conditions/guarantees on the data, that represents both the language-internal invariants as well as the user-code invariants/knowledge. In particular, if enough is guaranteed about the type of data, it can be unboxed. On the other side, if data is known to be (im)mutable, that part can also be left out.
@@ -58,3 +60,6 @@ data types:
     - compound (struct/record) with n fields
     - tagged (union) with n options
     - array with bytesize of element
+
+<!-- https://nickav.co/posts/0003_wasm_from_scratch -->
+<!-- https://wingolog.org/archives/2023/03/20/a-world-to-win-webassembly-for-the-rest-of-us -->

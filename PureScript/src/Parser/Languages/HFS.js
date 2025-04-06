@@ -4,6 +4,8 @@ export const mkBigNat = BigInt;
 export const bnBin = x => "0b" + x.toString(2);
 export const bnDec = x => x.toString(10);
 export const bnHex = x => "0x" + x.toString(16);
+export const bnOct = x => "0o" + x.toString(8);
+export const bnQua = x => "0q" + x.toString(4);
 export const bnZro = 0n;
 export const bnOne = 1n;
 export const bnCEQ = x => y => x==y;

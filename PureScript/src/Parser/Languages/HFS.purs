@@ -61,6 +61,8 @@ foreign import mkBigNat :: String -> BigNat
 foreign import bnBin :: BigNat -> String
 foreign import bnDec :: BigNat -> String
 foreign import bnHex :: BigNat -> String
+foreign import bnOct :: BigNat -> String
+foreign import bnQua :: BigNat -> String
 foreign import bnZro :: BigNat
 foreign import bnOne :: BigNat
 foreign import bnCEQ :: BigNat -> BigNat -> Boolean
@@ -81,7 +83,7 @@ foreign import bnCount :: BigNat -> BigNat
 foreign import bnUnpack :: BigNat -> Array BigNat
 
 -- | Preferred base for a `HFS` as a number
-data Base = Bin | Dec | Hex
+data Base = Bin | Dec | Hex | Oct | Qua
 derive instance eqBase :: Eq Base
 
 -- | Hereditarily Finite Sets
@@ -334,6 +336,10 @@ hfsAsDec :: HFS -> HFS
 hfsAsDec = NumLike Dec <<< bn
 hfsAsHex :: HFS -> HFS
 hfsAsHex = NumLike Hex <<< bn
+hfsAsOct :: HFS -> HFS
+hfsAsOct = NumLike Oct <<< bn
+hfsAsQua :: HFS -> HFS
+hfsAsQua = NumLike Qua <<< bn
 hfsAsHFS :: HFS -> HFS
 hfsAsHFS = setLike <<< Set.map (\x -> hfsAsHFS x) <<< hfs
 
@@ -589,12 +595,25 @@ withStdenv instrs =
 
 -- | Parse a literal.
 lit :: Comber HFS
-lit = "lit" #-> \litRec -> choices
+lit = "lit" #: choices
   [ rawr "\\d+" <#> mkBigNat >>> NumLike Dec
+  , rawr "0d\\d+" <#> String.drop 2 >>> mkBigNat >>> NumLike Dec
   , rawr "0b[01]+" <#> mkBigNat >>> NumLike Bin
+  , rawr "0o[0-7]+" <#> mkBigNat >>> NumLike Oct
   , rawr "0x[\\da-fA-F]+" <#> mkBigNat >>> NumLike Hex
-  , zero <$ rawr "0b"
-  , zero <$ rawr "0x"
+  , rawr "0q[0-3]+" <#> String.drop 2
+      >>> String.split (String.Pattern "")
+      >>> map case _ of
+        "0" -> "00"
+        "1" -> "01"
+        "2" -> "10"
+        "3" -> "11"
+        bad -> bad
+      >>> String.joinWith ""
+      >>> ("0b" <> _)
+      >>> mkBigNat >>> NumLike Qua
+  , zero <$ oneOfMap rawr
+    [ "0b", "0q", "0o", "0d", "0x" ]
   , mempty <$ token "∅"
   ]
 
@@ -815,6 +834,8 @@ data Fn
   | ToBin
   | ToDec
   | ToHex
+  | ToOct
+  | ToQua
   | ToHFS
   | NoOp
   | Decr
@@ -834,6 +855,8 @@ fn = "fn"#: choices
   , ToBin <$ token "Bin"
   , ToDec <$ token "Dec"
   , ToHex <$ token "Hex"
+  , ToOct <$ token "Oct"
+  , ToQua <$ token "Qua"
   , ToHFS <$ token "HFS"
   , NoOp <$ token ","
   , NoOp <$ rawr "##[^\n]*(\n|$)"
@@ -942,11 +965,15 @@ parser = pure [] <|> do
       , Set <$> do token "set" *> ws *> rawr "[a-zA-Z_-]+"
       ]
 
+-- ⟨⟩ ()
+
 showHFS :: HFS -> String
 showHFS (NumLike b n) = case b of
   Bin -> bnBin n
   Dec -> bnDec n
   Hex -> bnHex n
+  Oct -> bnOct n
+  Qua -> bnQua n
 showHFS (SetLike _ members) = (\m -> "{" <> m <> "}") $
   intercalateMap ", " showHFS (Array.reverse (Array.fromFoldable members))
 
@@ -1253,6 +1280,8 @@ interpret instr original = case instr, env of
     ToBin -> stack1 hfsAsBin
     ToDec -> stack1 hfsAsDec
     ToHex -> stack1 hfsAsHex
+    ToOct -> stack1 hfsAsOct
+    ToQua -> stack1 hfsAsQua
     ToHFS -> stack1 hfsAsHFS
     NoOp -> Right
     Decr -> stack1 (hfsSub <@> one)

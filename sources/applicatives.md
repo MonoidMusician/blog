@@ -176,7 +176,7 @@ applyGroupoid :: FreeApply f r <-> FreeGroupoid (Arrp f) () r
 -- DayFn and Day are equal is tricky)
 DayFn f g <=> Snuggles arr brr
   where
-  -- Both DayFn and Snuggles introduce an exitential type variable; I call it χ
+  -- Both DayFn and Snuggles introduce an existential type variable; I call it χ
   -- and in this case we can take the same value for it on both sides
   (f :: f χ) <-> (arr :: Arrp f () χ)
   f =(trivial2)= arr
@@ -317,4 +317,4 @@ Lax monoidal functors.
 Monoids in the category of endofunctors *with the Day convolution tensor*.
 (Not to be confused with [monoids in the category of endofunctors *with the composition tensor*](https://stackoverflow.com/questions/3870088/a-monad-is-just-a-monoid-in-the-category-of-endofunctors-whats-the-problem).)
 
-Enriched category? idk.
+<!-- Enriched category? idk. -->
