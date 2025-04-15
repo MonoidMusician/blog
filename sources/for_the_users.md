@@ -143,35 +143,90 @@ It will mostly still flash on page load though&nbsp;…
 // @match        *://*
 // @match        *://*/*
 // @sandbox      DOM
+// @require      https://raw.githubusercontent.com/emn178/js-md5/master/src/md5.js#md5=e7875ebe9e8341e772e830c48a732f02
 // ==/UserScript==
 
-(async function() {
+(function() {
     'use strict';
 
-    try {
-        if (window.self !== window.top) return;
-    } catch (e) {
-        return;
+    const knownMD5s = {
+        "e30da815843cee743f9881389d76c1cb": true, // validation_data.html
+        "d524ff95b8cd14c17def47962cb3a734": true, // lshw -html
+        "b4aebef39771fb9d57f8641b14ed4aef": true, // wasmtime explore (old)
+        "66cf6596c2f88bdad3c3ea77ea45bcdf": true, // wasmtime explore (new)
+    };
+    const knownLinks = {
+        "linuwial.css": true,
+    };
+    const custom = [
+        e => /^https:\/\/hackage.haskell.org\/package\/.*?\/docs\/src\/style\.css/.test(e.href) || undefined,
+    ];
+
+    function should() {
+        if (document.querySelector("body > div.debugger + div.pin-prompt")) {
+            // Flask error pages
+            return true;
+        }
+
+        for (let link of document.querySelectorAll("link[rel='stylesheet']")) {
+            const href = link.getAttribute("href");
+            if (href in knownLinks) {
+                console.debug("Dark mode trigger", knownLinks[href], href, link);
+                return knownLinks[href];
+            }
+            for (const f of custom) {
+                const r = f(link);
+                if (r != null) return r;
+            }
+        }
+
+        for (let style of document.querySelectorAll("style")) {
+            let thisMD5 = window.md5(style.textContent);
+            if (thisMD5 in knownMD5s) {
+                console.debug("Dark mode trigger", knownMD5s[thisMD5], thisMD5, style);
+                return knownMD5s[thisMD5];
+            } else {
+                //console.debug("Nope", thisMD5, style);
+            }
+            for (const f of custom) {
+                const r = f(style);
+                if (r != null) return r;
+            }
+        }
+
+        try {
+            // <iframe>s
+            if (window.self !== window.top) return console.debug("No dark mode", document.body);
+        } catch (e) {
+            console.log("Error in window");
+            return;
+        }
+
+        var href = window.location.href;
+        if (href.endsWith(".pdf") || href.endsWith(".ps") || href.endsWith(".m3u8")) {
+            return console.debug("No dark mode", ".pdf/.ps/.m3u8");
+        }
+        if (document.querySelector("body > embed")) {
+            return console.debug("No dark mode", "body > embed");
+        }
+        if (href.includes("/bitstream")) {
+            return console.debug("No dark mode", "/bitstream");
+        }
+        if (document.querySelector("link[rel='stylesheet'], style, link[href$='.css']")) {
+            return console.debug("No dark mode", "link[rel='stylesheet'], style, link[href$='.css']");
+        }
+        if (document.querySelector(":root[style], body[style], body > :first-child:last-child[style]")) {
+            return console.debug("No dark mode", ":root[style], body[style], body > :first-child:last-child[style]");
+        }
+        return true;
     }
 
-    var href = window.location.href;
-    if (href.endsWith(".pdf") || href.endsWith(".ps") || href.endsWith(".m3u8")) {
-        return;
-    }
-    if (document.querySelector("body > embed")) {
-        return;
-    }
-    if (href.includes("/bitstream")) {
-        return;
-    }
-    if (document.querySelector("link[rel='stylesheet'], style, link[href$='.css']")) {
-        return;
-    }
-    if (document.querySelector(":root[style], body[style], body > :first-child:last-child[style]")) {
-        return;
-    }
+    const directive = should();
+
+    if (!directive) return;
+
     var style = document.createElement("style");
-    style.textContent = `
+    style.textContent = typeof directive === 'string' ? directive : `
             html {
                 background: #191919 !important;
             }

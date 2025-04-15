@@ -1,0 +1,123 @@
+diff --git a/docs/demo/wat2wasm/demo.js b/docs/demo/wat2wasm/demo.js
+index a5b7eb09..278f28cd 100644
+--- a/docs/demo/wat2wasm/demo.js
++++ b/docs/demo/wat2wasm/demo.js
+@@ -17,10 +17,11 @@ Split(["#top-left", "#top-right"]);
+ Split(["#bottom-left", "#bottom-right"]);
+ 
+ Split(["#top-row", "#bottom-row"], {
+-  direction: 'vertical'
++  direction: 'vertical',
++  sizes: [70,30],
+ });
+ 
+-var features = {};
++var features = {'multi_memory':true};
+ 
+ WabtModule().then(function(wabt) {
+ 
+@@ -41,7 +42,7 @@ var binaryBlobUrl = null;
+ 
+ for (const [f, v] of Object.entries(wabt.FEATURES)) {
+   var featureEl = document.getElementById(f);
+-  featureEl.checked = v;
++  featureEl.checked = features[f] ?? v;
+   featureEl.addEventListener('change', event => {
+     var feature = event.target.id;
+     features[feature] = event.target.checked;
+@@ -53,8 +54,12 @@ var wasmInstance = null;
+ 
+ var wrappedConsole = Object.create(console);
+ 
++wrappedConsole.clear = (...args) => {
++  jsLogEl.textContent = '';
++  console.clear(...args);
++}
+ wrappedConsole.log = (...args) => {
+-  let line = args.map(String).join('') + '\n';
++  let line = args.map(String).join(' ') + '\n';
+   jsLogEl.textContent += line;
+   console.log(...args);
+ }
+@@ -67,7 +72,7 @@ var watEditor = CodeMirror((elt) => {
+ });
+ 
+ var jsEditor = CodeMirror((elt) => {
+-  document.getElementById('bottom-left').appendChild(elt);
++  document.getElementById('top-right').appendChild(elt);
+ }, {
+   mode: 'javascript',
+   lineNumbers: true,
+@@ -130,10 +135,13 @@ function run() {
+   try {
+     let wasm = new WebAssembly.Module(binaryBuffer);
+     let js = jsEditor.getValue();
+-    let fn = new Function('wasmModule', 'console', js + '//# sourceURL=demo.js');
++    if (run.blob) URL.revokeObjectURL(run.blob);
++    run.blob = URL.createObjectURL(new Blob([js]));
++    let fn = new Function('wasmModule', 'console', js + '//# sourceURL=' + run.blob);
+     fn(wasm, wrappedConsole);
+   } catch (e) {
+     jsLogEl.textContent += String(e);
++    throw e;
+   }
+ }
+ 
+diff --git a/docs/demo/wat2wasm/index.html b/docs/demo/wat2wasm/index.html
+index 69919e79..2056c17c 100644
+--- a/docs/demo/wat2wasm/index.html
++++ b/docs/demo/wat2wasm/index.html
+@@ -21,9 +21,22 @@
+   <title>wat2wasm demo</title>
+   <link href="../third_party/codemirror/codemirror.css" rel="stylesheet">
+   <link href="../custom.css" rel="stylesheet">
++  <style>
++    @media (prefers-color-scheme: dark) {
++      html {
++        background: #191919 !important;
++      }
++      body {
++        background: white !important;
++        box-shadow: none;
++        filter: invert(0.9) hue-rotate(180deg);
++      }
++    }
++  </style>
+ </head>
+ <body>
+   <header>
++    <!--
+     <h1>wat2wasm demo</h1>
+     <p>WebAssembly has a
+       <a href="https://webassembly.github.io/spec/core/text/index.html">text format</a>
+@@ -37,6 +50,7 @@
+       generated binary file.
+     </p>
+     <div>Enabled features:</div>
++    -->
+     <div>
+       <input type="checkbox" id="exceptions"><label for="exceptions">exceptions</label>
+       <input type="checkbox" id="mutable_globals"><label for="mutable_globals">mutable globals</label>
+@@ -75,17 +89,17 @@
+           </div>
+         </div>
+         <div id="top-right" class="split split-horizontal">
++          <div class="toolbar">JS</div>
++        </div>
++      </div>
++      <div id="bottom-row" class="split-vertical">
++        <div id="bottom-left" class="split split-horizontal">
+           <pre id="output" class="output"></pre>
+           <div class="toolbar">
+             <button class="btn disabled" type="button" id="buildLog" style="text-decoration: underline">BUILD LOG</button>
+             <button class="btn disabled" type="button" id="base64">BASE64</button>
+           </div>
+         </div>
+-      </div>
+-      <div id="bottom-row" class="split-vertical">
+-        <div id="bottom-left" class="split split-horizontal">
+-          <div class="toolbar">JS</div>
+-        </div>
+         <div id="bottom-right" class="split split-horizontal">
+           <pre id="js_log" class="output"></pre>
+           <div class="toolbar">JS LOG</div>

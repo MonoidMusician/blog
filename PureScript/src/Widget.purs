@@ -32,7 +32,7 @@ import Foreign.Object.ST as STO
 import Idiolect (filterFst, (>==))
 import Riverdragon.Dragon (Dragon, renderEl, snapshot)
 import Riverdragon.Dragon.Bones as Dragon
-import Riverdragon.River (Allocar, River, Stream, createRiverStore, mailbox, mailboxRiver, stillRiver)
+import Riverdragon.River (Allocar, River, createRiverStore, createStore, mailbox, mailboxRiver, stillRiver)
 import Riverdragon.River.Bed (allocLazy)
 import Web.DOM (Element, ParentNode)
 import Web.DOM.AttrName (AttrName(..))
@@ -101,6 +101,23 @@ storeInterface = do
     , current: stream.current
     , destroy: stream.destroy
     }
+
+valueInterface :: forall a. Ord a => a -> Allocar (Interface a)
+valueInterface v0 = do
+  stream <- createStore v0
+  -- destroyed by upstream.destroy
+  { byKey } <- mailbox (map { key: _, value: unit } stream.stream)
+  pure $ stillInterface
+    { send: stream.send
+    -- Here we don't have a notion of actors, so receive = loopback,
+    -- but downstream interfaces are able to adapt it to their needs
+    , receive: stream.stream
+    , loopback: stream.stream
+    , mailbox: byKey
+    , current: Just <$> stream.current
+    , destroy: stream.destroy
+    }
+
 
 makeKeyedInterface :: forall a. Ord a => Allocar (String -> Interface a)
 makeKeyedInterface = allocLazy do

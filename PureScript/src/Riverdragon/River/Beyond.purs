@@ -347,6 +347,28 @@ type KeyEvent =
   , stopImmediatePropagation :: Effect Unit
   }
 
+mkKeyEvent :: Event.Event -> Maybe KeyEvent
+mkKeyEvent = KeyboardEvent.fromEvent >>> map \event -> do
+  let baseEvent = KeyboardEvent.toEvent event
+  { phase: keyPhase event
+  , key: KeyboardEvent.key event
+  , code: KeyboardEvent.code event
+  , location: unsafePartial KeyboardEvent.location event
+  , composing: KeyboardEvent.isComposing event
+  , event
+  , baseEvent
+  , mod:
+    { ctrl: KeyboardEvent.ctrlKey event
+    , alt: KeyboardEvent.altKey event
+    , shift: KeyboardEvent.shiftKey event
+    , meta: KeyboardEvent.metaKey event
+    }
+  , targetType: Event.target baseEvent >>= Element.fromEventTarget # maybe "" (unwrap <<< Element.localName)
+  , preventDefault: Event.preventDefault baseEvent
+  , stopPropagation: Event.stopPropagation baseEvent
+  , stopImmediatePropagation: Event.stopImmediatePropagation baseEvent
+  }
+
 keyPhase :: KeyboardEvent.KeyboardEvent -> KeyPhase
 keyPhase event =
   case Event.type_ (KeyboardEvent.toEvent event), KeyboardEvent.repeat event of
@@ -359,27 +381,7 @@ keyEvents ::
   Allocar (Allocar Unit)
 keyEvents cb =
   [ "keydown", "keyup" ] #.. \ty ->
-    documentEvent (EventType ty) KeyboardEvent.fromEvent \event -> do
-      let baseEvent = KeyboardEvent.toEvent event
-      cb
-        { phase: keyPhase event
-        , key: KeyboardEvent.key event
-        , code: KeyboardEvent.code event
-        , location: unsafePartial KeyboardEvent.location event
-        , composing: KeyboardEvent.isComposing event
-        , event
-        , baseEvent
-        , mod:
-          { ctrl: KeyboardEvent.ctrlKey event
-          , alt: KeyboardEvent.altKey event
-          , shift: KeyboardEvent.shiftKey event
-          , meta: KeyboardEvent.metaKey event
-          }
-        , targetType: Event.target baseEvent >>= Element.fromEventTarget # maybe "" (unwrap <<< Element.localName)
-        , preventDefault: Event.preventDefault baseEvent
-        , stopPropagation: Event.stopPropagation baseEvent
-        , stopImmediatePropagation: Event.stopImmediatePropagation baseEvent
-        }
+    documentEvent (EventType ty) mkKeyEvent cb
 
 foreign import _devicePixelRatio ::
   { now :: Allocar Number

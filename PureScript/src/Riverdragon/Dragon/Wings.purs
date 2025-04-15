@@ -27,6 +27,7 @@ import Web.HTML (window)
 import Web.HTML.HTMLDocument as HTMLDocument
 import Web.HTML.HTMLInputElement as InputElement
 import Web.HTML.Window (document)
+import Widget (Interface)
 
 type Shell =
   { track :: forall r.
@@ -124,6 +125,15 @@ sourceCode lang attrs content =
     [ D.data_"lang" =:= lang, oneStream attrs ] $
       D.pre.$ D.code.$ content
 
+
+pushButtonRadio :: forall v. Eq v =>
+  Interface v -> Array (v /\ Dragon) -> Dragon
+pushButtonRadio { send, loopback } options =
+  D.div :."tab-switcher-header".$ D.Fragment $ options <#> \(value /\ content) -> do
+    D.button :."tab-switcher-tab":~
+      [ D.onClick =!= send value
+      , D.data_"selected" <:> eq value <$> loopback
+      ] $ content
 
 tabSwitcher :: Maybe String -> Array (String /\ Dragon) -> Dragon
 tabSwitcher initial tabs = hatching \shell -> do

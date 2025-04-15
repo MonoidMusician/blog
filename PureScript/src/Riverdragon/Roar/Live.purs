@@ -180,7 +180,7 @@ widget _ = pure $
       }
 
     \shell iface@{ pitch, temperament } -> do
-      perfectOvertones <- River.createStore false
+      perfectOvertones <- valueInterface false
       let
         -- A gentle organ voice to start off with
         voice semitones release = do
@@ -227,7 +227,7 @@ widget _ = pure $
               -- overtones or slightly distorted ones
               -- (try perfect intervals!)
               waveFreq = ado
-                perfect <- perfectOvertones.stream
+                perfect <- perfectOvertones.loopback
                 freq <- dynamicFreq
                 in freq * if perfect
                   then Number.round wave.overtone
@@ -248,45 +248,19 @@ widget _ = pure $
 
         dragon = D.Fragment
           -- Buttons to change parameters
-          [ D.div[] $~~
-            [ D.button
-              [ D.onClick =!= perfectOvertones.send true
-              , D.data_"selected" <:> perfectOvertones.stream
-              ] $$ "Perfect overtones"
-            , D.button
-              [ D.onClick =!= perfectOvertones.send false
-              -- We can use `not` on a whole stream!
-              -- (Instead of `not <$> stream`)
-              , D.data_"selected" <:> not perfectOvertones.stream
-              ] $$ "Imperfect overtones"
+          [ Wings.pushButtonRadio perfectOvertones
+            [ true /\ D.text "Perfect overtones"
+            , false /\ D.text "Imperfect overtones"
             ]
-          , D.div[] $~~
-            [ D.button
-              [ D.onClick =!= pitch.send 415.0
-              , D.data_"selected" <:> eq 415.0 <$> pitch.loopback
-              ] $$ "A415"
-            , D.button
-              [ D.onClick =!= pitch.send 440.0
-              , D.data_"selected" <:> eq 440.0 <$> pitch.loopback
-              ] $$ "A440"
-            , D.button
-              [ D.onClick =!= pitch.send 441.0
-              , D.data_"selected" <:> eq 441.0 <$> pitch.loopback
-              ] $$ "A441"
+          , Wings.pushButtonRadio pitch
+            [ 415.0 /\ D.text "A415"
+            , 440.0 /\ D.text "A440"
+            , 441.0 /\ D.text "A441"
             ]
-          , D.div[] $~~
-            [ D.button
-              [ D.onClick =!= temperament.send temperaments.equal
-              , D.data_"selected" <:> eq temperaments.equal <$> temperament.loopback
-              ] $$ "Equal Temperament"
-            , D.button
-              [ D.onClick =!= temperament.send temperaments.kirnbergerIII
-              , D.data_"selected" <:> eq temperaments.kirnbergerIII <$> temperament.loopback
-              ] $$ "Kirnberger III"
-            , D.button
-              [ D.onClick =!= temperament.send temperaments.pythagorean
-              , D.data_"selected" <:> eq temperaments.pythagorean <$> temperament.loopback
-              ] $$ "Pythagorean"
+          , Wings.pushButtonRadio temperament
+            [ temperaments.equal /\ D.text "Equal Temperament"
+            , temperaments.kirnbergerIII /\ D.text "Kirnberger III"
+            , temperaments.pythagorean /\ D.text "Pythagorean"
             ]
           ]
       pure { voice, dragon }

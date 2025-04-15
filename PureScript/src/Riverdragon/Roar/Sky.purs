@@ -49,6 +49,9 @@ import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (KeyEvent, KeyPhase(..), affToLake, animationLoop, counter, debounce, dedup, dedupBy, dedupOn, delay, delayAnim, delayMicro, delayWith, documentEvent, everyFrame, fallingLeaves, interval, joinLeave, keyEvents, keyPhase, mkAnimFrameBuffer, mkBufferedDelayer, risingFalling, withLast)
 import Riverdragon.River.Beyond (KeyEvent, KeyPhase(..), affToLake, animationLoop, counter, debounce, dedup, dedupBy, dedupOn, delay, delayAnim, delayMicro, delayWith, documentEvent, everyFrame, fallingLeaves, interval, joinLeave, keyEvents, keyPhase, mkAnimFrameBuffer, mkBufferedDelayer, risingFalling, withLast) as ReExports
 import Riverdragon.River.Beyond as Beyond
+import Widget (Interface, KeyedInterface, disconnected, stillInterface, storeInterface, valueInterface, makeKeyedInterface, sessionStorageInterface)
+import Widget (Interface, KeyedInterface, disconnected, stillInterface, storeInterface, valueInterface, makeKeyedInterface, sessionStorageInterface) as ReExports
+import Widget as Widget
 import Riverdragon.Roar.Live as Riverdragon.Roar.Live
 
 import Parser.Comb.Comber

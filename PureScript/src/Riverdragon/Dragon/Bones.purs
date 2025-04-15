@@ -307,14 +307,14 @@ _listenClick fn handler = fn <<< Array.cons (onClick =!= handler)
 infixl 4 _listenClick as :!
 
 -- | `HTMLInput.fromEventTarget ?. HTMLInput.value`
-_gather :: forall a b m. Bind m => Applicative m => (Web.EventTarget -> Maybe a) -> (a -> m b) -> (b -> m Unit) -> Web.Event -> m Unit
+_gather :: forall a b m. Monad m => (Web.EventTarget -> Maybe a) -> (a -> m b) -> (b -> m Unit) -> Web.Event -> m Unit
 _gather coe get = \fn e ->
   case Event.target e >>= coe of
     Just r -> r # (get >=> fn)
     Nothing -> pure unit
 infix 6 _gather as ?. -- under <>
 -- | `(Tuple HTMLInput.fromEventTarget HTMLInput.value) ?~> effectFnWithInput`
-_gathering :: forall a b m. Bind m => Applicative m => Tuple (Web.EventTarget -> Maybe a) (a -> m b) -> (b -> m Unit) -> Web.Event -> m Unit
+_gathering :: forall a b m. Monad m => Tuple (Web.EventTarget -> Maybe a) (a -> m b) -> (b -> m Unit) -> Web.Event -> m Unit
 _gathering (Tuple coe get) fn = _gather coe get fn
 infix 6 _gathering as ?~> -- under <>
 

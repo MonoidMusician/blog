@@ -113,6 +113,7 @@ module Riverdragon.River
   , singleShot
   , selfGatingEf
   , withInstantiated
+  , mapArray
   , alLake
   , alLake'
   , mapAl
@@ -145,7 +146,7 @@ import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Set as Set
 import Data.These (These(..))
-import Data.Traversable (class Foldable, foldMap, mapAccumL, traverse)
+import Data.Traversable (class Foldable, foldMap, mapAccumL, traverse, traverse_)
 import Data.Tuple (Tuple(..), fst, snd)
 import Effect (Effect, foreachE)
 import Idiolect ((#..))
@@ -791,6 +792,11 @@ withInstantiated :: forall flow a b.
 withInstantiated toFlow f = alLake do
   { burst, stream, destroy } <- instantiate toFlow
   pure { lake: f burst stream, destroy }
+
+mapArray :: forall flow a b. (a -> Array b) -> Stream flow a -> Stream flow b
+mapArray f (Stream t g) = mayMemoize $ Stream t \cbs -> do
+  r <- g cbs { receive = \a -> traverse_ cbs.receive (f a) }
+  pure r { burst = r.burst >>= f }
 
 
 alLake :: forall a.

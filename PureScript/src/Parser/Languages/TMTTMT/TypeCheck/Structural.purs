@@ -111,8 +111,8 @@ derive instance eqFunctional :: Eq Functional
 instance monoidFunctional :: Monoid Functional where
   mempty = Union []
 instance semigroupFunctional :: Semigroup Functional where
-  append (Union []) vdom = vdom
-  append vdom (Union []) = vdom
+  append (Union []) v = v
+  append v (Union []) = v
   append (Union v1s) (Union v2s) = Union (v1s <> v2s)
 
   -- Keep flattening, to keep it associative
