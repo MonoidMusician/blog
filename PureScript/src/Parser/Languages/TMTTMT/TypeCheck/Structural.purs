@@ -12,7 +12,7 @@ import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Filterable (filterMap, partitionMap)
-import Data.Foldable (foldM)
+import Data.Foldable (class Foldable, foldM)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Identity (Identity)
 import Data.Lens.Iso.Newtype (_Newtype)
@@ -24,7 +24,8 @@ import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Monoid (power)
 import Data.Monoid.Endo (Endo(..))
 import Data.Newtype (class Newtype, unwrap)
-import Data.Traversable (for_, sequence, traverse)
+import Data.Set (Set)
+import Data.Traversable (class Traversable, for_, sequence, traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst, uncurry)
 import Idiolect (intercalateMap)
@@ -134,6 +135,23 @@ isUninhabited (Concrete (Singleton _)) = false
 isUninhabited (Concrete AnyScalar) = false
 isUninhabited (Concrete (ListOf ty)) = isUninhabited ty
 isUninhabited (Concrete (Tupled tys)) = any isUninhabited tys
+
+newtype Sifted f a = Sifted
+  { singleton :: Set String
+  , anyScalar :: Maybe Unit
+  , listOf :: Maybe a
+  -- should be `DependentMap Int (\k -> Vector k t)`
+  , tupled :: SemigroupMap Int (SemigroupMap Int a)
+  -- function inputs are contravariant, but do not deal with intersections here
+  , function :: Options (Tuple a a)
+  , other :: f a
+  }
+derive instance newtypeSifted :: Newtype (Sifted f a) _
+derive newtype instance monoidSifted :: (Monoid a, Monoid (f a)) => Monoid (Sifted f a)
+derive newtype instance semigroupSifted :: (Semigroup a, Semigroup (f a)) => Semigroup (Sifted f a)
+derive instance functorSifted :: Functor f => Functor (Sifted f)
+derive instance foldableSifted :: Foldable f => Foldable (Sifted f)
+derive instance traversableSifted :: Traversable f => Traversable (Sifted f)
 
 type Loc = Unit
 dfLoc = mempty :: Loc

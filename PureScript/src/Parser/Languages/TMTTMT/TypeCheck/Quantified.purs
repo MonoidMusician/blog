@@ -6,31 +6,37 @@ import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Reader (class MonadAsk, class MonadReader, ReaderT, ask, local, runReaderT)
 import Control.Monad.Writer (WriterT, runWriter, tell)
-import Data.Array (all, any, fold)
+import Data.Array (all, any)
 import Data.Array as A
 import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Filterable (filterMap, partitionMap)
-import Data.Foldable (foldM)
+import Data.Foldable (class Foldable, fold, foldM, foldMap, foldl, foldr, intercalate)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.HeytingAlgebra (ff)
 import Data.Identity (Identity)
 import Data.Lens.Iso.Newtype (_Newtype)
 import Data.Lens.Record (prop)
 import Data.List (List(..), foldMap, foldr, (:))
+import Data.List as List
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe, isNothing)
 import Data.Monoid (power)
 import Data.Monoid.Endo (Endo(..))
 import Data.Newtype (class Newtype, unwrap)
-import Data.Traversable (for_, sequence, traverse)
+import Data.Pair (Pair(..))
+import Data.Set (Set)
+import Data.Set as Set
+import Data.Traversable (class Traversable, for_, sequence, traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
-import Data.Tuple (Tuple(..), fst, uncurry)
-import Idiolect (intercalateMap)
+import Data.Tuple (Tuple(..), fst, snd, uncurry)
+import Idiolect (intercalateMap, nonEmpty)
 import Parser.Languages.TMTTMT.TypeCheck (class TypeSystem, constructExpr)
-import Parser.Languages.TMTTMT.TypeCheck.Structural (BasicSubsetF(..), Items, Options, TmVar, TyVar, printPattern)
+import Parser.Languages.TMTTMT.TypeCheck.Structural (BasicSubsetF(..), Items, Options, Sifted(..), TmVar, TyVar, printPattern)
 import Parser.Languages.TMTTMT.Types (Calling(..), Case(..), Condition(..), Declaration(..), Expr(..), Matching(..), Pattern(..))
 import Partial.Unsafe (unsafeCrashWith)
 import PureScript.CST.Print (printQualified)
@@ -38,12 +44,306 @@ import Safe.Coerce (coerce)
 import Type.Proxy (Proxy(..))
 import Uncurried.RWSE (RWSE, evalRWSE)
 
+{-
+
+  expr ::= expr (: type :)
+  expr ::= [ (: overall_type :) expr* ]
+  expr ::= {: assoc* :} ## strict/enumerated record, not subject to field subtyping
+
+-}
+
+{-
+  Polymorphism and subtypes
+
+  `stronger <: weaker`
+  `subsumed <: subsumes`
+  `any term of this type <:(can also be used as) a term of this type`
+  `"true" <: ("true" | "false")`
+  `{ x: string, y: string } <: { x: string }`
+
+  Polymorphism increases the slipperiness:
+  - Like quantifiers commute
+  - Existential quantifiers are stronger before universals; they weaken when
+    they slip after them:
+    `exists y. forall x. f x y <: forall x. exists y. f x y`
+    (since `y` can then depend on `x`)
+  - Contravariant exists is covariant forall:
+    `(exists y. f y) -> z = forall y. f y -> z`
+    and vice versa... it just relies on occurs check for/and scoping, uh .
+  - Quantifiers can slip through covariant positions of constructors...
+    does strict positivity matter, or only for recursion? hard to tell, but
+    maybe in some cases (or at least for typechecking in generated code)
+  - Squish
+    `forall x y. f x y <: forall z. f z z`
+    `exists z. f z z <: exists x y. f x y`
+  - You need to peek through quantifiers to see the shape of data
+
+
+  E.g. Union [ (Forall _ (Function _ _)), TyVar _ ] is still a bad type for the
+  same reasons that it is a bad type without a forall
+
+  Unification-subsumption:
+  Each side has:
+  - Quantifier type -> variable type (skolem vs univar)
+  - Quantifier dependencies??
+  - Solutions
+
+  Solutions are a bit ugly/denormalized because they are left and right, so I
+  guess might as well augment with rightvar=leftvar when possible.
+
+  `TyApp`s are weird, will ignore for now: guess we can peek at variance and
+  maybe impose some variance constraints on tyvars, but yeah, not easy.
+  probably don't interact nicely with `TyVar`s
+
+  everything lifts: `k -> Type`, like forall and union and others. actually need
+  to be careful with that......
+
+  `range :: Int -> @forall (f :: @Type -> @Type | Foldable). f Int`
+  `range :: Int -> @forall (f :: @Type -> @Type, Foldable f). f Int`
+-}
+
+data UniSub solution = UniSub
+  -- quantifiers should be disjoint
+  { quantifiers :: Map TyVar (Either Unit (Set TyVar))
+  -- solutions may be overlapping
+  , solutions :: Map TyVar solution
+  } -- | Failed???
+
+newtype VSifted a = VSifted { tyvarapp :: Array a }
+derive newtype instance monoidVSifted :: Monoid (VSifted a)
+derive newtype instance semigroupVSifted :: Semigroup (VSifted a)
+derive instance newtypeVSifted :: Newtype (VSifted a) _
+derive instance functorVSifted :: Functor VSifted
+derive instance foldableVSifted :: Foldable VSifted
+derive instance traversableVSifted :: Traversable VSifted
+type QSifted = Sifted VSifted
+type QSiftQ = QSifted
+  { quantifiers :: List { var :: TyVar, exists :: Boolean }
+  , core :: Quantified
+  }
+
+-- | It is important to be able to sift out each type of case (e.g. arrays and
+-- | scalars and functions, mainly) after seeing through all of the quantifiers.
+-- | This only sees through one layer, of course, and it does not canonicalize
+-- | quantifiers, only records them in a faithful order.
+sift :: Quantified -> QSiftQ
+sift = case _ of
+  Concrete c -> case c of
+    Singleton s -> mk _ { singleton = Set.singleton s }
+    AnyScalar -> mk _ { anyScalar = Just unit }
+    ListOf t -> mk _ { listOf = Just $ unq t }
+    Tupled ts -> mk _
+      { tupled =
+          SemigroupMap $ Map.singleton (Array.length ts) $
+            SemigroupMap $ Map.fromFoldableWithIndex $ map unq ts
+      }
+  Function i o -> mk _ { function = Array.singleton (Tuple (unq i) (unq o)) }
+  TyVarApp v ts -> mk _ { other = VSifted { tyvarapp: [unq (TyVarApp v ts)] } }
+  Union ts -> foldMap sift ts
+  Forall v t -> q false v $ sift t
+  Exists v t -> q true v $ sift t
+  where
+  unq = { quantifiers: mempty, core: _ }
+  mk f = Sifted $ f
+    { singleton: Set.empty
+    , anyScalar: Nothing
+    , listOf: Nothing
+    , tupled: SemigroupMap Map.empty
+    , function: []
+    , other: VSifted { tyvarapp: [] }
+    }
+  q exists var = map \{ quantifiers, core } ->
+    { quantifiers: List.Cons { var, exists } quantifiers, core }
+
+-- | Similarly, we can join it back up again. TODO: detect shared quantifiers?
+unsift :: QSiftQ -> Quantified
+unsift (Sifted r) = fold
+  [ foldMap (Concrete <<< Singleton) r.singleton
+  , foldMap (const (Concrete AnyScalar)) r.anyScalar
+  , foldMap (Concrete <<< ListOf <<< q) r.listOf
+  , foldMap (Concrete <<< Tupled <<< map q) $ fromTupled r.tupled
+  , foldMap (\(Tuple i o) -> Function (q i) (q o)) r.function
+  -- , r.other
+  ]
+  where
+  q { quantifiers, core } =
+    foldl (\t { var, exists } -> (if exists then Exists else Forall) var t) core quantifiers
+  fromTupled = map $ map snd <<< Map.toUnfoldable <<< unwrap
+
+--------------------------------------------------------------------------------
+
+-- | Compare two parts of types to determine their overlap versus what remains
+-- | as excess from the left and right.
+type Comparer t = Pair t -> Compared (Maybe t)
+
+newtype Compared t = Compared
+  { left :: t
+  , both :: t
+  , right :: t
+  }
+derive instance functorCompared :: Functor Compared
+
+compareSet :: forall t. Ord t => Comparer (Set t)
+compareSet (Pair l r) = Compared
+  { left: nonEmpty $ Set.difference l r
+  , both: nonEmpty $ Set.intersection l r
+  , right: nonEmpty $ Set.difference r l
+  }
+
+compareUnit :: Comparer Unit
+compareUnit _ = Compared { left: Nothing, both: Just unit, right: Nothing }
+
+compareMaybe :: forall t. Comparer t -> Comparer (Maybe t)
+compareMaybe cmp (Pair (Just l) (Just r)) =
+  Just <$> cmp (Pair l r)
+compareMaybe _ (Pair l r) = Compared
+  { left: Just <$> l
+  , both: Nothing
+  , right: Just <$> r
+  }
+
+compareMap :: forall k t. Ord k => Comparer t -> Comparer (Map k t)
+compareMap cmp (Pair l r) = Compared
+  { left: nonmt $ fromCompared _.left `Map.union` Map.difference l r
+  , both: nonmt $ fromCompared _.both
+  , right: nonmt $ fromCompared _.right `Map.union` Map.difference r l
+  }
+  where
+  nonmt m = if Map.isEmpty m then Nothing else Just m
+  compared :: Map k { left :: Maybe t, both :: Maybe t, right :: Maybe t }
+  compared = ado
+    lv <- l
+    rv <- r
+    in let Compared c = cmp (Pair lv rv) in c
+  fromCompared f = filterMap f compared
+
+compareSemigroupMap :: forall k t. Ord k => Comparer t -> Comparer (SemigroupMap k t)
+compareSemigroupMap = coerce (compareMap :: Comparer t -> Comparer (Map k t))
+
+compareTupled :: forall t. t -> Comparer t -> Comparer (SemigroupMap Int (SemigroupMap Int t))
+compareTupled neutral cmp = compareSemigroupMap \(Pair l r) -> do
+  -- We need to keep the `SemigroupMap Int t` padded to the same length
+  -- (Really the type should be `DependentMap Int (\k -> Vector k t)`)
+  let
+    padding = neutral <$ void l <> void r
+    padBack Nothing = Nothing
+    padBack (Just result) = Just $ SemigroupMap $
+      unwrap result `Map.union` unwrap padding
+  padBack <$> compareSemigroupMap cmp (Pair l r)
+
+compareFunctions :: forall t. Monoid t => t -> Comparer t -> Comparer (Array (Tuple t t))
+compareFunctions neutral cmp =
+  map (unionFunctions' neutral cmp) >>> case _ of
+    Pair (Just (Tuple i o)) (Just (Tuple j u)) ->
+      let
+        Compared ij = cmp (Pair i j)
+        Compared ou = cmp (Pair o u)
+      -- intersection `(i -> o) & (j -> u)` and differences
+      in Compared
+        -- given that `(i -> o) = (i & j -> o) & (i \ j -> o)`,
+        -- then `(i -> o) \ ((i -> o) & (j -> u)) = (i & j -> o \ u)`
+        { left: map A.singleton $ mkfn ij.both ou.left
+        -- `(i -> o) & (j -> u) = (i & j -> o & u) & (i \ j -> o) & (j \ i -> u)`
+        , both: nonmt $ A.catMaybes
+          [ mkfn ij.both ou.both
+          , mkfn ij.left (Just o)
+          , mkfn ij.right (Just u)
+          ]
+        , right: map A.singleton $ mkfn ij.both ou.right
+        }
+    _ -> Compared { left: Nothing, both: Nothing, right: Nothing }
+  where
+  nonmt m = if Array.null m then Nothing else Just m
+  mkfn Nothing o = Just (Tuple neutral (fromMaybe neutral o))
+  mkfn (Just i) (Just o) = Just (Tuple i o)
+  mkfn (Just _) Nothing = Nothing
+
+compareQSifted :: forall t. Monoid t => t -> Comparer t -> Comparer (QSifted t)
+compareQSifted neutral cmp (Pair (Sifted l) (Sifted r)) = Compared
+  { left: nonmt $ Sifted
+    { singleton: singleton.left
+    , anyScalar: anyScalar.left
+    , listOf: listOf.left
+    , tupled: tupled.left
+    , function: function.left
+    , other: VSifted { tyvarapp: tyvarapp.left }
+    }
+  , both: nonmt $ Sifted
+    { singleton: singleton.both
+    , anyScalar: anyScalar.both
+    , listOf: listOf.both
+    , tupled: tupled.both
+    , function: function.both
+    , other: VSifted { tyvarapp: tyvarapp.both }
+    }
+  , right: nonmt $ Sifted
+    { singleton: singleton.right
+    , anyScalar: anyScalar.right
+    , listOf: listOf.right
+    , tupled: tupled.right
+    , function: function.right
+    , other: VSifted { tyvarapp: tyvarapp.right }
+    }
+  }
+  where
+  nonmt (Sifted r)
+    | Set.isEmpty r.singleton
+    , isNothing r.anyScalar
+    , isNothing r.listOf
+    , Map.isEmpty (unwrap r.tupled)
+    , Array.null r.function
+    , Array.null (unwrap r.other).tyvarapp = Nothing
+  nonmt r = Just r
+  Compared singleton = map fold $ compareSet (Pair l.singleton r.singleton)
+  Compared anyScalar = map join $ compareMaybe compareUnit (Pair l.anyScalar r.anyScalar)
+  Compared listOf = map join $ compareMaybe cmp (Pair l.listOf r.listOf)
+  Compared tupled = map (fromMaybe (SemigroupMap Map.empty)) $
+    compareTupled neutral cmp (Pair l.tupled r.tupled)
+  Compared function = map fold $ compareFunctions neutral cmp (Pair l.function r.function)
+  Compared tyvarapp = map (fold :: Maybe _ -> Array _) $ ?help (Pair (unwrap l.other).tyvarapp (unwrap r.other).tyvarapp)
+
+-- intersectQuantified :: NonEmptyArray Quantified -> Quantified
+-- intersectQuantified = map sift >>> shallow >>> deep
+--   where
+--   shallow = NEA.foldl1 \l r ->
+--     let Compared c = compareQSifted mempty ?help (join Pair <$> (Pair l r)) in c.both
+--   deep = ?help
+
+unionFunctions' :: forall t. Monoid t => t -> Comparer t -> Array (Tuple t t) -> Maybe (Tuple t t)
+unionFunctions' neutral cmp = NEA.fromArray >>> map \fns -> do
+  Tuple (fromMaybe neutral $ NEA.foldl1 cmpIntersect $ Just <<< fst <$> fns) (foldMap snd fns)
+  where
+  cmpIntersect = map join <<< lift2 \l r ->
+    let Compared c = cmp (Pair l r) in c.both
+
+--------------------------------------------------------------------------------
+
+data UniOrSub = Unify | LSub | RSub
+
+-- unisubSifted :: UniOrSub -> Pair QSiftQ -> Pair (UniSub (QSiftQ Quantified))
+-- unisubSifted dir (Pair l r) =
+--   unisubSingleton
+
+-- unisubInner :: UniOrSub -> Pair Quantified -> Pair (UniSub Quantified)
+-- unisubInner _ = map sift >>>
+
+--
+-- unisubInner :: UniOrSub -> Quantified -> Quantified -> Pair (UniSub Quantified)
+-- unisub :: UniOrSub -> Quantified -> Quantified -> Pair Quantified
+--
+-- checkUniSubs :: Pair (UniSub Quantified) -> Either Error (Pair (UniSub Quantified))
+-- -- transitivized:
+-- -- - skolemsL :: SemigroupMap LTyVar (Set RTyVar) ~> [(Set LTyVar, Set RTyVar)] disjoint
+-- -- - skolemsR
+-- -- - univarsL :: Map TyVar solution ~> transitivized, check for cycles and skolem escapes and such
+
 data Quantified
   = Function Quantified Quantified
   | Concrete (BasicSubsetF Quantified)
-  | TyVar TyVar
+  | TyVarApp TyVar (Array Quantified)
   | Union (Options Quantified)
   | Forall TyVar Quantified
+  | Exists TyVar Quantified
 
 derive instance eqQuantified :: Eq Quantified
 
@@ -67,13 +367,14 @@ type SubsetWithQuantifiers = BasicSubsetF Quantified
 
 isUninhabited :: Quantified -> Boolean
 isUninhabited (Function _ _) = false -- due to effects
-isUninhabited (TyVar _) = false -- unknown
+isUninhabited (TyVarApp _ _) = false -- unknown
 isUninhabited (Union tys) = all isUninhabited tys
 isUninhabited (Concrete (Singleton _)) = false
 isUninhabited (Concrete AnyScalar) = false
 isUninhabited (Concrete (ListOf ty)) = isUninhabited ty
 isUninhabited (Concrete (Tupled tys)) = any isUninhabited tys
 isUninhabited (Forall _ ty) = isUninhabited ty
+isUninhabited (Exists _ ty) = isUninhabited ty
 
 type Loc = Unit
 dfLoc = mempty :: Loc
@@ -212,7 +513,8 @@ normalizeQuantified' = case _ of
   Concrete (Tupled ts) -> Concrete <<< Tupled <$> traverse normalizeQuantified' ts
   Concrete c -> Just $ Concrete c
   Forall v t -> Forall v <$> normalizeQuantified' t
-  TyVar v -> Just $ TyVar v
+  Exists v t -> Exists v <$> normalizeQuantified' t
+  TyVarApp v ts -> TyVarApp v <$> traverse normalizeQuantified' ts
   Union options ->
     case Array.nubEq $ unUnion <<< normalizeQuantified =<< options of
       [] -> Nothing
@@ -227,8 +529,9 @@ printQuantified = normalizeQuantified >>> case _ of
     AnyScalar -> "$$"
     ListOf t -> "+" <> printQuantified t
     Tupled ts -> "[" <> intercalateMap " " printQuantified ts <> "]"
-  TyVar v -> v
+  TyVarApp v ts -> "(" <> intercalate " " ([ v ] <> map printQuantified ts) <> ")"
   Forall v t -> "(" <> ("@" <> v <> ". " <> printQuantified t) <> ")"
+  Exists v t -> "(" <> ("&" <> v <> ". " <> printQuantified t) <> ")"
   Union [] -> "(|)"
   Union [ t ] -> printQuantified t
   Union [ Concrete (Singleton ""), Concrete AnyScalar ] -> "$"
