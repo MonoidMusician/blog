@@ -1,0 +1,7 @@
+*.wasm*
+*.wat*
+*.cwasm*
+*.ll*
+*.explore.html
+clif/
+*.clif

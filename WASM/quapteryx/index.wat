@@ -368,7 +368,7 @@
         ;; roll back $obit to overwrite the the zeros
         ;; (call $dbg (i32.const 0xb0a000) (local.get $arity2))
         ;; (call $dbg (i32.const 0xb0a010) (global.get $obit))
-        ;; (global.set $obit (i64.sub (global.get $obit) (local.get $arity2)))
+        (global.set $obit (i64.sub (global.get $obit) (local.get $arity2)))
         ;; (call $dbg (i32.const 0xb0a020) (global.get $obit))
         ;; focus the crumb after the redex head
         (global.set $ibit (i64.add (local.get $shift) (i64.const 2)))
@@ -481,7 +481,7 @@
 
     (i64.or
       (i64.shr_u (global.get $obit) (i64.const 1))
-      (i64.shl (i64.extend_i32_u (global.get $optr)) (i64.const 5))
+      (i64.shl (i64.extend_i32_u (global.get $optr)) (i64.const 2))
     )
   )
 
@@ -597,12 +597,21 @@
     (local $tmp i64)
     (local $dbg i64)
 
-    (global.get $optr)
-      (i64.load $output (global.get $optr))
-      (i64.shl (global.get $word_max) (i64.sub (global.get $word_size) (global.get $obit)))
-      i64.and
-    ;; local.tee $dbg (call $dbg (i32.const 0xDD00) (local.get $dbg))
-    i64.store $output
+    (if (i64.eqz (global.get $obit))
+      (then
+        (global.get $optr)
+        (i64.const 0)
+        i64.store $output
+      )
+      (else
+        (global.get $optr)
+          (i64.load $output (global.get $optr))
+          (i64.shl (global.get $word_max) (i64.sub (global.get $word_size) (global.get $obit)))
+          i64.and
+        ;; local.tee $dbg (call $dbg (i32.const 0xDD00) (local.get $dbg))
+        i64.store $output
+      )
+    )
 
     global.get $obit
     i64.const 2
