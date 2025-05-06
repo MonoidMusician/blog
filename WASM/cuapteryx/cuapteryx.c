@@ -1,7 +1,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define assert(c) {if (!(c)) {__builtin_trap(); __builtin_unreachable();}}
+#define assert(c) {if (!(c)) {__builtin_unreachable();}}
 
 typedef uint64_t u64;
 typedef uint32_t u32;
@@ -37,7 +37,9 @@ __attribute__((import_name("dbg")))
 extern void dbg(u32 l, u64 r);
 
 __attribute__((import_name("print64")))
-extern void print64(char* lbl, u64 value);
+extern void _print64(char* lbl, u64 value);
+
+#define print64(x, y) {}
 
 __attribute__((import_name("dent")))
 extern void dent(s32 value);

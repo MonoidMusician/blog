@@ -92,6 +92,10 @@ set -euo pipefail
       -S \
       "$THIS.c" || true
 
+    # Cranelift IR
+    wasmtime compile -O opt-level=2 --emit-clif clif "$THIS.wasm" || true
+    rm -f clif/array_to_wasm_*.clif clif/wasm_to_array_trampoline_*.clif
+
     node "$THIS.node.js"
   fi
 }; exit $?
