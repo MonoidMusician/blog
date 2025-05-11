@@ -1,0 +1,55 @@
+{
+  "fileTypes": [],
+  "injectionSelector": "L:meta.paragraph.markdown - (comment, string, markup.math.inline.markdown, markup.fenced_code.block.markdown)",
+  "patterns": [
+    {
+      "include": "#math_inline_round"
+    },
+    {
+      "include": "#math_inline_square"
+    }
+  ],
+  "repository": {
+    "math_inline_round": {
+      "name": "markup.math.inline.markdown",
+      "match": "(?<=\\s|\\W|^)(?<!\\\\)(\\\\\\()(.+?)(?<!\\\\)(\\\\\\))(?=\\s|\\W|$)",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.math.begin.bracket.round.markdown"
+        },
+        "2": {
+          "name": "meta.embedded.math.markdown",
+          "patterns": [
+            {
+              "include": "text.html.markdown.math#math"
+            }
+          ]
+        },
+        "3": {
+          "name": "punctuation.definition.math.end.bracket.round.markdown"
+        }
+      }
+    },
+    "math_inline_square": {
+      "name": "markup.math.inline.markdown",
+      "match": "(?<=\\s|\\W|^)(?<!\\\\)(\\\\\\[)(.+?)(?<!\\\\)(\\\\\\])(?=\\s|\\W|$)",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.math.begin.bracket.square.markdown"
+        },
+        "2": {
+          "name": "meta.embedded.math.markdown",
+          "patterns": [
+            {
+              "include": "text.html.markdown.math#math"
+            }
+          ]
+        },
+        "3": {
+          "name": "punctuation.definition.math.end.bracket.square.markdown"
+        }
+      }
+    }
+  },
+  "scopeName": "markdown.math.inline"
+}

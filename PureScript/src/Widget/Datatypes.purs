@@ -217,6 +217,9 @@ abbreviations = Map.fromFoldable
   , "etc." /\ Foreign "la" "et ce\x0304tera"
       (Just "https://en.wiktionary.org/wiki/etc.#English")
       ["and so on", "and the remaining items"]
+  , "&c." /\ Foreign "la" "et ce\x0304tera"
+      (Just "https://en.wiktionary.org/wiki/etc.#English")
+      ["and so on", "and the remaining items"]
   , "et al." /\ Foreign "la" "et aliae, et alii\x0304"
       (Just "https://en.wiktionary.org/wiki/et_al.#Etymology_1")
       ["and others"]
@@ -268,6 +271,11 @@ abbreviations = Map.fromFoldable
   , "UI" /\ Acronym "User Interface"
   , "UX" /\ Acronym "User Experience"
   , "JSON" /\ Acronym "JavaScript Object Notation"
+  , "DAG" /\ Acronym "Directed Acyclic Graph"
+  , "WHNF" /\ Acronym "Weak Head Normal Form"
+  , "NF" /\ Acronym "Normal Form"
+  , "AST" /\ Acronym "Abstract Syntax Tree"
+  , "CST" /\ Acronym "Concrete Syntax Tree"
   ]
 
 matching :: String -> Array String

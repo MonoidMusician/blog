@@ -131,6 +131,7 @@ const testIO = ({ input: i, output: o, inputs: extra, test: func }) => {
     if (extra[k] == undefined) continue;
     ({
       "fuel": (value) => {
+        console.log('fuel', value);
         new Uint32Array(ex.memory.buffer, ex.fuel, 1)[0] = value;
       },
     })[k]?.(extra[k]);
@@ -325,7 +326,7 @@ function test_slowest() {
       trydebug(() => {
         r = testIO({
           input, output, inputs: {fuel, debug},
-          test: () => o = ex.slowest(BigInt(input.length)),
+          test: () => o = ex.eval(BigInt(input.length)),
           outputs: {
             optr: 8 * (output.length>>5),
             obit: (2*output.length) % 64,
@@ -357,7 +358,7 @@ function test_slowest() {
 
   {
     try {
-      testcase("00231", "3", 1);
+      testcase("00231", "3", 100);
       testcase("0100231", "00231", 1);
       testcase("3", "3", 1);
       testcase("033", "033", 1);
@@ -577,7 +578,7 @@ var debugfn = fn => {
 };
 var trydebug = inner => {
   var previous = debugging;
-  var here = debugging = [];
+  var here = debugging = true;
   let r;
   try {
     r = inner();
@@ -591,6 +592,7 @@ var trydebug = inner => {
   debugging = previous;
   return r;
 };
+
 
 WebAssembly.instantiate(wasmBuffer, {
   env: {

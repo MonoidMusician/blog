@@ -6,7 +6,7 @@ set -euo pipefail
   THIS=$(basename "$0" .sh)
 
   if [[ "${1:-}" == "--watch" ]]; then
-    watchexec -f "$THIS.c" -f "$THIS.sh" -f "$THIS.node.js" -r -c --shell=none -- "$0"
+    watchexec -f "$THIS.c" -f "*.h" -f "$THIS.sh" -f "$THIS.node.js" -r -c --shell=none -- "$0"
   else
     CLANG=clang
     if [[ -f /usr/local/Cellar/llvm/17.0.6_1/bin/clang ]]; then

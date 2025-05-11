@@ -6,7 +6,7 @@ ptrbit input_at = {};
 ptrbit stop_at = {};
 ptrbit output_at = {};
 
-#define SZ 16 * 1024
+#define SZ 1024 * 1024
 word input_words[SZ];
 word output_words[SZ];
 

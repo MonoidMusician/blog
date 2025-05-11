@@ -44,6 +44,7 @@ __attribute__((import_name("dent")))
 extern void dent(s32 value);
 
 
+// Coalesce each nonzero crumb (pair of bits) into its lower bit.
 __attribute__((export_name("nonzeros"), always_inline))
 word nonzeros(word crumbs) {
   return lower & (crumbs | (crumbs >> 1));
@@ -91,6 +92,24 @@ word redexes(u8 leadingZeroBits, word crumbs) {
     default:
       return redexes_impl(leadingZeroBits, crumbs);
   }
+}
+
+// Calculate if there are any `S` redexes exclusively, since `I` and `K` are
+// not really a problem for duplicated work. Assumes `leadingZeroBits = 3`
+// (or that the word is well-formed).
+__attribute__((export_name("nontrivial_redexes")))
+word nontrivial_redexes(word crumbs) {
+  word S;
+  // Any nonzero crumb means that the
+  // next 3 crumbs cannot be `S` redexes
+  S = crumbs >> 2 | crumbs >> 4 | crumbs >> 6;
+  // Any any crumb that is not `0b11 = 0q3`
+  // cannot be an `S` redex
+  S |= crumbs ^ (0b11 * lower);
+  // The redexes are then the crumbs where
+  // this `S` is zero, so we coalesce them
+  // and we give them the value `0b11 = 0q3`
+  return ~(0b11 * nonzeros(S));
 }
 
 __attribute__((export_name("redex")))

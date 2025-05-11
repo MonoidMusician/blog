@@ -231,6 +231,8 @@ compareTupled neutral cmp = compareSemigroupMap \(Pair l r) -> do
       unwrap result `Map.union` unwrap padding
   padBack <$> compareSemigroupMap cmp (Pair l r)
 
+{-
+
 compareFunctions :: forall t. Monoid t => t -> Comparer t -> Comparer (Array (Tuple t t))
 compareFunctions neutral cmp =
   map (unionFunctions' neutral cmp) >>> case _ of
@@ -315,6 +317,8 @@ unionFunctions' neutral cmp = NEA.fromArray >>> map \fns -> do
   where
   cmpIntersect = map join <<< lift2 \l r ->
     let Compared c = cmp (Pair l r) in c.both
+
+-}
 
 --------------------------------------------------------------------------------
 

@@ -1,10 +1,12 @@
-from: markdown+tex_math_single_backslash+footnotes+inline_notes+autolink_bare_uris
+from: markdown+tex_math_single_backslash+footnotes+inline_notes+autolink_bare_uris-tex_math_dollars
 toc: true
 toc-depth: 5
 section-divs: true
 template: pandoc/post
 preserve-tabs: true
 wrap: preserve
+# Remove table width, c.f. https://github.com/jgm/pandoc/issues/3386#issuecomment-275621007
+columns: 10000
 filters:
   - pandoc/lua/LilyPond.lua
   - pandoc/lua/PureScript.lua
@@ -17,6 +19,7 @@ filters:
 css:
   - assets/katex/katex.min.css
 syntax-definition:
+  - pandoc/skylighting/c.xml
   - pandoc/skylighting/fish.xml
   - pandoc/skylighting/purescript.xml
 metadata:

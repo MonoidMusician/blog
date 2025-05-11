@@ -1,0 +1,47 @@
+{
+  "fileTypes": [],
+  "injectionSelector": "L:text.html.markdown - (comment, string, meta.paragraph.markdown, markup.math.block.markdown, markup.fenced_code.block.markdown, markup.raw.block.markdown)",
+  "patterns": [
+    {
+      "include": "#math_block"
+    }
+  ],
+  "repository": {
+    "math_block": {
+      "name": "markup.math.block.markdown",
+      "contentName": "meta.embedded.math.markdown",
+      "begin": "(?<=\\s|^)(\\\\\\[)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.math.begin.bracket.square.markdown"
+        }
+      },
+      "end": "(.*)(\\\\\\])",
+      "endCaptures": {
+        "1": {
+          "name": "meta.embedded.math.markdown",
+          "patterns": [
+            {
+              "include": "text.html.markdown.math#math"
+            }
+          ]
+        },
+        "2": {
+          "name": "punctuation.definition.math.end.bracket.square.markdown"
+        }
+      },
+      "patterns": [
+        {
+          "begin": "(^|\\G)",
+          "while": "(^|\\G)(?!.*(\\\\\\]))",
+          "patterns": [
+            {
+              "include": "text.html.markdown.math#math"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "scopeName": "markdown.math.block"
+}
