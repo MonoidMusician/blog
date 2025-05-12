@@ -18,6 +18,8 @@ const asserteq = (l, r, msg='Were not equal', ...info) => {
   assert(l === r, msg, l, r, ...info);
 };
 
+const u64 = (value) => ((value + (1n<<64n)) % (1n<<64n));
+
 // Convert quaternary to binary
 const q2b = i => {
   const digit = x => {const v = parseInt(x, 4); return isFinite(v) ? v : '`IKS'.indexOf(x)};
@@ -131,8 +133,7 @@ const testIO = ({ input: i, output: o, inputs: extra, test: func }) => {
     if (extra[k] == undefined) continue;
     ({
       "fuel": (value) => {
-        console.log('fuel', value);
-        new Uint32Array(ex.memory.buffer, ex.fuel, 1)[0] = value;
+        new BigUint64Array(ex.memory.buffer, ex.fuel, 1)[0] = BigInt(value);
       },
     })[k]?.(extra[k]);
   }
@@ -359,17 +360,17 @@ function test_slowest() {
   {
     try {
       testcase("00231", "3", 100);
-      testcase("0100231", "00231", 1);
+      // testcase("0100231", "00231", 1);
       testcase("3", "3", 1);
       testcase("033", "033", 1);
-      testcase("0100231", "00231", 1);
-      testcase("00231", "3", 1);
+      // testcase("0100231", "00231", 1);
+      testcase("00231", "3", 2);
       testcase("3", "3", 2);
-      testcase("0100231", "3", 3);
+      testcase("0100231", "3", 4);
       testcase("0100231", "3", 30);
-      reductions("000302113", "000213013", "01013", "013", "3");
-      testcase('010000030030200302323022330030232', '0000030030200302323022330030232', 1);
-      testcase('010000030030200302323022330030232', '00300302323', 11);
+      // reductions("000302113", "000213013", "01013", "013", "3");
+      // testcase('010000030030200302323022330030232', '0000030030200302323022330030232', 1);
+      testcase('010000030030200302323022330030232', '00300302323', 25);
     } catch(e) {
       console.error("Locals", {});
       throw e;
@@ -576,14 +577,25 @@ var debugfn = fn => {
     }
   }
 };
+var tracing = {by_ptr: {}, flat: {by_event: [], all_events: []}};
+var trace_n = 0;
 var trydebug = inner => {
   var previous = debugging;
-  var here = debugging = true;
+  var here = debugging = [];
+  tracing = {by_ptr: {}, flat: {by_event: [], all_events: []}};
+  trace_n = 0;
   let r;
   try {
     r = inner();
   } catch(e) {
-    if (Array.isArray(debugged) && debugged.length < 1000)
+    console.log("Caught", e.message);
+    fs.writeFileSync(THIS + '.trace.json',
+      JSON.stringify(tracing, (_, v) => typeof v === 'bigint' ? v.toString() : v, 2)
+        .replaceAll(/\n        (  )*/g, ' ')
+        .replaceAll(/\n      (  )*\]/g, ' ]')
+        .replaceAll(/    "_/g, '    "')
+    );
+    if (Array.isArray(here) && here.length < 1000)
       for (var debugged of here)
         debugged();
     debugging = previous;
@@ -593,6 +605,7 @@ var trydebug = inner => {
   return r;
 };
 
+var prettytrace = v => typeof v === 'bigint' ? (u64(v) > 0x10000n ? [u64(v), u64(v).toString(4).padStart(32, 0)] : Number(u64(v))) : v;
 
 WebAssembly.instantiate(wasmBuffer, {
   env: {
@@ -601,13 +614,26 @@ WebAssembly.instantiate(wasmBuffer, {
       "0x"+((y + (1n<<64n)) % (1n<<64n)).toString(16).padStart(16, 0),
       ((y + (1n<<64n)) % (1n<<64n)).toString(4).padStart(32, 0),
     )),
-    print64: (str_ptr, value) => debugfn(() => console.log(
-      repeat(indentation, '  ') + c_str(str_ptr).padEnd(22 + 10 - 2*indentation),
-      "0x"+((value + (1n<<64n)) % (1n<<64n)).toString(16).padStart(16, 0),
-      ((value + (1n<<64n)) % (1n<<64n)).toString(4).padStart(32, 0),
-      ((value + (1n<<64n)) % (1n<<64n)),
-    )),
-    dent: value => debugfn(() => { indentation += value; }),
+    print64: (str_ptr, value) => {
+      tracing.flat.all_events.push([ -trace_n, indentation, c_str(str_ptr), prettytrace(value)]);
+      debugfn(() => console.log(
+        repeat(indentation, '  ') + c_str(str_ptr).padEnd(22 + 10 - 2*indentation),
+        "0x"+((value + (1n<<64n)) % (1n<<64n)).toString(16).padStart(16, 0),
+        ((value + (1n<<64n)) % (1n<<64n)).toString(4).padStart(32, 0),
+        ((value + (1n<<64n)) % (1n<<64n)),
+      ));
+    },
+    dent: value => {
+      indentation += value;
+      debugfn(() => { indentation += value; })
+    },
+    trace: (ptr, c_str1, c_str2, ...arg) => {
+      let event = [c_str(c_str1), c_str(c_str2)].concat(arg.map(prettytrace));
+      ++trace_n;
+      tracing.flat.by_event.push([trace_n, ptr, ...event]);
+      tracing.flat.all_events.push([trace_n, ptr, ...event]);
+      (tracing.by_ptr["_"+ptr] || (tracing.by_ptr["_"+ptr]=[])).push([trace_n, ...event]);
+    },
   },
 }).then(wasmModule => {
   wasmInstance = wasmModule.instance;

@@ -5,3 +5,5 @@
 *.explore.html
 clif/
 *.clif
+*.trace.json
+

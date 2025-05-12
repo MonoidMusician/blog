@@ -23,7 +23,7 @@ set -euo pipefail
     # https://aransentin.github.io/cwasm/ ?
     declare -a OPTIONS
     OPTIONS=(
-      "-O3"
+      "-O0"
       "-flto"
       "-nostdlib"
       "-mmultivalue" "-Xclang" "-target-abi" "-Xclang" "experimental-mv"
@@ -99,6 +99,7 @@ set -euo pipefail
     wasmtime compile -O opt-level=2 --emit-clif clif "$THIS.wasm" || true
     rm -f clif/array_to_wasm_*.clif clif/wasm_to_array_trampoline_*.clif
 
+    node "$THIS.node.js"
     # while ! node --inspect-brk "$THIS.node.js"; do
     #   read -p "Restart?"
     # done
