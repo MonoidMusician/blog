@@ -10,6 +10,13 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 
 ## Posts <a class="icon iconoir" href="rss.xml"><?xml version="1.0" encoding="UTF-8"?><svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
 
+- Quapteryx: a Quaternary Combinator Calculus in C/WASM [2025/05/10 – 2025/05/11]{.dated}
+
+  - [Part I: On the SKI Combinator Calculus](quapteryx1.html) [2025/05/10]{.dated}
+  - [Part II: Ojo: a Bitflipped Jot, and a Real Flop](quapteryx2.html) [2025/05/10]{.dated}
+  - [Part III: Quaternary Combinators](quapteryx3.html) [2025/05/11]{.dated}
+  - [Part IV: Efficient Quapteryx Evaluator](quapteryx4.html) [2025/05/11]{.dated}
+
 - [Implementing [FRP]{t=} and Why](riverdragon_implementation.html) [2025/02/22]{.dated}
 
 - [Perfect Vector Graphics for a [QR]{t=} code](svgqr.html) [2025/01/29]{.dated}
