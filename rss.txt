@@ -1,3 +1,8 @@
+sources/quapteryx4.md
+sources/quapteryx3.md
+sources/quapteryx2.md
+sources/quapteryx1.md
+sources/riverdragon_implementation.md
 sources/svgqr.md
 sources/webrtc_over_qr.md
 sources/qrinqr.md
