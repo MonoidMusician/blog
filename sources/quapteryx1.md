@@ -37,7 +37,7 @@ Instead, I realized that I could make a really efficient evaluator using SKI cal
 I wanted to target WASM for several reasons, and I tried hand writing WASM (well, the textual format WAT), before deciding that that, too, was too unwieldy.
 So I translated my WASM to C by hand, fixed a few bugs and actually got it working, and then I scrapped it for an actually efficient evaluator.
 
-[My journey into Jot](quapteryx2.html) is the subject of the next chapter, and [Quapteryx](quatperyx3.html) is documented in the other chapters.
+[My journey into Jot](quapteryx2.html) is the subject of the next chapter, and [Quapteryx](quapteryx3.html) is documented in the other chapters.
 
 However, most readers will probably benefit from the background that occupies the rest of this chapter.
 
