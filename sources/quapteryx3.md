@@ -440,6 +440,6 @@ The normal form of `factorial(1)` is 3359 crumbs *long*, `factorial(2)` is 2573 
 Thus my tests went through various irreducible values of `m` and `n` to evaluate `factorial(3)(m)(n)` and ensure that it evaluated to `0m0m0m0m0m0mn` each time, and so on.
 
 :::centered
-_Read on at [Quapteryx Part IV: Quapteryx Takes Flight](quapteryx4.html)._
+_Read on at [Quapteryx Part IV: Efficient Quapteryx Evaluator](quapteryx4.html)._
 :::
 
