@@ -336,7 +336,10 @@ function test_slowest() {
         assert(o === BigInt(output.length));
       });
     } catch(e) {
-      if (o !== undefined) console.error(o+':', getOutput(Number(o)));
+      if (o !== undefined) {
+        console.error(o+':', prettyCrumbs(getOutput(Number(o))));
+        console.error('vs'.padEnd((o+':').length, ' '), prettyCrumbs(output));
+      }
       throw e;
     }
     return r;
@@ -368,9 +371,12 @@ function test_slowest() {
       testcase("3", "3", 2);
       testcase("0100231", "3", 4);
       testcase("0100231", "3", 30);
+      testcase('000022330030232', '3', 25);
+      // testcase('03000022330030232', '033', 25);
+      // testcase('0030030232000022330030232', '00300302323', 25);
       // reductions("000302113", "000213013", "01013", "013", "3");
       // testcase('010000030030200302323022330030232', '0000030030200302323022330030232', 1);
-      testcase('010000030030200302323022330030232', '00300302323', 25);
+      // testcase('010000030030200302323022330030232', '00300302323', 25);
     } catch(e) {
       console.error("Locals", {});
       throw e;
@@ -460,6 +466,8 @@ function test_slowest() {
         testcase(lhs, rhs, fuel, debug);
         testcase(lhs, rhs, fuel+1, debug);
       };
+      t('000Bmno = 0m0no', 4)
+
       t('0000*(00SBI)(#1)mn = 0m0mn', 25)
       t('0000*(#2)(#2)mn = 0m0m0m0mn', 40)
 

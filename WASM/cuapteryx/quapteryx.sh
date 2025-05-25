@@ -13,9 +13,12 @@ set -euo pipefail
       CLANG=/usr/local/Cellar/llvm/17.0.6_1/bin/clang
     fi
 
-    # Preserve old text file for diff
+    # Preserve old text files for diff
     if [[ -f "$THIS.wat" ]]; then
       mv "$THIS.wat" "$THIS.wat.old"
+    fi
+    if [[ -f "$THIS.trace.json" ]]; then
+      cp "$THIS.trace.json" "$THIS.trace.json.old"
     fi
     rm -f "$THIS.wasm" "$THIS.wat"
 
@@ -60,6 +63,7 @@ set -euo pipefail
 
     # Calculate the diff
     if [[ -f "$THIS.wat.old" ]]; then
+      printf '%s' "WAT: "
       # Preserve old diff
       if test -f "$THIS.wat.diff"; then mv "$THIS.wat.diff" ".$THIS.wat.diff"; fi
       # Calculate diff
@@ -99,9 +103,37 @@ set -euo pipefail
     wasmtime compile -O opt-level=2 --emit-clif clif "$THIS.wasm" || true
     rm -f clif/array_to_wasm_*.clif clif/wasm_to_array_trampoline_*.clif
 
-    node "$THIS.node.js"
+    node "$THIS.node.js" || EXITCODE=$?
     # while ! node --inspect-brk "$THIS.node.js"; do
     #   read -p "Restart?"
     # done
+
+    if [[ -f "$THIS.trace.json.old" ]]; then
+      printf '%s' "Trace: "
+      # Preserve old diff
+      if test -f "$THIS.trace.json.diff"; then mv "$THIS.trace.json.diff" ".$THIS.trace.json.diff"; fi
+      # Calculate diff
+      if git diff --no-index \
+        --diff-algorithm=histogram \
+        --stat --patch --unified=5 \
+        --ignore-all-space \
+        "$THIS.trace.json.old" "$THIS.trace.json" > "$THIS.trace.json.diff";
+      then
+        # Restore old diff
+        if test -f ".$THIS.trace.json.diff"; then mv ".$THIS.trace.json.diff" "$THIS.trace.json.diff"; fi
+        echo "No change"
+      else
+        # Remove old diff
+        if test -f ".$THIS.trace.json.diff"; then rm -f ".$THIS.trace.json.diff"; fi
+        # Print stats line
+        head -n 2 "$THIS.trace.json.diff" \
+          | tail -n 1 \
+          | cut -d ',' -f 2- \
+          | cut -c 2-
+      fi
+      rm -f "$THIS.trace.json.old"
+    fi
+
+    exit "$EXITCODE"
   fi
 }; exit $?
