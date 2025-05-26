@@ -9,9 +9,20 @@
 
 void *malloc(size_t size) __attribute__((warn_unused_result, alloc_size(1), noinline));
 void free(void *p) __attribute__((noinline));
+#define free(p) {};
 
+#ifndef CLI
 __attribute__((import_name("trace")))
 extern void trace(void*, char*, char*, word);
+__attribute__((import_name("trace")))
+extern void trace_void(void*, char*, char*);
+__attribute__((import_name("epoch")))
+extern void epoch(char*, u32);
+#else
+void trace(void* what, char* lbl1, char* lbl2, word value) {}
+void trace_void(void* what, char* lbl1, char* lbl2) {}
+void epoch(char* lbl, u32 value) {}
+#endif
 
 #undef assert
 #define assert(c) BLOCK(if (!(c)) {print64("## Assert failed: " #c ", at line", __LINE__); __builtin_trap(); __builtin_unreachable();})
@@ -55,7 +66,7 @@ word word_cat(u8 hi_bits, word hi, u8 lo_bits, word lo) {
 void copy_to_unaligned(word* dst, const word* src, u8 offset, word words, bool clobber) {
   if (words == 0) return;
   assert(offset < word_size);
-  if ((offset % 8) == 0) {
+  if (offset == 0) {
     __builtin_memcpy(dst + (offset / 8), src, sizeof(word) * words);
     return;
   }
@@ -80,12 +91,11 @@ void copy_to_unaligned(word* dst, const word* src, u8 offset, word words, bool c
 void copy_from_unaligned(word* dst, const word* src, u8 offset, word words) {
   if (words == 0) return;
   assert(offset < word_size);
-  if ((offset % 8) == 0) {
+  if (offset == 0) {
     __builtin_memcpy(dst, src + (offset / 8), sizeof(word) * words - (offset / 8));
     return;
   }
   word last = *src;
-  words++; // ??
   while (words--) {
     word this = (last << offset);
     if (words) {
@@ -114,8 +124,8 @@ ptrbit ptrbitlength(const word* crumbstring, word known_words) {
   // Fall through, in case `known_words` was too short.
   // (This is used in `ap_heap_cat`.)
   while (!offset) {
-    dbg(exp);
-    dbg(crumbstring[i]);
+    // dbg(exp);
+    // dbg(crumbstring[i]);
     assert(i < 100);
     _dbg1_word = i;
     // See if it reaches zero during the current word
@@ -198,8 +208,10 @@ typedef struct synthetic_operand {
 synthetic_operand* _dbg_synth;
 
 
-operand direct(const word crumbs) {
+operand direct(word crumbs) {
   assert(crumbs != 0);
+  assert(reachesZero(1, crumbs));
+  crumbs &= ~(word_max >> reachesZero(1, crumbs));
   return (operand) { .immediate = true, .crumbs = crumbs };
 }
 operand shared(shared_operand* shared) {
@@ -258,7 +270,7 @@ shared_operand shared_tmp = { .ref_count = ~1, .work = 0, .on_heap = true, .heap
 heap_operand* as_tmp1(operand l) {
   if (l.immediate) {
     heap_tmp1.crumbstring[0] = l.crumbs;
-    trace(&heap_tmp1, "heap_tmp1", "", 0);
+    trace_void(&heap_tmp1, "heap_tmp1", "");
     return &heap_tmp1;
   }
   assert(l.shared->on_heap);
@@ -267,7 +279,7 @@ heap_operand* as_tmp1(operand l) {
 heap_operand* as_tmp2(operand r) {
   if (r.immediate) {
     heap_tmp2.crumbstring[0] = r.crumbs;
-    trace(&heap_tmp2, "heap_tmp2", "", 0);
+    trace_void(&heap_tmp2, "heap_tmp2", "");
     return &heap_tmp2;
   }
   assert(r.shared->on_heap);
@@ -318,7 +330,7 @@ void trace_op(char* lbl, operand op) {
   if (op.immediate) {
     trace(0, lbl, "immediate", op.crumbs);
   } else if (op.shared->on_heap) {
-    trace(op.shared, lbl, "heap", op.shared->ref_count);
+    trace(op.shared, lbl, "heap, refc:", op.shared->ref_count);
     for (int i=0; i<op.shared->heap->length; i++) trace(op.shared, lbl, "crumb", op.shared->heap->crumbstring[i]);
   } else {
     trace(op.shared, lbl, "synth->fun", op_trace(op.shared->synth->fun));
@@ -367,19 +379,19 @@ bool drop_shared(shared_operand* shared, bool just_spine) {
     trace(shared, "drop: free(shared)", shared->on_heap ? "(heap), weakref_max:" : "(synth), weakref_max:", shared->weakref_stack_max);
     if (shared->on_heap) {
       shared->work = (word)shared->heap;
-      trace(shared->heap, "drop: free(shared->heap)", "", 0);
+      trace_void(shared->heap, "drop: free(shared->heap)", "");
       free(shared->heap);
       shared->heap = (void*)0xDEADDEED;
     } else {
       shared->work = (word)shared->heap;
-      trace(shared->synth, "drop: free(shared->synth)", "", 0);
-      if (!just_spine && shared->synth->fun.immediate) trace(shared->synth->fun.shared, "recursive drop:", "fun of", (word)shared);
+      trace_void(shared->synth, "drop: free(shared->synth)", "");
+      if (!just_spine && !shared->synth->fun.immediate) trace(shared->synth->fun.shared, "recursive drop:", "fun of", (word)shared);
       if (!just_spine) drop(shared->synth->fun);
       else if (!shared->synth->fun.immediate && !shared->synth->fun.shared->on_heap) drop_spine(shared->synth->fun);
       if (!just_spine && !shared->synth->arg.immediate) trace(shared->synth->arg.shared, "recursive drop:", "arg of", (word)shared);
       if (!just_spine) drop(shared->synth->arg);
       if (!shared->synth->arg.immediate) shared->synth->arg.shared = (void*)0xDEADAAAA;
-      if (!shared->synth->arg.immediate) shared->synth->fun.shared = (void*)0xDEADFFFF;
+      if (!shared->synth->fun.immediate) shared->synth->fun.shared = (void*)0xDEADFFFF;
       free(shared->synth);
       shared->synth = (void*)0xDEADDEAD;
     }
@@ -518,8 +530,8 @@ operand dup(operand term) {
 // then the crumbs of the first followed by the crumbs of the second, `0{l}{r}`.
 __attribute__((noinline))
 shared_operand* ap_heap_cat(heap_operand* l, heap_operand* r) {
-  trace(l, "ap_heap_cat", "l[0]", l->crumbstring[0]);
-  trace(r, "ap_heap_cat", "r[0]", r->crumbstring[0]);
+  // trace(l, "ap_heap_cat", "l[0]", l->crumbstring[0]);
+  // trace(r, "ap_heap_cat", "r[0]", r->crumbstring[0]);
   // FIXME: decrement length if overallocated?
   int wordlength = l->length + r->length + 1;
   shared_operand* result = alloc_shared_heap(wordlength);
@@ -533,11 +545,46 @@ shared_operand* ap_heap_cat(heap_operand* l, heap_operand* r) {
   reallength = ptrbit_incr_bits(reallength, 2);
   copy_to_unaligned(out + (reallength.ptr / sizeof(word)), r->crumbstring, reallength.bit, r->length, false);
 
-  for (int i=0; i<result->heap->length; i++) trace(result, "ap_heap_cat", "crumb", out[i]);
+  // for (int i=0; i<result->heap->length; i++) trace(result, "ap_heap_cat", "crumb", out[i]);
 
   dbg(bitlength(out, 0));
   assert(bitlength(out, 0) == 2 + bitlength(l->crumbstring, 0) + bitlength(r->crumbstring, 0));
   return result;
+}
+
+operand synthetic_apply(const operand fun, const operand arg) {
+  synthetic_operand* ap_node = malloc(sizeof(synthetic_operand));
+  assert(ap_node != NULL);
+  ap_node->fun = fun;
+  ap_node->arg = arg;
+  shared_operand* sh = malloc(sizeof(shared_operand));
+  assert(sh != NULL);
+  sh->ref_count = 1;
+  sh->work = 0;
+  sh->on_heap = false;
+  sh->synth = ap_node;
+  sh->weakref_stack_max = 0;
+  sh->weakref_stack_min = 0;
+  trace(sh, "make synthetic ap (refc 1)",
+    ap_node->fun.immediate
+      ? (ap_node->arg.immediate ? "im im" : ap_node->arg.shared->on_heap ? "im hp" : "im sy")
+    : ap_node->fun.shared->on_heap
+      ? (ap_node->arg.immediate ? "hp im" : ap_node->arg.shared->on_heap ? "hp hp" : "hp sy")
+      : (ap_node->arg.immediate ? "sy im" : ap_node->arg.shared->on_heap ? "sy hp" : "sy sy"),
+    (word)ap_node
+  );
+  trace(sh->synth, "(made synthetic ap) (refc 1)",
+    ap_node->fun.immediate
+      ? (ap_node->arg.immediate ? "im im" : ap_node->arg.shared->on_heap ? "im hp" : "im sy")
+    : ap_node->fun.shared->on_heap
+      ? (ap_node->arg.immediate ? "hp im" : ap_node->arg.shared->on_heap ? "hp hp" : "hp sy")
+      : (ap_node->arg.immediate ? "sy im" : ap_node->arg.shared->on_heap ? "sy hp" : "sy sy"),
+    (word)sh
+  );
+  trace(sh, "synthetic ap->fun", "", ap_node->fun.immediate ? ap_node->fun.crumbs : (word)ap_node->fun.shared);
+  trace(sh, "synthetic ap->arg", "", ap_node->arg.immediate ? ap_node->arg.crumbs : (word)ap_node->arg.shared);
+  // assert((word)sh != 132832);
+  return shared(sh);
 }
 
 // Construct a new operand with `fun` applied to `arg`, via whatever
@@ -565,8 +612,8 @@ operand apply(const operand fun, const operand arg) {
   ) {
     operand result = shared(ap_heap_cat(as_tmp1(fun), as_tmp2(arg)));
     // free the shared nodes
-    if (!fun.immediate) trace(fun.shared, "drop to merge in apply", "fun", 0);
-    if (!arg.immediate) trace(arg.shared, "drop to merge in apply", "arg", 0);
+    if (!fun.immediate) trace_void(fun.shared, "drop to merge in apply", "fun");
+    if (!arg.immediate) trace_void(arg.shared, "drop to merge in apply", "arg");
     drop(fun); drop(arg);
     print64("ap_heap_cat", (word)result.shared);
     print64("ap_heap_cat[0]", result.shared->heap->crumbstring[0]);
@@ -574,38 +621,7 @@ operand apply(const operand fun, const operand arg) {
   }
   // Otherwise we need to synthesize a new application node to share the result
   // of evaluating both of them.
-  synthetic_operand* ap_node = malloc(sizeof(synthetic_operand));
-  assert(ap_node != NULL);
-  ap_node->fun = fun;
-  ap_node->arg = arg;
-  shared_operand* sh = malloc(sizeof(shared_operand));
-  assert(sh != NULL);
-  sh->ref_count = 1;
-  sh->work = 0;
-  sh->on_heap = false;
-  sh->synth = ap_node;
-  sh->weakref_stack_max = 0;
-  sh->weakref_stack_min = 0;
-  trace(sh, "synthetic ap (refc 1)",
-    ap_node->fun.immediate
-      ? (ap_node->arg.immediate ? "im im" : ap_node->arg.shared->on_heap ? "im hp" : "im sy")
-    : ap_node->fun.shared->on_heap
-      ? (ap_node->arg.immediate ? "hp im" : ap_node->arg.shared->on_heap ? "hp hp" : "hp sy")
-      : (ap_node->arg.immediate ? "sy im" : ap_node->arg.shared->on_heap ? "sy hp" : "sy sy"),
-    (word)ap_node
-  );
-  trace(sh->synth, "(synthetic ap) (refc 1)",
-    ap_node->fun.immediate
-      ? (ap_node->arg.immediate ? "im im" : ap_node->arg.shared->on_heap ? "im hp" : "im sy")
-    : ap_node->fun.shared->on_heap
-      ? (ap_node->arg.immediate ? "hp im" : ap_node->arg.shared->on_heap ? "hp hp" : "hp sy")
-      : (ap_node->arg.immediate ? "sy im" : ap_node->arg.shared->on_heap ? "sy hp" : "sy sy"),
-    (word)sh
-  );
-  trace(sh, "synthetic ap->fun", "", ap_node->fun.immediate ? ap_node->fun.crumbs : (word)ap_node->fun.shared);
-  trace(sh, "synthetic ap->arg", "", ap_node->arg.immediate ? ap_node->arg.crumbs : (word)ap_node->arg.shared);
-  // assert((word)sh != 132832);
-  return shared(sh);
+  return synthetic_apply(fun, arg);
 }
 
 
@@ -615,10 +631,10 @@ operand apply(const operand fun, const operand arg) {
 
 
 // Fuel limits the explicit work done, in the evaluation loop
-u64 fuel asm("fuel") = 10000;
+u64 fuel = 10000;
 // Work is the number of reductions that it takes to get to what was produced,
 // possibly out of order of the nominal lazy evaluation
-u64 work asm("work") = 0;
+u64 work = 0;
 
 ptrbit _dbg_ptrbit;
 
@@ -626,6 +642,7 @@ ptrbit _dbg_ptrbit;
 __attribute__((always_inline))
 ptrbit _scan1(const word crumbstring[], ptrbit _input_at, const ptrbit _stop_at) {
   goodptrbit(_input_at);
+  goodptrbit(_stop_at);
   ptrbit failed = _input_at;
   // adjust the expected number of nodes by the leading nonzeros *crumbs*
   // we will add (could use leading zeros, but this seems more robust to
@@ -644,6 +661,8 @@ ptrbit _scan1(const word crumbstring[], ptrbit _input_at, const ptrbit _stop_at)
     dbg(crumbs);
     dbg(reachesZero(exp, crumbs));
     if ((_input_at.bit = reachesZero(exp, crumbs))) {
+      _input_at.ptr += sizeof(word) * (_input_at.bit / word_size);
+      _input_at.bit %= word_size;
       if (_input_at.ptr < _stop_at.ptr || _input_at.bit < _stop_at.bit || (_input_at.ptr == _stop_at.ptr && _input_at.bit == _stop_at.bit)) {
         dent(-1);
         return _input_at;
@@ -654,8 +673,9 @@ ptrbit _scan1(const word crumbstring[], ptrbit _input_at, const ptrbit _stop_at)
         return failed;
       }
     }
-    _input_at.ptr += 8;
+    _input_at.ptr += sizeof(word);
     _input_at.bit = 0;
+    goodptrbit(_input_at);
     s8 delta = deltaExpecting(crumbs);
     assert(delta <= 0 || exp > delta);
     exp -= delta;
@@ -719,7 +739,7 @@ bool refill() {
     dbg(crumbs);
     op = direct(mask_hi(2*crumblen) & crumbs);
   } else {
-    op = shared(alloc_shared_heap(ROUNDUPDIV(crumblen, word_crumbs)));
+    op = shared(alloc_shared_heap(2 + ROUNDUPDIV(crumblen, word_crumbs)));
     copy_from_unaligned(
       op.shared->heap->crumbstring, from_ptr(input_words, start_at),
       start_at.bit, input_at.ptr/sizeof(word) - start_at.ptr/sizeof(word) + 1
@@ -739,7 +759,7 @@ bool refill() {
   }
 
   goodop(op);
-  trace((void*)stack_top, "onto stack", "refc:", op.immediate ? 12345678901234567890ULL : op.shared->ref_count);
+  trace((void*)(9876000 + stack_top), "refill onto stack", "refc:", op.immediate ? 12345678901234567890ULL : op.shared->ref_count);
   stack[stack_top++] = FRAME(op);
   return true;
 }
@@ -768,7 +788,7 @@ bool step_(bool whnf) {
         (op.shared->heap->crumbstring[0] >> (word_size - 2)) != 0
     ) {
       const word crumb = op.shared->heap->crumbstring[0];
-      if (!op.immediate) trace(op.shared, "drop in step", "heap->immediate", 0);
+      if (!op.immediate) trace_void(op.shared, "drop in step", "heap->immediate");
       drop(op);
       // We set it back on the stack in the case that we are out of input crumbs
       // and are thus in WHNF, so we revert the stack to its original size before
@@ -862,7 +882,7 @@ bool step_(bool whnf) {
       POP_OR(y, { stack_top += 2; assert(stack_top == initial_stack);return false; });
 
       // Drop `y` and put `x` back onto the stack: `Kxy = x`
-      if (!y.immediate) trace(y.shared, "drop in step", "K", 0);
+      if (!y.immediate) trace_void(y.shared, "drop in step", "K");
       drop(y);
       stack[stack_top++] = FRAME(x);
       work++;
@@ -876,7 +896,7 @@ bool step_(bool whnf) {
 
       // `Sxyz = 00xz0yz = ((xz)(yz))`
       // Increase the ref count on `z`
-      if (!z.immediate) trace(z.shared, "dup for S:", "", 0);
+      if (!z.immediate) trace_void(z.shared, "dup for S:", "");
       z = dup(z);
       // Put `x`, `z`, and the synthetic `(yz)` on the stack
       operand yz = apply(y, z);
@@ -909,19 +929,19 @@ bool step_(bool whnf) {
         stack_was_evaling(stack_top, spine.shared);
       }
       // Now we add it onto the stack
-      if (!this->synth->arg.immediate) trace(this->synth->arg.shared, "dup for stack:", "", 0);
+      if (!this->synth->arg.immediate) trace_void(this->synth->arg.shared, "dup for stack:", "");
       trace((void*)stack_top, "onto stack (arg)", "refc:", this->synth->arg.immediate ? 12345678901234567890ULL : this->synth->arg.shared->ref_count);
-      stack[stack_top++] = FRAME(this->synth->arg);
+      stack[stack_top++] = FRAME(dup(this->synth->arg));
       // And proceed down the spine
       spine = this->synth->fun;
     }
     // Finally, whatever we ended up with is at the top of the stack.
-    if (!spine.immediate) trace(spine.shared, "dup for stack head:", "", 0);
+    if (!spine.immediate) trace_void(spine.shared, "dup for stack head:", "");
     trace((void*)stack_top, "onto stack (fun)", "refc:", spine.immediate ? 12345678901234567890ULL : spine.shared->ref_count);
-    stack[stack_top++] = FRAME(spine);
+    stack[stack_top++] = FRAME(dup(spine));
     // And free the spine (all the arguments were dup'ed, so are safe)
-    if (!op.immediate) trace(op.shared, "drop_spine in step", "spine", 0);
-    drop_spine(op); // FIXME?
+    if (!op.immediate) trace_void(op.shared, "drop_spine in step", "spine");
+    drop(op); // FIXME?
     return true;
   }
 
@@ -967,25 +987,28 @@ bool step_(bool whnf) {
       print64("crumbstring", crumbstring[last.ptr/sizeof(word)]);
       // Scan ahead one item
       i = scan1(crumbstring, last, (ptrbit) { .ptr = bytes, .bit = 0 });
+      goodptrbit(i);
       const int crumblen = ptrbit2crumbs(i) - ptrbit2crumbs(last);
       assert(crumblen);
       print64("crumblen", crumblen);
       if (crumblen < word_crumbs && i.ptr == last.ptr) {
         stack[stack_top - stacked] = FRAME(direct(word_of(crumbstring, last) << last.bit));
         print64("immediate", stack[stack_top - stacked].to_eval.crumbs);
-        print64("at", stack_top - stacked);
+        print64("onto stack at", stack_top - stacked);
       } else {
         // Copy it into its own heap
-        shared_operand* sh = alloc_shared_heap(ROUNDUPDIV(crumblen, word_crumbs));
-        copy_from_unaligned(sh->heap->crumbstring, from_ptr(crumbstring, last), last.bit, sh->heap->length);
+        shared_operand* sh = alloc_shared_heap(2 + ROUNDUPDIV(crumblen, word_crumbs));
+        word words = 1 + (i.ptr - last.ptr) / sizeof(word);
+        copy_from_unaligned(sh->heap->crumbstring, from_ptr(crumbstring, last), last.bit, words);
         for (int i=0; i<op.shared->heap->length; i++) trace(op.shared, "step", "crumb", op.shared->heap->crumbstring[i]);
+        print64("onto stack at", stack_top - stacked);
         // And plop it on the stack
         stack[stack_top - stacked] = FRAME(shared(sh));
         goodop(shared(sh));
       }
     }
     dent(-1);
-    if (!op.immediate) trace(op.shared, "drop in step", "unpacked heap", 0);
+    if (!op.immediate) trace(op.shared, "drop in step", "unpacked heap", initial_stack - 1);
     drop(op);
     return true;
   }
@@ -995,6 +1018,9 @@ bool step_(bool whnf) {
 operand whnf_op(operand op) {
   goodop(op);
   if (!fuel) return op;
+  if (!redexes(0, op.crumbs)) {
+    return op;
+  }
   assert(stack_top == 0);
   stack[stack_top++] = FRAME(op);
 
@@ -1013,15 +1039,28 @@ operand whnf_op(operand op) {
   print64("-->", fuel);
 
   op = stack[--stack_top].to_eval;
+  if (fuel) assert(op.immediate && (op.crumbs >> (word_size - 2)));
   assert(stack[stack_top].was_evaling == NULL);
   stack[stack_top].was_evaling = NULL;
   while (stack_top) {
     --stack_top;
     if (stack[stack_top].was_evaling) have_evaled(stack[stack_top].was_evaling, op);
-    op = apply(op, stack[stack_top].to_eval);
+    op = synthetic_apply(op, stack[stack_top].to_eval);
     stack[stack_top].was_evaling = NULL;
   }
   goodop(op);
+  trace_op("whnf_evaluated", op);
+  return op;
+}
+
+operand whnf2nf_op(operand op) {
+  goodop(op);
+  if (!fuel || op.immediate || op.shared->on_heap) return op;
+
+  op.shared->synth->fun = whnf2nf_op(op.shared->synth->fun);
+  op.shared->synth->arg = whnf2nf_op(whnf_op(op.shared->synth->arg));
+  // FIXME
+  return apply(op.shared->synth->fun, op.shared->synth->arg);
   return op;
 }
 
@@ -1030,16 +1069,14 @@ operand whnf_op(operand op) {
 __attribute__((noinline))
 void write_out(operand op) {
   goodop(op);
-  print64("whnf_op", op.immediate ? op.crumbs : (word)op.shared);
-  dent(1);
-  op = whnf_op(op); // FIXME
-  dent(-1);
   _dbg_op1 = op;
   goodptrbit(output_at);
   if (op.immediate) {
     print64("write_out", op.crumbs);
+    print64("(at bit)", output_at.bit);
     const u8 len = reachesZero(1, op.crumbs);
     copy_to_unaligned(from_ptr(output_words, output_at), &op.crumbs, output_at.bit, 1, false);
+    print64("written_out", word_of(output_words, output_at));
     output_at = ptrbit_incr_bits(output_at, len);
   } else if (op.shared->on_heap) {
     _dbg_heap = op.shared->heap;
@@ -1049,10 +1086,12 @@ void write_out(operand op) {
     assert(op.shared->heap->length < 2000);
     const word len = bitlength(op.shared->heap->crumbstring, op.shared->heap->length);
     copy_to_unaligned(from_ptr(output_words, output_at), op.shared->heap->crumbstring, output_at.bit, op.shared->heap->length, false);
+    print64("written_out0", word_of(output_words, output_at));
     assert(word_of(output_words, output_at) != 0);
     // assert(word_of(output_words, output_at) == op.shared->heap->crumbstring[0]);
     output_at = ptrbit_incr_bits(output_at, len);
-    trace(op.shared, "drop in write_out", "heap", 0);
+    print64("written_out1", word_of(output_words, output_at));
+    trace_void(op.shared, "drop in write_out", "heap");
     drop(op); // FIXME
   } else {
     // Write a zero crumb `0q0` (application)
@@ -1062,15 +1101,17 @@ void write_out(operand op) {
     output_at = ptrbit_incr_bits(output_at, 2);
     // Write each operand
     write_out(op.shared->synth->fun);
+    print64("(written_out0)", word_of(output_words, output_at));
     write_out(op.shared->synth->arg);
+    print64("(written_out1)", word_of(output_words, output_at));
     trace(op.shared, "drop in write_out", "synth, refc:", op.shared->ref_count);
     assert(op.shared->ref_count);
     if (!--op.shared->ref_count) {
-      trace(op.shared->synth, "drop: free(shared->synth) in write_out", "", 0);
-      free(op.shared->synth);
+      trace_void(op.shared->synth, "drop: free(shared->synth) in write_out", "");
+      // free(op.shared->synth);
       op.shared->synth = (void*)0xDEADDADA;
-      free(op.shared);
-      trace(op.shared, "drop: free(shared) in write_out", "", 0);
+      // free(op.shared);
+      trace_void(op.shared, "drop: free(shared) in write_out", "");
       op.shared = (void*)0xDEADDABA;
     }
   }
@@ -1082,17 +1123,25 @@ void write_out(operand op) {
 // written.
 word eval(word input_crumbs) {
   if (!input_crumbs) return 0;
+  trace_void(&shared_tmp, "name", "shared_tmp");
+  trace_void(&heap_tmp1, "name", "heap_tmp1");
+  trace_void(&heap_tmp2, "name", "heap_tmp2");
   input_at = (ptrbit) {};
   stop_at = crumbs2ptrbit(input_crumbs);
   output_at = (ptrbit){};
 
   print64("fuel0", fuel);
   refill();
+  assert(stack_top);
   while (fuel-- && step_(false)) {
     print64("fuel", fuel);
+    epoch("fuel epoch", fuel);
     for (int i=stack_top; i-- > 0; ) {
       operand op = stack[i].to_eval;
+      trace(0, "on stack:", "(at)", i);
+      trace_op(i <= 3 ? ((char*[]) {"(on stack@0)", "(on stack@1)", "(on stack@2)", "(on stack@3)"})[i] : "(on stack)", op);
       if (op.immediate) continue;
+      goodop(op);
       if (!op.shared->ref_count) {
         trace(shared, "check_stack(shared) ERR", op.shared->on_heap ? "(heap), refc:" : "(synth), refc:", op.shared->ref_count);
       }
@@ -1103,18 +1152,64 @@ word eval(word input_crumbs) {
   assert(stack_top);
 
   operand op = stack[--stack_top].to_eval;
+  if (fuel) assert(op.immediate && (op.crumbs >> (word_size - 2)));
   assert(stack[stack_top].was_evaling == NULL);
   stack[stack_top].was_evaling = NULL;
   while (stack_top) {
     --stack_top;
     if (stack[stack_top].was_evaling) have_evaled(stack[stack_top].was_evaling, op);
-    op = apply(op, stack[stack_top].to_eval);
+    op = synthetic_apply(op, stack[stack_top].to_eval);
     stack[stack_top].was_evaling = NULL;
   }
-  trace_op("evaluated",op);
+  trace_op("whnf_evaluated0", op);
   assert(stack_top == 0);
   goodop(op);
+  dent(1);
+  op = whnf2nf_op(op);
+  trace_op("nf_evaluated", op);
+  dent(-1);
   write_out(op);
 
   return ptrbit2crumbs(output_at);
 }
+
+#ifdef CLI
+// #else
+int main (int argc, char *argv[]) {
+  if (argc <= 1) return 2;
+
+  word i=0;
+  for (; argv[1][i] != '\0'; i++) {
+    switch (argv[1][i]) {
+      case '0': continue;
+      case '1':
+      case '2':
+      case '3': {
+        word offset = 2*(word_crumbs - 1 - (i % word_crumbs));
+        word set_bit = ((word) (argv[1][i] - '0')) << offset;
+        input_words[i / word_crumbs] |= set_bit;
+        break;
+      }
+      default:
+        return 3;
+    }
+  }
+
+  char buf[SZ] = {0};
+  word output = eval(i);
+  word j=0;
+  for (; j<output; j++) {
+    buf[j] = '0' + (0b11 & (output_words[j / word_crumbs] >> 2*(word_crumbs - 1 - (j % word_crumbs))));
+  }
+  buf[j] = '\0';
+
+  if (argc >= 3) {
+    for (word k=0; k<SZ; k++) {
+      if (argv[2][k] != buf[k]) return 4;
+      if (buf[k] == '\0') break;
+    }
+  }
+
+  return 0;
+}
+#endif

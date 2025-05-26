@@ -7,12 +7,21 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Debug Quapteryx",
+      "name": "Debug Quapteryx (WASM on Node.js)",
       "skipFiles": ["<node_internals>/**"],
       "program": "${workspaceFolder}/WASM/cuapteryx/quapteryx.node.js",
       "runtimeArgs": [
         // "--watch",
       ],
+    },
+    {
+      "type": "gdb",
+      "request": "launch",
+      "name": "Debug Quapteryx (Native GDB)",
+      "program": "${workspaceFolder}/WASM/cuapteryx/quapteryx.native",
+      "arguments": "00000030232003003023200322003003023203233 03033",
+      "cwd": "${workspaceFolder}/WASM/cuapteryx",
+      "openGdbConsole": true,
     }
   ]
 }

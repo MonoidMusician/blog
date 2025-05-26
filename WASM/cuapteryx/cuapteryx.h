@@ -34,6 +34,7 @@ static const u64 upper = 0b10 * lower;
 #define clz __builtin_clzll
 #define ctz __builtin_ctzll
 
+#ifndef CLI
 __attribute__((import_name("dbg")))
 extern void dbg(u32 l, u64 r);
 
@@ -42,7 +43,11 @@ extern void print64(char* lbl, u64 value);
 
 __attribute__((import_name("dent")))
 extern void dent(s32 value);
-
+#else
+void dbg(u32 l, u64 r){}
+void print64(char* lbl, u64 value){}
+void dent(s32 value){}
+#endif
 
 // Coalesce each nonzero crumb (pair of bits) into its lower bit.
 __attribute__((export_name("nonzeros"), always_inline))

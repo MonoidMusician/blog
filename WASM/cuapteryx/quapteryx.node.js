@@ -315,6 +315,8 @@ function slowest_impl(crumbs, fuel=1000, strategy=undefined) {
 
 function test_slowest() {
   function testcase(input, output, fuel=100, debug=false) {
+    fuel += 100;
+    fuel *= 100;
     debugging && console.log();
     let o, r;
     input = sugar(input);
@@ -529,15 +531,17 @@ function test_factorial(fixed_x=undefined) {
     input = sugar(input);
     output = sugar(output);
     try {
-      r = testIO({
-        input, output, inputs: {fuel, debug},
-        test: () => o = ex.slowest(BigInt(input.length)),
-        outputs: {
-          optr: 8 * (output.length>>5),
-          obit: (2*output.length) % 64,
-        },
+      trydebug(() => {
+        r = testIO({
+          input, output, inputs: {fuel, debug},
+          test: () => o = ex.eval(BigInt(input.length)),
+          outputs: {
+            optr: 8 * (output.length>>5),
+            obit: (2*output.length) % 64,
+          },
+        });
+        assert(o === BigInt(output.length));
       });
-      assert(o === BigInt(output.length));
     } catch(e) {
       if (o !== undefined) console.error(o+':', getOutput(Number(o)));
       throw e;
@@ -603,7 +607,7 @@ var trydebug = inner => {
         .replaceAll(/\n      (  )*\]/g, ' ]')
         .replaceAll(/    "_/g, '    "')
     );
-    if (Array.isArray(here) && here.length < 1000)
+    if (Array.isArray(here) && here.length < 10000)
       for (var debugged of here)
         debugged();
     debugging = previous;
@@ -637,10 +641,25 @@ WebAssembly.instantiate(wasmBuffer, {
     },
     trace: (ptr, c_str1, c_str2, ...arg) => {
       let event = [c_str(c_str1), c_str(c_str2)].concat(arg.map(prettytrace));
+      if (event[1] === "" && event.length === 2) event = [event[0]];
       ++trace_n;
       tracing.flat.by_event.push([trace_n, ptr, ...event]);
       tracing.flat.all_events.push([trace_n, ptr, ...event]);
       (tracing.by_ptr["_"+ptr] || (tracing.by_ptr["_"+ptr]=[])).push([trace_n, ...event]);
+    },
+    epoch: (c_str1, ...arg) => {
+      let event = [c_str(c_str1)].concat(arg.map(prettytrace));
+      ++trace_n;
+      tracing.flat.by_event.push([trace_n, ...event]);
+      tracing.flat.all_events.push([trace_n, ...event]);
+      for (let ptr in tracing.by_ptr) {
+        let evs = tracing.by_ptr[ptr];
+        if (evs.at(-1)[1] === event[0] && evs.at(-2)[1] === event[0]) {
+          evs[evs.length-1] = [trace_n, ...event];
+        } else {
+          evs.push([trace_n, ...event]);
+        }
+      }
     },
   },
 }).then(wasmModule => {

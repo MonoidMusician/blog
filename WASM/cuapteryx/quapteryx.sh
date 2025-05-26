@@ -54,6 +54,8 @@ set -euo pipefail
       "walloc.c" \
       "$THIS.c"
 
+    clang "$THIS.c" -o "$THIS.native" -O0 -g3 -DCLI -Wno-c2x-extensions -Wno-unknown-attributes -Wno-int-to-void-pointer-cast
+
     # Convert binary to text representation
     # (prefer S-exprs, inline exports)
     wasm2wat \
@@ -89,7 +91,7 @@ set -euo pipefail
     fi
 
     rm -f "$THIS.wasm.not.c"
-    if which wasm-decompile >/dev/null; then wasm-decompile "$THIS.wasm" > "$THIS.wasm.not.c" || true; fi
+    if which wasm-decompile >/dev/null 2>/dev/null; then wasm-decompile "$THIS.wasm" > "$THIS.wasm.not.c" || true; fi
 
     # LLVM textual IR: "$THIS.ll"
     $CLANG \
@@ -100,7 +102,7 @@ set -euo pipefail
       "$THIS.c" || true
 
     # Cranelift IR
-    wasmtime compile -O opt-level=2 --emit-clif clif "$THIS.wasm" || true
+    if which wasmtime >/dev/null 2>/dev/null; then wasmtime compile -O opt-level=2 --emit-clif clif "$THIS.wasm" || true; fi
     rm -f clif/array_to_wasm_*.clif clif/wasm_to_array_trampoline_*.clif
 
     node "$THIS.node.js" || EXITCODE=$?
