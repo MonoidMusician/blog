@@ -8,6 +8,8 @@ set -euo pipefail
   if [[ "${1:-}" == "--watch" ]]; then
     watchexec -f "$THIS.c" -f "*.h" -f "$THIS.sh" -f "$THIS.node.js" -r -c --shell=none -- "$0"
   else
+    EXITCODE=0
+
     CLANG=clang
     if [[ -f /usr/local/Cellar/llvm/17.0.6_1/bin/clang ]]; then
       CLANG=/usr/local/Cellar/llvm/17.0.6_1/bin/clang
@@ -26,7 +28,7 @@ set -euo pipefail
     # https://aransentin.github.io/cwasm/ ?
     declare -a OPTIONS
     OPTIONS=(
-      "-O0"
+      "-O3"
       "-flto"
       "-nostdlib"
       "-mmultivalue" "-Xclang" "-target-abi" "-Xclang" "experimental-mv"
@@ -47,7 +49,7 @@ set -euo pipefail
     )
 
     # Command to compile C -> (LLVM) -> WASM
-    $CLANG \
+    $CLANG -DCLI \
       --target=wasm32 \
       "${OPTIONS[@]}" \
       -o "$THIS.wasm" \

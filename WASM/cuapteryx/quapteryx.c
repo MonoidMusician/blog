@@ -9,7 +9,7 @@
 
 void *malloc(size_t size) __attribute__((warn_unused_result, alloc_size(1), noinline));
 void free(void *p) __attribute__((noinline));
-#define free(p) {};
+// #define free(p) {};
 
 #ifndef CLI
 __attribute__((import_name("trace")))
@@ -524,6 +524,16 @@ operand dup(operand term) {
   trace(term.shared, "dup shared", "new refc:", term.shared->ref_count);
   return term;
 }
+__attribute__((noinline))
+operand soft_dup(operand term) {
+  if (term.immediate) {
+    return term;
+  }
+  // If it is already shared, we just need to increment the `ref_count`
+  term.shared->ref_count++;
+  trace(term.shared, "dup shared", "new refc:", term.shared->ref_count);
+  return term;
+}
 
 // Concatenate two heap operands into a new shared operand of the two applied.
 // That is, it starts with a zero crumb (for the application operator), and
@@ -931,14 +941,14 @@ bool step_(bool whnf) {
       // Now we add it onto the stack
       if (!this->synth->arg.immediate) trace_void(this->synth->arg.shared, "dup for stack:", "");
       trace((void*)stack_top, "onto stack (arg)", "refc:", this->synth->arg.immediate ? 12345678901234567890ULL : this->synth->arg.shared->ref_count);
-      stack[stack_top++] = FRAME(dup(this->synth->arg));
+      stack[stack_top++] = FRAME(soft_dup(this->synth->arg));
       // And proceed down the spine
       spine = this->synth->fun;
     }
     // Finally, whatever we ended up with is at the top of the stack.
     if (!spine.immediate) trace_void(spine.shared, "dup for stack head:", "");
     trace((void*)stack_top, "onto stack (fun)", "refc:", spine.immediate ? 12345678901234567890ULL : spine.shared->ref_count);
-    stack[stack_top++] = FRAME(dup(spine));
+    stack[stack_top++] = FRAME(soft_dup(spine));
     // And free the spine (all the arguments were dup'ed, so are safe)
     if (!op.immediate) trace_void(op.shared, "drop_spine in step", "spine");
     drop(op); // FIXME?
@@ -1026,7 +1036,8 @@ operand whnf_op(operand op) {
 
   print64("fuel0", fuel);
   if (op.immediate) dbg(redexes(0, op.crumbs));
-  while (fuel-- && step_(true)) {
+  while (fuel && step_(true)) {
+    fuel--;
     print64("fuel", fuel);
     for (int i=stack_top; i-- > 0; ) {
       operand op = stack[i].to_eval;
@@ -1060,7 +1071,7 @@ operand whnf2nf_op(operand op) {
   op.shared->synth->fun = whnf2nf_op(op.shared->synth->fun);
   op.shared->synth->arg = whnf2nf_op(whnf_op(op.shared->synth->arg));
   // FIXME
-  return apply(op.shared->synth->fun, op.shared->synth->arg);
+  // return apply(op.shared->synth->fun, op.shared->synth->arg);
   return op;
 }
 
@@ -1108,9 +1119,9 @@ void write_out(operand op) {
     assert(op.shared->ref_count);
     if (!--op.shared->ref_count) {
       trace_void(op.shared->synth, "drop: free(shared->synth) in write_out", "");
-      // free(op.shared->synth);
+      free(op.shared->synth);
       op.shared->synth = (void*)0xDEADDADA;
-      // free(op.shared);
+      free(op.shared);
       trace_void(op.shared, "drop: free(shared) in write_out", "");
       op.shared = (void*)0xDEADDABA;
     }
@@ -1133,7 +1144,8 @@ word eval(word input_crumbs) {
   print64("fuel0", fuel);
   refill();
   assert(stack_top);
-  while (fuel-- && step_(false)) {
+  while (fuel && step_(false)) {
+    fuel--;
     print64("fuel", fuel);
     epoch("fuel epoch", fuel);
     for (int i=stack_top; i-- > 0; ) {

@@ -122,9 +122,6 @@ const testIO = ({ input: i, output: o, inputs: extra, test: func }) => {
     input.forEach((_, i) => {
       input[i] = BigInt("0b" + bits.substring(64*i, 64*i+64));
     });
-    let stop = new Uint32Array(ex.memory.buffer, ex.stop_at, 2);
-    stop[0] = 8*(i.length>>5);
-    stop[1] = 2*(i.length % 32);
     // console.log(i, bits, Array.from(input, x => x.toString(2).padStart(64, 0)));
   }
   // Set global variables (ugh)
@@ -315,8 +312,8 @@ function slowest_impl(crumbs, fuel=1000, strategy=undefined) {
 
 function test_slowest() {
   function testcase(input, output, fuel=100, debug=false) {
-    fuel += 100;
-    fuel *= 100;
+    fuel += 2;
+    fuel *= 2;
     debugging && console.log();
     let o, r;
     input = sugar(input);
@@ -466,7 +463,7 @@ function test_slowest() {
         test = s; desugared = mno(s);
         let [lhs, rhs] = mno(s).split("=");
         testcase(lhs, rhs, fuel, debug);
-        testcase(lhs, rhs, fuel+1, debug);
+        // testcase(lhs, rhs, fuel+1, debug);
       };
       t('000Bmno = 0m0no', 4)
 
@@ -530,6 +527,10 @@ function test_factorial(fixed_x=undefined) {
     let o, r;
     input = sugar(input);
     output = sugar(output);
+    // let by_impl = slowest_impl(input, fuel);
+    // if (output !== by_impl) {
+    //   console.error('Discrepancy', {input,output,by_impl,fuel});
+    // }
     try {
       trydebug(() => {
         r = testIO({
@@ -543,7 +544,10 @@ function test_factorial(fixed_x=undefined) {
         assert(o === BigInt(output.length));
       });
     } catch(e) {
-      if (o !== undefined) console.error(o+':', getOutput(Number(o)));
+      if (o !== undefined) {
+        console.error(o+':', prettyCrumbs(getOutput(Number(o))));
+        console.error('vs'.padEnd((o+':').length, ' '), prettyCrumbs(output));
+      }
       throw e;
     }
     return r;
@@ -562,9 +566,9 @@ function test_factorial(fixed_x=undefined) {
         let [lhs, rhs] = mno(s).split("=");
         testcase(lhs, rhs, fuel, debug);
       };
-      t(`00${fx}no = ${succs}o`, 5000)
-      // Only do one test of x=3
-      if (x === 3) return;
+      t(`00${fx}no = ${succs}o`, x < 4 ? 10000 : 98765)
+      // Only do one test of x=4
+      if (x === 4) return;
     } catch(e) {
       console.error("Locals", {test,desugared,x,n,o});
       throw e;
@@ -683,6 +687,7 @@ WebAssembly.instantiate(wasmBuffer, {
     test_factorial1: () => test_factorial(1),
     test_factorial2: () => test_factorial(2),
     test_factorial3: () => test_factorial(3),
+    test_factorial4: () => test_factorial(4),
   });
 
   // console.log(sugar()('#1'));
