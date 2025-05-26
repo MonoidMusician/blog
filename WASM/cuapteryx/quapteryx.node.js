@@ -310,7 +310,7 @@ function slowest_impl(crumbs, fuel=1000, strategy=undefined) {
 }
 
 
-function test_slowest() {
+function test_eval() {
   function testcase(input, output, fuel=100, debug=false) {
     fuel += 2;
     fuel *= 2;
@@ -466,11 +466,6 @@ function test_slowest() {
         // testcase(lhs, rhs, fuel+1, debug);
       };
       t('000Bmno = 0m0no', 4)
-
-      t('0000*(00SBI)(#1)mn = 0m0mn', 25)
-      t('0000*(#2)(#2)mn = 0m0m0m0mn', 40)
-
-      t('000Bmno = 0m0no', 4)
       t('000302mno = 0m0no', 2)
       t('000Cmno = 00mon', 10)
       t('000030203m2no = 00mon', 4)
@@ -485,6 +480,7 @@ function test_slowest() {
       t('00(#1)mn = 0mn', 13)
       t('00(#2)mn = 0m0mn', 13)
       t('00(00SBI)mn = 0m0mn', 13)
+      t('0000*(00SBI)(#1)mn = 0m0mn', 25)
       // mul 2 2 = 4
       t('0000*(00SBI)(00SBI)mn = 0m0m0m0mn', 25)
       t('0000+(00SBI)(00SBI)mn = 0m0m0m0mn', 23)
@@ -566,9 +562,10 @@ function test_factorial(fixed_x=undefined) {
         let [lhs, rhs] = mno(s).split("=");
         testcase(lhs, rhs, fuel, debug);
       };
-      t(`00${fx}no = ${succs}o`, x < 4 ? 10000 : 98765)
-      // Only do one test of x=4
-      if (x === 4) return;
+      t(`00${fx}no = ${succs}o`, [1000,1000,10000,10000,100000,1000000,10000000,100000000][x])
+      // if (x === 6) console.error(mno(`00${fx}no = ${succs}o`));
+      // Only do one test of x=6
+      if (x === 6) return;
     } catch(e) {
       console.error("Locals", {test,desugared,x,n,o});
       throw e;
@@ -680,7 +677,7 @@ WebAssembly.instantiate(wasmBuffer, {
   asserteq(reachesZero(1, "032"), 6);
   asserteq(reachesZero(1, "00132"),10);
 
-  Perform({test_slowest});
+  Perform({test_eval});
   console.log('max_output:', new Uint32Array(ex.memory.buffer, ex.max_output, 1)[0]);
   Perform({
     test_factorial0: () => test_factorial(0),
@@ -688,6 +685,10 @@ WebAssembly.instantiate(wasmBuffer, {
     test_factorial2: () => test_factorial(2),
     test_factorial3: () => test_factorial(3),
     test_factorial4: () => test_factorial(4),
+    test_factorial5: () => test_factorial(5),
+    test_factorial6: () => test_factorial(6),
+    // test_factorial7: () => test_factorial(7),
+    // test_factorial8: () => test_factorial(8),
   });
 
   // console.log(sugar()('#1'));

@@ -2,7 +2,8 @@
 #include <stdint.h>
 
 #define BLOCK(stmt) { do{ stmt } while(0); }
-#define assert(c) BLOCK(if (!(c)) {__builtin_trap(); __builtin_unreachable();})
+#undef assert
+#define assert(c) BLOCK(if (!(c)) {__builtin_unreachable();})
 
 typedef uint64_t u64;
 typedef uint32_t u32;
@@ -33,21 +34,6 @@ static const u64 upper = 0b10 * lower;
 #define popcnt __builtin_popcountll
 #define clz __builtin_clzll
 #define ctz __builtin_ctzll
-
-#ifndef CLI
-__attribute__((import_name("dbg")))
-extern void dbg(u32 l, u64 r);
-
-__attribute__((import_name("print64")))
-extern void print64(char* lbl, u64 value);
-
-__attribute__((import_name("dent")))
-extern void dent(s32 value);
-#else
-void dbg(u32 l, u64 r){}
-void print64(char* lbl, u64 value){}
-void dent(s32 value){}
-#endif
 
 // Coalesce each nonzero crumb (pair of bits) into its lower bit.
 __attribute__((export_name("nonzeros"), always_inline))
@@ -233,7 +219,6 @@ ptrbit ptrbit_incr_bits(ptrbit where, word incr_bits) {
 #define nextword_of(crumbstring, where) ((crumbstring)[1 + (where.ptr)/sizeof(word)])
 #define from_ptr(crumbstring, where) ((crumbstring) + ((where.ptr)/sizeof(word)))
 
-__attribute__((noinline))
 static void goodptrbit(ptrbit where) {
   assert((where.ptr & 0x7) == 0);
   assert((where.bit & 0x1) == 0);

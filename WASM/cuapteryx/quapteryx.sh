@@ -49,7 +49,7 @@ set -euo pipefail
     )
 
     # Command to compile C -> (LLVM) -> WASM
-    $CLANG -DCLI \
+    $CLANG \
       --target=wasm32 \
       "${OPTIONS[@]}" \
       -o "$THIS.wasm" \
