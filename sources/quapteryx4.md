@@ -279,56 +279,70 @@ More special cases could be added for other combinators, like \(C\) and \(B\) an
 <summary>Code</summary>
 
 ```C
-// This is the procedure to pop an item from the stack: if the stack is
-// empty, we try to refill it from the input buffer, and if we cannot, then
-// we have to return. If it succeeded, we save it to the given variable.
-#define POP_OR(lvalue, stmt) BLOCK( \
-  if (!stack_top && !refill()) { \
-    stmt; __builtin_trap(); \
-  }; \
-  lvalue = stack[--stack_top].to_eval; \
-  assert(stack[stack_top].was_evaling = NULL); \
-)
-// Now we handle the particular opcodes: I=1, K=2, S=3
-if (crumb == 1) {
-  // Check that there is an argument available; otherwise, we need to restore
-  // the head operand back to the stack
-  if (!stack_top && !refill()) { stack_top += 1; return false; }
+// Perform a reduction according to whatever the head combinator is.
+//
+// `Ix = x`
+// `Kxy = x`
+// `Sxyz = 00xz0yz = ((xz)(yz))`
+bool reduction_rule(word crumbs) {
+  const u8 crumb = crumbs >> (word_size - 2);
+  assert(crumb > 0);
+  assert(crumb <= 3);
 
-  // Just drop this identity node, good riddance
-  // (Morally we pop the argument and push it back onto the stack.)
-  work++;
-  return true;
-} else if (crumb == 2) {
-  // Get two arguments
-  operand x, y;
-  POP_OR(x, { stack_top += 1; return false; });
-  // TODO: tell `refill()` that it does not need to actually copy this operand?
-  POP_OR(y, { stack_top += 2; return false; });
+  // This is the procedure to pop an item from the stack: if the stack is
+  // empty, we try to refill it from the input buffer, and if we cannot, then
+  // we have to return. If it succeeded, we save it to the given variable.
+  #define POP_OR(lvalue, stmt) BLOCK( \
+    if (!stack_top && !refill()) { \
+      stmt; __builtin_trap(); \
+    }; \
+    lvalue = stack[--stack_top].to_eval; \
+    assert(stack[stack_top].was_evaling == NULL); \
+    goodop(stack[stack_top].to_eval); \
+  )
+  // Now we handle the particular opcodes: I=1, K=2, S=3
+  if (crumb == 1) {
+    // Check that there is an argument available; otherwise, we need to restore
+    // the head operand back to the stack
+    if (!stack_top && !refill()) { stack_top += 1; return false; }
 
-  // Drop `y` and put `x` back onto the stack: `Kxy = x`
-  drop(y);
-  stack[stack_top++] = FRAME(x);
-  work++;
-  return true;
-} else if (crumb == 3) {
-  // Get three arguments
-  operand x, y, z;
-  POP_OR(x, { stack_top += 1; return false; });
-  POP_OR(y, { stack_top += 2; return false; });
-  POP_OR(z, { stack_top += 3; return false; });
+    // Just drop this identity node `op`, good riddance
+    // (Morally we pop the argument and push it back onto the stack.)
+    work++;
+    return true;
+  } else if (crumb == 2) {
+    // Get two arguments
+    operand x, y;
+    POP_OR(x, { stack_top += 1; return false; });
+    // TODO: tell `refill()` that it does not need to actually copy this operand?
+    POP_OR(y, { stack_top += 2; return false; });
 
-  // `Sxyz = 00xz0yz = ((xz)(yz))`
-  // Increase the ref count on `z`
-  z = dup(z);
-  // Put `x`, `z`, and the synthetic `(yz)` on the stack
-  operand yz = apply(y, z);
-  stack[stack_top++] = FRAME(yz);
-  stack[stack_top++] = FRAME(z);
-  stack[stack_top++] = FRAME(x);
-  work++;
-  // Evaluation will continue with `x` on the next `step()`!
-  return true;
+    // Drop `y` and put `x` back onto the stack: `Kxy = x`
+    drop(y);
+    stack[stack_top++] = FRAME(x);
+    assert(stack_top < SZ);
+    work++;
+    return true;
+  } else if (crumb == 3) {
+    // Get three arguments
+    operand x, y, z;
+    POP_OR(x, { stack_top += 1; return false; });
+    POP_OR(y, { stack_top += 2; return false; });
+    POP_OR(z, { stack_top += 3; return false; });
+
+    // `Sxyz = 00xz0yz = ((xz)(yz))`
+    // Increase the ref count on `z`
+    z = dup(z);
+    // Put `x`, `z`, and the synthetic `(yz)` on the stack
+    operand yz = apply(y, z);
+    stack[stack_top++] = FRAME(yz);
+    stack[stack_top++] = FRAME(z);
+    stack[stack_top++] = FRAME(x);
+    assert(stack_top < SZ);
+    work++;
+    // Evaluation will continue with `x` on the next `step()`!
+    return true;
+  }
 }
 ```
 
@@ -342,25 +356,31 @@ On the other hand, sometimes we have to unpack the synthetic applications we cre
 <summary>Code</summary>
 
 ```C
-// We might as well walk the spine of synthetic applications here in a tight
-// loop, instead of waiting for the next `step();`
-operand spine = op;
-// #pragma unfold(2)
-while (!spine.immediate && !spine.shared->on_heap) {
-  shared_operand* this = spine.shared;
-  if (stack_top && this->ref_count > 1) {
-    stack_was_evaling(stack_top, spine.shared);
+// Synthetic application nodes represent an argument to go on the stack, and
+// the function, which is the new top of the stack. We can recursively unpack
+// synth nodes until the arguments are all on the stack and the last function
+// is a heap or immediate operand.
+operand unpack_synth_onto_stack(const operand op) {
+  // We might as well walk the spine of synthetic applications here in a tight
+  // loop, instead of waiting for the next `step();`
+  operand spine = op;
+  // #pragma unfold(2)
+  while (!spine.immediate && !spine.shared->on_heap) {
+    shared_operand* this = spine.shared;
+    if (stack_top && this->ref_count > 1) {
+      stack_was_evaling(stack_top, this);
+    }
+    // Now we add it onto the stack
+    stack[stack_top++] = FRAME(soft_dup(this->synth->arg));
+    // And proceed down the spine
+    spine = this->synth->fun;
   }
-  // Now we add it onto the stack
-  stack[++stack_top] = FRAME(dup(this->synth->arg));
-  // And proceed down the spine
-  spine = this->synth->fun;
+  // Finally, whatever we ended up with is at the top of the stack.
+  operand result = soft_dup(spine);
+  // And free the spine (all the leaves were dup'ed, so are safe)
+  drop(op);
+  return result;
 }
-// Finally, whatever we ended up with is at the top of the stack.
-stack[++stack_top] = FRAME(dup(spine));
-// And free the spine (all the arguments were dup'ed, so are safe)
-drop(op);
-return true;
 ```
 
 </details>
@@ -371,46 +391,200 @@ A little more complicated, but still the same idea, is unpacking a crumbstring f
 <summary>Code</summary>
 
 ```C
-// Cache the amount of bytes
-const int bytes = sizeof(word) * op.shared->heap->length;
-// Here is the crumbstring
-word* crumbstring = op.shared->heap->crumbstring;
-// Start at the first crumb
-ptrbit i = (ptrbit) {};
-
-// Count the leading zero crumbs
-{
-  // Whole words
-  while (i.ptr < bytes && word_of(crumbstring, i) == 0) {
-    i.ptr += sizeof(word);
+// A heap or immediate operand is unpacked onto the stack: the number of leading
+// zeros in the crumbstring indicates the number of arguments that will be
+// unpacked, and the first crumb is the combinator that will control the
+// reduction.
+operand unpack_crumbstring_onto_stack(operand op) {
+  if (op.immediate) {
+    if (op.crumbs >> (word_size - 2)) return op;
+    op = shared(as_tmp(op));
   }
-  // Remaining crumbs
-  i.bit = clz(word_of(crumbstring, i)) & ~1;
-}
+  assert(!op.immediate && op.shared->on_heap);
 
-// This is now our arity
-const word arity = ptrbit2crumbs(i);
+  // Cache the number of bytes
+  const int bytes = sizeof(word) * op.shared->heap->length;
+  // Here is the crumbstring
+  word* crumbstring = op.shared->heap->crumbstring;
+  // Start at the first crumb
+  ptrbit i = (ptrbit) {};
 
-// Increase stack_top already, and then we will walk back and fill in the
-// arguments on the stack.
-stack_top += arity;
-for (int stacked = 0; stacked < arity; stacked++) {
+  // Count the leading zero crumbs
+  {
+    // Whole words
+    while (i.ptr < bytes && word_of(crumbstring, i) == 0) {
+      i.ptr += sizeof(word);
+    }
+    // Remaining crumbs
+    i.bit = clz(word_of(crumbstring, i)) & ~1;
+  }
   goodptrbit(i);
-  const ptrbit last = i;
-  // Scan ahead one item
-  i = scan1(crumbstring, last, (ptrbit) { .ptr = bytes, .bit = 0 });
-  const int crumblen = ptrbit2crumbs(i) - ptrbit2crumbs(last);
-  // Copy it into its own heap
-  shared_operand* sh = alloc_shared_heap(ROUNDUPDIV(crumblen, word_crumbs));
-  copy_from_unaligned(sh->heap->crumbstring, from_ptr(crumbstring, last), last.bit, sh->heap->length);
-  // And plop it on the stack
-  stack[stack_top - stacked] = FRAME(shared(sh));
+
+  // This is now our arity
+  const word arity = ptrbit2crumbs(i);
+
+  // I guess it cannot be too large to fit on the stack
+  assert(arity == (int)arity);
+  assert(arity + stack_top < sizeof(stack) / sizeof(struct stack_frame));
+  // Also must be nonzero
+  assert(arity);
+
+  // Increase stack_top already, and then we will walk back and fill in the
+  // arguments on the stack.
+  stack_top += arity + 1;
+  for (int stacked = 1; stacked <= arity + 1; stacked++) {
+    goodptrbit(i);
+    const ptrbit last = i;
+    // Scan ahead one item
+    i = scan1(crumbstring, last, (ptrbit) { .ptr = bytes, .bit = 0 });
+    const int crumblen = ptrbit2crumbs(i) - ptrbit2crumbs(last);
+    assert(crumblen);
+    // This conditional is load-bearing, for `stacked=1` at least
+    if (crumblen < word_crumbs && (i.ptr == last.ptr || (i.ptr == last.ptr + 1 && i.bit == 0))) {
+      stack[stack_top - stacked] = FRAME(direct(word_of(crumbstring, last) << last.bit));
+    } else {
+      // Copy it into its own heap
+      shared_operand* sh = alloc_shared_heap(1 + ROUNDUPDIV(crumblen, word_crumbs));
+      word words = 1 + (i.ptr - last.ptr) / sizeof(word);
+      copy_from_unaligned(sh->heap->crumbstring, from_ptr(crumbstring, last), last.bit, words);
+      // And plop it on the stack
+      stack[stack_top - stacked] = FRAME(shared(sh));
+    }
+  }
+
+  // This is now consumed
+  drop(op);
+
+  // Return the head of the applications
+  return stack[--stack_top].to_eval;
 }
-return true;
 ```
 
 </details>
 
+### Handling evaluated thunks
+
+<details class="Details">
+<summary>Code</summary>
+
+```C
+// Now that the head is a known combinator, the underapplied nodes formed by
+// it and its first couple arguments on the stack (not meeting its arity) are
+// in Weak Head Normal Form, so we need to update `was_evaling` for them.
+void whnf_on_stack(word crumbs) {
+  const u8 crumb = crumbs >> (word_size - 2);
+  assert(crumb > 0);
+  assert(crumb <= 3);
+
+  // Scan the stack to see how many we need to save, up to one less than
+  // the arity of this node (since we are evaling it applied to the arity)
+  u8 was_evaled = 0;
+  for (u8 i=1; i <= stack_top && i < crumb; i++) {
+    if (stack[stack_top - i].was_evaling != NULL) {
+      // If ref_count was zero, it should have been freed and `was_evaling`
+      // removed from the stack
+      assert(stack[stack_top - i].was_evaling->ref_count > 0);
+      was_evaled = i;
+    }
+  }
+  if (!was_evaled) return;
+
+  operand evaled = direct(crumbs);
+  // Now we walk it and build up the WHNF term as we go
+  for (u8 i=1; i <= was_evaled; i++) {
+    if (stack[stack_top - i].was_evaling != NULL) {
+      // Shared, so we want to swap out what we computed to be its
+      // WHNF value `evaled` for whatever it has currently. And we
+      // snowball from there.
+      //
+      // If `evaled` has a heap, for example, then ownership of it is
+      // transferred to `was_evaling`. Whatever `was_evaling` has
+      // is deleted, unless it is a small heap that can be reused
+      // by an immediate `evaled`.
+      have_evaled(stack[stack_top - i].was_evaling, dup(evaled));
+      evaled = shared(stack[stack_top - i].was_evaling);
+      stack[stack_top - i].was_evaling = NULL;
+    }
+    // Create a new apply node only if it will be transferred, otherwise
+    // it is just a leak/immediately dropped.
+    if (i < was_evaled) {
+      evaled = apply(evaled, stack[stack_top].to_eval);
+    } else {
+      break;
+    }
+  }
+}
+```
+
+</details>
+
+### Altogether
+
+<details class="Details">
+<summary>Code</summary>
+
+```C
+// Evaluate one operand at the top of the stack. If it is a known combinator
+// `S`, `K`, or `I` then we can apply it and compute a reduction (and if it
+// ends up being underapplied and thus we are in WHNF). If not, it is an
+// application node that we have to unpack onto the stack and recurse into the
+// function side to continue evaluating on the next `step();`
+bool step() {
+  if (!stack_top && !refill()) return false; // all done
+
+  operand op = stack[--stack_top].to_eval;
+  assert(stack[stack_top].was_evaling == NULL);
+
+  // Do some setup for shared nodes
+  if (!op.immediate) {
+    // If it is `S`, `K`, or `I` that ended up on the heap for some reason
+    // (e.g. because it was shared at one point), unpack it.
+    if (
+      op.shared->on_heap &&
+        (op.shared->heap->crumbstring[0] >> (word_size - 2)) != 0
+    ) {
+      const word crumb = op.shared->heap->crumbstring[0];
+      drop(op);
+      // We set it back on the stack in the case that we are out of input crumbs
+      // and are thus in WHNF, so we revert the stack to its original size before
+      // this function was called
+      stack[stack_top].to_eval = op = direct(crumb);
+    }
+
+    // Try to keep at least one thing on the stack to make sure we have
+    // somewhere to pin `was_evaled`. But if we ran out of input, that is fine:
+    // it is the final node to evaluate anyways.
+    else if (op.shared->ref_count > 1 && (stack_top || refill())) {
+      stack_was_evaling(stack_top, op.shared);
+    }
+  }
+
+  // Walk down the tree of synth nodes until we end up at a heap or immediate
+  op = unpack_synth_onto_stack(op);
+
+  assert(op.immediate || op.shared->on_heap);
+  if (op.immediate)
+    stack[stack_top].to_eval = op;
+
+  // Unpack applications from a crumbstring, leaving the combinator at the head
+  op = unpack_crumbstring_onto_stack(op);
+
+  // What is left should be a bare combinator
+  assert(op.immediate);
+  const u8 crumb = op.crumbs >> (word_size - 2);
+  assert(crumb > 0);
+  assert(crumb <= 3);
+
+  // The first `0 .. crumb-1` applications are now evaluated to WHNF, so their
+  // evaluations on the stack need to be handled
+  whnf_on_stack(op.crumbs);
+
+  // Finally we apply the reduction indicated by the combinator, I=1, K=2, S=3
+  return reduction_rule(op.crumbs);
+}
+```
+
+</details>
 
 ## Appendix: Links
 

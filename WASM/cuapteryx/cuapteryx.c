@@ -13,6 +13,11 @@ word output_words[SZ];
 #define INPUT input_words[input_at.ptr/8]
 #define OUTPUT output_words[output_at.ptr/8]
 
+__attribute__((import_name("print64")))
+extern void print64(char* lbl, u64 value);
+__attribute__((import_name("dent")))
+extern void dent(s8);
+
 ptr max_output = 0;
 
 void copyBack() {

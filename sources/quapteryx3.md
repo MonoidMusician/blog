@@ -224,13 +224,14 @@ word nonzeros(word crumbs) {
 }
 
 // Calculate if there are any `S` redexes exclusively, since `I` and `K` are
-// not really a problem for duplicated work. Assumes `leadingZeroBits = 3`
-// (or that the word is well-formed).
+// not really a problem for duplicated work. Assumes `leadingZeroBits = 0`.
 word nontrivial_redexes(word crumbs) {
   word S;
   // Any nonzero crumb means that the
   // next 3 crumbs cannot be `S` redexes
   S = crumbs >> 2 | crumbs >> 4 | crumbs >> 6;
+  // Top 3 crumbs cannot be redexes
+  S |= ~(word_max >> 6);
   // Any any crumb that is not `0b11 = 0q3`
   // cannot be an `S` redex
   S |= crumbs ^ (0b11 * lower);
@@ -312,7 +313,7 @@ We could technically do a kind of binary search, and/or skip through contiguous 
 u8 reachesZero(word expecting, word crumbs) {
   word _nonzeros = nonzeros(crumbs);
 
-  if (expecting + (clz(_nonzeros) >> 1) > popcnt(_nonzeros))
+  if (expecting + clz(_nonzeros)/2 > popcnt(_nonzeros))
     return 0;
 
   u8 bit = word_size - 2;
@@ -431,13 +432,15 @@ This is \((SB(...(SB(SK))))\), where `0030232`{.st} is the encoding of the \(B\)
 
 That is, once you apply an argument \(f\) to it, it reduces to \(Bf(Bf(...Bf(I)))\), or the \(n\)-fold composition of \(f\).
 
-***However***, you need to be careful: just because the expression is evaluated, doesnʼt mean that the Church number is in normal form!
+***However***, you need to be careful: just because the expression is evaluated, doesnʼt mean that the Church number is a recognizable form!
 Because of the lack of eta-equivalence in this implementation of combinator calculus, it will evaluate to an expression with the same behavior but spelled a different way in the combinators.
 
 For example, the normal form of `factorial(0)` is `0032032`{.st} \((SK)(SK) \approx_\eta I\), not `0030030232032`{.st} \((SB)(SK)\).
 The normal form of `factorial(1)` is 3359 crumbs *long*, `factorial(2)` is 2573 crumbs long (not sure why it is shorter), `factorial(3)` is 3559 crumbs long, and the rest grow comparatively slowly from there.
 
 Thus my tests went through various irreducible values of `m` and `n` to evaluate `factorial(3)(m)(n)` and ensure that it evaluated to `0m0m0m0m0m0mn` each time, and so on.
+
+The alternate way is to evaluate `factorial(x)(SB)(SK)` to get to a canonical Church numeral `(SB)(SB)…(SB)(SK)`.
 
 :::centered
 _Read on at [Quapteryx Part IV: Efficient Quapteryx Evaluator](quapteryx4.html)._

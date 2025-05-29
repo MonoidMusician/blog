@@ -86,14 +86,15 @@ word redexes(u8 leadingZeroBits, word crumbs) {
 }
 
 // Calculate if there are any `S` redexes exclusively, since `I` and `K` are
-// not really a problem for duplicated work. Assumes `leadingZeroBits = 3`
-// (or that the word is well-formed).
+// not really a problem for duplicated work. Assumes `leadingZeroBits = 0`.
 __attribute__((export_name("nontrivial_redexes")))
 word nontrivial_redexes(word crumbs) {
   word S;
   // Any nonzero crumb means that the
   // next 3 crumbs cannot be `S` redexes
   S = crumbs >> 2 | crumbs >> 4 | crumbs >> 6;
+  // Top 3 crumbs cannot be redexes
+  S |= ~(word_max >> 6);
   // Any any crumb that is not `0b11 = 0q3`
   // cannot be an `S` redex
   S |= crumbs ^ (0b11 * lower);
@@ -117,15 +118,17 @@ s8 deltaExpecting(word crumbs) {
   return 2 * popcnt(nonzeros(crumbs)) - word_crumbs;
 }
 
+// pure attribute make it worse??
 __attribute__((export_name("reachesZero")))
 u8 reachesZero(word expecting, word crumbs) {
   word _nonzeros = nonzeros(crumbs);
 
-  if (expecting + (clz(_nonzeros) >> 1) > popcnt(_nonzeros))
-    return 0;
+  // Never hit in practice, apparently
+  // if (expecting + clz(_nonzeros)/2 > popcnt(_nonzeros))
+  //   return 0;
 
   u8 bit = word_size - 2;
-  #pragma nounroll
+  // #pragma nounroll
   while (expecting += (0b1 & (_nonzeros >> bit) ? -1 : 1)) {
     if (!bit) return 0;
     bit -= 2;
@@ -139,65 +142,13 @@ word toAtomic(word crumbs) {
   return crumbs << (exp - (-1));
 }
 
-word mkcrumbs64(
-  u8 q0, u8 q1, u8 q2, u8 q3, u8 q4, u8 q5, u8 q6, u8 q7, u8 q8, u8 q9, u8 qA, u8 qB, u8 qC, u8 qD, u8 qE, u8 qF,
-  u8 p0, u8 p1, u8 p2, u8 p3, u8 p4, u8 p5, u8 p6, u8 p7, u8 p8, u8 p9, u8 pA, u8 pB, u8 pC, u8 pD, u8 pE, u8 pF
-) {
-  return (0
-    | (((word) 3 & q0) << 62)
-    | (((word) 3 & q1) << 60)
-    | (((word) 3 & q2) << 58)
-    | (((word) 3 & q3) << 56)
-    | (((word) 3 & q4) << 54)
-    | (((word) 3 & q5) << 52)
-    | (((word) 3 & q6) << 50)
-    | (((word) 3 & q7) << 48)
-    | (((word) 3 & q8) << 46)
-    | (((word) 3 & q9) << 44)
-    | (((word) 3 & qA) << 42)
-    | (((word) 3 & qB) << 40)
-    | (((word) 3 & qC) << 38)
-    | (((word) 3 & qD) << 36)
-    | (((word) 3 & qE) << 34)
-    | (((word) 3 & qF) << 32)
-    | (((word) 3 & p0) << 30)
-    | (((word) 3 & p1) << 28)
-    | (((word) 3 & p2) << 26)
-    | (((word) 3 & p3) << 24)
-    | (((word) 3 & p4) << 22)
-    | (((word) 3 & p5) << 20)
-    | (((word) 3 & p6) << 18)
-    | (((word) 3 & p7) << 16)
-    | (((word) 3 & p8) << 14)
-    | (((word) 3 & p9) << 12)
-    | (((word) 3 & pA) << 10)
-    | (((word) 3 & pB) <<  8)
-    | (((word) 3 & pC) <<  6)
-    | (((word) 3 & pD) <<  4)
-    | (((word) 3 & pE) <<  2)
-    | (((word) 3 & pF) <<  0)
-  );
-}
-
-word mkcrumbs32(u8 q0, u8 q1, u8 q2, u8 q3, u8 q4, u8 q5, u8 q6, u8 q7, u8 q8, u8 q9, u8 qA, u8 qB, u8 qC, u8 qD, u8 qE, u8 qF) {
-  return mkcrumbs64(q0, q1, q2, q3, q4, q5, q6, q7, q8, q9, qA, qB, qC, qD, qE, qF, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
-}
-
-#define P 0
-#define I 1
-#define K 2
-#define S 3
-
-// word x = toAtomic(0b00001100100011000011101010); // T = PPSPKPSPPSKKK
-// word y = mkcrumbs32(P,P,S,P,K,P,S,P,P,S,K,K,K,0,0,0);
-
 
 // A ptrbit stores the raw memory pointer (a multiple of word_size/byte_size)
 // and the bit within the word (which is even, since it is pointing to a crumb).
 static word ptrbit2crumbs(ptrbit where) {
   // print64("ptr", where.ptr);
   // print64("bit", where.bit);
-  return (where.bit >> 1) | (where.ptr << 2);
+  return (where.bit >> 1) | (where.ptr * (word_crumbs / sizeof(word)));
 }
 static ptrbit crumbs2ptrbit(word crumblength) {
   word bits = crumblength << 1;

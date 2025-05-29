@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "cuapteryx.h"
+#include "compilation.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // Externs (using walloc.c)                                                   //
@@ -9,10 +10,12 @@
 
 void *malloc(size_t size) __attribute__((warn_unused_result, alloc_size(1), noinline));
 void free(void *p) __attribute__((noinline));
-// #define free(p) {};
 
 #undef assert
-#define assert(c) BLOCK(if (!(c)) {__builtin_unreachable();})
+#pragma clang diagnostic ignored "-Wassume"
+// #define assert(c) BLOCK(if (!(c)) {__builtin_trap();__builtin_unreachable();})
+// #define assert(c) BLOCK(if (!(c)) {__builtin_unreachable();})
+#define assert(c) __builtin_assume((c))
 
 ////////////////////////////////////////////////////////////////////////////////
 // More basic helpers                                                         //
@@ -31,6 +34,7 @@ word mask_lo(u8 lo_bits) {
 }
 // Concatenate the high `hi_bits` of `hi` and the high `lo_bits` of `lo` into
 // the high bits of a word (i.e. all left-aligned).
+__attribute__((always_inline))
 word word_cat(u8 hi_bits, word hi, u8 lo_bits, word lo) {
   assert(hi_bits + lo_bits <= word_size);
   return (hi & mask_hi(hi_bits)) | ((lo & mask_hi(lo_bits)) >> hi_bits);
@@ -48,14 +52,14 @@ void copy_to_unaligned(word* dst, const word* src, u8 offset, word words, bool c
   if (words == 0) return;
   assert(offset < word_size);
   if (offset == 0) {
-    __builtin_memcpy(dst + (offset / 8), src, sizeof(word) * words);
+    __builtin_memcpy(dst, src, sizeof(word) * words);
     return;
   }
-  assert(offset != 0); // messes with word_cat
+  assert(offset != 0); // messes with bitshifts
   word hanging = clobber ? 0 : *dst;
   while (words--) {
     *dst = word_cat(offset, hanging, word_size - offset, *src);
-    hanging = *src << offset;
+    hanging = *src << (word_size - offset);
     dst++;
     src++;
   }
@@ -65,7 +69,7 @@ void copy_from_unaligned(word* dst, const word* src, u8 offset, word words) {
   if (words == 0) return;
   assert(offset < word_size);
   if (offset == 0) {
-    __builtin_memcpy(dst, src + (offset / 8), sizeof(word) * words - (offset / 8));
+    __builtin_memcpy(dst, src, sizeof(word) * words);
     return;
   }
   word last = *src;
@@ -94,7 +98,6 @@ ptrbit ptrbitlength(const word* crumbstring, word known_words) {
   // Fall through, in case `known_words` was too short.
   // (This is used in `ap_heap_cat`.)
   while (!offset) {
-    assert(i < 100);
     // See if it reaches zero during the current word
     offset = reachesZero(exp, crumbstring[i]);
     if (!offset) {
@@ -167,10 +170,16 @@ typedef struct synthetic_operand {
 } synthetic_operand;
 
 
+operand nullop = {};
+bool isnullop(operand op) {
+  return op.immediate == nullop.immediate && op.crumbs == nullop.crumbs;
+}
 operand direct(word crumbs) {
   assert(crumbs != 0);
   assert(reachesZero(1, crumbs));
-  crumbs &= ~(word_max >> reachesZero(1, crumbs));
+  // Clear out the irrelevant crumbs (optional, slower)
+  // (Seems to impact WASM more than native x86_64, for whatever reason)
+  // crumbs &= mask_hi(reachesZero(1, crumbs));
   return (operand) { .immediate = true, .crumbs = crumbs };
 }
 operand shared(shared_operand* shared) {
@@ -182,7 +191,7 @@ operand shared(shared_operand* shared) {
 // Stack, for evaluation                                                      //
 ////////////////////////////////////////////////////////////////////////////////
 
-#define SZ 1024
+#define SZ 128*1024
 
 // When you evaluate an application node `0xy`, `y` goes onto the stack (first)
 // and `x` is the new top of stack. Reaching `I`, `K`, or `S` will pop from the
@@ -283,8 +292,8 @@ shared_operand* alloc_shared_heap(const int wordlength) {
   shared->work = 0;
   shared->on_heap = true;
   shared->heap = on_heap;
-  shared->weakref_stack_max = 0;
-  shared->weakref_stack_min = 0;
+  shared->weakref_stack_max = ~0;
+  shared->weakref_stack_min = ~0;
   return shared;
 }
 
@@ -396,7 +405,8 @@ operand have_evaled(shared_operand* was_evaling, const operand evaled) {
 operand dup(operand term) {
   if (term.immediate) {
     // An irreducible direct operand is safe to be duplicated
-    if (!nontrivial_redexes(term.crumbs)) return term;
+    if (!nontrivial_redexes(term.crumbs))
+      return term;
     // Otherwise we need to make a shared operand
     shared_operand* sh = alloc_shared_heap(1);
     sh->heap->crumbstring[0] = term.crumbs;
@@ -422,7 +432,7 @@ operand soft_dup(operand term) {
 // then the crumbs of the first followed by the crumbs of the second, `0{l}{r}`.
 shared_operand* ap_heap_cat(heap_operand* l, heap_operand* r) {
   // FIXME: decrement length if overallocated?
-  int wordlength = l->length + r->length + 1;
+  int wordlength = l->length + r->length;
   shared_operand* result = alloc_shared_heap(wordlength);
   result->heap->length = wordlength;
   word* out = result->heap->crumbstring;
@@ -449,8 +459,8 @@ operand synthetic_apply(const operand fun, const operand arg) {
   sh->work = 0;
   sh->on_heap = false;
   sh->synth = ap_node;
-  sh->weakref_stack_max = 0;
-  sh->weakref_stack_min = 0;
+  sh->weakref_stack_max = ~0;
+  sh->weakref_stack_min = ~0;
   return shared(sh);
 }
 
@@ -470,9 +480,9 @@ operand apply(const operand fun, const operand arg) {
   // If we have two nodes that are not otherwise shared, we can delete them
   // and merge them.
   if (
-    (fun.immediate || (fun.shared->on_heap && fun.shared->ref_count == 1))
+    (fun.immediate || (fun.shared->on_heap && fun.shared->ref_count == 1 && fun.shared->heap->length < 16))
     &&
-    (arg.immediate || (arg.shared->on_heap && arg.shared->ref_count == 1))
+    (arg.immediate || (arg.shared->on_heap && arg.shared->ref_count == 1 && arg.shared->heap->length < 16))
   ) {
     operand result = shared(ap_heap_cat(as_tmp1(fun), as_tmp2(arg)));
     // free the shared nodes
@@ -484,6 +494,33 @@ operand apply(const operand fun, const operand arg) {
   return synthetic_apply(fun, arg);
 }
 
+bool heap_reducible(heap_operand* heap) {
+  word i = 0; word exp = 1; u8 offset = 0; u8 trailing = 0;
+  while (i < heap->length && exp) {
+    word crumbs = heap->crumbstring[i];
+    offset = reachesZero(exp, crumbs);
+    if (offset) {
+      return !!redexes(trailing, crumbs);
+    } else {
+      if (redexes(trailing, crumbs))
+        return true;
+    }
+    exp -= deltaExpecting(crumbs);
+    trailing = ctz(crumbs);
+    i++;
+  }
+  return false;
+}
+
+bool could_be_reducible(operand op) {
+  if (op.immediate) {
+    return !!redexes(0, op.crumbs);
+  } else if (op.shared->on_heap) {
+    return heap_reducible(op.shared->heap);
+  }
+  // For synth nodes: just assume yes rather than recursing
+  return true;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Machinery for computing reductions and managing input and output           //
@@ -507,7 +544,7 @@ ptrbit _scan1(const word crumbstring[], ptrbit _input_at, const ptrbit _stop_at)
   // optimizations in `reachesZero()`)
   word exp = 1 + (_input_at.bit >> 1);
 
-  // #pragma unroll(2)
+  #pragma unroll(2)
   while (_input_at.ptr < _stop_at.ptr || (_input_at.ptr == _stop_at.ptr && _input_at.bit <= _stop_at.bit)) {
     assert(ptrbit2crumbs(_input_at) <= ptrbit2crumbs(_stop_at));
     goodptrbit(_input_at);
@@ -533,18 +570,52 @@ ptrbit _scan1(const word crumbstring[], ptrbit _input_at, const ptrbit _stop_at)
   return failed;
 }
 
-__attribute__((noinline))
-ptrbit scan1(const word crumbstring[], ptrbit _input_at, const ptrbit _stop_at) {
-  return _scan1(crumbstring, _input_at, _stop_at);
+struct ptrbitop { ptrbit next; operand op; };
+
+__attribute__((always_inline))
+static struct ptrbitop scan1op(const word crumbstring[], ptrbit _input_at, const ptrbit _stop_at) {
+  ptrbit next = _scan1(crumbstring, _input_at, _stop_at);
+  goodptrbit(next);
+  if (next.ptr == _input_at.ptr && next.bit == _input_at.bit)
+    return (struct ptrbitop) { next, 0 };
+  const int crumblen = ptrbit2crumbs(next) - ptrbit2crumbs(_input_at);
+  assert(crumblen);
+  // This conditional is load-bearing, for `stacked=1` at least
+  if (crumblen < word_crumbs && (next.ptr == _input_at.ptr || next.bit == 0)) {
+    assert(next.ptr <= _input_at.ptr + sizeof(word));
+    const word crumbs = word_of(crumbstring, _input_at) << _input_at.bit;
+    assert(reachesZero(1, crumbs) == 2*crumblen);
+    return (struct ptrbitop) { next, direct(crumbs) };
+  } else if (crumblen < word_crumbs) {
+    // Saves maybe 10% of allocations, but needs the assertion to not make it
+    // slower (i.e., to avoid recomputing the crumb length)
+    assert(next.ptr <= _input_at.ptr + sizeof(word) || (next.ptr == _input_at.ptr + 2*sizeof(word) && next.bit == 0));
+    const word crumbs = word_cat(
+      word_size - _input_at.bit,
+        leftbits_of(crumbstring, _input_at),
+      (2*crumblen) - (word_size - _input_at.bit),
+        nextword_of(crumbstring, _input_at)
+    );
+    assert(reachesZero(1, crumbs) == 2*crumblen);
+    return (struct ptrbitop) { next, direct(crumbs) };
+  } else {
+    // Copy it into its own heap
+    shared_operand* sh = alloc_shared_heap(1 + ROUNDUPDIV(crumblen, word_crumbs));
+    word words = 1 + (next.ptr - _input_at.ptr) / sizeof(word);
+    copy_from_unaligned(sh->heap->crumbstring, from_ptr(crumbstring, _input_at), _input_at.bit, words);
+    // And plop it on the stack
+    goodop(shared(sh));
+    return (struct ptrbitop) { next, shared(sh) };
+  }
 }
 
 // Scan `input_words` to find an operand: increments `input_at` instead of
 // returning anything (and respects `stop_at`).
-__attribute__((noinline))
-bool scan1input() {
+static operand scan1input() {
   const ptrbit failed = input_at;
-  input_at = _scan1(input_words, input_at, stop_at);
-  return input_at.ptr != failed.ptr || input_at.bit != failed.bit;
+  struct ptrbitop scanned = scan1op(input_words, input_at, stop_at);
+  input_at = scanned.next;
+  return scanned.op;
 }
 
 // When the stack reaches zero, we are allowed to and need to refresh it from
@@ -554,54 +625,233 @@ bool scan1input() {
 bool refill() {
   assert(stack_top == 0);
 
-  if (input_at.ptr == stop_at.ptr && input_at.bit == stop_at.bit) return false;
+  if (input_at.ptr >= stop_at.ptr && input_at.bit >= stop_at.bit) return false;
 
   // Scan one operand from `input_words`, so we know how to copy it
   goodptrbit(input_at);
   ptrbit start_at = input_at;
-  if (!scan1input()) {
+  operand op = scan1input();
+  if (isnullop(op)) {
     return false;
-  }
-  goodptrbit(input_at);
-
-  const word crumblen = ptrbit2crumbs(input_at) - ptrbit2crumbs(start_at);
-  operand op;
-  // Already fit into one word
-  if (start_at.ptr == input_at.ptr) {
-    const word crumbs = leftbits_of(input_words, start_at);
-    assert(mask_hi(2*crumblen) & crumbs);
-    op = direct(mask_hi(2*crumblen) & crumbs);
-  // Stored over adjacent words but fits into one word
-  } else if (2*crumblen <= word_size) {
-    assert(input_at.ptr == start_at.ptr + sizeof(word));
-    assert(input_at.bit <= start_at.bit);
-    const word crumbs = word_cat(
-      word_size - start_at.bit,
-        leftbits_of(input_words, start_at),
-      (2*crumblen) - (word_size - start_at.bit),
-        nextword_of(input_words, start_at)
-    );
-    op = direct(mask_hi(2*crumblen) & crumbs);
-  } else {
-    op = shared(alloc_shared_heap(1 + ROUNDUPDIV(crumblen, word_crumbs)));
-    copy_from_unaligned(
-      op.shared->heap->crumbstring, from_ptr(input_words, start_at),
-      start_at.bit, input_at.ptr/sizeof(word) - start_at.ptr/sizeof(word) + 1
-    );
-    assert(bitlength(op.shared->heap->crumbstring, 0) == 2*crumblen);
-    // TODO: zero out last of bits
-  }
-
-  if (op.immediate && nontrivial_redexes(op.crumbs)) {
-    shared_operand* tmp = alloc_shared_heap(1);
-    tmp->heap->crumbstring[0] = op.crumbs;
-    assert(bitlength(tmp->heap->crumbstring, 0) < word_size);
-    op = shared(tmp);
   }
 
   goodop(op);
   stack[stack_top++] = FRAME(op);
+  assert(stack_top < SZ);
   return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Machinery for evaluation (stack management, reductions, WHNF, etc.)        //
+////////////////////////////////////////////////////////////////////////////////
+
+
+// Synthetic application nodes represent an argument to go on the stack, and
+// the function, which is the new top of the stack. We can recursively unpack
+// synth nodes until the arguments are all on the stack and the last function
+// is a heap or immediate operand.
+PLEASE_INLINABLE
+static operand unpack_synth_onto_stack(const operand op) {
+  // We might as well walk the spine of synthetic applications here in a tight
+  // loop, instead of waiting for the next `step();`
+  operand spine = op;
+  goodop(op);
+  // #pragma unfold(2)
+  while (!spine.immediate && !spine.shared->on_heap) {
+    shared_operand* this = spine.shared;
+    if (stack_top && this->ref_count > 1) {
+      stack_was_evaling(stack_top, this);
+    }
+    // Now we add it onto the stack
+    stack[stack_top++] = FRAME(soft_dup(this->synth->arg));
+    assert(stack_top < SZ);
+    // And proceed down the spine
+    spine = this->synth->fun;
+  }
+  // Finally, whatever we ended up with is at the top of the stack.
+  operand result = soft_dup(spine);
+  // And free the spine (all the leaves were dup'ed, so are safe)
+  drop(op);
+  return result;
+}
+
+// A heap or immediate operand is unpacked onto the stack: the number of leading
+// zeros in the crumbstring indicates the number of arguments that will be
+// unpacked, and the first crumb is the combinator that will control the
+// reduction.
+PLEASE_INLINABLE
+static operand unpack_crumbstring_onto_stack(operand op) {
+  if (op.immediate) {
+    if (op.crumbs >> (word_size - 2))
+      return op;
+    op = shared(as_tmp(op));
+  }
+  assert(!op.immediate && op.shared->on_heap);
+
+  // Cache the number of bytes
+  const int bytes = sizeof(word) * op.shared->heap->length;
+  // Here is the crumbstring
+  word* crumbstring = op.shared->heap->crumbstring;
+  // Start at the first crumb
+  ptrbit i = (ptrbit) {};
+
+  // Count the leading zero crumbs
+  {
+    // Whole words
+    while (i.ptr < bytes && word_of(crumbstring, i) == 0) {
+      i.ptr += sizeof(word);
+    }
+    // Remaining crumbs
+    i.bit = clz(word_of(crumbstring, i)) & ~1;
+  }
+  goodptrbit(i);
+
+  // This is now our arity
+  const word arity = ptrbit2crumbs(i);
+
+  // I guess it cannot be too large to fit on the stack
+  assert(arity == (int)arity);
+  assert(arity + stack_top < sizeof(stack) / sizeof(struct stack_frame));
+  // Also must be nonzero
+  assert(arity);
+
+  // Increase stack_top already, and then we will walk back and fill in the
+  // arguments on the stack.
+  stack_top += arity + 1;
+  assert(stack_top < SZ);
+  for (int stacked = 1; stacked <= arity + 1; stacked++) {
+    goodptrbit(i);
+    // Scan ahead one item
+    struct ptrbitop scanned = scan1op(crumbstring, i, (ptrbit) { .ptr = bytes, .bit = 0 });
+    i = scanned.next;
+    assert(!isnullop(scanned.op));
+    goodop(scanned.op);
+    stack[stack_top - stacked] = FRAME(scanned.op);
+  }
+
+  // This is now consumed
+  drop(op);
+
+  // Return the head of the applications
+  return stack[--stack_top].to_eval;
+}
+
+// Now that the head is a known combinator, the underapplied nodes formed by
+// it and its first couple arguments on the stack (not meeting its arity) are
+// in Weak Head Normal Form, so we need to update `was_evaling` for them.
+PLEASE_INLINABLE
+static void whnf_on_stack(word crumbs) {
+  const u8 crumb = crumbs >> (word_size - 2);
+  assert(crumb > 0);
+  assert(crumb <= 3);
+
+  // Scan the stack to see how many we need to save, up to one less than
+  // the arity of this node (since we are evaling it applied to the arity)
+  u8 was_evaled = 0;
+  for (u8 i=1; i <= stack_top && i < crumb; i++) {
+    if (stack[stack_top - i].was_evaling != NULL) {
+      // If ref_count was zero, it should have been freed and `was_evaling`
+      // removed from the stack
+      assert(stack[stack_top - i].was_evaling->ref_count > 0);
+      was_evaled = i;
+    }
+  }
+  if (!was_evaled) return;
+
+  operand evaled = direct(crumbs);
+  // Now we walk it and build up the WHNF term as we go
+  for (u8 i=1; i <= was_evaled; i++) {
+    if (stack[stack_top - i].was_evaling != NULL) {
+      // Shared, so we want to swap out what we computed to be its
+      // WHNF value `evaled` for whatever it has currently. And we
+      // snowball from there.
+      //
+      // If `evaled` has a heap, for example, then ownership of it is
+      // transferred to `was_evaling`. Whatever `was_evaling` has
+      // is deleted, unless it is a small heap that can be reused
+      // by an immediate `evaled`.
+      have_evaled(stack[stack_top - i].was_evaling, dup(evaled));
+      evaled = shared(stack[stack_top - i].was_evaling);
+      stack[stack_top - i].was_evaling = NULL;
+    }
+    // Create a new apply node only if it will be transferred, otherwise
+    // it is just a leak/immediately dropped.
+    if (i < was_evaled) {
+      evaled = apply(evaled, stack[stack_top].to_eval);
+    } else {
+      break;
+    }
+  }
+}
+
+// Perform a reduction according to whatever the head combinator is.
+//
+// `Ix = x`
+// `Kxy = x`
+// `Sxyz = 00xz0yz = ((xz)(yz))`
+PLEASE_INLINABLE
+static bool reduction_rule(word crumbs) {
+  assert(stack_top < SZ);
+
+  const u8 crumb = crumbs >> (word_size - 2);
+  assert(crumb > 0);
+  assert(crumb <= 3);
+
+  // This is the procedure to pop an item from the stack: if the stack is
+  // empty, we try to refill it from the input buffer, and if we cannot, then
+  // we have to return. If it succeeded, we save it to the given variable.
+  #define POP_OR(lvalue, stmt) BLOCK( \
+    if (!stack_top && !refill()) { \
+      stmt; __builtin_trap(); \
+    }; \
+    lvalue = stack[--stack_top].to_eval; \
+    assert(stack[stack_top].was_evaling == NULL); \
+    goodop(stack[stack_top].to_eval); \
+  )
+  // Now we handle the particular opcodes: I=1, K=2, S=3
+  if (crumb == 1) {
+    // Check that there is an argument available; otherwise, we need to restore
+    // the head operand back to the stack
+    if (!stack_top && !refill()) { stack_top += 1; return false; }
+
+    // Just drop this identity node `op`, good riddance
+    // (Morally we pop the argument and push it back onto the stack.)
+    work++;
+    return true;
+  } else if (crumb == 2) {
+    // Get two arguments
+    operand x, y;
+    POP_OR(x, { stack_top += 1; return false; });
+    // TODO: tell `refill()` that it does not need to actually copy this operand?
+    POP_OR(y, { stack_top += 2; return false; });
+
+    // Drop `y` and put `x` back onto the stack: `Kxy = x`
+    drop(y);
+    stack[stack_top++] = FRAME(x);
+    assert(stack_top < SZ);
+    work++;
+    return true;
+  } else if (crumb == 3) {
+    // Get three arguments
+    operand x, y, z;
+    POP_OR(x, { stack_top += 1; return false; });
+    POP_OR(y, { stack_top += 2; return false; });
+    POP_OR(z, { stack_top += 3; return false; });
+
+    // `Sxyz = 00xz0yz = ((xz)(yz))`
+    // Increase the ref count on `z`
+    z = dup(z);
+    // Put `x`, `z`, and the synthetic `(yz)` on the stack
+    operand yz = apply(y, z);
+    stack[stack_top++] = FRAME(yz);
+    stack[stack_top++] = FRAME(z);
+    stack[stack_top++] = FRAME(x);
+    assert(stack_top < SZ);
+    work++;
+    // Evaluation will continue with `x` on the next `step()`!
+    return true;
+  }
+  __builtin_unreachable();
 }
 
 // Evaluate one operand at the top of the stack. If it is a known combinator
@@ -609,10 +859,10 @@ bool refill() {
 // ends up being underapplied and thus we are in WHNF). If not, it is an
 // application node that we have to unpack onto the stack and recurse into the
 // function side to continue evaluating on the next `step();`
-bool step_(bool whnf) {
+bool step() {
   if (!stack_top && !refill()) return false; // all done
 
-  int initial_stack = stack_top;
+  assert(stack_top < SZ);
 
   operand op = stack[--stack_top].to_eval;
   assert(stack[stack_top].was_evaling == NULL);
@@ -642,208 +892,52 @@ bool step_(bool whnf) {
     }
   }
 
-  if (op.immediate) {
-    const u8 crumb = op.crumbs >> (word_size - 2);
+  PLEASE_INLINE_FOLLOWING_STATEMENT
+  // Walk down the tree of synth nodes until we end up at a heap or immediate
+  op = unpack_synth_onto_stack(op);
 
-    // First take care of thunks that are still shared, which are now at least
-    // in WHNF (weak head normal form: an underapplied S, K, or I).
-    if (crumb) {
-      assert(crumb <= 3);
-      // Scan the stack to see how many we need to save, up to one less than
-      // the arity of this node (since we are evaling it applied to the arity)
-      u8 was_evaled = 0;
-      for (u8 i=1; i <= stack_top && i < crumb; i++) {
-        if (stack[stack_top - i].was_evaling != NULL) {
-          // If ref_count was zero, it should have been freed and `was_evaling`
-          // removed from the stack
-          assert(stack[stack_top - i].was_evaling->ref_count > 0);
-          was_evaled = i;
-        }
-      }
-      if (was_evaled) {
-        operand evaled = op;
-        // Now we walk it and build up the WHNF term as we go
-        for (u8 i=1; i <= was_evaled; i++) {
-          if (stack[stack_top - i].was_evaling != NULL) {
-            // Shared, so we want to swap out what we computed to be its
-            // WHNF value `evaled` for whatever it has currently. And we
-            // snowball from there.
-            //
-            // If `evaled` has a heap, for example, then ownership of it is
-            // transferred to `was_evaling`. Whatever `was_evaling` has
-            // is deleted, unless it is a small heap that can be reused
-            // by an immediate `evaled`.
-            have_evaled(stack[stack_top - i].was_evaling, dup(evaled));
-            evaled = shared(stack[stack_top - i].was_evaling);
-            stack[stack_top - i].was_evaling = NULL;
-          }
-          // Create a new apply node only if it will be transferred, otherwise
-          // it is just a leak/immediately dropped.
-          if (i < was_evaled) {
-            evaled = apply(evaled, stack[stack_top].to_eval);
-          } else {
-            break;
-          }
-        }
-      }
-    }
+  assert(stack_top < SZ);
 
-    // This is the procedure to pop an item from the stack: if the stack is
-    // empty, we try to refill it from the input buffer, and if we cannot, then
-    // we have to return. If it succeeded, we save it to the given variable.
-    #define POP_OR(lvalue, stmt) BLOCK( \
-      if (!stack_top && (whnf || !refill())) { \
-        stmt; __builtin_trap(); \
-      }; \
-      lvalue = stack[--stack_top].to_eval; \
-      assert(stack[stack_top].was_evaling == NULL); \
-      goodop(stack[stack_top].to_eval); \
-    )
-    // Now we handle the particular opcodes: I=1, K=2, S=3
-    if (crumb == 1) {
-      // Check that there is an argument available; otherwise, we need to restore
-      // the head operand back to the stack
-      if (!stack_top && !refill()) { stack_top += 1; assert(stack_top == initial_stack); return false; }
+  assert(op.immediate || op.shared->on_heap);
+  if (op.immediate)
+    stack[stack_top].to_eval = op;
 
-      // Just drop this identity node, good riddance
-      // (Morally we pop the argument and push it back onto the stack.)
-      work++;
-      return true;
-    } else if (crumb == 2) {
-      // Get two arguments
-      operand x, y;
-      POP_OR(x, { stack_top += 1; assert(stack_top == initial_stack); return false; });
-      // TODO: tell `refill()` that it does not need to actually copy this operand?
-      POP_OR(y, { stack_top += 2; assert(stack_top == initial_stack); return false; });
+  PLEASE_INLINE_FOLLOWING_STATEMENT
+  // Unpack applications from a crumbstring, leaving the combinator at the head
+  op = unpack_crumbstring_onto_stack(op);
 
-      // Drop `y` and put `x` back onto the stack: `Kxy = x`
-      drop(y);
-      stack[stack_top++] = FRAME(x);
-      work++;
-      return true;
-    } else if (crumb == 3) {
-      // Get three arguments
-      operand x, y, z;
-      POP_OR(x, { stack_top += 1; assert(stack_top == initial_stack); return false; });
-      POP_OR(y, { stack_top += 2; assert(stack_top == initial_stack); return false; });
-      POP_OR(z, { stack_top += 3; assert(stack_top == initial_stack); return false; });
+  // What is left should be a bare combinator
+  assert(op.immediate);
+  const u8 crumb = op.crumbs >> (word_size - 2);
+  assert(crumb > 0);
+  assert(crumb <= 3);
 
-      // `Sxyz = 00xz0yz = ((xz)(yz))`
-      // Increase the ref count on `z`
-      z = dup(z);
-      // Put `x`, `z`, and the synthetic `(yz)` on the stack
-      operand yz = apply(y, z);
-      stack[stack_top++] = FRAME(yz);
-      stack[stack_top++] = FRAME(z);
-      stack[stack_top++] = FRAME(x);
-      work++;
-      // Evaluation will continue with `x` on the next `step()`!
-      return true;
-    }
-    // Fall through to the next case (`if (op.shared->on_heap)`)
-    op = shared(as_tmp(op));
-  }
-  assert(!op.immediate);
-  // If we get here, it should be an application node, either packed on the heap
-  // or as synthetic applications.
+  PLEASE_INLINE_FOLLOWING_STATEMENT
+  // The first `0 .. crumb-1` applications are now evaluated to WHNF, so their
+  // evaluations on the stack need to be handled
+  whnf_on_stack(op.crumbs);
 
-  // A synthetic application
-  if (!op.shared->on_heap) {
-    // We might as well walk the spine of synthetic applications here in a tight
-    // loop, instead of waiting for the next `step();`
-    operand spine = op;
-    goodop(op);
-    // #pragma unfold(2)
-    while (!spine.immediate && !spine.shared->on_heap) {
-      shared_operand* this = spine.shared;
-      if (stack_top && this->ref_count > 1) {
-        stack_was_evaling(stack_top, spine.shared);
-      }
-      // Now we add it onto the stack
-      stack[stack_top++] = FRAME(soft_dup(this->synth->arg));
-      // And proceed down the spine
-      spine = this->synth->fun;
-    }
-    // Finally, whatever we ended up with is at the top of the stack.
-    stack[stack_top++] = FRAME(soft_dup(spine));
-    // And free the spine (all the arguments were dup'ed, so are safe)
-    drop(op);
-    return true;
-  }
-
-  // Otherwise we have some applications waiting to unpack from a crumbstring
-  if (op.shared->on_heap) {
-    // Cache the amount of bytes
-    const int bytes = sizeof(word) * op.shared->heap->length;
-    // Here is the crumbstring
-    word* crumbstring = op.shared->heap->crumbstring;
-    // Start at the first crumb
-    ptrbit i = (ptrbit) {};
-
-    // Count the leading zero crumbs
-    {
-      // Whole words
-      while (i.ptr < bytes && word_of(crumbstring, i) == 0) {
-        i.ptr += sizeof(word);
-      }
-      // Remaining crumbs
-      i.bit = clz(word_of(crumbstring, i)) & ~1;
-    }
-    goodptrbit(i);
-
-    // This is now our arity
-    const word arity = ptrbit2crumbs(i);
-
-    // I guess it cannot be too large to fit on the stack
-    assert(arity == (int)arity);
-    assert(arity + stack_top < sizeof(stack) / sizeof(struct stack_frame));
-    // Also must be nonzero
-    assert(arity);
-
-    // Increase stack_top already, and then we will walk back and fill in the
-    // arguments on the stack.
-    stack_top += arity + 1;
-    for (int stacked = 1; stacked <= arity + 1; stacked++) {
-      goodptrbit(i);
-      const ptrbit last = i;
-      // Scan ahead one item
-      i = scan1(crumbstring, last, (ptrbit) { .ptr = bytes, .bit = 0 });
-      goodptrbit(i);
-      const int crumblen = ptrbit2crumbs(i) - ptrbit2crumbs(last);
-      assert(crumblen);
-      if (crumblen < word_crumbs && i.ptr == last.ptr) {
-        stack[stack_top - stacked] = FRAME(direct(word_of(crumbstring, last) << last.bit));
-      } else {
-        // Copy it into its own heap
-        shared_operand* sh = alloc_shared_heap(1 + ROUNDUPDIV(crumblen, word_crumbs));
-        word words = 1 + (i.ptr - last.ptr) / sizeof(word);
-        copy_from_unaligned(sh->heap->crumbstring, from_ptr(crumbstring, last), last.bit, words);
-        // And plop it on the stack
-        stack[stack_top - stacked] = FRAME(shared(sh));
-        goodop(shared(sh));
-      }
-    }
-    drop(op);
-    return true;
-  }
-  return false;
+  PLEASE_INLINE_FOLLOWING_STATEMENT
+  // Finally we apply the reduction indicated by the combinator, I=1, K=2, S=3
+  return reduction_rule(op.crumbs);
 }
 
-operand whnf_op(operand op) {
-  goodop(op);
-  if (!fuel) return op;
-  if (!redexes(0, op.crumbs)) {
-    return op;
+// Read a term from the stack, with an assertion that it is in Weak Head Normal
+// Form (if fuel is nonzero). This means that the head term (at the top of the
+// stack) is a single combinator, and the total stack size is less than or equal
+// to its value.
+PLEASE_INLINABLE
+operand read_whnf_from_stack() {
+  assert(stack_top);
+
+  operand op = stack[--stack_top].to_eval;
+  if (fuel) {
+    // WHNF
+    assert(op.immediate);
+    u8 arity = op.crumbs >> (word_size - 2);
+    assert(arity);
+    assert(stack_top < arity);
   }
-  assert(stack_top == 0);
-  stack[stack_top++] = FRAME(op);
-
-  while (fuel && step_(true)) {
-    fuel--;
-  };
-
-  op = stack[--stack_top].to_eval;
-  if (fuel) assert(op.immediate && (op.crumbs >> (word_size - 2)));
   assert(stack[stack_top].was_evaling == NULL);
   stack[stack_top].was_evaling = NULL;
   while (stack_top) {
@@ -852,19 +946,43 @@ operand whnf_op(operand op) {
     op = synthetic_apply(op, stack[stack_top].to_eval);
     stack[stack_top].was_evaling = NULL;
   }
+  assert(stack_top == 0);
   goodop(op);
   return op;
 }
 
-operand whnf2nf_op(operand op) {
+// Evaluate an operand to Weak Head Normal Form by running it on the stack
+// until the step returns no reductions (or fuel runs out). This takes over the
+// stack so it must be called with an empty stack. (An alternate option would
+// be to save a stack pointer as a new underflow point.)
+__attribute__((always_inline))
+operand whnf_op(operand op) {
   goodop(op);
-  if (!fuel || op.immediate || op.shared->on_heap) return op;
+  if (!fuel) return op;
+  if (!could_be_reducible(op)) {
+    return op;
+  }
+  assert(stack_top == 0);
+  stack[stack_top++] = FRAME(op);
+  assert(stack_top < SZ);
 
-  op.shared->synth->fun = whnf2nf_op(op.shared->synth->fun);
-  op.shared->synth->arg = whnf2nf_op(whnf_op(op.shared->synth->arg));
-  // FIXME
-  // return apply(op.shared->synth->fun, op.shared->synth->arg);
-  return op;
+  while (fuel && step()) {
+    fuel--;
+  };
+
+  PLEASE_INLINE_FOLLOWING_STATEMENT
+  return read_whnf_from_stack();
+}
+
+// Convert a Weak Head Normal Form term to Normal Form, by recursively
+// normalizing the arguments too.
+void whnf2nf_op(operand op) {
+  goodop(op);
+  if (!fuel || op.immediate || op.shared->on_heap) return;
+
+  whnf2nf_op(op.shared->synth->fun);
+  op.shared->synth->arg = whnf_op(op.shared->synth->arg);
+  whnf2nf_op(op.shared->synth->arg); // tail call
 }
 
 // Write out an operand into the output buffer. This is an important operation
@@ -877,7 +995,6 @@ void write_out(operand op) {
     copy_to_unaligned(from_ptr(output_words, output_at), &op.crumbs, output_at.bit, 1, false);
     output_at = ptrbit_incr_bits(output_at, len);
   } else if (op.shared->on_heap) {
-    assert(op.shared->heap->length < 2000);
     const word len = bitlength(op.shared->heap->crumbstring, op.shared->heap->length);
     copy_to_unaligned(from_ptr(output_words, output_at), op.shared->heap->crumbstring, output_at.bit, op.shared->heap->length, false);
     assert(word_of(output_words, output_at) != 0);
@@ -889,16 +1006,18 @@ void write_out(operand op) {
     // (we may have written other bits to the word already, from hapless copying)
     word_of(output_words, output_at) &= mask_hi(output_at.bit);
     output_at = ptrbit_incr_bits(output_at, 2);
-    // Write each operand
-    write_out(op.shared->synth->fun);
-    write_out(op.shared->synth->arg);
-    assert(op.shared->ref_count);
-    if (!--op.shared->ref_count) {
-      free(op.shared->synth);
-      free(op.shared);
-    }
+    // Write each operand (while negating the effect of `write_out` dropping it)
+    write_out(soft_dup(op.shared->synth->fun));
+    operand arg = soft_dup(op.shared->synth->arg);
+    drop(op);
+    write_out(arg); // tail call
   }
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Main API surface: single-shot, streaming, and CLI entrypoint               //
+////////////////////////////////////////////////////////////////////////////////
 
 // The full evaluation process: read `input_crumbs` out of `input_words`,
 // evaluate it (using the stack for all intermediaries), and write out the
@@ -910,33 +1029,95 @@ word eval(word input_crumbs) {
   stop_at = crumbs2ptrbit(input_crumbs);
   output_at = (ptrbit){};
 
-  refill();
+  stack_top = 0;
+  if (!refill()) return 0;
   assert(stack_top);
-  while (fuel && step_(false)) {
+
+  while (fuel && step()) {
     fuel--;
+    assert(stack_top < SZ);
   };
 
-  assert(stack_top);
-
-  operand op = stack[--stack_top].to_eval;
-  if (fuel) assert(op.immediate && (op.crumbs >> (word_size - 2)));
-  assert(stack[stack_top].was_evaling == NULL);
-  stack[stack_top].was_evaling = NULL;
-  while (stack_top) {
-    --stack_top;
-    if (stack[stack_top].was_evaling) have_evaled(stack[stack_top].was_evaling, op);
-    op = synthetic_apply(op, stack[stack_top].to_eval);
-    stack[stack_top].was_evaling = NULL;
-  }
-  assert(stack_top == 0);
-  goodop(op);
-  op = whnf2nf_op(op);
+  operand op = read_whnf_from_stack();
+  whnf2nf_op(op);
+  output_at = (ptrbit){};
   write_out(op);
 
   return ptrbit2crumbs(output_at);
 }
 
-#ifdef CLI
+word eval1word(word crumbs) {
+  assert(reachesZero(1, crumbs));
+
+  input_at = (ptrbit) {};
+  stop_at = input_at;
+  output_at = (ptrbit){};
+  stack_top = 1;
+  stack[0] = FRAME(direct(crumbs));
+
+  while (fuel && step()) {
+    fuel--;
+    assert(stack_top < SZ);
+  };
+
+  operand op = read_whnf_from_stack();
+  whnf2nf_op(op);
+  output_at = (ptrbit){};
+  write_out(op);
+  assert(ptrbit2crumbs(output_at) <= word_crumbs);
+  return output_words[0];
+}
+
+// Set up the streaming interface, read `input_crumbs` out of `input_words` and
+// place it on the stack, but performing no evaluation.
+bool setup(word input_crumbs) {
+  if (!input_crumbs) return false;
+  input_at = (ptrbit) {};
+  stop_at = crumbs2ptrbit(input_crumbs);
+  output_at = (ptrbit) {};
+
+  stack_top = 0;
+  if (!refill()) return false;
+  assert(stack_top);
+
+  return true;
+}
+
+// Resume evaluation, resetting the fuel. Returns true if it is finished
+// (may be off by one).
+bool resume(word drip_fuel) {
+  assert(drip_fuel);
+  fuel = drip_fuel;
+  while (fuel && step()) {
+    fuel--;
+    assert(stack_top < SZ);
+  };
+
+  if (!fuel) return false;
+
+  operand op = read_whnf_from_stack();
+  whnf2nf_op(op);
+  assert(stack_top == 0);
+  // Place it back on the stack to remember it for the next `resume()`
+  stack[0] = FRAME(op);
+  stack_top = 1;
+
+  return fuel != 0;
+}
+
+// Write out the current value of the stack.
+word finalize() {
+  if (!stack_top) return 0;
+
+  output_at = (ptrbit) {};
+  operand op = read_whnf_from_stack();
+  write_out(op);
+
+  return ptrbit2crumbs(output_at);
+}
+
+
+// #ifdef CLI
 // #else
 int main (int argc, char *argv[]) {
   if (argc <= 1) return 2;
@@ -975,4 +1156,4 @@ int main (int argc, char *argv[]) {
 
   return 0;
 }
-#endif
+// #endif

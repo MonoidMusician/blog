@@ -1,4 +1,30 @@
 const fs = require('node:fs');
+const {
+  assert,
+  asserteq,
+  u64,
+  repeat,
+  roundUp,
+  perform,
+  Perform,
+  performed1,
+} = require('./base.js');
+const {
+  q2b,
+  b2q,
+  prettyCrumbs,
+  reachesZero_impl,
+  deltaExpecting_impl,
+  combinators,
+  isatomic,
+  sugar,
+  factorialfn,
+  factorial,
+  factorial_calc,
+  toNat,
+  toCombinators,
+  eval_impl,
+} = require('./combinators.js');
 
 const THIS = __filename.replace('.node.js', '');
 const wasmBuffer = fs.readFileSync(THIS+'.wasm');
@@ -8,35 +34,6 @@ var defaults = {
   "fuel": 10000,
 };
 
-const assert = (c, msg='Assertion failed',...info) => {
-  if (!c) {
-    if (info.length) console.error(msg, ...info);
-    throw new Error(msg, ...info);
-  }
-};
-const asserteq = (l, r, msg='Were not equal', ...info) => {
-  assert(l === r, msg, l, r, ...info);
-};
-
-const u64 = (value) => ((value + (1n<<64n)) % (1n<<64n));
-
-// Convert quaternary to binary
-const q2b = i => {
-  const digit = x => {const v = parseInt(x, 4); return isFinite(v) ? v : '`IKS'.indexOf(x)};
-  return Array.from(i, x => digit(x).toString(2).padStart(2, 0)).join("");
-};
-// Binary to quaternary
-const b2q = i => {
-  return i.padStart(roundUp(i.length, 2), 0).replace(/[01][01]/g, q => parseInt(q, 2).toString(4));
-};
-// Separate every 64 bits with `_`, 32 bits with `…`, and 16 bits with `.`
-const prettyCrumbs = i => {
-  let place = 0;
-  const markers = ".…._.…";
-  return i.replace(/[0123]{8}(?!$)/g, m => m+markers[place++%markers.length]);
-};
-// Round `l` up to the next multiple of `amt`
-const roundUp = (l, amt=64) => l + (amt - l%amt)%amt;
 
 
 const getOutput = (startOrLen=undefined, len=undefined) => {
@@ -58,48 +55,16 @@ function assertOutput(crumbs) {
 }
 
 
-// Helper to repeat characters
-const repeat = (n, fill="0") => [...Array(n)].map((_,i) => typeof fill === 'function' ? fill(i) : fill).join("");
 // Random quaternary word of the day
 const randomWord = [...Array(32)].map(_ => Math.max(0,Math.floor(6*Math.random() - 2))).join("");
 const balanced = "00200033000210000331132000323102";
 
 
-let tests = 0;
-
-// Test the performance of a function
-const perform = (label, f, ...args) => {
-  tests = 0;
-  const start = performance.now();
-  const r = f(...args);
-  const end = performance.now();
-  if (true) console.debug(`${label}: ${(end - start).toFixed(2)}ms x${tests}`);
-  return r;
-};
-// Test the performance of an object of functions, passing the
-// same arguments to each.
-const Perform = (obj, ...args) => {
-  const r = {};
-  for (const k in obj) r[k] = perform(k, obj[k], ...args);
-  return r;
-};
-
 function reachesZero(expected, input) {
   return ex.reachesZero(BigInt(expected), BigInt("0b"+q2b(input).padEnd(64, 0)));
 }
-function reachesZero_impl(expected, input) {
-  expected = Number(expected);
-  let i = 0;
-  for (const c of input) if (!(i++, expected += 2*!+c - 1)) return (2*i);
-  return 0;
-}
 function deltaExpecting(input) {
   return ex.deltaExpecting(BigInt("0b"+q2b(input).padEnd(64, 0)));
-}
-function deltaExpecting_impl(input) {
-  let expected = 0;
-  for (const c of input) expected += 2*!+c - 1;
-  return expected;
 }
 function redexes(leading, input) {
   if (input === undefined) {input=leading;leading=0}
@@ -136,7 +101,7 @@ const testIO = ({ input: i, output: o, inputs: extra, test: func }) => {
   }
   // Run the test function
   const r = func();
-  tests++;
+  performed1();
   // Assert the output string (if set)
   if (o != undefined) {
     assertOutput(o);
@@ -150,166 +115,6 @@ const testIO = ({ input: i, output: o, inputs: extra, test: func }) => {
 
 
 
-const combinators = {
-  "S": "3", "K": "2", "I": "1", "P": "0",
-  "*":     "((S(KS))K)", // B
-  "+":     "((S(KS))(S(K((S(KS))K))))", // S(KS)D
-  "ι":     "((((S(K((S((S(K((S(KS))K)))S))(KK))))((S(K(S((SK)K))))K))S)K)",
-  "Θ":     "((((SS)K)((S(K((SS)(S((SS)K)))))K)(S((SK)K))))",
-  "W**":   "(S(K(S(K((S(K(S((S(K((S((SK)K))((SK)K))))((S(K((S(KS))K)))((S(K(S((SK)K))))K))))))K)))))",
-  "C**":   "(S(K(S(K((S((S(K((S(KS))K)))S))(KK))))))",
-  "R**":   "(S(K((S(K((S((S(K((S(KS))K)))S))(KK))))(S(K((S((S(K((S(KS))K)))S))(KK)))))))",
-  "F**":   "(S(K((S(K(S(K((S((S(K((S(KS))K)))S))(KK))))))((S(K((S((S(K((S(KS))K)))S))(KK))))(S(K((S((S(K((S(KS))K)))S))(KK))))))))",
-  "V**":   "(S(K((S(K((S((S(K((S(KS))K)))S))(KK))))((S(K(S(K((S((S(K((S(KS))K)))S))(KK))))))((S(K((S((S(K((S(KS))K)))S))(KK))))(S(K((S((S(K((S(KS))K)))S))(KK)))))))))",
-  "I*":    "(S(SK))",
-  "W*":    "(S(K((S(K(S((S(K((S((SK)K))((SK)K))))((S(K((S(KS))K)))((S(K(S((SK)K))))K))))))K)))",
-  "C*":    "(S(K((S((S(K((S(KS))K)))S))(KK))))",
-  "R*":    "((S(K((S((S(K((S(KS))K)))S))(KK))))(S(K((S((S(K((S(KS))K)))S))(KK)))))",
-  "F*":    "((S(K(S(K((S((S(K((S(KS))K)))S))(KK))))))((S(K((S((S(K((S(KS))K)))S))(KK))))(S(K((S((S(K((S(KS))K)))S))(KK))))))",
-  "V*":    "((S(K((S((S(K((S(KS))K)))S))(KK))))((S(K(S(K((S((S(K((S(KS))K)))S))(KK))))))((S(K((S((S(K((S(KS))K)))S))(KK))))(S(K((S((S(K((S(KS))K)))S))(KK)))))))",
-  "Ê":     "((S(K((S(K((S(KS))K)))((S(KS))K))))(S(K((S(K((S(KS))K)))((S(KS))K)))))",
-  "B1":    "((S(K((S(KS))K)))((S(KS))K))",
-  "B2":    "((S(K((S(K((S(KS))K)))((S(KS))K))))((S(KS))K))",
-  "B3":    "((S(K((S(K((S(KS))K)))((S(KS))K))))((S(KS))K))",
-  "D1":    "(S(K(S(K((S(KS))K)))))",
-  "D2":    "((S(K((S(KS))K)))(S(K((S(KS))K))))",
-  "M2":    "(S(K((S((SK)K))((SK)K))))",
-  "Q1":    "((S(K((S((S(K((S(KS))K)))S))(KK))))((S(KS))K))",
-  "Q2":    "((S(K(S((S(K((S((S(K((S(KS))K)))S))(KK))))((S(KS))K)))))K)",
-  "Q3":    "(S(K((S(K(S((SK)K))))K)))",
-  "Q4":    "((S(K((S((S(K((S(KS))K)))S))(KK))))((S(K(S((S(K((S((S(K((S(KS))K)))S))(KK))))((S(KS))K)))))K))",
-  "W1":    "((S(K(S((S(K(S((S(K((S((SK)K))((SK)K))))((S(K((S(KS))K)))((S(K(S((SK)K))))K))))))K))))K)",
-  "B":     "((S(KS))K)",
-  "C":     "((S((S(K((S(KS))K)))S))(KK))",
-  "D":     "(S(K((S(KS))K)))",
-  "E":     "(S(K((S(K((S(KS))K)))((S(KS))K))))",
-  "F":     "((S(K((S((SK)K))(K((S(K(S((SK)K))))K)))))((S(K((S(K((S(KS))K)))((S(KS))K))))((S(K(S((SK)K))))K)))",
-  "G":     "((S(K((S(KS))K)))((S((S(K((S(KS))K)))S))(KK)))",
-  "H":     "((S(K((S(K(S((S(K((S((SK)K))((SK)K))))((S(K((S(KS))K)))((S(K(S((SK)K))))K))))))K)))(S(K((S((S(K((S(KS))K)))S))(KK)))))",
-  "I":     "((SK)K)",
-  "J":     "((S(K(S(K((S((S(K((S(KS))K)))S))(KK))))))((S((S(K((S((SK)K))((SK)K))))((S(K((S(KS))K)))((S(K(S((SK)K))))K))))(K((S(K((S((S(K((S(KS))K)))S))(KK))))(S(K((S(K((S(KS))K)))((S(KS))K))))))))",
-  "L":     "((S((S(KS))K))(K((S((SK)K))((SK)K))))",
-  "M":     "((S((SK)K))((SK)K))",
-  "O":     "(S((SK)K))",
-  "Q":     "((S(K(S((S(KS))K))))K)",
-  "R":     "((S(K((S(KS))K)))((S(K(S((SK)K))))K))",
-  "T":     "((S(K(S((SK)K))))K)",
-  "U":     "((S(K(S((SK)K))))((S((SK)K))((SK)K)))",
-  "V":     "((S(K((S((S(K((S(KS))K)))S))(KK))))((S(K(S((SK)K))))K))",
-  "ω":     "((S(K(S((S(K((S((SK)K))((SK)K))))((S(K((S(KS))K)))((S(K(S((SK)K))))K))))))K)",
-  "Y":     "(((SS)K)((S(K((SS)(S((SS)K)))))K)",
-}
-for (const k in combinators) {
-  if (k === "P") continue;
-  combinators[k] = combinators[k]
-    .replaceAll('(', '0')
-    .replaceAll('I', '1')
-    .replaceAll('K', '2')
-    .replaceAll('S', '3')
-    .replaceAll(')', '');
-  assert(deltaExpecting_impl(combinators[k]) === -1, k, deltaExpecting_impl(combinators[k]));
-  assert(reachesZero_impl(1, combinators[k]) === combinators[k].length*2, k, reachesZero_impl(1, combinators[k]));
-}
-function isatomic(s) {
-  return reachesZero_impl(1, s) === (s.length * 2);
-}
-
-function sugar(more) {
-  if (typeof more !== 'object' && more != undefined) return sugar({})(more);
-  const vars = {...combinators};
-  for (const k in more||{}) {
-    vars[k] = sugar(undefined)(more[k]);
-    assert(isatomic(vars[k]), k + ' was not atomic', more[k], vars[k]);
-  }
-  return s => {
-    if (typeof s === 'number') s = '#'+s;
-    s = s.replaceAll(/#[0-9]+/g, x => repeat(Number(x.substring(1)), '00SB')+'0SK');
-    for (const k in vars) {
-      s = s.replaceAll(k, vars[k]);
-    }
-    return s.replaceAll(/\(| |\)/g, '');
-  };
-}
-
-// https://crypto.stanford.edu/~blynn/lambda/sk.html
-const factorialfn = 'PPPSPKPPSPPSKKPPSKKPPSPKPPSSPKPPSPPSKKPPSKKKPPSPKPPSPKPSPPSPPSPPSPPSKKPKPKPSKPKKPSKPSPPSPKSKPPSPKPPSSPKPPSPKPPSPKPSPKPPSSPKPSKPSPKPPSPKPPSSPKKKPPSPKPPSSPKPPSPKPPSPKPSPKPPSPKPSPPSKKKPSPPSKKKKK';
-const factorial = n => 'P' + factorialfn + '#' + n;
-const factorial_calc = n => {let r=1; while(n) r*=n--; return r;};
-
-
-function toCombinators(crumbs, pedantic=true) {
-  crumbs = sugar(crumbs);
-  assert(isatomic(crumbs), "Needs to be atomic to convert to combinators", crumbs, reachesZero_impl(1, crumbs), crumbs.length);
-  let i = 0; let r = '';
-  let take1 = () => {
-    let l = reachesZero_impl(1, crumbs.substring(i))/2;
-    assert(l, "Overran", crumbs.substring(i));
-    return [l, toCombinators(crumbs.substring(i, i+l), pedantic)];
-  };
-  if (crumbs[i] === '0') {
-    i++;
-    let [j,f] = take1();
-    i+=j;
-    let [k,x] = take1();
-    i+=k;
-    r = `(${f}${x})`;
-  } else {
-    r = ({
-      '1': 'I',
-      '2': 'K',
-      '3': 'S',
-    })[crumbs[i]];
-    assert(r, "Unknown crumb", crumbs[i]);
-    i++;
-  }
-  assert(i === crumbs.length, "Stopped at correct point", i, crumbs.length);
-  return r;
-}
-
-function slowest_impl(crumbs, fuel=1000, strategy=undefined) {
-  if (strategy === undefined) strategy = 0;
-  crumbs = String(sugar(crumbs));
-  let take1 = (i) => {
-    let l = reachesZero_impl(1, crumbs.substring(i))/2;
-    return crumbs.substring(i, i+l);
-  };
-  let reverted = 0;
-  while (fuel--) {
-    var I = crumbs.indexOf('01', reverted);
-    var K = crumbs.indexOf('002', reverted);
-    var S = crumbs.indexOf('0003', reverted);
-    if (I + K + S === -3) break;
-    reverted = 0;
-    if (I > -1 && (K === -1 || I < K) && (S === -1 || I < S)) {
-      let x = take1(I + 2);
-      if (x) {
-        crumbs = crumbs.substring(0, I) + x + crumbs.substring(I + 2 + x.length);
-      } else {
-        reverted = I+2;
-      }
-    } else if (K > -1 && (S === -1 || K < S)) {
-      let x = take1(K + 3);
-      let y = take1(K + 3 + x.length);
-      if (x && y) {
-        crumbs = crumbs.substring(0, K) + x + crumbs.substring(K + 3 + x.length + y.length);
-      } else {
-        reverted = K+3;
-      }
-    } else {
-      let x = take1(S + 4);
-      let y = take1(S + 4 + x.length);
-      let z = take1(S + 4 + x.length + y.length);
-      if (x && y && z) {
-        crumbs = crumbs.substring(0, S) + '00' + x + z + '0' + y + z + crumbs.substring(S + 4 + x.length + y.length + z.length);
-      } else {
-        reverted = S+4;
-      }
-    }
-  }
-  return crumbs;
-}
-
-
 function test_eval() {
   function testcase(input, output, fuel=100, debug=false) {
     fuel += 2;
@@ -318,7 +123,7 @@ function test_eval() {
     let o, r;
     input = sugar(input);
     output = sugar(output);
-    let by_impl = slowest_impl(input, fuel);
+    let by_impl = eval_impl(input, fuel);
     if (output !== by_impl) {
       console.error('Discrepancy', {input,output,by_impl,fuel});
     }
@@ -336,6 +141,7 @@ function test_eval() {
       });
     } catch(e) {
       if (o !== undefined) {
+        console.error(getOutput(Number(o)));
         console.error(o+':', prettyCrumbs(getOutput(Number(o))));
         console.error('vs'.padEnd((o+':').length, ' '), prettyCrumbs(output));
       }
@@ -362,7 +168,7 @@ function test_eval() {
   {
     try {
       testcase("00231", "3", 100);
-      // testcase("0100231", "00231", 1);
+      testcase("0100231", "3", 2);
       testcase("3", "3", 1);
       testcase("033", "033", 1);
       // testcase("0100231", "00231", 1);
@@ -371,87 +177,17 @@ function test_eval() {
       testcase("0100231", "3", 4);
       testcase("0100231", "3", 30);
       testcase('000022330030232', '3', 25);
-      // testcase('03000022330030232', '033', 25);
-      // testcase('0030030232000022330030232', '00300302323', 25);
+      testcase('03000022330030232', '033', 25);
+      testcase('0030030232000022330030232', '00300302323', 25);
       // reductions("000302113", "000213013", "01013", "013", "3");
       // testcase('010000030030200302323022330030232', '0000030030200302323022330030232', 1);
-      // testcase('010000030030200302323022330030232', '00300302323', 25);
+      testcase('010000030030200302323022330030232', '00300302323', 25);
     } catch(e) {
       console.error("Locals", {});
       throw e;
     }
   }
-  tinyFactorial:{
-    // break tinyFactorial;
-    // input = sugar(factorial(1));
-    // console.log(isatomic(input));
-    // output = problem;//sugar(1);
-    // testIO({
-    //   input,
-    //   output,
-    //   inputs: {fuel: 197}, // 198: memory access OOB with 16*1024 *and* 1024
-    //   test: () => {
-    //     o = ex.slowest(BigInt(input.length));
-    //     console.log('max_output', new Uint32Array(ex.memory.buffer, ex.max_output, 1)[0]);
-    //     console.log(o+':', getOutput(Number(o)));
-    //   },
-    // });
 
-    // input = sugar(factorial(1));
-    // output = sugar(1);
-    // (() => testIO({
-    //   input,
-    //   output,
-    //   inputs: {fuel: 428},
-    //   test: () => {
-    //     o = ex.slowest(BigInt(input.length));
-    //     console.log('max_output', new Uint32Array(ex.memory.buffer, ex.max_output, 1)[0]);
-    //     console.log(o+':', getOutput(Number(o)));
-    //   },
-    // }))();
-
-    // input = sugar(`PP${factorial(1)}21`);
-    // output = `021`;
-    // (() => testIO({
-    //   input,
-    //   output,
-    //   inputs: {fuel: 120},
-    //   test: () => {
-    //     o = ex.slowest(BigInt(input.length));
-    //     console.log('max_output', new Uint32Array(ex.memory.buffer, ex.max_output, 1)[0]);
-    //     console.log(o+':', getOutput(Number(o)));
-    //   },
-    // }))();
-  }
-  // smallFactorial:{
-  //   break smallFactorial;
-  //   input = sugar(factorial(2));
-  //   output = sugar(2);
-  //   testIO({
-  //     input,
-  //     output,
-  //     inputs: {fuel: 197}, // 198: memory access OOB with 16*1024 *and* 1024
-  //     test: () => o = ex.slowest(BigInt(input.length)),
-  //   });
-  // }
-  // factorialTest:{
-  //   break factorialTest;
-  //   //ex.input.grow(5000)
-  //   //ex.output.grow(5000)
-  //   console.log(ex.input);
-  //   input = sugar(factorial(4));
-  //   output = sugar(repeat(24, '00SB')+'0SK');
-  //   testIO({
-  //     input,
-  //     output,
-  //     inputs: {fuel: 1000, fuel_copy: 3000, fuel_scan: 3000},
-  //     test: () => o = ex.slowest(BigInt(input.length)),
-  //     outputs: {
-  //       optr: 8 * (output.length>>5),
-  //       obit: (2*output.length) % 64,
-  //     },
-  //   });
-  // }
   for (const m of ["3"])
   for (const n of ["3", "2", "032"])
   for (const o of ["3", "2", "1", "032", "021", "B"])
@@ -523,7 +259,7 @@ function test_factorial(fixed_x=undefined) {
     let o, r;
     input = sugar(input);
     output = sugar(output);
-    // let by_impl = slowest_impl(input, fuel);
+    // let by_impl = eval_impl(input, fuel);
     // if (output !== by_impl) {
     //   console.error('Discrepancy', {input,output,by_impl,fuel});
     // }
@@ -541,6 +277,7 @@ function test_factorial(fixed_x=undefined) {
       });
     } catch(e) {
       if (o !== undefined) {
+        console.error(getOutput(Number(o)));
         console.error(o+':', prettyCrumbs(getOutput(Number(o))));
         console.error('vs'.padEnd((o+':').length, ' '), prettyCrumbs(output));
       }
@@ -548,6 +285,7 @@ function test_factorial(fixed_x=undefined) {
     }
     return r;
   }
+
 
   for (const x of fixed_x !== undefined ? [fixed_x] : [0, 1, 2, 3])
   for (const [fx, succs] of [[sugar(factorial(x)), repeat(factorial_calc(x), '0n')]])
@@ -562,12 +300,31 @@ function test_factorial(fixed_x=undefined) {
         let [lhs, rhs] = mno(s).split("=");
         testcase(lhs, rhs, fuel, debug);
       };
-      t(`00${fx}no = ${succs}o`, [1000,1000,10000,10000,100000,1000000,10000000,100000000][x])
-      // if (x === 6) console.error(mno(`00${fx}no = ${succs}o`));
+      t(`00${fx}no = ${succs}o`, [1000,1000,10000,10000,100000,1000000,10000000,100000000,1000000000][x])
+      // if (x === 8) console.error(mno(`00${fx}no = ${succs}o`));
       // Only do one test of x=6
-      if (x === 6) return;
+      if (x >= 6) return;
     } catch(e) {
       console.error("Locals", {test,desugared,x,n,o});
+      throw e;
+    }
+  }
+
+  for (const x of fixed_x !== undefined ? [fixed_x] : [0, 1, 2, 3])
+  if (x <= 6)
+  {
+    let test, desugared;
+    try {
+      const mno = sugar({});
+      const t = (s, fuel=30, debug=false) => {
+        test = s; desugared = mno(s);
+        let [lhs, rhs] = mno(s).split("=");
+        testcase(lhs, rhs, fuel, debug);
+      };
+      // console.error(x, sugar(`${toNat(factorial(x))} = ${sugar(+factorial_calc(x))}`));
+      t(`${toNat(factorial(x))} = ${sugar(+factorial_calc(x))}`, 123248203829023423n)
+    } catch(e) {
+      console.error("Locals", {test,desugared,x});
       throw e;
     }
   }
@@ -677,8 +434,17 @@ WebAssembly.instantiate(wasmBuffer, {
   asserteq(reachesZero(1, "032"), 6);
   asserteq(reachesZero(1, "00132"),10);
 
+  {
+    const upstream = '000000302003003220032200302003302003003220032220030200302030030030030032202020320220320300302320030200330200302003020302003302032030200302003302220030200330200302003020302003020300322203003222220030030232003003023200300302320030030232032030030232032';
+    const problem = '003003023200300302320030030232003003023200300302320030030232003003023200300302320030030232003003003000300302320030030232003003020000300302320030030232003003023200300302320030030232003003023200300302320030030232003003023200300302320030030232032';
+    // const solution = eval_impl(problem, 80);
+    // console.log(solution === problem, solution);
+    // console.log(eval_impl(upstream, 1000040));
+    // return;
+  }
+
   Perform({test_eval});
-  console.log('max_output:', new Uint32Array(ex.memory.buffer, ex.max_output, 1)[0]);
+  // console.log('max_output:', new Uint32Array(ex.memory.buffer, ex.max_output, 1)[0]);
   Perform({
     test_factorial0: () => test_factorial(0),
     test_factorial1: () => test_factorial(1),
@@ -687,10 +453,10 @@ WebAssembly.instantiate(wasmBuffer, {
     test_factorial4: () => test_factorial(4),
     test_factorial5: () => test_factorial(5),
     test_factorial6: () => test_factorial(6),
-    // test_factorial7: () => test_factorial(7),
-    // test_factorial8: () => test_factorial(8),
+    test_factorial7: () => test_factorial(7),
+    test_factorial8: () => test_factorial(8),
   });
 
   // console.log(sugar()('#1'));
-  console.log('max_output:', new Uint32Array(ex.memory.buffer, ex.max_output, 1)[0]);
+  // console.log('max_output:', new Uint32Array(ex.memory.buffer, ex.max_output, 1)[0]);
 });
