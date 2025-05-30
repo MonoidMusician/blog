@@ -117,8 +117,6 @@ const testIO = ({ input: i, output: o, inputs: extra, test: func }) => {
 
 function test_eval() {
   function testcase(input, output, fuel=100, debug=false) {
-    fuel += 2;
-    fuel *= 2;
     debugging && console.log();
     let o, r;
     input = sugar(input);
@@ -167,11 +165,11 @@ function test_eval() {
 
   {
     try {
-      testcase("00231", "3", 100);
+      testcase("00231", "3", 1);
       testcase("0100231", "3", 2);
       testcase("3", "3", 1);
       testcase("033", "033", 1);
-      // testcase("0100231", "00231", 1);
+      testcase("0100231", "00231", 1);
       testcase("00231", "3", 2);
       testcase("3", "3", 2);
       testcase("0100231", "3", 4);
@@ -179,8 +177,9 @@ function test_eval() {
       testcase('000022330030232', '3', 25);
       testcase('03000022330030232', '033', 25);
       testcase('0030030232000022330030232', '00300302323', 25);
-      // reductions("000302113", "000213013", "01013", "013", "3");
-      // testcase('010000030030200302323022330030232', '0000030030200302323022330030232', 1);
+      reductions("000302113", "000213013", "01013", "013", "3");
+      testcase('010000030030200302323022330030232', '0000030030200302323022330030232', 1);
+      testcase('00210000030030200302323022330030232', '1', 1);
       testcase('010000030030200302323022330030232', '00300302323', 25);
     } catch(e) {
       console.error("Locals", {});
@@ -433,15 +432,6 @@ WebAssembly.instantiate(wasmBuffer, {
   asserteq(reachesZero(1, "32"), 2);
   asserteq(reachesZero(1, "032"), 6);
   asserteq(reachesZero(1, "00132"),10);
-
-  {
-    const upstream = '000000302003003220032200302003302003003220032220030200302030030030030032202020320220320300302320030200330200302003020302003302032030200302003302220030200330200302003020302003020300322203003222220030030232003003023200300302320030030232032030030232032';
-    const problem = '003003023200300302320030030232003003023200300302320030030232003003023200300302320030030232003003003000300302320030030232003003020000300302320030030232003003023200300302320030030232003003023200300302320030030232003003023200300302320030030232032';
-    // const solution = eval_impl(problem, 80);
-    // console.log(solution === problem, solution);
-    // console.log(eval_impl(upstream, 1000040));
-    // return;
-  }
 
   Perform({test_eval});
   // console.log('max_output:', new Uint32Array(ex.memory.buffer, ex.max_output, 1)[0]);

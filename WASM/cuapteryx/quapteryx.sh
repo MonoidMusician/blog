@@ -30,14 +30,15 @@ set -euo pipefail
     # https://aransentin.github.io/cwasm/ ?
     declare -a OPTIONS
     OPTIONS=(
-      "-O3"
-      "-flto"
-      "-nostdlib"
-      "-mmultivalue" "-Xclang" "-target-abi" "-Xclang" "experimental-mv"
-      "-mbulk-memory"
+      "-O3" # optimize!
+      "-g" # debug symbols
+      "-flto" # link time optimizations
+      "-nostdlib" # no standard library, just WASM builtins
       "-Wl,--no-entry"
       "-Wl,--lto-O3"
-      "-g"
+      # specify some WASM things
+      "-mmultivalue" "-Xclang" "-target-abi" "-Xclang" "experimental-mv"
+      "-mbulk-memory"
       # "-Wl,-z,stack-size=0"
       # "-Wl,--initial-heap=0"
       # "-Wl,--extra-features=mutable-globals" # does nothing
@@ -58,7 +59,20 @@ set -euo pipefail
       "walloc.c" \
       "$THIS.c"
 
-    clang "$THIS.c" -o "$THIS.native" -O3 -g3 -DCLI -Wno-unknown-attributes -Wno-int-to-void-pointer-cast
+    NATIVE_OPTIONS=(
+      -O3 # optimize!
+      -g3 # debug symbols
+      # --coverage
+      -DCLI
+      -Wno-unknown-attributes
+      -Wno-int-to-void-pointer-cast
+    )
+
+    # if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    #   NATIVE_OPTIONS+=( -pg )
+    # fi
+
+    clang "${NATIVE_OPTIONS[@]}" "$THIS.c" -o "$THIS.native"
 
     # Convert binary to text representation
     # (prefer S-exprs, inline exports)

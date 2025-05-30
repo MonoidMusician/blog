@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define BLOCK(stmt) { do{ stmt } while(0); }
@@ -13,7 +14,7 @@ typedef int32_t s32;
 typedef int8_t s8;
 
 typedef u64 word;
-typedef u32 ptr; // memory64?
+typedef size_t ptr; // memory64?
 
 // -mmultivalue -Xclang -target-abi -Xclang experimental-mv
 typedef struct { u64 x; u64 y; } u64u64;
@@ -30,10 +31,32 @@ static const u64 word_max = ~((word)0);
 static const u64 mask_even = word_max - 1;
 static const u64 lower = word_max / 0b11;
 static const u64 upper = 0b10 * lower;
+static const u64 word_bytes = word_max / 0b11111111;
 
 #define popcnt __builtin_popcountll
 #define clz __builtin_clzll
 #define ctz __builtin_ctzll
+
+
+// Divide, rounding up
+#define ROUNDUPDIV(num, denom) ((num + (denom - 1)) / denom)
+
+// Mask of the specified high bits
+word mask_hi(u8 hi_bits) {
+  return ~(word_max >> hi_bits);
+}
+// Mask of the specified low bits
+word mask_lo(u8 lo_bits) {
+  return ~(word_max << lo_bits);
+}
+// Concatenate the high `hi_bits` of `hi` and the high `lo_bits` of `lo` into
+// the high bits of a word (i.e. all left-aligned).
+__attribute__((always_inline))
+word word_cat(u8 hi_bits, word hi, u8 lo_bits, word lo) {
+  assert(hi_bits + lo_bits <= word_size);
+  return (hi & mask_hi(hi_bits)) | ((lo & mask_hi(lo_bits)) >> hi_bits);
+}
+
 
 // Coalesce each nonzero crumb (pair of bits) into its lower bit.
 __attribute__((export_name("nonzeros"), always_inline))
@@ -118,18 +141,55 @@ s8 deltaExpecting(word crumbs) {
   return 2 * popcnt(nonzeros(crumbs)) - word_crumbs;
 }
 
-// pure attribute make it worse??
-__attribute__((export_name("reachesZero")))
+s8 deltaExpecting_part(word crumbs, u8 bits) {
+  return 2 * popcnt(mask_hi(bits) & nonzeros(crumbs)) - bits/2;
+}
+
+// u8 reachesZero_aux(word expecting, word _nonzeros, u8 start, u8 end) {}
+
+// pure attribute makes it worse??
+__attribute__((export_name("reachesZero"), always_inline))
 u8 reachesZero(word expecting, word crumbs) {
+  // if (expecting == 1 && (crumbs >> (word_size - 2)) != 0)
+  //   return 2;
+
   word _nonzeros = nonzeros(crumbs);
 
-  // Never hit in practice, apparently
-  // if (expecting + clz(_nonzeros)/2 > popcnt(_nonzeros))
-  //   return 0;
+  // if (word_size == 64) {
+  //   // Never hit in practice, apparently
+  //   if (expecting + clz(_nonzeros)/2 > popcnt(_nonzeros))
+  //     return 0;
+  //   assert(expecting <= word_crumbs);
 
+  //   word replicated = ((u8) expecting) * word_bytes;
+
+  //   word acc2bits = _nonzeros; // u2x32
+  //   word acc4bits = ((acc2bits >> 2) + acc2bits) & (word_max / 0b1111); // u4x16
+  //   word acc8bits = ((acc4bits >> 4) + acc4bits) & (word_max / 0b11111111); // u8x8
+  //   // ^ number of bits set, per byte
+  //   // delta expecting, per byte:
+  //   word deltas = (acc8bits);
+  // }
+
+  // u8 startat = 2 * (expecting + clz(_nonzeros)/2);
+  // u8 bit = word_size - startat;
+  // expecting -= deltaExpecting_part(crumbs, startat - 2);
   u8 bit = word_size - 2;
-  // #pragma nounroll
-  while (expecting += (0b1 & (_nonzeros >> bit) ? -1 : 1)) {
+  while (expecting += (0b11 & (crumbs >> bit) ? -1 : 1)) {
+    if (!bit) return 0;
+    bit -= 2;
+  }
+  return word_size - bit;
+}
+
+__attribute__((always_inline))
+u8 reachesZero1(word crumbs) {
+  if ((crumbs >> (word_size - 2)) != 0)
+    return 2;
+
+  u8 expecting = 2;
+  u8 bit = word_size - 4;
+  while (expecting += (0b11 & (crumbs >> bit) ? -1 : 1)) {
     if (!bit) return 0;
     bit -= 2;
   }
