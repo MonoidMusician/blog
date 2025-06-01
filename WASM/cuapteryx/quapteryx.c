@@ -106,24 +106,25 @@ word bitlength(const word* crumbstring, word known_words) {
 ////////////////////////////////////////////////////////////////////////////////
 
 // An operand is either shared (heap or synthetic), or an inline word (immediate).
-typedef struct operand {
-  union {
-    struct shared_operand* shared;
-    word crumbs;
-  };
-  bool immediate;
+// This is determined by the last bit: since an operand is always an odd number
+// of crumbs, it is unused in the immediate operand so we can set it to `1` in
+// `crumbs`, and memory is always aligned, so it is set to `0` in the `shared`
+// pointer. Interestingly this seems to speed up WASM more than native x86_64.
+typedef union operand {
+  struct shared_operand* shared;
+  word crumbs;
 } operand;
 
 // A shared operand is ref-counted and used for sharing work from lazy evaluation.
 // The pointer it stores is updated after it is evaluated, and `work` increased.
 typedef struct shared_operand {
-  int ref_count;
-  word work;
   union {
     struct synthetic_operand* synth;
     struct heap_operand* heap;
   };
   bool on_heap;
+  int ref_count;
+  word work;
   // These bound indices of weakrefs `was_evaling` on the stack, so they can
   // be zeroed out when this `shared_operand` is freed. If they are already
   // zeroed out or otherwise replaced, this is fine!
@@ -154,19 +155,24 @@ typedef struct synthetic_operand {
 
 operand nullop = {};
 bool isnullop(operand op) {
-  return op.immediate == nullop.immediate && op.crumbs == nullop.crumbs;
+  return op.crumbs == nullop.crumbs;
+}
+bool isimmediate(operand op) {
+  return op.crumbs & 0b1;
 }
 operand direct(word crumbs) {
   assert(crumbs != 0);
   assert(reachesZero1(crumbs));
+  assert(reachesZero1(crumbs) < 64);
   // Clear out the irrelevant crumbs (optional, slower)
   // (Seems to impact WASM more than x86_64, for whatever reason)
   // crumbs &= mask_hi(reachesZero1(crumbs));
-  return (operand) { .immediate = true, .crumbs = crumbs };
+  return (operand) { .crumbs = crumbs | 0b1 };
 }
 operand shared(shared_operand* shared) {
   assert(shared != 0);
-  return (operand) { .immediate = false, .shared = shared };
+  assert(((size_t)shared & 0b1) == 0);
+  return (operand) { .shared = shared };
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -219,7 +225,7 @@ heap_operand heap_tmp2 = { .length = 1, .crumbstring = {0} };
 shared_operand shared_tmp = { .ref_count = ~1, .work = 0, .on_heap = true, .heap = &heap_tmp1 };
 
 heap_operand* as_tmp1(operand l) {
-  if (l.immediate) {
+  if (isimmediate(l)) {
     heap_tmp1.crumbstring[0] = l.crumbs;
     return &heap_tmp1;
   }
@@ -227,7 +233,7 @@ heap_operand* as_tmp1(operand l) {
   return l.shared->heap;
 }
 heap_operand* as_tmp2(operand r) {
-  if (r.immediate) {
+  if (isimmediate(r)) {
     heap_tmp2.crumbstring[0] = r.crumbs;
     return &heap_tmp2;
   }
@@ -248,7 +254,7 @@ shared_operand* as_tmp(operand term) {
 
 void goodop(operand op) {
   assert(!isnullop(op));
-  if (op.immediate) {
+  if (isimmediate(op)) {
     assert(reachesZero1(op.crumbs));
   } else {
     assert(op.shared != NULL);
@@ -300,13 +306,13 @@ void drop_shared(shared_operand* shared) {
       free(shared);
     } else {
       shared->work = (word)shared->heap;
-      if (!shared->synth->fun.immediate) {
+      if (!isimmediate(shared->synth->fun)) {
         drop_shared(shared->synth->fun.shared);
       }
       operand arg = shared->synth->arg;
       free(shared->synth);
       free(shared);
-      if (!arg.immediate) {
+      if (!isimmediate(arg)) {
         drop_shared(arg.shared); // tail call
       }
     }
@@ -316,7 +322,7 @@ void drop_shared(shared_operand* shared) {
 // Drop a reference if it is a shared operand. Immediate operands are not
 // ref counted.
 bool drop(operand op) {
-  if (op.immediate) return false;
+  if (isimmediate(op)) return false;
   if (op.shared->ref_count > 1) {
     op.shared->ref_count--;
     return false;
@@ -352,7 +358,7 @@ operand have_evaled(shared_operand* was_evaling, const operand evaled) {
   if (was_evaling == NULL) return evaled;
   goodop(shared(was_evaling));
 
-  if (evaled.immediate) {
+  if (isimmediate(evaled)) {
     if (was_evaling->on_heap) {
       // Might as well reuse small buffers, but reallocate large ones
       if (was_evaling->heap->length > 64) {
@@ -399,7 +405,7 @@ operand have_evaled(shared_operand* was_evaling, const operand evaled) {
 // Increase the ref count. If the node is immediate, it will copy it to not
 // lose work...
 operand dup(operand term) {
-  if (term.immediate) {
+  if (isimmediate(term)) {
     // An irreducible direct operand is safe to be duplicated
     if (!nontrivial_redexes(term.crumbs))
       return term;
@@ -415,7 +421,7 @@ operand dup(operand term) {
   return term;
 }
 operand soft_dup(operand term) {
-  if (term.immediate) {
+  if (isimmediate(term)) {
     return term;
   }
   // If it is already shared, we just need to increment the `ref_count`
@@ -466,7 +472,7 @@ operand apply(const operand fun, const operand arg) {
   goodop(fun); goodop(arg);
   // If we have two direct operands, we can just merge them, if they are small
   // enough.
-  if (fun.immediate && arg.immediate && !nontrivial_redexes(fun.crumbs) && !nontrivial_redexes(arg.crumbs)) {
+  if (isimmediate(fun) && isimmediate(arg) && !nontrivial_redexes(fun.crumbs) && !nontrivial_redexes(arg.crumbs)) {
     u8 fun_len = reachesZero1(fun.crumbs);
     u8 arg_len = reachesZero1(arg.crumbs);
     if (2 + fun_len + arg_len <= word_size) {
@@ -476,9 +482,9 @@ operand apply(const operand fun, const operand arg) {
   // If we have two nodes that are not otherwise shared, we can delete them
   // and merge them.
   if (
-    (fun.immediate || (fun.shared->on_heap && fun.shared->ref_count == 1 && fun.shared->heap->length < 16))
+    (isimmediate(fun) || (fun.shared->on_heap && fun.shared->ref_count == 1 && fun.shared->heap->length < 16))
     &&
-    (arg.immediate || (arg.shared->on_heap && arg.shared->ref_count == 1 && arg.shared->heap->length < 16))
+    (isimmediate(arg) || (arg.shared->on_heap && arg.shared->ref_count == 1 && arg.shared->heap->length < 16))
   ) {
     operand result = shared(ap_heap_cat(as_tmp1(fun), as_tmp2(arg)));
     // free the shared nodes
@@ -509,7 +515,7 @@ bool heap_reducible(heap_operand* heap) {
 }
 
 bool could_be_reducible(operand op) {
-  if (op.immediate) {
+  if (isimmediate(op)) {
     return !!redexes(0, op.crumbs);
   } else if (op.shared->on_heap) {
     return heap_reducible(op.shared->heap);
@@ -670,7 +676,7 @@ static operand unpack_synth_onto_stack(const operand op) {
   operand spine = op;
   goodop(op);
   // #pragma unfold(2)
-  while (!spine.immediate && !spine.shared->on_heap) {
+  while (!isimmediate(spine) && !spine.shared->on_heap) {
     shared_operand* this = spine.shared;
     if (stack_top > stack_endstop && this->ref_count > 1) {
       stack_was_evaling(stack_top - 1, this); // FIXME?
@@ -694,12 +700,12 @@ static operand unpack_synth_onto_stack(const operand op) {
 // reduction.
 PLEASE_INLINABLE
 static operand unpack_crumbstring_onto_stack(operand op) {
-  if (op.immediate) {
+  if (isimmediate(op)) {
     if (op.crumbs >> (word_size - 2))
       return op;
     op = shared(as_tmp(op));
   }
-  assert(!op.immediate && op.shared->on_heap);
+  assert(!isimmediate(op) && op.shared->on_heap);
 
   // Cache the number of bytes
   const word bytes = sizeof(word) * op.shared->heap->length;
@@ -882,7 +888,7 @@ bool step(void) {
   goodop(op);
 
   // Do some setup for shared nodes
-  if (!op.immediate) {
+  if (!isimmediate(op)) {
     // If it is `S`, `K`, or `I` that ended up on the heap for some reason
     // (e.g. because it was shared at one point), unpack it.
     if (
@@ -911,7 +917,7 @@ bool step(void) {
 
   assert(stack_top < SZ);
 
-  assert(op.immediate || op.shared->on_heap);
+  assert(isimmediate(op) || op.shared->on_heap);
   stack[stack_top].to_eval = op;
 
   PLEASE_INLINE_FOLLOWING_STATEMENT
@@ -919,7 +925,7 @@ bool step(void) {
   op = unpack_crumbstring_onto_stack(op);
 
   // What is left should be a bare combinator
-  assert(op.immediate);
+  assert(isimmediate(op));
   const u8 crumb = op.crumbs >> (word_size - 2);
   assert(crumb > 0);
   assert(crumb <= 3);
@@ -945,7 +951,7 @@ operand read_whnf_from_stack(void) {
   operand op = stack[--stack_top].to_eval;
   if (fuel) {
     // WHNF
-    assert(op.immediate);
+    assert(isimmediate(op));
     u8 arity = op.crumbs >> (word_size - 2);
     assert(arity);
     assert(stack_top < stack_endstop + arity);
@@ -994,7 +1000,7 @@ operand whnf_op(operand op) {
 // normalizing the arguments too.
 void whnf2nf_op(operand op) {
   goodop(op);
-  if (!fuel || op.immediate || op.shared->on_heap) return;
+  if (!fuel || isimmediate(op) || op.shared->on_heap) return;
 
   whnf2nf_op(op.shared->synth->fun);
   op.shared->synth->arg = whnf_op(op.shared->synth->arg);
@@ -1006,7 +1012,7 @@ void whnf2nf_op(operand op) {
 void write_out(operand op) {
   goodop(op);
   goodptrbit(output_at);
-  if (op.immediate) {
+  if (isimmediate(op)) {
     const u8 len = reachesZero1(op.crumbs);
     copy_to_unaligned(from_ptr(output_words, output_at), &op.crumbs, output_at.bit, 1, false);
     output_at = ptrbit_incr_bits(output_at, len);

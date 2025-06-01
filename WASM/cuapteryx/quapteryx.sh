@@ -39,6 +39,9 @@ set -euo pipefail
       # specify some WASM things
       "-mmultivalue" "-Xclang" "-target-abi" "-Xclang" "experimental-mv"
       "-mbulk-memory"
+      # "-msimd128" # does not seem to help noticeably?
+
+      # "-mmutable-globals" # does nothing
       # "-Wl,-z,stack-size=0"
       # "-Wl,--initial-heap=0"
       # "-Wl,--extra-features=mutable-globals" # does nothing
@@ -66,6 +69,9 @@ set -euo pipefail
       -DCLI
       -Wno-unknown-attributes
       -Wno-int-to-void-pointer-cast
+      # optimize for current processor
+      -mtune=native
+      # -march=native gives an instruction that valgrind cannot handle lol
     )
 
     # if [[ "$OSTYPE" == "linux-gnu"* ]]; then
