@@ -47,7 +47,7 @@ def robots_txt(*disallowed):
     )
 
 def uablock():
-    bot_re = "|".join(bad_bots+["customer"])
+    bot_re = "|".join(bad_bots+["customer","l9explore"])
     return includable("user-agent blocking",
         Directive("if",
             Token("($http_user_agent ~* "+Token.str(bot_re)+")"),
