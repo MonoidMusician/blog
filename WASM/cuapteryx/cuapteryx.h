@@ -25,13 +25,14 @@ typedef struct { u8 x; u8 y; } u8u8;
 typedef struct { ptr ptr; u8 bit; } ptrbit;
 
 // Constants
-static const u64 word_size = 8*sizeof(word);
-static const u64 word_crumbs = word_size/2;
-static const u64 word_max = ~((word)0);
-static const u64 mask_even = word_max - 1;
-static const u64 lower = word_max / 0b11;
-static const u64 upper = 0b10 * lower;
-static const u64 word_bytes = word_max / 0b11111111;
+static const u32 word_size = 8*sizeof(word);
+static const u32 word_crumbs = word_size/2;
+
+static const word word_max = ~((word)0);
+static const word mask_even = word_max - 1;
+static const word lower = word_max / 0b11;
+static const word upper = 0b10 * lower;
+static const word word_bytes = word_max / 0b11111111;
 
 #define popcnt __builtin_popcountll
 #define clz __builtin_clzll

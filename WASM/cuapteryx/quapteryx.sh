@@ -41,6 +41,8 @@ set -euo pipefail
       "-mbulk-memory"
       # "-msimd128" # does not seem to help noticeably?
 
+      "-DNDEBUG" # for walloc, mostly
+
       # "-mmutable-globals" # does nothing
       # "-Wl,-z,stack-size=0"
       # "-Wl,--initial-heap=0"
@@ -121,6 +123,7 @@ set -euo pipefail
     $CLANG \
       --target=wasm32 \
       -emit-llvm \
+      -O3 \
       -c \
       -S \
       "$THIS.c" || true
