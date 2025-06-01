@@ -119,10 +119,10 @@ typedef union operand {
 // The pointer it stores is updated after it is evaluated, and `work` increased.
 typedef struct shared_operand {
   union {
-    struct synthetic_operand* synth;
-    struct heap_operand* heap;
+    struct synthetic_operand* synth; // even pointer
+    struct heap_operand* heap1; // odd pointer
+    // (this optimization does not help much)
   };
-  bool on_heap;
   int ref_count;
   word work;
   // These bound indices of weakrefs `was_evaling` on the stack, so they can
@@ -175,6 +175,23 @@ operand shared(shared_operand* shared) {
   return (operand) { .shared = shared };
 }
 
+bool isheap(shared_operand* op) {
+  return (size_t)op->heap1 & 0b1;
+}
+heap_operand* getheap(shared_operand* op) {
+  return (heap_operand*) ((size_t)op->heap1 & ~0b1);
+}
+void setheap(shared_operand* op, heap_operand* heap) {
+  op->heap1 = (heap_operand*) ((size_t)heap | 0b1);
+  assert(isheap(op));
+}
+bool issharedheap(operand op) {
+  return !isimmediate(op) && isheap(op.shared);
+}
+heap_operand* getsharedheap(operand op) {
+  return getheap(op.shared);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Stack, for evaluation                                                      //
 ////////////////////////////////////////////////////////////////////////////////
@@ -222,29 +239,28 @@ word output_words[SZ];
 
 heap_operand heap_tmp1 = { .length = 1, .crumbstring = {0} };
 heap_operand heap_tmp2 = { .length = 1, .crumbstring = {0} };
-shared_operand shared_tmp = { .ref_count = ~1, .work = 0, .on_heap = true, .heap = &heap_tmp1 };
+shared_operand shared_tmp = { .ref_count = ~1, .work = 0 };
 
 heap_operand* as_tmp1(operand l) {
   if (isimmediate(l)) {
     heap_tmp1.crumbstring[0] = l.crumbs;
     return &heap_tmp1;
   }
-  assert(l.shared->on_heap);
-  return l.shared->heap;
+  assert(issharedheap(l));
+  return getsharedheap(l);
 }
 heap_operand* as_tmp2(operand r) {
   if (isimmediate(r)) {
     heap_tmp2.crumbstring[0] = r.crumbs;
     return &heap_tmp2;
   }
-  assert(r.shared->on_heap);
-  return r.shared->heap;
+  assert(issharedheap(r));
+  return getsharedheap(r);
 }
 shared_operand* as_tmp(operand term) {
   shared_tmp.ref_count = ~1; // never de-allocate it
   shared_tmp.work = 0; // reset
-  shared_tmp.on_heap = 1;
-  shared_tmp.heap = as_tmp1(term);
+  setheap(&shared_tmp, as_tmp1(term));
   return &shared_tmp;
 }
 
@@ -258,8 +274,8 @@ void goodop(operand op) {
     assert(reachesZero1(op.crumbs));
   } else {
     assert(op.shared != NULL);
-    if (op.shared->on_heap) {
-      assert(op.shared->heap->length > 0);
+    if (issharedheap(op)) {
+      assert(getsharedheap(op)->length > 0);
     } else {
       // goodop(op.shared->synth->arg);
       // goodop(op.shared->synth->fun);
@@ -280,8 +296,7 @@ shared_operand* alloc_shared_heap(const size_t wordlength) {
   assert(shared != NULL);
   shared->ref_count = 1;
   shared->work = 0;
-  shared->on_heap = true;
-  shared->heap = on_heap;
+  setheap(shared, on_heap);
   shared->weakref_stack_max = ~0;
   shared->weakref_stack_min = ~0;
   return shared;
@@ -300,12 +315,10 @@ void drop_shared(shared_operand* shared) {
         if (stack[i].was_evaling == shared) stack[i].was_evaling = NULL;
       }
     }
-    if (shared->on_heap) {
-      shared->work = (word)shared->heap;
-      free(shared->heap);
+    if (isheap(shared)) {
+      free(getheap(shared));
       free(shared);
     } else {
-      shared->work = (word)shared->heap;
       if (!isimmediate(shared->synth->fun)) {
         drop_shared(shared->synth->fun.shared);
       }
@@ -359,30 +372,29 @@ operand have_evaled(shared_operand* was_evaling, const operand evaled) {
   goodop(shared(was_evaling));
 
   if (isimmediate(evaled)) {
-    if (was_evaling->on_heap) {
+    if (isheap(was_evaling)) {
       // Might as well reuse small buffers, but reallocate large ones
-      if (was_evaling->heap->length > 64) {
-        free(was_evaling->heap);
-        was_evaling->heap = malloc(sizeof(heap_operand) + sizeof(word[1]));
-        assert(was_evaling->heap != NULL);
+      heap_operand* heap = getheap(was_evaling);
+      if (heap->length > 64) {
+        free(heap);
+        heap = malloc(sizeof(heap_operand) + sizeof(word[1]));
+        assert(heap != NULL);
       }
     } else {
       drop(was_evaling->synth->fun);
       drop(was_evaling->synth->arg);
       free(was_evaling->synth);
-      was_evaling->on_heap = true;
-      was_evaling->heap = malloc(sizeof(heap_operand) + sizeof(word[1]));
-      assert(was_evaling->heap != NULL);
+      setheap(was_evaling, malloc(sizeof(heap_operand) + sizeof(word[1])));
     }
-    was_evaling->heap->length = 1;
-    was_evaling->heap->crumbstring[0] = evaled.crumbs;
+    getheap(was_evaling)->length = 1;
+    getheap(was_evaling)->crumbstring[0] = evaled.crumbs;
   } else {
     // Will not actually happen but that is okay
     if (evaled.shared == was_evaling) return evaled;
 
     // Free the stale data (unevaluated/less evaluated value)
-    if (was_evaling->on_heap) {
-      free(was_evaling->heap);
+    if (isheap(was_evaling)) {
+      free(getheap(was_evaling));
     } else {
       drop(was_evaling->synth->fun);
       drop(was_evaling->synth->arg);
@@ -393,8 +405,8 @@ operand have_evaled(shared_operand* was_evaling, const operand evaled) {
     was_evaling->work += evaled.shared->work; // add the work (TODO?)
 
     // Transfer ownership from `evaled` to `was_evaling`
-    if ((was_evaling->on_heap = evaled.shared->on_heap)) {
-      was_evaling->heap = evaled.shared->heap;
+    if (isheap(evaled.shared)) {
+      setheap(was_evaling, getheap(evaled.shared));
     } else {
       was_evaling->synth = evaled.shared->synth;
     }
@@ -407,12 +419,12 @@ operand have_evaled(shared_operand* was_evaling, const operand evaled) {
 operand dup(operand term) {
   if (isimmediate(term)) {
     // An irreducible direct operand is safe to be duplicated
-    if (!nontrivial_redexes(term.crumbs))
+    if (!nontrivial_redexes(term.crumbs & ~0b11))
       return term;
     // Otherwise we need to make a shared operand
     shared_operand* sh = alloc_shared_heap(1);
-    sh->heap->crumbstring[0] = term.crumbs;
-    assert(bitlength(sh->heap->crumbstring, 0) <= word_size);
+    getheap(sh)->crumbstring[0] = term.crumbs;
+    assert(bitlength(getheap(sh)->crumbstring, 0) <= word_size);
     sh->ref_count = 2;
     return shared(sh);
   }
@@ -436,8 +448,8 @@ shared_operand* ap_heap_cat(heap_operand* l, heap_operand* r) {
   // FIXME: decrement length if overallocated?
   size_t wordlength = l->length + r->length;
   shared_operand* result = alloc_shared_heap(wordlength);
-  result->heap->length = wordlength;
-  word* out = result->heap->crumbstring;
+  getheap(result)->length = wordlength;
+  word* out = getheap(result)->crumbstring;
   copy_to_unaligned(out, l->crumbstring, 2, l->length, true);
   assert(l->crumbstring[0] >> 2 == out[0]);
   ptrbit reallength = ptrbitlength(l->crumbstring, l->length - 1);
@@ -453,13 +465,13 @@ shared_operand* ap_heap_cat(heap_operand* l, heap_operand* r) {
 operand synthetic_apply(const operand fun, const operand arg) {
   synthetic_operand* ap_node = malloc(sizeof(synthetic_operand));
   assert(ap_node != NULL);
+  assert(((size_t)ap_node & 0b1) == 0);
   ap_node->fun = fun;
   ap_node->arg = arg;
   shared_operand* sh = malloc(sizeof(shared_operand));
   assert(sh != NULL);
   sh->ref_count = 1;
   sh->work = 0;
-  sh->on_heap = false;
   sh->synth = ap_node;
   sh->weakref_stack_max = ~0;
   sh->weakref_stack_min = ~0;
@@ -472,7 +484,7 @@ operand apply(const operand fun, const operand arg) {
   goodop(fun); goodop(arg);
   // If we have two direct operands, we can just merge them, if they are small
   // enough.
-  if (isimmediate(fun) && isimmediate(arg) && !nontrivial_redexes(fun.crumbs) && !nontrivial_redexes(arg.crumbs)) {
+  if (isimmediate(fun) && isimmediate(arg) && !nontrivial_redexes(fun.crumbs & ~0b11) && !nontrivial_redexes(arg.crumbs & ~0b11)) {
     u8 fun_len = reachesZero1(fun.crumbs);
     u8 arg_len = reachesZero1(arg.crumbs);
     if (2 + fun_len + arg_len <= word_size) {
@@ -482,9 +494,9 @@ operand apply(const operand fun, const operand arg) {
   // If we have two nodes that are not otherwise shared, we can delete them
   // and merge them.
   if (
-    (isimmediate(fun) || (fun.shared->on_heap && fun.shared->ref_count == 1 && fun.shared->heap->length < 16))
+    (isimmediate(fun) || (issharedheap(fun) && fun.shared->ref_count == 1 && getsharedheap(fun)->length < 16))
     &&
-    (isimmediate(arg) || (arg.shared->on_heap && arg.shared->ref_count == 1 && arg.shared->heap->length < 16))
+    (isimmediate(arg) || (issharedheap(arg) && arg.shared->ref_count == 1 && getsharedheap(arg)->length < 16))
   ) {
     operand result = shared(ap_heap_cat(as_tmp1(fun), as_tmp2(arg)));
     // free the shared nodes
@@ -517,8 +529,8 @@ bool heap_reducible(heap_operand* heap) {
 bool could_be_reducible(operand op) {
   if (isimmediate(op)) {
     return !!redexes(0, op.crumbs);
-  } else if (op.shared->on_heap) {
-    return heap_reducible(op.shared->heap);
+  } else if (issharedheap(op)) {
+    return heap_reducible(getsharedheap(op));
   }
   // For synth nodes: just assume yes rather than recursing
   return true;
@@ -604,7 +616,7 @@ static struct ptrbitop scan1op(const word crumbstring[], ptrbit _input_at, const
     // Copy it into its own heap
     shared_operand* sh = alloc_shared_heap(1 + ROUNDUPDIV(crumblen, word_crumbs));
     const word words = 1 + (next.ptr - _input_at.ptr) / sizeof(word);
-    copy_from_unaligned(sh->heap->crumbstring, from_ptr(crumbstring, _input_at), _input_at.bit, words);
+    copy_from_unaligned(getheap(sh)->crumbstring, from_ptr(crumbstring, _input_at), _input_at.bit, words);
     // And plop it on the stack
     goodop(shared(sh));
     return (struct ptrbitop) { next, shared(sh) };
@@ -676,7 +688,7 @@ static operand unpack_synth_onto_stack(const operand op) {
   operand spine = op;
   goodop(op);
   // #pragma unfold(2)
-  while (!isimmediate(spine) && !spine.shared->on_heap) {
+  while (!isimmediate(spine) && !issharedheap(spine)) {
     shared_operand* this = spine.shared;
     if (stack_top > stack_endstop && this->ref_count > 1) {
       stack_was_evaling(stack_top - 1, this); // FIXME?
@@ -705,12 +717,13 @@ static operand unpack_crumbstring_onto_stack(operand op) {
       return op;
     op = shared(as_tmp(op));
   }
-  assert(!isimmediate(op) && op.shared->on_heap);
+  assert(!isimmediate(op) && issharedheap(op));
 
+  heap_operand* heap = getsharedheap(op);
   // Cache the number of bytes
-  const word bytes = sizeof(word) * op.shared->heap->length;
+  const word bytes = sizeof(word) * heap->length;
   // Here is the crumbstring
-  const word* crumbstring = op.shared->heap->crumbstring;
+  const word* crumbstring = heap->crumbstring;
   // Start at the first crumb
   ptrbit i = (ptrbit) {};
 
@@ -892,10 +905,10 @@ bool step(void) {
     // If it is `S`, `K`, or `I` that ended up on the heap for some reason
     // (e.g. because it was shared at one point), unpack it.
     if (
-      op.shared->on_heap &&
-        (op.shared->heap->crumbstring[0] >> (word_size - 2)) != 0
+      issharedheap(op) &&
+        (getsharedheap(op)->crumbstring[0] >> (word_size - 2)) != 0
     ) {
-      const word crumb = op.shared->heap->crumbstring[0];
+      const word crumb = getsharedheap(op)->crumbstring[0];
       drop(op);
       // We set it back on the stack in the case that we are out of input crumbs
       // and are thus in WHNF, so we revert the stack to its original size before
@@ -917,7 +930,7 @@ bool step(void) {
 
   assert(stack_top < SZ);
 
-  assert(isimmediate(op) || op.shared->on_heap);
+  assert(isimmediate(op) || issharedheap(op));
   stack[stack_top].to_eval = op;
 
   PLEASE_INLINE_FOLLOWING_STATEMENT
@@ -1000,7 +1013,7 @@ operand whnf_op(operand op) {
 // normalizing the arguments too.
 void whnf2nf_op(operand op) {
   goodop(op);
-  if (!fuel || isimmediate(op) || op.shared->on_heap) return;
+  if (!fuel || isimmediate(op) || issharedheap(op)) return;
 
   whnf2nf_op(op.shared->synth->fun);
   op.shared->synth->arg = whnf_op(op.shared->synth->arg);
@@ -1016,9 +1029,10 @@ void write_out(operand op) {
     const u8 len = reachesZero1(op.crumbs);
     copy_to_unaligned(from_ptr(output_words, output_at), &op.crumbs, output_at.bit, 1, false);
     output_at = ptrbit_incr_bits(output_at, len);
-  } else if (op.shared->on_heap) {
-    const word len = bitlength(op.shared->heap->crumbstring, op.shared->heap->length);
-    copy_to_unaligned(from_ptr(output_words, output_at), op.shared->heap->crumbstring, output_at.bit, op.shared->heap->length, false);
+  } else if (issharedheap(op)) {
+    heap_operand* heap = getsharedheap(op);
+    const word len = bitlength(heap->crumbstring, heap->length);
+    copy_to_unaligned(from_ptr(output_words, output_at), heap->crumbstring, output_at.bit, heap->length, false);
     assert(word_of(output_words, output_at) != 0);
     // assert(word_of(output_words, output_at) == op.shared->heap->crumbstring[0]);
     output_at = ptrbit_incr_bits(output_at, len);
