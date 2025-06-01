@@ -21,9 +21,9 @@ set -euo pipefail
     if [[ -f "$THIS.wat" ]]; then
       mv "$THIS.wat" "$THIS.wat.old"
     fi
-    if [[ -f "$THIS.trace.json" ]]; then
-      cp "$THIS.trace.json" "$THIS.trace.json.old"
-    fi
+    # if [[ -f "$THIS.trace.json" ]]; then
+    #   cp "$THIS.trace.json" "$THIS.trace.json.old"
+    # fi
     rm -f "$THIS.wasm" "$THIS.wat"
 
     # https://surma.dev/things/c-to-webassembly/
@@ -87,6 +87,7 @@ set -euo pipefail
     wasm2wat \
       --fold-exprs \
       --inline-exports \
+      --enable-memory64 \
       "$THIS.wasm" -o "$THIS.wat"
 
     # Calculate the diff
@@ -117,7 +118,7 @@ set -euo pipefail
     fi
 
     rm -f "$THIS.wasm.not.c"
-    if which wasm-decompile >/dev/null 2>/dev/null; then wasm-decompile "$THIS.wasm" > "$THIS.wasm.not.c" || true; fi
+    if which wasm-decompile >/dev/null 2>/dev/null; then wasm-decompile --enable-all "$THIS.wasm" > "$THIS.wasm.not.c" || true; fi
 
     # LLVM textual IR: "$THIS.ll"
     $CLANG \
@@ -132,7 +133,13 @@ set -euo pipefail
     if which wasmtime >/dev/null 2>/dev/null; then wasmtime compile -O opt-level=2 --emit-clif clif "$THIS.wasm" || true; fi
     rm -f clif/array_to_wasm_*.clif clif/wasm_to_array_trampoline_*.clif
 
-    node "$THIS.node.js" || EXITCODE=$?
+    NODE_OPTIONS=(
+      --experimental-wasm-memory64
+      --no-liftoff # disable Liftoff, the baseline compiler for WebAssembly
+      --wasm-opt
+      # --no-wasm-bounds-checks --no-wasm-stack-checks
+    )
+    node "${NODE_OPTIONS[@]}" "$THIS.node.js" || EXITCODE=$?
     # while ! node --inspect-brk "$THIS.node.js"; do
     #   read -p "Restart?"
     # done

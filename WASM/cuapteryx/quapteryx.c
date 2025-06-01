@@ -192,6 +192,18 @@ heap_operand* getsharedheap(operand op) {
   return getheap(op.shared);
 }
 
+bool match_crumbs(const word match_low, const u8 crumblen, const operand op) {
+  if (!isimmediate(op) && !issharedheap(op)) return false;
+  const u8 len = crumblen * 2;
+  const word mask = mask_hi(len);
+  const word crumbs = isimmediate(op) ? op.crumbs : getsharedheap(op)->crumbstring[0];
+  return (mask & crumbs) == (match_low << (word_size - len));
+}
+
+bool isI(const operand op) {return match_crumbs(0x1, 1, op);}
+bool isK(const operand op) {return match_crumbs(0x2, 1, op);}
+bool isS(const operand op) {return match_crumbs(0x3, 1, op);}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Stack, for evaluation                                                      //
 ////////////////////////////////////////////////////////////////////////////////
@@ -292,6 +304,7 @@ shared_operand* alloc_shared_heap(const size_t wordlength) {
   heap_operand* on_heap = malloc(sizeof(heap_operand) + sizeof(word[wordlength]));
   assert(on_heap != NULL);
   on_heap->length = wordlength;
+  on_heap->crumbstring[wordlength-1] = 0; // FIXME?
   shared_operand* shared = malloc(sizeof(shared_operand));
   assert(shared != NULL);
   shared->ref_count = 1;
@@ -335,7 +348,7 @@ void drop_shared(shared_operand* shared) {
 // Drop a reference if it is a shared operand. Immediate operands are not
 // ref counted.
 bool drop(operand op) {
-  if (isimmediate(op)) return false;
+  if (isnullop(op) || isimmediate(op)) return false;
   if (op.shared->ref_count > 1) {
     op.shared->ref_count--;
     return false;
@@ -432,6 +445,8 @@ operand dup(operand term) {
   term.shared->ref_count++;
   return term;
 }
+// Soft dup just increases the ref count (of alreayd shared operands), it does
+// not try to share immediate operands if they are reducible.
 operand soft_dup(operand term) {
   if (isimmediate(term)) {
     return term;
@@ -439,6 +454,42 @@ operand soft_dup(operand term) {
   // If it is already shared, we just need to increment the `ref_count`
   term.shared->ref_count++;
   return term;
+}
+
+operand fast_unconstant(const operand op) {
+  if (isimmediate(op)) {
+    // Match `02x` -> `x`
+    if (match_crumbs(0x2, 2, op)) {
+      // Shift by 4 bits to isolate `x`
+      return direct(op.crumbs << 4);
+    }
+  } else if (issharedheap(op)) {
+    if (match_crumbs(0x2, 2, op)) {
+      heap_operand* heap = getsharedheap(op);
+      // Do not try hard to generate a new heap
+      if (heap->length == 1) {
+        return direct(heap->crumbstring[0] << 4);
+      }
+      if (op.shared->ref_count == 1) {
+        // Seems to only help native x86_64 not WASM
+        u8 lastBits = 0;
+        for (int i = heap->length; i-- > 0; ) {
+          u8 save = heap->crumbstring[i] >> (word_size - 4);
+          heap->crumbstring[i] = (heap->crumbstring[i] << 4) | lastBits;
+          lastBits = save;
+        }
+        assert(lastBits = 0x2);
+        return op;
+      }
+    }
+  } else {
+    if (isK(op.shared->synth->fun)) {
+      const operand arg = soft_dup(op.shared->synth->arg);
+      drop(op);
+      return arg;
+    }
+  }
+  return nullop;
 }
 
 // Concatenate two heap operands into a new shared operand of the two applied.
@@ -482,6 +533,11 @@ operand synthetic_apply(const operand fun, const operand arg) {
 // representation we guessed is best.
 operand apply(const operand fun, const operand arg) {
   goodop(fun); goodop(arg);
+  if (isI(fun)) {
+    extern u64 work; // shh
+    work++;
+    return arg;
+  }
   // If we have two direct operands, we can just merge them, if they are small
   // enough.
   if (isimmediate(fun) && isimmediate(arg) && !nontrivial_redexes(fun.crumbs & ~0b11) && !nontrivial_redexes(arg.crumbs & ~0b11)) {
@@ -563,7 +619,7 @@ ptrbit _scan1(const word crumbstring[], ptrbit _input_at, const ptrbit _stop_at)
     assert(ptrbit2crumbs(_input_at) <= ptrbit2crumbs(_stop_at));
     goodptrbit(_input_at);
     // Fill the leading bits with ones (first loop iteration only)
-    word crumbs = word_of(crumbstring, _input_at) | ~(word_max >> _input_at.bit);
+    word crumbs = word_of(crumbstring, _input_at) | mask_hi(_input_at.bit);
     if ((_input_at.bit = reachesZero(exp, crumbs))) {
       _input_at.ptr += sizeof(word) * (_input_at.bit / word_size);
       _input_at.bit %= word_size;
@@ -573,6 +629,7 @@ ptrbit _scan1(const word crumbstring[], ptrbit _input_at, const ptrbit _stop_at)
         return failed;
       }
     }
+    // Advance to the start of the next word
     _input_at.ptr += sizeof(word);
     _input_at.bit = 0;
     goodptrbit(_input_at);
@@ -691,7 +748,7 @@ static operand unpack_synth_onto_stack(const operand op) {
   while (!isimmediate(spine) && !issharedheap(spine)) {
     shared_operand* this = spine.shared;
     if (stack_top > stack_endstop && this->ref_count > 1) {
-      stack_was_evaling(stack_top - 1, this); // FIXME?
+      stack_was_evaling(stack_top - 1, this);
     }
     // Now we add it onto the stack
     stack[stack_top++] = FRAME(soft_dup(this->synth->arg));
@@ -859,7 +916,12 @@ static bool reduction_rule(word crumbs) {
 
     // Drop `y` and put `x` back onto the stack: `Kxy = x`
     drop(y);
-    stack[stack_top++] = FRAME(x);
+    if (isI(x) && stack_top > stack_endstop) {
+      drop(x);
+      work++;
+    } else {
+      stack[stack_top++] = FRAME(x);
+    }
     assert(stack_top < SZ);
     work++;
     return true;
@@ -869,15 +931,43 @@ static bool reduction_rule(word crumbs) {
     POP_OR(x, { stack_top += 1; return false; });
     POP_OR(y, { stack_top += 2; return false; });
     POP_OR(z, { stack_top += 3; return false; });
-
     // `Sxyz = 00xz0yz = ((xz)(yz))`
-    // Increase the ref count on `z`
-    z = dup(z);
-    // Put `x`, `z`, and the synthetic `(yz)` on the stack
-    operand yz = apply(y, z);
+
+    // `SKyz = Kz(yz) = z`
+    if (isK(x)) {
+      drop(x); drop(y);
+      stack[stack_top++] = FRAME(z);
+      work++; work++;
+      return true;
+    }
+    operand yz = fast_unconstant(y);
+    if (isnullop(yz)) {
+      operand xz = fast_unconstant(x);
+      if (isnullop(xz)) {
+        // Increase the ref count on `z`
+        z = dup(z);
+        // Put `x`, `z`, and the synthetic `(yz)` on the stack
+        yz = apply(y, z);
+      } else {
+        // `S(Kx)yz = Kxz(yz) = x(yz) = Bxyz`
+        yz = apply(y, z);
+        stack[stack_top++] = FRAME(yz);
+        stack[stack_top++] = FRAME(xz);
+        work++; work++;
+        return true;
+      }
+    } else {
+      // `Sx(Ky)z = (xz)(Kyz) = xzy`
+      work++;
+    }
     stack[stack_top++] = FRAME(yz);
     stack[stack_top++] = FRAME(z);
-    stack[stack_top++] = FRAME(x);
+    if (isI(x)) {
+      drop(x);
+      work++;
+    } else {
+      stack[stack_top++] = FRAME(x);
+    }
     assert(stack_top < SZ);
     work++;
     // Evaluation will continue with `x` on the next `step()`!
@@ -920,7 +1010,7 @@ bool step(void) {
     // somewhere to pin `was_evaled`. But if we ran out of input, that is fine:
     // it is the final node to evaluate anyways.
     else if (op.shared->ref_count > 1 && (stack_top <= stack_endstop && refill())) {
-      stack_was_evaling(stack_top - 1, op.shared); // FIXME?
+      stack_was_evaling(stack_top - 1, op.shared);
     }
   }
 
@@ -932,6 +1022,9 @@ bool step(void) {
 
   assert(isimmediate(op) || issharedheap(op));
   stack[stack_top].to_eval = op;
+  if (issharedheap(op) && op.shared->ref_count > 1 && (stack_top > stack_endstop || refill())) {
+    stack_was_evaling(stack_top - 1, op.shared);
+  }
 
   PLEASE_INLINE_FOLLOWING_STATEMENT
   // Unpack applications from a crumbstring, leaving the combinator at the head
