@@ -139,7 +139,7 @@ typedef struct shared_operand {
 // Terms that are immediate but too large to fit into a word also end up
 // as a `heap_operand`.
 typedef struct heap_operand {
-  u64 crumblength;
+  size_t length;
   word crumbstring[];
 } heap_operand;
 
@@ -237,14 +237,13 @@ word output_words[SZ];
 // special cases)                                                             //
 ////////////////////////////////////////////////////////////////////////////////
 
-heap_operand heap_tmp1 = { .crumbstring = {0} };
-heap_operand heap_tmp2 = { .crumbstring = {0} };
+heap_operand heap_tmp1 = { .length = 1, .crumbstring = {0} };
+heap_operand heap_tmp2 = { .length = 1, .crumbstring = {0} };
 shared_operand shared_tmp = { .ref_count = ~1, .work = 0 };
 
 heap_operand* as_tmp1(operand l) {
   if (isimmediate(l)) {
     heap_tmp1.crumbstring[0] = l.crumbs;
-    heap_tmp1.crumblength = reachesZero1(l.crumbs)/2;
     return &heap_tmp1;
   }
   assert(issharedheap(l));
@@ -253,7 +252,6 @@ heap_operand* as_tmp1(operand l) {
 heap_operand* as_tmp2(operand r) {
   if (isimmediate(r)) {
     heap_tmp2.crumbstring[0] = r.crumbs;
-    heap_tmp2.crumblength = reachesZero1(r.crumbs)/2;
     return &heap_tmp2;
   }
   assert(issharedheap(r));
@@ -277,8 +275,7 @@ void goodop(operand op) {
   } else {
     assert(op.shared != NULL);
     if (issharedheap(op)) {
-      assert(getsharedheap(op)->crumblength > 0);
-      assert(2*getsharedheap(op)->crumblength == bitlength(getsharedheap(op)->crumbstring, 0));
+      assert(getsharedheap(op)->length > 0);
     } else {
       // goodop(op.shared->synth->arg);
       // goodop(op.shared->synth->fun);
@@ -290,12 +287,11 @@ void goodop(operand op) {
 
 // Create a new shared heap operand, given a wordlength to allocate.
 __attribute__((noinline))
-shared_operand* alloc_shared_heap(const u64 crumblength) {
-  const size_t wordlength = 1 + ROUNDUPDIV(crumblength, word_crumbs);
+shared_operand* alloc_shared_heap(const size_t wordlength) {
   assert(wordlength);
   heap_operand* on_heap = malloc(sizeof(heap_operand) + sizeof(word[wordlength]));
   assert(on_heap != NULL);
-  on_heap->crumblength = crumblength;
+  on_heap->length = wordlength;
   shared_operand* shared = malloc(sizeof(shared_operand));
   assert(shared != NULL);
   shared->ref_count = 1;
@@ -379,7 +375,7 @@ operand have_evaled(shared_operand* was_evaling, const operand evaled) {
     if (isheap(was_evaling)) {
       // Might as well reuse small buffers, but reallocate large ones
       heap_operand* heap = getheap(was_evaling);
-      if (heap->crumblength >= 63*word_crumbs) {
+      if (heap->length > 64) {
         free(heap);
         heap = malloc(sizeof(heap_operand) + sizeof(word[1]));
         assert(heap != NULL);
@@ -390,7 +386,7 @@ operand have_evaled(shared_operand* was_evaling, const operand evaled) {
       free(was_evaling->synth);
       setheap(was_evaling, malloc(sizeof(heap_operand) + sizeof(word[1])));
     }
-    getheap(was_evaling)->crumblength = reachesZero1(evaled.crumbs)/2;
+    getheap(was_evaling)->length = 1;
     getheap(was_evaling)->crumbstring[0] = evaled.crumbs;
   } else {
     // Will not actually happen but that is okay
@@ -426,7 +422,7 @@ operand dup(operand term) {
     if (!nontrivial_redexes(term.crumbs & ~0b11))
       return term;
     // Otherwise we need to make a shared operand
-    shared_operand* sh = alloc_shared_heap(reachesZero1(term.crumbs)/2);
+    shared_operand* sh = alloc_shared_heap(1);
     getheap(sh)->crumbstring[0] = term.crumbs;
     assert(bitlength(getheap(sh)->crumbstring, 0) <= word_size);
     sh->ref_count = 2;
@@ -450,17 +446,19 @@ operand soft_dup(operand term) {
 // then the crumbs of the first followed by the crumbs of the second, `0{l}{r}`.
 shared_operand* ap_heap_cat(heap_operand* l, heap_operand* r) {
   // FIXME: decrement length if overallocated?
-  u64 crumblength = 1 + l->crumblength + r->crumblength;
-  shared_operand* result = alloc_shared_heap(crumblength);
+  size_t wordlength = l->length + r->length;
+  shared_operand* result = alloc_shared_heap(wordlength);
+  getheap(result)->length = wordlength;
   word* out = getheap(result)->crumbstring;
-  copy_to_unaligned(out, l->crumbstring, 2, ROUNDUPDIV(l->crumblength, word_crumbs), true);
+  copy_to_unaligned(out, l->crumbstring, 2, l->length, true);
   assert(l->crumbstring[0] >> 2 == out[0]);
-  ptrbit reallength = crumbs2ptrbit(1 + l->crumblength);
-  copy_to_unaligned(out + (reallength.ptr / sizeof(word)), r->crumbstring, reallength.bit, ROUNDUPDIV(r->crumblength, word_crumbs), false);
+  ptrbit reallength = ptrbitlength(l->crumbstring, l->length - 1);
+  assert(reallength.bit != 0);
+  // assert(reallength.ptr == sizeof(word) * (l->length - 1));
+  reallength = ptrbit_incr_bits(reallength, 2);
+  copy_to_unaligned(out + (reallength.ptr / sizeof(word)), r->crumbstring, reallength.bit, r->length, false);
 
-  // assert(bitlength(out, 0) == 2*getheap(result)->crumblength);
-  // assert(2*getheap(result)->crumblength == 2 + bitlength(l->crumbstring, 0) + bitlength(r->crumbstring, 0));
-  goodop(shared(result));
+  assert(bitlength(out, 0) == 2 + bitlength(l->crumbstring, 0) + bitlength(r->crumbstring, 0));
   return result;
 }
 
@@ -496,14 +494,13 @@ operand apply(const operand fun, const operand arg) {
   // If we have two nodes that are not otherwise shared, we can delete them
   // and merge them.
   if (
-    (isimmediate(fun) || (issharedheap(fun) && fun.shared->ref_count == 1 && getsharedheap(fun)->crumblength < 16*word_crumbs))
+    (isimmediate(fun) || (issharedheap(fun) && fun.shared->ref_count == 1 && getsharedheap(fun)->length < 16))
     &&
-    (isimmediate(arg) || (issharedheap(arg) && arg.shared->ref_count == 1 && getsharedheap(arg)->crumblength < 16*word_crumbs))
+    (isimmediate(arg) || (issharedheap(arg) && arg.shared->ref_count == 1 && getsharedheap(arg)->length < 16))
   ) {
     operand result = shared(ap_heap_cat(as_tmp1(fun), as_tmp2(arg)));
     // free the shared nodes
     drop(fun); drop(arg);
-    goodop(result);
     return result;
   }
   // Otherwise we need to synthesize a new application node to share the result
@@ -513,7 +510,7 @@ operand apply(const operand fun, const operand arg) {
 
 bool heap_reducible(heap_operand* heap) {
   word i = 0; word exp = 1; u8 offset = 0; u8 trailing = 0;
-  while (i < ROUNDUPDIV(heap->crumblength, word_crumbs) && exp) {
+  while (i < heap->length && exp) {
     const word crumbs = heap->crumbstring[i];
     offset = reachesZero(exp, crumbs);
     if (offset) {
@@ -617,7 +614,7 @@ static struct ptrbitop scan1op(const word crumbstring[], ptrbit _input_at, const
     return (struct ptrbitop) { next, direct(crumbs) };
   } else {
     // Copy it into its own heap
-    shared_operand* sh = alloc_shared_heap(crumblen);
+    shared_operand* sh = alloc_shared_heap(1 + ROUNDUPDIV(crumblen, word_crumbs));
     const word words = 1 + (next.ptr - _input_at.ptr) / sizeof(word);
     copy_from_unaligned(getheap(sh)->crumbstring, from_ptr(crumbstring, _input_at), _input_at.bit, words);
     // And plop it on the stack
@@ -694,7 +691,7 @@ static operand unpack_synth_onto_stack(const operand op) {
   while (!isimmediate(spine) && !issharedheap(spine)) {
     shared_operand* this = spine.shared;
     if (stack_top > stack_endstop && this->ref_count > 1) {
-      stack_was_evaling(stack_top - 1, this);
+      stack_was_evaling(stack_top - 1, this); // FIXME?
     }
     // Now we add it onto the stack
     stack[stack_top++] = FRAME(soft_dup(this->synth->arg));
@@ -724,7 +721,7 @@ static operand unpack_crumbstring_onto_stack(operand op) {
 
   heap_operand* heap = getsharedheap(op);
   // Cache the number of bytes
-  const word bytes = sizeof(word) * ROUNDUPDIV(heap->crumblength, word_crumbs);
+  const word bytes = sizeof(word) * heap->length;
   // Here is the crumbstring
   const word* crumbstring = heap->crumbstring;
   // Start at the first crumb
@@ -923,7 +920,7 @@ bool step(void) {
     // somewhere to pin `was_evaled`. But if we ran out of input, that is fine:
     // it is the final node to evaluate anyways.
     else if (op.shared->ref_count > 1 && (stack_top <= stack_endstop && refill())) {
-      stack_was_evaling(stack_top - 1, op.shared);
+      stack_was_evaling(stack_top - 1, op.shared); // FIXME?
     }
   }
 
@@ -1034,10 +1031,11 @@ void write_out(operand op) {
     output_at = ptrbit_incr_bits(output_at, len);
   } else if (issharedheap(op)) {
     heap_operand* heap = getsharedheap(op);
-    copy_to_unaligned(from_ptr(output_words, output_at), heap->crumbstring, output_at.bit, ROUNDUPDIV(heap->crumblength, word_crumbs), false);
+    const word len = bitlength(heap->crumbstring, heap->length);
+    copy_to_unaligned(from_ptr(output_words, output_at), heap->crumbstring, output_at.bit, heap->length, false);
     assert(word_of(output_words, output_at) != 0);
     // assert(word_of(output_words, output_at) == op.shared->heap->crumbstring[0]);
-    output_at = ptrbit_incr_bits(output_at, 2*heap->crumblength);
+    output_at = ptrbit_incr_bits(output_at, len);
     drop(op);
   } else {
     // Write a zero crumb `0q0` (application)
