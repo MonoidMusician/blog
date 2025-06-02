@@ -14,7 +14,7 @@ const u64 = (value) => ((value + (1n<<64n)) % (1n<<64n));
 const roundUp = (l, amt=64) => l + (amt - l%amt)%amt;
 
 // Helper to repeat characters
-const repeat = (n, fill="0") => [...Array(n)].map((_,i) => typeof fill === 'function' ? fill(i) : fill).join("");
+const repeat = (n, fill="0") => n > 0 ? [...Array(n)].map((_,i) => typeof fill === 'function' ? fill(i) : fill).join("") : "";
 
 // Test the performance of a function
 const perform = (label, f, ...args) => {

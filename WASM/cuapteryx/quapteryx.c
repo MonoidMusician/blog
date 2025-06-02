@@ -1280,6 +1280,11 @@ word finalize(void) {
   return ptrbit2crumbs(output_at);
 }
 
+void cancel(void) {
+  do {
+    drop(stack[stack_top].to_eval);
+  } while (stack_top && stack_top--);
+}
 
 // #ifdef CLI
 // #else
