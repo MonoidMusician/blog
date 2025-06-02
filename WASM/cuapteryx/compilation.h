@@ -13,3 +13,15 @@
 #define PLEASE_INLINE_FOLLOWING_STATEMENT
 #define PLEASE_INLINABLE __attribute__((always_inline))
 #endif
+
+#if __has_builtin(__builtin_expect)
+#define RARELY(c) (__builtin_expect((c), 0))
+#else
+#define RARELY(c) (c)
+#endif
+
+#if __has_extension(cxx_attributes)
+#define TAILCALL [[clang::musttail]]
+#else
+#define TAILCALL
+#endif
