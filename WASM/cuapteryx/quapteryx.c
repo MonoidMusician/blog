@@ -30,16 +30,18 @@ extern void free(void *p) __attribute__((noinline));
 // dst[bits: offset : offset + 64*words] =
 //   src[bits: 0 : 64*words]
 // ```
-void copy_to_unaligned(word* dst, const word* src, u8 offset, word words, bool clobber) {
+void copy_to_unaligned(word* dst, const word* src, const u8 offset, word words, bool clobber) {
   if (words == 0) return;
   assert(offset < word_size);
   if (offset == 0) {
     __builtin_memcpy(dst, src, sizeof(word) * words);
     return;
   }
+  assert(offset < word_size);
   assert(offset != 0); // messes with bitshifts
   word hanging = clobber ? 0 : *dst;
   while (words--) {
+    assert(offset < word_size);
     *dst = word_cat(offset, hanging, word_size - offset, *src);
     hanging = *src << (word_size - offset);
     dst++;
@@ -229,6 +231,8 @@ struct stack_frame {
 u32 stack_top = 0;
 u32 stack_endstop = 0; // used in whnf_op
 
+const u32 stack_length = sizeof(stack) / sizeof(struct stack_frame);
+
 // Create a new stack frame, without `was_evaling`.
 #define FRAME(value) ((struct stack_frame) { .to_eval = (value) })
 
@@ -245,6 +249,9 @@ ptrbit output_at = {};
 word input_words[SZ];
 // write once
 word output_words[SZ];
+
+const u32 input_words_length = sizeof(input_words) / sizeof(word);
+const u32 output_words_length = sizeof(output_words) / sizeof(word);
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -295,8 +302,8 @@ void goodop(operand op) {
       // goodop(op.shared->synth->arg);
       // goodop(op.shared->synth->fun);
     }
-    assert(op.shared->weakref_stack_max < SZ);
-    assert(op.shared->weakref_stack_min < SZ);
+    assert(op.shared->weakref_stack_max == ~0 || op.shared->weakref_stack_max < stack_length);
+    assert(op.shared->weakref_stack_min == ~0 || op.shared->weakref_stack_min < stack_length);
   }
 }
 
@@ -713,7 +720,7 @@ bool refill(void) {
 
   goodop(op);
   stack[stack_top++] = FRAME(op);
-  assert(stack_top < SZ);
+  assert(stack_top < stack_length);
   return true;
 }
 
@@ -756,7 +763,7 @@ static operand unpack_synth_onto_stack(const operand op) {
     }
     // Now we add it onto the stack
     stack[stack_top++] = FRAME(soft_dup(this->synth->arg));
-    assert(stack_top < SZ);
+    assert(stack_top < stack_length);
     // And proceed down the spine
     spine = this->synth->fun;
   }
@@ -803,15 +810,14 @@ static operand unpack_crumbstring_onto_stack(operand op) {
   const word arity = ptrbit2crumbs(i);
 
   // I guess it cannot be too large to fit on the stack
-  assert(arity == (int)arity);
-  assert(arity + stack_top < sizeof(stack) / sizeof(struct stack_frame));
+  assert(arity < stack_length);
+  assert(stack_top < stack_length - arity - 1);
   // Also must be nonzero
   assert(arity);
 
   // Increase stack_top already, and then we will walk back and fill in the
   // arguments on the stack.
   stack_top += arity + 1;
-  assert(stack_top < SZ);
   for (int stacked = 1; stacked <= arity + 1; stacked++) {
     goodptrbit(i);
     // Scan ahead one item
@@ -884,7 +890,7 @@ static void save_whnf_on_stack(word crumbs) {
 // `Sxyz = 00xz0yz = ((xz)(yz))`
 PLEASE_INLINABLE
 static bool reduction_rule(word crumbs) {
-  assert(stack_top < SZ);
+  assert(stack_top < stack_length);
 
   const u8 crumb = crumbs >> (word_size - 2);
   assert(crumb > 0);
@@ -946,7 +952,7 @@ static bool reduction_rule(word crumbs) {
     } else {
       stack[stack_top++] = FRAME(x);
     }
-    assert(stack_top < SZ);
+    assert(stack_top < stack_length);
     work++;
     // Evaluation will continue with `x` on the next `step()`!
     return true;
@@ -965,7 +971,7 @@ static bool reduction_rule(word crumbs) {
     } else {
       stack[stack_top++] = FRAME(x);
     }
-    assert(stack_top < SZ);
+    assert(stack_top < stack_length);
     work++;
     return true;
   } else if (crumb == 1) {
@@ -990,7 +996,7 @@ bool step(void) {
   if (RARELY(!stack_top && !refill())) return false; // all done
 
   assert(stack_top > stack_endstop);
-  assert(stack_top < SZ);
+  assert(stack_top < stack_length);
 
   operand op = stack[--stack_top].to_eval;
   assert(stack[stack_top].was_evaling == NULL);
@@ -1024,7 +1030,7 @@ bool step(void) {
   // Walk down the tree of synth nodes until we end up at a heap or immediate
   op = unpack_synth_onto_stack(op);
 
-  assert(stack_top < SZ);
+  assert(stack_top < stack_length);
 
   assert(isimmediate(op) || issharedheap(op));
   stack[stack_top].to_eval = op;
@@ -1098,7 +1104,7 @@ operand whnf_op(operand op) {
   }
   assert(stack_top == stack_endstop);
   stack[stack_top++] = FRAME(op);
-  assert(stack_top < SZ);
+  assert(stack_top < stack_length);
 
   while (fuel && step()) {
     fuel--;
@@ -1124,12 +1130,14 @@ void whnf2nf_op(operand op) {
 void write_out(operand op) {
   goodop(op);
   goodptrbit(output_at);
+  assert(output_at.ptr < output_words_length * sizeof(word));
   if (isimmediate(op)) {
     const u8 len = reachesZero1(op.crumbs);
     copy_to_unaligned(from_ptr(output_words, output_at), &op.crumbs, output_at.bit, 1, false);
     output_at = ptrbit_incr_bits(output_at, len);
   } else if (issharedheap(op)) {
     heap_operand* heap = getsharedheap(op);
+    assert(output_at.ptr + heap->length < output_words_length * sizeof(word));
     const word len = bitlength(heap->crumbstring, heap->length);
     copy_to_unaligned(from_ptr(output_words, output_at), heap->crumbstring, output_at.bit, heap->length, false);
     assert(word_of(output_words, output_at) != 0);
@@ -1147,12 +1155,14 @@ void write_out(operand op) {
     drop(op);
     TAILCALL return write_out(arg);
   }
+  assert(output_at.ptr < output_words_length * sizeof(word));
 }
 
 void write_nf_from_whnf_stack(void) {
   int our_endstop = stack_endstop;
   assert(stack_top > stack_endstop);
 
+  assert(output_at.ptr < output_words_length * sizeof(word));
   word_of(output_words, output_at) &= mask_hi(output_at.bit);
   size_t i = output_at.ptr/sizeof(word);
   output_at = ptrbit_incr_bits(output_at, 2 * (stack_top - stack_endstop - 1));
@@ -1174,7 +1184,7 @@ void write_nf_from_whnf_stack(void) {
     while (fuel && step()) {
       fuel--;
       assert(stack_top > stack_endstop);
-      assert(stack_top < SZ);
+      assert(stack_top < stack_length);
     };
 
     if (stack_endstop == our_endstop) break; // for tail call
@@ -1182,6 +1192,7 @@ void write_nf_from_whnf_stack(void) {
     write_nf_from_whnf_stack();
     assert(stack_top == stack_endstop);
   }
+  assert(output_at.ptr < output_words_length * sizeof(word));
   TAILCALL return write_nf_from_whnf_stack();
 }
 
@@ -1207,7 +1218,7 @@ word eval(const word input_crumbs) {
 
   while (fuel && step()) {
     fuel--;
-    assert(stack_top < SZ);
+    assert(stack_top < stack_length);
   };
 
   write_nf_from_whnf_stack();
@@ -1226,7 +1237,7 @@ word eval1word(const word crumbs) {
 
   while (fuel && step()) {
     fuel--;
-    assert(stack_top < SZ);
+    assert(stack_top < stack_length);
   };
 
   operand op = read_whnf_from_stack();
@@ -1246,9 +1257,9 @@ bool setup(const word input_crumbs) {
   output_at = (ptrbit) {};
 
   stack_top = 0;
-  skip_leading_zeros();
   if (!refill()) return false;
   assert(stack_top);
+  assert(input_at.ptr == stop_at.ptr && input_at.bit == stop_at.bit);
 
   return true;
 }
@@ -1260,7 +1271,7 @@ bool resume(const word drip_fuel) {
   fuel = drip_fuel;
   while (fuel && step()) {
     fuel--;
-    assert(stack_top < SZ);
+    assert(stack_top < stack_length);
   };
 
   if (!fuel) return false;
@@ -1278,9 +1289,17 @@ bool resume(const word drip_fuel) {
 // Write out the current value of the stack.
 word finalize(void) {
   if (!stack_top) return 0;
+  assert(stack_endstop == 0);
 
   output_at = (ptrbit) {};
-  operand op = read_whnf_from_stack();
+  operand op;
+  if (stack_top == 1) {
+    op = stack[0].to_eval;
+    stack_top = 0;
+  } else {
+    op = read_whnf_from_stack();
+  }
+  goodop(op);
   write_out(op);
 
   return ptrbit2crumbs(output_at);

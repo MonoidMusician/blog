@@ -23,5 +23,15 @@
 #if __has_extension(cxx_attributes)
 #define TAILCALL [[clang::musttail]]
 #else
-#define TAILCALL
+#define TAILCALL __attribute__((musttail))
+#endif
+
+#if __has_attribute(import_name)
+// Set it up as a WASM import
+#define OPTIONAL_IMPORT_OR_VOID(name, ...) \
+  __attribute__((import_name(#name))) \
+  extern void name(__VA_ARGS__);
+#else
+// Define an empty stub
+#define OPTIONAL_IMPORT_OR_VOID(name, ...) void name(__VA_ARGS__) {}
 #endif

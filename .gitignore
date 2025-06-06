@@ -19,6 +19,7 @@ output-es/
 /assets/json/
 /assets/ps/*
 /assets/purs/
+/assets/wasm/
 /dist-newstyle/
 *.o
 *.hi
