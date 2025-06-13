@@ -71,10 +71,10 @@ author:
     padding-bottom: 15px;
   }
   .code-points > .code-point:first-child {
-    margin-left: 5vw;
+    margin-left: 5svw;
   }
   .code-points > .code-point:last-child {
-    margin-right: 5vw;
+    margin-right: 5svw;
   }
   .code-points > .code-point {
     display: inline-block;

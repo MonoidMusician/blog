@@ -7,7 +7,7 @@ title:
 
 :::{#composer}
 
-<div style="font-variant-numeric: lining-nums tabular-nums" class="sourceCode unicode" data-lang="Markdown"><pre><code><textarea id="post" style="min-height: 40vh">---
+<div style="font-variant-numeric: lining-nums tabular-nums" class="sourceCode unicode" data-lang="Markdown"><pre><code><textarea id="post" style="min-height: 40svh">---
 title: Draft
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
@@ -33,11 +33,11 @@ author:
     flex: 0.3;
     flex-basis: 200px;
     padding: 0 calc(2% + 8px);
-    height: 100vh;
+    height: 100svh;
   }
   #posted_post {
     flex: 0.7;
-    height: 100vh;
+    height: 100svh;
   }
   #posts > li {
     margin: 0;
@@ -48,7 +48,7 @@ author:
 
 :::{#composer}
 
-<div style="font-variant-numeric: lining-nums tabular-nums" class="sourceCode unicode" data-lang="Markdown"><pre><code><textarea id="markdown" style="min-height: calc(75vh - 40px - 40px)"></textarea></code></pre></div>
+<div style="font-variant-numeric: lining-nums tabular-nums" class="sourceCode unicode" data-lang="Markdown"><pre><code><textarea id="markdown" style="min-height: calc(75svh - 40px - 40px)"></textarea></code></pre></div>
 
 <div>
   <label class="input-wrapper text"><span>Slug</span><input id="slug"/></label>
@@ -56,7 +56,7 @@ author:
   <button id="post" class="add">Post</button>
   <button id="preview" class="big">Preview</button>
 
-  <ul id="posts" style="max-height: calc(10vh + 20px); overflow: auto; border-width: 1px; border-color: #2372ffaa; border-radius: 4px;">
+  <ul id="posts" style="max-height: calc(10svh + 20px); overflow: auto; border-width: 1px; border-color: #2372ffaa; border-radius: 4px;">
   </ul>
 </div>
 

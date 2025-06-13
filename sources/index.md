@@ -20,7 +20,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 - [Implementing [FRP]{t=} and Why](riverdragon_implementation.html) [2025/02/22]{.dated}
 
 - [Perfect Vector Graphics for a [QR]{t=} code](svgqr.html) [2025/01/29]{.dated}
-  <img class="sidenote" src="assets/images/qr_demo1.svg" style="max-height: min(100%, 100vh)">
+  <img class="sidenote" src="assets/images/qr_demo1.svg" style="max-height: min(100%, 100svh)">
 
   > You would think that [SVG]{t=} would be a perfect medium for rendering [QR]{t=} codes, but iOS was having trouble rendering the [SVG]{t=}s for the complex, large [QR]{t=} codes I was using (nearly max size).
   > We need to render adjacent modules as a single [SVG]{t=} path.
@@ -126,7 +126,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   > - Implemented using semilattices ([monoids](version_solver.html#monoids-monoids-everywhere)).
 
 - [Impossible Bézier Calligraphy: Approximating cubic nibs drawn along cubic strokes](bezier_calligraphy.html) [2022/09/18 – 2023/04/23]{.dated}
-  <img class="sidenote" src="assets/images/calligraphy_demo1.svg" style="max-height: min(100%, 100vh)">
+  <img class="sidenote" src="assets/images/calligraphy_demo1.svg" style="max-height: min(100%, 100svh)">
 
   > Given a pen nib of some shape, what composite shape is produced when that pen is drawn along any particular path?
   > If the inputs are cubic Bézier curves, is the output as well?

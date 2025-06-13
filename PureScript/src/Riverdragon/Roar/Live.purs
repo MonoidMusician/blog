@@ -134,7 +134,7 @@ embed incomingRaw = hatching \shell -> do
   let
     assetFrame asset = D.html_"iframe"
       [ D.attr "src" =:= codeURL <> "/" <> asset <> ".html"
-      , D.stylish =:= D.smarts { height: "calc(max(400px, 70vh))" }
+      , D.stylish =:= D.smarts { height: "calc(max(400px, 70svh))" }
       ]
       mempty
     sourceCodeOf moduleName = fetchHighlight (codeURL <> "/" <> moduleName <> "/source.purs")

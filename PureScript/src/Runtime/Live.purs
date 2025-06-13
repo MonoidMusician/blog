@@ -186,7 +186,7 @@ compileInterface sessionStorageName embed df = hatching \shell -> do
     [ sourceCode "PureScript" .$ D.textarea
         [ D.onInputValue =:= setValue
         , D.value =:= defaultValue
-        , D.style =:= "height: 40vh"
+        , D.style =:= "height: 40svh"
         , D.asCodeInput
         ]
     , D.div.$ D.buttonW "" "Compile!" (compileNow =<< lastValue)

@@ -469,7 +469,7 @@ var svg = SVG("svg", {
   viewBox: "0 0 1 1",
   $style: {
     width: "100%",
-    height: "calc(80vh - 2em)",
+    height: "calc(80svh - 2em)",
     display: "block",
     strokeLinecap: "round",
   },

@@ -140,8 +140,8 @@ Other patterns are essentially random, and in fact are meant to be somewhat unpr
     max-height: 100%;
   }
   div.fit > svg {
-    max-width: min(100%, 100vw);
-    max-height: min(100%, 100vh);
+    max-width: min(100%, 100svw);
+    max-height: min(100%, 100svh);
     max-width: min(100%, 100svw);
     max-height: min(100%, 100svh);
   }

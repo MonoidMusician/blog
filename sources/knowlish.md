@@ -18,9 +18,10 @@ _[Overflow](knowlish_overflow.html)_
   cat (echo "obase=16" | psub) - | bc | xargs -I % -n 1 bash -c "echo -n \\\\x% | pbcopy; echo \\\\x%"
   ```
 - [`watchexec`{.sh}](https://github.com/watchexec/watchexec/tree/main/crates/cli#usage-examples) to watch files & directories and then rerun `make`{.sh} or whatnot. better than `entr`{.sh}
-- [`date '+%Y-%m-%d-%H-%M-%S'`{.bash}](https://stackoverflow.com/questions/1401482/yyyy-mm-dd-format-date-in-shell-script#answer-1401495)
-- [`grep -Fxq "One specific line exists in" many_lines.txt`{.bash}](https://stackoverflow.com/questions/4749330/how-to-test-if-string-exists-in-file-with-bash#answer-4749368)
-- pipe into `sponge filename.txt`{.bash} if `filename.txt` is used earlier in the command (since output redirection erases the file)
+- [`date '+%Y-%m-%d-%H-%M-%S'`{.sh}](https://stackoverflow.com/questions/1401482/yyyy-mm-dd-format-date-in-shell-script#answer-1401495)
+- [`grep -Fxq "One specific line exists in" many_lines.txt`{.sh}](https://stackoverflow.com/questions/4749330/how-to-test-if-string-exists-in-file-with-bash#answer-4749368)
+- pipe into `sponge filename.txt`{.sh} if `filename.txt` is used earlier in the command (since output redirection erases the file)
+- [show approximate progress during `tar`{.sh}](https://superuser.com/questions/168749/is-there-a-way-to-see-any-tar-progress-per-file)
 
 ### MacOS
 

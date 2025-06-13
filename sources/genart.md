@@ -14,13 +14,13 @@ Press shift-space and <button id="enjoy" class="add">enjoy</button> \^.\^
     display: none;
   }
   section#editor {
-    margin: 0 -20vw;
+    margin: 0 -20svw;
     padding: 0 !important;
     max-width: initial !important;
   }
   @media (max-width: 760px) {
     section#editor {
-      margin: 0 -5vw;
+      margin: 0 -5svw;
     }
   }
   section#editor > *, #studio > *, #panes > * {
@@ -53,11 +53,11 @@ Press shift-space and <button id="enjoy" class="add">enjoy</button> \^.\^
 :::::: {#studio}
 ::::: {#panes}
 :::: {}
-  <textarea id="textarea" style="display: block; width: 100%; font-family: monospace; font-size: 14px; height: calc(100vh - 140px); background: inherit; resize: none;box-sizing: border-box;"></textarea>
+  <textarea id="textarea" style="display: block; width: 100%; font-family: monospace; font-size: 14px; height: calc(100svh - 140px); background: inherit; resize: none;box-sizing: border-box;"></textarea>
 ::::
 
 :::: {}
-  <div><canvas class="fullscreen" id="canvas" style="display:block;margin:auto;max-width:100%; max-height: 100vh" width="1500px" height="500px"></canvas><style></style></div>
+  <div><canvas class="fullscreen" id="canvas" style="display:block;margin:auto;max-width:100%; max-height: 100svh" width="1500px" height="500px"></canvas><style></style></div>
   <div class="Error" id="error" style="margin-top: 0.75em; font-family: monospace;"></div>
 ::::
 :::::

@@ -58,11 +58,11 @@
   }
   section:has(#rotate:checked) ~ section .diagonal {
     transform: rotate(45deg);
-    /* width: 141vw; */
+    /* width: 141svw; */
     /* Literally a magic constant */
     width: 200%;
     /* Dunno?? */
-    transform-origin: 83.3vw 33.3vw;
+    transform-origin: 83.3svw 33.3svw;
   }
   .diagonal > .padding {
     height: auto;
@@ -71,12 +71,12 @@
   .diagonal > .padding.right {
     float: right;
     shape-outside: polygon(0% 0%, 100% 100%, 100% 0%);
-    width: calc(100% - 70.5vw);
+    width: calc(100% - 70.5svw);
   }
   .diagonal > .padding.left {
     float: left;
     shape-outside: polygon(0% 0%, 0% 100%, 100% 100%, 0% 50%, 100% 0%);
-    width: 70.5vw;
+    width: 70.5svw;
     height: auto;
     aspect-ratio: 1/2;
   }
@@ -87,7 +87,7 @@
     height: auto;
     aspect-ratio: 1;
     /* ??? */
-    shape-margin: 50vw;
+    shape-margin: 50svw;
   }
   [lang="fa"] {
     font-family: "Gulzar";

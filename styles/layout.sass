@@ -15,27 +15,27 @@ body > section
   margin-left: auto
   margin-right: auto
   .full-width
-    width: 100vw
-    margin-left: calc(-20vw - 5px)
-    margin-right: calc(-20vw - 5px)
+    width: 100svw
+    margin-left: calc(-20svw - 5px)
+    margin-right: calc(-20svw - 5px)
     box-sizing: border-box
   @media (max-width: $breakpoint)
     max-width: 98%
     .full-width
-      margin-left: calc(-5vw - 7px)
-      margin-right: calc(-5vw - 7px)
+      margin-left: calc(-5svw - 7px)
+      margin-right: calc(-5svw - 7px)
 body section > .Box
     &:not(.full-width)
       margin: 0 -9px
       margin-top: 0.75em
     &.full-width
       /* idk why 12px */
-      width: calc(100vw - 12px)
-      margin-left: calc(-20vw)
-      margin-right: calc(-20vw)
+      width: calc(100svw - 12px)
+      margin-left: calc(-20svw)
+      margin-right: calc(-20svw)
       @media (max-width: $breakpoint)
-        margin-left: calc(-5vw - 2px)
-        margin-right: calc(-5vw - 2px)
+        margin-left: calc(-5svw - 2px)
+        margin-right: calc(-5svw - 2px)
 
 table
   border-spacing: 0
@@ -237,7 +237,7 @@ blockquote
   width: calc(20% - 1em - 8px)
   padding-right: 1em
   float: left
-  max-height: 100vh
+  max-height: 100svh
   overflow-y: auto
   font-size: 0.8em
   @media (max-width: $breakpoint)

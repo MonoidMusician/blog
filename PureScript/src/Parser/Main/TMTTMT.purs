@@ -206,7 +206,7 @@ component setGlobal resetting = hatching \shell -> do
         [ D.onInputValue =:= (pushUpdate <<< Update)
         , D.onChangeValue =:= setGlobal
         , D.value <:> resetting
-        , D.style =:= "height: 50vh"
+        , D.style =:= "height: 50svh"
         , D.asCodeInput
         ]
     , D.pre [ D.style =:= "white-space: break-spaces;" ] $ D.code[] $

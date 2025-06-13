@@ -15,16 +15,16 @@ html
 
 .widgets.focus-mode, body.focus-mode
   padding: 0
-  width: 100vw
-  height: 100vh
+  width: 100svw
+  height: 100svh
   display: grid
-  grid-template-columns: repeat(2, 50vw)
+  grid-template-columns: repeat(2, 50svw)
   @media (max-width: 760px)
-    grid-template-columns: repeat(1, 100vw)
+    grid-template-columns: repeat(1, 100svw)
   grid-auto-flow: row
-  grid-auto-rows: 50vh
+  grid-auto-rows: 50svh
   @media (max-height: 500px)
-    grid-auto-rows: 100vh
+    grid-auto-rows: 100svh
   overflow: auto
   // prevent vertical overscrolling since it gets stuck on Chromium
   // overscroll-behavior-y: none

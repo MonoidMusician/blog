@@ -391,7 +391,7 @@ widgetShow _ = pure $ hatching \shell -> do
     [ sourceCode "Haskell" .$ D.textarea
         [ D.onInputValue =:= set
         , D.value <:> valueSet
-        , D.style =:= "height: 40vh"
+        , D.style =:= "height: 40svh"
         , D.asCodeInput
         ]
     , slider "adjust-indent" "Indent"

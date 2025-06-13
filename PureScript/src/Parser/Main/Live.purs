@@ -111,7 +111,7 @@ embed incomingRaw = hatching \shell -> do
   let
     assetFrame asset = D.html_"iframe"
       [ D.attr "src" =:= codeURL <> "/" <> asset <> ".html"
-      , D.stylish =:= D.smarts { height: "calc(max(400px, 70vh))" }
+      , D.stylish =:= D.smarts { height: "calc(max(400px, 70svh))" }
       ]
       mempty
     sourceCodeOf moduleName = fetchHighlight (codeURL <> "/" <> moduleName <> "/source.purs")
@@ -131,7 +131,7 @@ embed incomingRaw = hatching \shell -> do
                 D.textarea
                   [ D.onInputValue =:= setValue
                   , D.value =:= ""
-                  , D.style =:= "height: 15vh"
+                  , D.style =:= "height: 15svh"
                   , D.asCodeInput
                   ]
             , sourceCode "Out" :."sourceCode unicode".$$~

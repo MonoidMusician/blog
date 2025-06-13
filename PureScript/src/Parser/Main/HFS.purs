@@ -141,7 +141,7 @@ widget _ = pure $ hatching \shell -> do
           ] $ D.textarea
               [ D.onInputValue =:= setValue <<< Tuple false
               , D.onChangeValue =:= setValue <<< Tuple true
-              , D.style =:= "height: 20vh"
+              , D.style =:= "height: 20svh"
               , D.asCodeInput
               ]
       , D.div [ D.style =:= "flex: 0 0 50%; overflow: auto; font-size: 70%" ] $
