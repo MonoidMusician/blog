@@ -43,49 +43,61 @@ Lazy:
 
 <script type="module">
 import { quapteryx } from "../assets/js/quapteryx.mjs";
-import { sugar, toatomic } from "../assets/js/combinators.mjs";
+import { sugar, toatomic, display } from "../assets/js/combinators.mjs";
 const { ById } = Ve; // verity.js
 {
   let input = ById.quapteryx_input;
   let output = ById.quapteryx_output;
   let last = null;
+  let slots = {
+    calculating: ById.quapteryx_calculating,
+    output,
+    error: ById.quapteryx_error,
+  };
+  let showit = (parts) => {
+    let showpart = (html, value) => {
+      html.style.display = value ? '' : 'none';
+      if (typeof value === 'string' || typeof value === 'number')
+        html.textContent = value;
+      else if (value instanceof Node)
+        { html.textContent = ''; html.appendChild(value); }
+    };
+    for (const [k, slot] of Object.entries(slots)) {
+      showpart(slot, parts[k]);
+    }
+    ById.quapteryx_output_wrapper.style.display = output.style.display;
+  };
+  let showcrumbs = (result) => {
+    if (!result) return '';
+    if (result.length > 1000) return result;
+    const { crumbstring, combinator } = displayer(display(result));
+    return Ve.HTML.div([crumbstring]);
+  };
   input.onchange = () => {
-    if (last) { try { last.cancel(); } catch {} last = null }
+    if (last) { try { last.cancel(); } catch {}; last = null }
     if (input.value) {
       var evaluating = quapteryx(toatomic(sugar(input.value)));
       if (typeof evaluating === 'string') {
-        output.textContent = evaluating;
-        ById.quapteryx_calculating.style.display = 'none';
-        ById.quapteryx_output_wrapper.style.display = '';
-        ById.quapteryx_error.style.display = 'none';
+        showit({ output: showcrumbs(evaluating) });
         last = null;
       } else {
-        output.textContent = "Loading...";
         ById.quapteryx_calculating.style.display = '';
         ById.quapteryx_output_wrapper.style.display = 'none';
         ById.quapteryx_error.style.display = 'none';
         (last = evaluating).then(
           evaluated => {
-            output.textContent = evaluated;
-            ById.quapteryx_calculating.style.display = 'none';
-            ById.quapteryx_output_wrapper.style.display = '';
-            ById.quapteryx_error.style.display = 'none';
+            showit({ output: showcrumbs(evaluated) });
+            last = null;
           },
           err => {
-            ById.quapteryx_calculating.style.display = 'none';
-            ById.quapteryx_output_wrapper.style.display = 'none';
-            ById.quapteryx_error.style.display = '';
             console.error(err);
-            ById.quapteryx_error.textContent = err instanceof Error ? `${err.name}: ${err.message}` : err;
-
+            showit({ error: err instanceof Error ? `${err.name}: ${err.message}` : err });
             last = null;
           },
         );
       }
     } else {
-      ById.quapteryx_calculating.style.display = 'none';
-      ById.quapteryx_output_wrapper.style.display = 'none';
-      ById.quapteryx_error.style.display = 'none';
+      showit({});
     }
   };
   ById.quapteryx_cancel.onclick = () => {
@@ -94,27 +106,18 @@ const { ById } = Ve; // verity.js
       try {
         evaluating = last.cancel();
       } catch(err) {
-        ById.quapteryx_calculating.style.display = 'none';
-        ById.quapteryx_output_wrapper.style.display = 'none';
-        ById.quapteryx_error.style.display = '';
         console.error(err);
-        ById.quapteryx_error.textContent = err instanceof Error ? `${err.name}: ${err.message}` : err;
-
+        showit({ error: err instanceof Error ? `${err.name}: ${err.message}` : err });
         last = null;
         return;
       }
       last = null;
     }
     if (evaluating) {
-      output.textContent = evaluating;
-      ById.quapteryx_calculating.style.display = 'none';
-      ById.quapteryx_output_wrapper.style.display = '';
-      ById.quapteryx_error.style.display = 'none';
+      showit({ output: showcrumbs(evaluating) });
       last = null;
     } else {
-      ById.quapteryx_calculating.style.display = 'none';
-      ById.quapteryx_output_wrapper.style.display = 'none';
-      ById.quapteryx_error.style.display = 'none';
+      showit({});
     }
   };
   document.onclick = (e) => {
@@ -164,7 +167,7 @@ const displayer = displayed => {
       }, displayed.value),
       combinator: Ve.HTML.span({
         style: { 'color': clr(displayed.argDepth) },
-      }, displayed.value),
+      }, "PIKS"[displayed.value]),
     };
   } else {
     const crumbcolor = clr(displayed.depth);
@@ -191,6 +194,7 @@ const displayer = displayed => {
     }
   }
 };
+window.displayer = displayer;
 
 const letters = Object.fromEntries(
   [].concat(display.nice_colors, display.nice_colors)

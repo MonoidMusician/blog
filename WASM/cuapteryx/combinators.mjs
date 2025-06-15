@@ -585,12 +585,7 @@ function display(crumbs, options=undefined) {
       len: 1,
       end: options.position+1,
     };
-    r = ({
-      '1': 'I',
-      '2': 'K',
-      '3': 'S',
-    })[crumbs[i]];
-    assert(r, "Unknown crumb", crumbs[i]);
+    r = crumbs[i];
     i++;
   }
   assert(i === crumbs.length, "Stopped at correct point", i, crumbs.length);
