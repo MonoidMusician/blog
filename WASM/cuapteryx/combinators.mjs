@@ -550,6 +550,70 @@ function toCombinators(crumbs, pedantic=true) {
   return r;
 }
 
+function display(crumbs, options=undefined) {
+  if (!options) options = {};
+  if (!options.depth) options.depth = 0;
+  if (!options.argDepth) options.argDepth = 0;
+  if (!options.position) options.position = 0;
+  crumbs = sugar(crumbs);
+  assert(isatomic(crumbs), "Needs to be atomic to convert to combinators", crumbs, reachesZero_impl(1, crumbs), crumbs.length);
+  let i = 0; let r = '';
+  let take1 = (needsParensHere) => {
+    let l = reachesZero_impl(1, crumbs.substring(i))/2;
+    assert(l, "Overran", crumbs.substring(i));
+    let rec = {
+      ...options,
+      depth: options.depth+1,
+      argDepth: options.argDepth+!!needsParensHere,
+      needsParens: needsParensHere,
+      position: options.position+i,
+      len: l,
+      end: options.position+i+l,
+    };
+    return [l, display(crumbs.substring(i, i+l), rec)];
+  };
+  if (crumbs[i] === '0') {
+    i++;
+    let [j,f] = take1(false);
+    i+=j;
+    let [k,x] = take1(true);
+    i+=k;
+    r = [f, x];
+  } else {
+    options = {
+      ...options,
+      len: 1,
+      end: options.position+1,
+    };
+    r = ({
+      '1': 'I',
+      '2': 'K',
+      '3': 'S',
+    })[crumbs[i]];
+    assert(r, "Unknown crumb", crumbs[i]);
+    i++;
+  }
+  assert(i === crumbs.length, "Stopped at correct point", i, crumbs.length);
+  return { value: r, ...options };
+}
+display.bracket_colors = [
+  "#ff004d",
+  "#fe7a29",
+  "#fab30e",
+  "#1dca24",
+  "#22c79a",
+  "#2372ff",
+  "#d350fe",
+  "#e86db7",
+];
+display.nice_colors = [
+  "#d350fe",
+  "#2372ff",
+  "#1dca24",
+  "#fab30e",
+  "#ff004d",
+];
+
 
 
 function eval_impl(crumbs, fuel=1000, strategy=undefined) {
@@ -619,6 +683,7 @@ export {
   factorial_calc,
   asNat,
   toCombinators,
+  display,
   eval_impl,
 };
 

@@ -27,7 +27,11 @@ Infinity and beyond:
 <button data-example="` M M">Self-reducing</button>
 <button data-example="` Y Y">Infinitely growing</button>
 <button data-example="0000030333333">Smallest infinitely growing program</button>
-<button data-example="K 2 `YY">Lazy evaluation</button>
+<br/>
+Lazy:
+<button data-example="``K2`YY">Non-strict evaluation</button>
+<button data-example="`$isZero `$factorial #23">Partial evaluation</button>
+<button data-example="`$asNat ``* #2 `$factorial #6">Shared evaluation?</button>
 <br/>
 </details>
 
@@ -142,13 +146,56 @@ const { ById } = Ve; // verity.js
 </div>
 
 <script type="module">
-import { combinatorTable, combinators, sugar, toCombinators } from "../assets/js/combinators.mjs";
+import { combinatorTable, combinators, sugar, toCombinators, display } from "../assets/js/combinators.mjs";
 import * as c from "../assets/js/combinators.mjs";
 globalThis.combinators = c; // export it to the browser console
 
 const { HTML, ById } = Ve; // verity.js
 
 let table = ById.combinator_table;
+
+const displayer = displayed => {
+  const clrs = display.bracket_colors;
+  const clr = i => clrs[i % clrs.length];
+  if (typeof displayed.value === 'string') {
+    return {
+      crumbstring: Ve.HTML.span({
+        style: { 'color': clr(displayed.depth) },
+      }, displayed.value),
+      combinator: Ve.HTML.span({
+        style: { 'color': clr(displayed.argDepth) },
+      }, displayed.value),
+    };
+  } else {
+    const crumbcolor = clr(displayed.depth);
+    const color = displayed.needsParens ? clr(displayed.argDepth) : 'gray';
+    const children = displayed.value.map(v => displayer(v));
+    return {
+      crumbstring: [
+        Ve.HTML.span({
+          style: { 'color': crumbcolor },
+        }, '0'),
+        children[0].crumbstring,
+        children[1].crumbstring,
+      ],
+      combinator: [
+        Ve.HTML.span({
+          style: { 'color': color },
+        }, '('),
+        children[0].combinator,
+        children[1].combinator,
+        Ve.HTML.span({
+          style: { 'color': color },
+        }, ')'),
+      ],
+    }
+  }
+};
+
+const letters = Object.fromEntries(
+  [].concat(display.nice_colors, display.nice_colors)
+    .map((c,i) => [String.fromCharCode('a'.charCodeAt() + i), c])
+);
 
 for (const [symbol, sk] of Object.entries(combinatorTable)) {
   if (typeof sk === 'string') {
@@ -157,7 +204,13 @@ for (const [symbol, sk] of Object.entries(combinatorTable)) {
       style: { 'text-align': 'left', 'font-style': 'italic' },
     }, sk)));
   } else {
-    let lambda;
+    const { crumbstring, combinator } =
+      sk.value === "0"
+        ? { crumbstring: "0", combinator: "0" }
+        : displayer(display(sk.value));
+    const lambda = sk.lambda && Array.from(sk.lambda).map(c =>
+      Ve.HTML.span({ style: { 'color': letters[c] ?? ('(λ.)'.includes(c) ? 'gray' : undefined) } }, c)
+    );
     table.appendChild(HTML.tr(
       HTML.th(HTML.span.code(symbol)),
       HTML.td((sk.name || '') + (sk.name && sk.bird ? ' / ' : '') + (sk.bird || '')),
@@ -168,11 +221,11 @@ for (const [symbol, sk] of Object.entries(combinatorTable)) {
         ]
         : [
           HTML.td(HTML.span.code(sk.def)),
-          HTML.td(HTML.span({ class: 'code nowrap' }, sk.lambda)),
+          HTML.td(HTML.span({ class: 'code nowrap' }, lambda)),
           HTML.td(
-            HTML.span.code(sk.value),
+            HTML.span.code(crumbstring),
             HTML.br,
-            HTML.span.code(toCombinators(sk.value)),
+            HTML.span.code(combinator),
           ),
         ]
       ),

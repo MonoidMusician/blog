@@ -121,6 +121,7 @@ var bracket_colors = [
   "#fe7a29",
   "#fab30e",
   "#1dca24",
+  // "#22c79a",
   "#2372ff",
   "#d350fe",
   "#e86db7",
