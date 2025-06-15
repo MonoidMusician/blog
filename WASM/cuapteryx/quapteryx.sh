@@ -6,7 +6,7 @@ set -euo pipefail
   THIS=$(basename "$0" .sh)
 
   if [[ "${1:-}" == "--watch" ]]; then
-    watchexec -f "$THIS.c" -f "*.h" -f "$THIS.sh" -f "$THIS.node.js" -f "*.js" -r -c --shell=none -- "$0"
+    watchexec -f "$THIS.c" -f "*.h" -f "$THIS.sh" -f "$THIS.node.mjs" -f "*.js" -r -c --shell=none -- "$0"
   else
     EXITCODE=0
 
@@ -139,8 +139,8 @@ set -euo pipefail
       --wasm-opt
       # --no-wasm-bounds-checks --no-wasm-stack-checks
     )
-    node "${NODE_OPTIONS[@]}" "$THIS.node.js" || EXITCODE=$?
-    # while ! node --inspect-brk "$THIS.node.js"; do
+    node "${NODE_OPTIONS[@]}" "$THIS.node.mjs" || EXITCODE=$?
+    # while ! node --inspect-brk "$THIS.node.mjs"; do
     #   read -p "Restart?"
     # done
 

@@ -712,9 +712,11 @@ bool refill(void) {
 
   // Scan one operand from `input_words`, so we know how to copy it
   goodptrbit(input_at);
+  goodptrbit(stop_at);
   const ptrbit start_at = input_at;
   const operand op = scan1input();
   if (isnullop(op)) {
+    // input_at = ptrbit_incr_bits(input_at, 2);
     return false;
   }
 
@@ -1076,13 +1078,13 @@ operand read_whnf_from_stack(void) {
     assert(stack[stack_top].was_evaling == NULL);
     stack[stack_top].was_evaling = NULL;
   } else {
-    if (stack[stack_top].was_evaling)
-      op = have_evaled(stack[stack_top].was_evaling, op);
+    // if (stack[stack_top].was_evaling)
+    //   op = have_evaled(stack[stack_top].was_evaling, op);
   }
   while (stack_top > stack_endstop) {
     --stack_top;
-    if (stack[stack_top].was_evaling)
-      op = have_evaled(stack[stack_top].was_evaling, op);
+    // if (stack[stack_top].was_evaling)
+    //   op = have_evaled(stack[stack_top].was_evaling, op);
     stack[stack_top].was_evaling = NULL;
     op = synthetic_apply(op, stack[stack_top].to_eval);
   }

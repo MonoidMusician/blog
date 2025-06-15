@@ -1,0 +1,1 @@
+../../WASM/cuapteryx/base.mjs

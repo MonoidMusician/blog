@@ -9,7 +9,7 @@
       "request": "launch",
       "name": "Debug Quapteryx (WASM on Node.js)",
       "skipFiles": ["<node_internals>/**"],
-      "program": "${workspaceFolder}/WASM/cuapteryx/quapteryx.node.js",
+      "program": "${workspaceFolder}/WASM/cuapteryx/quapteryx.node.mjs",
       "runtimeArgs": [
         // "--watch",
       ],

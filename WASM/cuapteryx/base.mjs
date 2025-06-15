@@ -36,7 +36,7 @@ const Perform = (obj, ...args) => {
 };
 
 
-module.exports = {
+export {
   assert,
   asserteq,
   u64,

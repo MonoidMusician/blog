@@ -1,4 +1,4 @@
-const fs = require('node:fs');
+const fs = await import('node:fs');
 const {
   assert,
   asserteq,
@@ -8,7 +8,7 @@ const {
   perform,
   Perform,
   performed1,
-} = require('./base.js');
+} = await import('./base.mjs');
 const {
   q2b,
   b2q,
@@ -21,12 +21,12 @@ const {
   factorialfn,
   factorial,
   factorial_calc,
-  toNat,
+  asNat,
   toCombinators,
   eval_impl,
-} = require('./combinators.js');
+} = await import('./combinators.mjs');
 
-const THIS = __filename.replace('.node.js', '');
+const THIS = import.meta.filename.replace('.node.mjs', '');
 const wasmBuffer = fs.readFileSync(THIS+'.wasm');
 let wasmInstance, ex;
 
@@ -320,8 +320,8 @@ function test_factorial(fixed_x=undefined) {
         let [lhs, rhs] = mno(s).split("=");
         testcase(lhs, rhs, fuel, debug);
       };
-      // console.error(x, sugar(`${toNat(factorial(x))} = ${sugar(+factorial_calc(x))}`));
-      t(`${toNat(factorial(x))} = ${sugar(+factorial_calc(x))}`, 123248203829023423n)
+      // console.error(x, sugar(`${asNat(factorial(x))} = ${sugar(+factorial_calc(x))}`));
+      t(`${asNat(factorial(x))} = ${sugar(+factorial_calc(x))}`, 123248203829023423n)
     } catch(e) {
       console.error("Locals", {test,desugared,x});
       throw e;
