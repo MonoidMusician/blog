@@ -8,7 +8,10 @@ const asserteq = (l, r, msg='Were not equal', ...info) => {
   assert(l === r, msg, l, r, ...info);
 };
 
-const u64 = (value) => ((value + (1n<<64n)) % (1n<<64n));
+const u64 = (value) => ((BigInt(value) + (1n<<64n)) % (1n<<64n));
+const u32 = (value) => Number((BigInt(value) + (1n<<32n)) % (1n<<32n));
+const s64 = (value) => u64(BigInt(value) + (1n<<63n)) - (1n<<63n);
+const s32 = (value) => u32(BigInt(value) + (1n<<31n)) - (1<<31);
 
 // Round `l` up to the next multiple of `amt`
 const roundUp = (l, amt=64) => l + (amt - l%amt)%amt;
@@ -40,6 +43,9 @@ export {
   assert,
   asserteq,
   u64,
+  u32,
+  s64,
+  s32,
   repeat,
   roundUp,
   perform,

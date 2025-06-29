@@ -159,18 +159,19 @@ let table = ById.combinator_table;
 
 const displayer = displayed => {
   const clrs = display.bracket_colors;
-  const clr = i => clrs[i % clrs.length];
+  const clr = i => i >= 0 ? clrs[i % clrs.length] : undefined;
   if (typeof displayed.value === 'string') {
+    const crumbcolor = displayed.depth ? clr(displayed.depth - 1) : undefined;
     return {
       crumbstring: Ve.HTML.span({
-        style: { 'color': clr(displayed.depth) },
+        style: { 'color': crumbcolor },
       }, displayed.value),
       combinator: Ve.HTML.span({
-        style: { 'color': clr(displayed.argDepth) },
+        style: { 'color': displayed.depth ? clr(displayed.argDepth) : undefined },
       }, "PIKS"[displayed.value]),
     };
   } else {
-    const crumbcolor = clr(displayed.depth);
+    const crumbcolor = displayed.depth ? clr(displayed.depth - 1) : 'gray';
     const color = displayed.needsParens ? clr(displayed.argDepth) : 'gray';
     const children = displayed.value.map(v => displayer(v));
     return {

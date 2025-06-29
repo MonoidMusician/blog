@@ -1,3 +1,4 @@
+SHELL:=bash
 TXTDIR=sources
 BUILDIR=static
 MDS=$(wildcard $(TXTDIR)/*.md)
@@ -69,7 +70,7 @@ $(BUILDIR) : | rendered
 pandoc : $(HTMLS)
 
 $(BUILDIR)/%.html : $(TXTDIR)/%.md pandoc/defaults.yaml pandoc/post.html PureScript/src/PureScript/Highlight.purs | cache
-	pandoc --defaults=pandoc/defaults.yaml $< -o $@
+	pandoc --defaults=pandoc/defaults.yaml --syntax-definition=<(./pandoc/skylighting/from_post.sh $<) $< -o $@
 
 .PHONY : watch-pandoc
 watch-pandoc :

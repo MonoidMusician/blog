@@ -15,20 +15,21 @@ Hereʼs a tiny taste:
 
 _What you write:_
 
-```js{data-lang="tmTTmt"}
-// If we are casing on a known boolean, we know which case to choose
-normalize/ ["if" "true" "then" exprT "else" exprF] => exprT;
-normalize/ ["if" "false" "then" exprT "else" exprF] => exprF;
-// If both branches have the same value, the boolean is irrelevant
-// This is an example of non-linear pattern matching, which will get desugared
-normalize/ ["if" _cond "then" expr "else" expr] => expr;
-// Fallback case, including most other nodes not specified
-normalize/ layer => normalized:
-  // ^ We compute the result, `normalized`, by following these operation(s):
-  // Recursively calling normalize on each child node of this node
-  // (that's it, that's the only operation in this case, but there could be more)
+```tmttmt{data-lang="tmTTmt"}
+normalize:: Term -> Term
+## If we are casing on a known boolean, we know which case to choose
+normalize: ["if" "true" "then" exprT "else" exprF] => exprT;
+normalize: ["if" "false" "then" exprT "else" exprF] => exprF;
+## If both branches have the same value, the boolean is irrelevant
+## This is an example of non-linear pattern matching, which will get desugared
+normalize: ["if" _cond "then" expr "else" expr] => expr;
+## Fallback case, including most other nodes not specified
+normalize: layer => normalized:
+  ## ^ We compute the result, `normalized`, by following these operation(s):
+  ## Recursively calling normalize on each child node of this node
+  ## (that's it, that's the only operation in this case, but there could be more)
   map normalize layer => normalized
-  // ^ okay this line probably needs tweaking for type inference ...
+  ## ^ okay this line probably needs tweaking for type inference ...
 ```
 
 _What it means:_
@@ -185,7 +186,7 @@ I think Iʼm ready to make it happen!
   - :::Key_Idea
     In particular, by committing ourselves to _this_ logic of **literals as ground truth for comparing _across types_**, we can generate automatic coercions between subsets of complex types.
 
-    I understand why a lot of languages want literals to have distinct types ([e.g.]{t=} Haskell ADTs all have distinct, named constructors), but it just poses a barrier to the fluidity I want to have in this system for language design of all things. If you name something `["if" _ "then" _ "else" _]`{.js} then you know what it represents! No matter if it is in the source CST, the desugared AST, or a final core pass&nbsp;…
+    I understand why a lot of languages want literals to have distinct types ([e.g.]{t=} Haskell ADTs all have distinct, named constructors), but it just poses a barrier to the fluidity I want to have in this system for language design of all things. If you name something `["if" _ "then" _ "else" _]`{.tmttmt} then you know what it represents! No matter if it is in the source CST, the desugared AST, or a final core pass&nbsp;…
     :::
 
     In some target runtimes, if they are faithful to the literals, these will be actual zero-cost coercions.
@@ -218,7 +219,7 @@ https://cohost.org/monoidmusician/post/3252802-first-class-patterns
 - We need a way to reflect patterns into values, filling in any variables with default values.
   This is most useful to implement unification: to unify a term with a pattern, you first replace the variables with unification variables, call the unification function (which has no idea what a pattern is), and then match the pattern against the result.
 
-  So if you want to unify `T`{.js} against `["tuple" x y]`{.js}, you first generate two unification variables `U1` and `U2`, then run `unify T ["tuple" U1 U2] => R`{.js} (if `T`{.js} is a unification variable, this will write into state that it is now known to be a tuple!), and finally do regular pattern matching of `R`{.js} against `["tuple" x y]`{.js}, binding `x`{.js} and `y`{.js} to the respective subnodes of `R`{.js}.
+  So if you want to unify `T`{.tmttmt} against `["tuple" x y]`{.tmttmt}, you first generate two unification variables `U1` and `U2`, then run `unify T ["tuple" U1 U2] => R`{.tmttmt} (if `T`{.tmttmt} is a unification variable, this will write into state that it is now known to be a tuple!), and finally do regular pattern matching of `R`{.tmttmt} against `["tuple" x y]`{.tmttmt}, binding `x`{.tmttmt} and `y`{.tmttmt} to the respective subnodes of `R`{.tmttmt}.
 
   - Iʼm not quite sure if this deserves to be called first-class patterns.
     To be honest, Iʼm not sure what first-class patterns would even mean!
@@ -367,8 +368,8 @@ But what if it is the first item that has the wrong type, and all 12 other items
 I believe it is best to typecheck each term in isolation, then see if the results can be unified all at once – and then unify the unification states, since unification variables may have been unified in inconsistent ways.
 (This requires unification state to be `WriterT`{.haskell} not `StateT`{.haskell}. Yeah.)
 
-```js{data-lang="tmTTmt"}
-typecheck/ ["ListLiteral" items] => ["App" "ListType" itemType]
+```tmttmt{data-lang="tmTTmt"}
+typecheck ["ListLiteral" items] => ["App" "ListType" itemType]
   map typecheck items => itemTypes
   ensureConsistency itemTypes => itemType
 ```
@@ -382,31 +383,32 @@ I would like to be able to short-circuit typechecking non-dependent functions, a
 This would show up as a soft error that allows further typechecking to proceed.
 Soft errors can be turned into critical errors when we need to be able to trust the result of typechecking, [e.g.]{t=} to know that normalization is going to complete.
 
-```js{data-lang="tmTTmt"}
-typecheck/ ["App" fn arg] => resultType:
-  // Unifies the result with a "Pi" type
+```tmttmt{data-lang="tmTTmt"}
+typecheck: term -> type
+typecheck ["App" fn arg] => resultType:
+  ## Unifies the result with a "Pi" type
   typecheck fn => ["Pi" binder domain codomain]
-  // See if `codomain` does not in fact depend on `binder`
+  ## See if `codomain` does not in fact depend on `binder`
   tryApplyConstant binder codomain
   ? ["constant" resultType]:
-    // `resultType` got assigned, so this case is not necessary to produce
-    // *some* result that can inform further type errors, though this node does
-    // not truly typecheck if it fails:
+    ## `resultType` got assigned, so this case is not necessary to produce
+    ## *some* result that can inform further type errors, though this node does
+    ## not truly typecheck if it fails:
     typecheck arg => domain
-    // `domain` is a non-linear pattern match, unifying `argType` and `domain`
-    // (any further references to `domain` would refer to the unified node)
+    ## `domain` is a non-linear pattern match, unifying `argType` and `domain`
+    ## (any further references to `domain` would refer to the unified node)
   ? ["non-constant"]:
-    // Typecheck the argument in strict mode to ensure that type errors result
-    // in an immediate failure even if an approximate result can be computed:
-    strictly ([] => typecheck arg) => domain
-    // (Unification with `domain` is always strict, it never adds soft errors.)
+    ## Typecheck the argument in strict mode to ensure that type errors result
+    ## in an immediate failure even if an approximate result can be computed:
+    strictly (\[] => typecheck arg) => domain
+    ## (Unification with `domain` is always strict, it never adds soft errors.)
 
-    // Now that it is safe to compute with `arg`, we apply it to compute the
-    // result type:
+    ## Now that it is safe to compute with `arg`, we apply it to compute the
+    ## result type:
     substitute binder arg codomain => resultType
   !
 
-// Probably should simplify this somehow ...
+## Probably should simplify this somehow ...
 ```
 
 <!--
@@ -417,7 +419,7 @@ branch :: f (Either a b) -> f (a -> c) -> f (b -> c) -> f c
 Is this good notation for lambdas as arguments to functions?
 I donʼt know.
 
-```js{data-lang="tmTTmt"}
+```tmttmt{data-lang="tmTTmt"}
   strictly | [] => r:
     typecheck arg => r
   ! => domain
@@ -425,7 +427,7 @@ I donʼt know.
 
 Macros for currying?
 
-```js{data-lang="tmTTmt"}
+```tmttmt{data-lang="tmTTmt"}
 asdf (!2 append !1 !0 !)
 ```
 
@@ -435,7 +437,7 @@ I want to avoid some problems:
 - Related: figuring out where the lambdas end is also annoying.
   I do like dangling lambdas actually.
 
-```js{data-lang="tmTTmt"}
+```tmttmt{data-lang="tmTTmt"}
 ["if" ($matches-tag arg1) (: MyExprType) "then" "true" "else" ($failed-match)]
 ```
 :::
@@ -493,18 +495,21 @@ The rough grammar for types:
 
 ```bnf
 ty =
-  | '[' ty+ ']' -- fixed-size tuple
-  | '+' ty -- non-empty list
-  | '*' ty -- sugar for `'+' ty '|' '[' ']'`
-  | ty '|' ty -- union
-  | '$$' -- non-empty strings
-  | '$' -- strings, sugar for `'$$' '|' '"' '"'`
-  | '"' strchar* '"' -- string literal
-  | ty '->' ty -- function type
-  | name -- type variable
-  | '(' ty+ ')' -- type application
-  | '(' '?' ty+ ')' -- type hole
-  | '(' '|' ')' -- empty type (Void/never)
+  | '+' ty             ## non-empty list
+  | '*' ty             ## possibly-empty list, sugar for `'+' ty '|' '[' ']'`
+  | '?' ty             ## optional, sugar for `'[' ty ']' '|' '[' ']'`
+  | ty '|' ty          ## union (may also have leading bars, or trailing bars, if within parentheses)
+  | '$$'               ## non-empty strings
+  | '$'                ## strings, sugar for `'$$' '|' '"' '"'`
+  | string             ## string singleton
+  | ty '->' ty         ## function type
+  | name               ## type variable
+  | '(' ty+ ')'        ## type application (maybe?)
+  | '(?' ty* '?'? ')'  ## type hole
+  | '(' '|' ')'        ## empty type (Void/never)
+  | '[' aspect* ']'                 ## vector literal
+  | '{'  (string '=' aspect)*  '}'  ## hash literal
+  | '{.' (string '=' aspect)* '.}'  ## enumerated record literal
 ```
 
 <details class="Example">
@@ -513,60 +518,64 @@ ty =
 
 ```tmttmt
 (# primitive #)
-#type Void = (|)
+#type(Void)( (|) )
 
-#type Unit = []
+#type(Unit)( [] )
 
-#type Wrap a = [a]
+#type(Wrap a)( [a] )
 
 (# sugar for `$$ | ""` #)
-#type String = $
+#type(String)($)
 (# primitive #)
-#type NEString = $$
+#type(NEString)($$)
 
 (# `Maybe a` can be coerced to `List a` #)
-#type Maybe a = [] | [a]
+#type(Maybe a)([] | [a])
 
-Maybe2List : forall a. Maybe a -> List a
-Maybe2List a => a
+Maybe2List:: #forall(a)(Maybe a -> List a)
+Maybe2List: a => a
 
 (# sugar for `+a | []` #)
-#type List a = *a
+#type(List a)(*a)
 (# primitive #)
-#type NEList a = +a
+#type(NEList a)(+a)
 
-#type Cons a = [] | [a (Cons a)]
-#type Snoc a = [] | [(Snoc a) a]
+#type(Cons a)([] | [a (Cons a)])
+#type(Snoc a)([] | [(Snoc a) a])
 
-#type Endo a = a -> a
+#type(Endo a)(a -> a)
 
-#type Tuple a b = [a b]
+#type(Tuple a b)([a b])
 
-#type Either a b =
+#type(Either a b)(
   | ["L" a]
   | ["R" b]
+)
 
 (# newtype (once I have nominal types) #)
-#type Validation a b = Either a b
+#type(Validation a b)(Either a b)
 
-#type These a b =
+#type(These a b)(
   | Either a b
   | ["B" a b]
+)
 
 (# strings and lists, recursively #)
-#type AnyData =
+#type(AnyData)(
   | $
   | *AnyData
+)
 
 (# strings, lists, and functions, recursively #)
 (# for an untyped language #)
-#type UniType =
+#type(UniType)(
   | AnyData
   | (UniType -> UniType)
+)
 
 (# sorry not sorry #)
 (# (you will appreciate me later) #)
-#type Nat = [] | [Nat]
+#type(Nat)([] | [Nat])
 ```
 
 </details>

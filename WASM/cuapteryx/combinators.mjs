@@ -2,6 +2,7 @@ import {
   assert,
   roundUp,
   repeat,
+  u64,
 } from './base.mjs';
 
 // Convert quaternary to binary
@@ -13,6 +14,46 @@ const q2b = i => {
 const b2q = i => {
   return i.padStart(roundUp(i.length, 2), 0).replace(/[01][01]/g, q => parseInt(q, 2).toString(4));
 };
+
+// quaternary to bigint
+const q2I = i => {
+  let bits = q2b(i);
+  bits = bits.padEnd(64, 0);
+  return BigInt("0b" + bits.substring(0, 64));
+};
+// bigint to quaternary?
+const I2q = i => i.toString(4);
+// quaternary into buffer
+const q2B = (value, buf) => {
+  const littleEndian = true;
+  let bits = q2b(value);
+  bits = bits.padEnd(roundUp(bits.length, 64), 0);
+  if (!(buf instanceof DataView)) {
+    if (!buf) buf = new ArrayBuffer(bits.length / 8);
+    if (!(buf instanceof ArrayBuffer)) buf = buf.buffer;
+    buf = new DataView(buf);
+  }
+  for (let i=0; i<bits.length/64; i++) {
+    const word = BigInt("0b" + bits.substring(64*i, 64*i+64));
+    buf.setBigUint64(8*i, word, littleEndian);
+  }
+  return buf;
+};
+// buffer into quaternary
+const B2q = (crumbs, buf) => {
+  const littleEndian = true;
+  if (!(buf instanceof DataView)) {
+    if (!(buf instanceof ArrayBuffer)) buf = buf.buffer;
+    buf = new DataView(buf);
+  }
+  const output = new Array(roundUp(crumbs, 32)/32);
+  for (let i=0; i<output.length; i++) {
+    output[i] = u64(outputView.getBigUint64(8*i, littleEndian));
+  }
+  return b2q(Array.from(output, bigint => bigint.toString(2).padStart(64, 0)).join("")).substring(0, len);
+};
+
+
 // Separate every 64 bits with `_`, 32 bits with `…`, and 16 bits with `.`
 const prettyCrumbs = i => {
   let place = 0;
@@ -23,7 +64,7 @@ const prettyCrumbs = i => {
 function reachesZero_impl(expected, input) {
   expected = Number(expected);
   let i = 0;
-  for (const c of input) if (!(i++, expected += 2*!+c - 1)) return (2*i);
+  for (const c of input) if (!(i++, expected += 2*(c=='0') - 1)) return (2*i);
   return 0;
 }
 function deltaExpecting_impl(input) {
@@ -463,6 +504,7 @@ function isatomic(s) {
   return reachesZero_impl(1, s) === (s.length * 2);
 }
 function toatomic(s) {
+  if (typeof s === 'bigint') return toatomic(I2q(s));
   let zeropoint;
   // Drop leading zeros if needed
   while (!(zeropoint = reachesZero_impl(1, s) / 2)) {
@@ -665,6 +707,9 @@ function eval_impl(crumbs, fuel=1000, strategy=undefined) {
 export {
   q2b,
   b2q,
+  q2I,
+  q2B,
+  B2q,
   prettyCrumbs,
   reachesZero_impl,
   deltaExpecting_impl,

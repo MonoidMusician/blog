@@ -16,11 +16,14 @@ filters:
   - pandoc/lua/concat.lua
   - pandoc/lua/canvas.lua
   - pandoc/lua/widgets.lua
+  - pandoc/lua/skylighting.lua
 css:
   - assets/katex/katex.min.css
 syntax-definition:
   - pandoc/skylighting/c.xml
   - pandoc/skylighting/fish.xml
   - pandoc/skylighting/purescript.xml
+  - pandoc/skylighting/bnf.xml
+  - pandoc/skylighting/tmttmt.xml
 metadata:
   lang: en
