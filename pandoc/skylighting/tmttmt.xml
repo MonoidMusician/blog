@@ -3,37 +3,45 @@
   <highlighting>
     <contexts>
       <context name="Root" attribute="Normal Text" lineEndContext="#stay">
-        <RegExpr attribute="Function" context="#stay" String="^[-a-zA-Z0-9_]+::?"/>
+        <RegExpr attribute="Function" context="#stay" String="^\s*[-a-zA-Z0-9_]+(::?|(?=\s*:=))"/>
         <RegExpr attribute="Normal Text" context="#stay" String="[-a-zA-Z0-9_]+(#(#|\d+))?"/>
-        <RegExpr attribute="Keyword" context="#stay" String="#[-a-zA-Z_][-a-zA-Z0-9_]*"/>
+        <RegExpr attribute="Keyword" context="#stay" String="%[-a-zA-Z_][-a-zA-Z0-9_]*"/>
         <RegExpr attribute="Annotation" context="#stay" String="@[-a-zA-Z_][-a-zA-Z0-9_]*"/>
-        <RegExpr attribute="Keyword" context="#stay" String="-&gt;|\$\$|\$|\(\|\)|=?=>"/>
+        <RegExpr attribute="Keyword" context="#stay" String="-&gt;|\$\$|\$|\(\|\)|=?=&gt;|:=|\?\s*=&gt;|=&gt;\s*\?"/>
         <RegExpr attribute="Meta" context="#stay" String="…|&lt;[^][(){}&lt;&gt;]+&gt;"/>
         <IncludeRules context="FindOperators"/>
         <IncludeRules context="FindComments"/>
         <IncludeRules context="FindStrings"/>
+        <RegExpr attribute="Annotation" name="StartAnnotationBlock" context="AnnotationBlock" String="@{\s*[-a-zA-Z_][-a-zA-Z0-9_]*"/>
+      </context>
+
+      <context name="AnnotationBlock">
+        <IncludeRules context="FindComments"/>
+        <IncludeRules context="FindStrings"/>
+        <IncludeRules context="FindBalanced"/>
+        <StringDetect attribute="Annotation" context="#pop" String="}"/>
       </context>
 
       <context name="FindOperators" attribute="Normal Text" lineEndContext="#stay">
-        <RegExpr attribute="Operator" context="#stay" String="[=|+*?!\\:;]"/>
+        <RegExpr attribute="Operator" context="#stay" String="\(:|:\)|[=|+*?!\\:;]"/>
       </context>
 
       <context name="FindComments" attribute="Comment">
         <StringDetect attribute="Comment" context="LineComment" String="##"/>
         <StringDetect attribute="Comment" context="LineComment" String="#!"/>
-        <StringDetect attribute="Comment" context="BlockComment" String="{{#"/>
+        <StringDetect attribute="Comment" context="BlockComment" String="{#"/>
         <StringDetect attribute="Comment" context="ParenComment" String="(#"/>
       </context>
 
       <context name="LineComment" attribute="Comment" lineEndContext="#pop">
       </context>
       <context name="BlockComment" attribute="Comment" lineEndContext="#stay">
-        <StringDetect attribute="Comment" context="BlockComment" String="{{#"/>
+        <StringDetect attribute="Comment" context="BlockComment" String="{#"/>
         <StringDetect attribute="Comment" context="ParenComment" String="(#"/>
-        <StringDetect attribute="Comment" context="#pop" String="#}}"/>
+        <StringDetect attribute="Comment" context="#pop" String="#}"/>
       </context>
       <context name="ParenComment" attribute="Comment" lineEndContext="#stay">
-        <StringDetect attribute="Comment" context="BlockComment" String="{{#"/>
+        <StringDetect attribute="Comment" context="BlockComment" String="{#"/>
         <StringDetect attribute="Comment" context="ParenComment" String="(#"/>
         <StringDetect attribute="Comment" context="#pop" String="#)"/>
       </context>
@@ -59,6 +67,26 @@
         <Detect2Chars attribute="Escape" char="\" char1="$"/>
         <Detect2Chars attribute="Escape" char="\" char1="\"/>
         <DetectChar attribute="String DoubleQ" context="#pop" char="&quot;"/>
+      </context>
+
+      <context name="FindBalanced">
+        <StringDetect context="Paren" String="("/>
+        <StringDetect context="Brace" String="{"/>
+        <StringDetect context="Bracket" String="["/>
+        <IncludeRules context="FindComments"/>
+        <IncludeRules context="FindStrings"/>
+      </context>
+      <context name="Paren">
+        <IncludeRules context="FindBalanced"/>
+        <StringDetect context="#pop" String=")"/>
+      </context>
+      <context name="Brace">
+        <IncludeRules context="FindBalanced"/>
+        <StringDetect context="#pop" String="}"/>
+      </context>
+      <context name="Bracket">
+        <IncludeRules context="FindBalanced"/>
+        <StringDetect context="#pop" String="]"/>
       </context>
     </contexts>
 

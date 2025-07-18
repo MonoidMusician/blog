@@ -346,11 +346,11 @@ Worship the shape of data and the structure of code ...
     - `downZF :: f x -> f (ZF f' x)`{.haskell}
     - `ixF :: f' x -> i`{.haskell}
 - Array stuff
-  - normal `zipWith`
-  - “long” `zipWith`
-  - `takeWhileJustWithRest :: (a -> Maybe b) -> Array a -> (Array b, Array a)`
+  - normal `zipWith`{.haskell}
+  - “long” `zipWith`{.haskell}
+  - `takeWhileJustWithRest :: (a -> Maybe b) -> Array a -> (Array b, Array a)`{.haskell}
     - some kind of condensor pattern
-  - something better than `mapAccumL`/`mapAccumR` lol
+  - something better than `mapAccumL`{.haskell}/`mapAccumR`{.haskell} lol
     - every time I want to reach for a stateful traversal, I find it so annoying!
   - maybe some actual parser type thing
 
@@ -369,7 +369,7 @@ I believe it is best to typecheck each term in isolation, then see if the result
 (This requires unification state to be `WriterT`{.haskell} not `StateT`{.haskell}. Yeah.)
 
 ```tmttmt{data-lang="tmTTmt"}
-typecheck ["ListLiteral" items] => ["App" "ListType" itemType]
+typecheck: ["ListLiteral" items] => ["App" "ListType" itemType]:
   map typecheck items => itemTypes
   ensureConsistency itemTypes => itemType
 ```
@@ -384,8 +384,8 @@ This would show up as a soft error that allows further typechecking to proceed.
 Soft errors can be turned into critical errors when we need to be able to trust the result of typechecking, [e.g.]{t=} to know that normalization is going to complete.
 
 ```tmttmt{data-lang="tmTTmt"}
-typecheck: term -> type
-typecheck ["App" fn arg] => resultType:
+typecheck:: term -> type
+typecheck: ["App" fn arg] => resultType:
   ## Unifies the result with a "Pi" type
   typecheck fn => ["Pi" binder domain codomain]
   ## See if `codomain` does not in fact depend on `binder`
@@ -415,14 +415,12 @@ typecheck ["App" fn arg] => resultType:
 branch :: f (Either a b) -> f (a -> c) -> f (b -> c) -> f c
 -->
 
-:::{.Note box-name="Aside"}
+<!-- :::{.Note box-name="Aside"}
 Is this good notation for lambdas as arguments to functions?
 I donʼt know.
 
 ```tmttmt{data-lang="tmTTmt"}
-  strictly | [] => r:
-    typecheck arg => r
-  ! => domain
+  strictly (\[] => typecheck arg) => domain
 ```
 
 Macros for currying?
@@ -440,7 +438,7 @@ I want to avoid some problems:
 ```tmttmt{data-lang="tmTTmt"}
 ["if" ($matches-tag arg1) (: MyExprType) "then" "true" "else" ($failed-match)]
 ```
-:::
+::: -->
 
 ```haskell
 -- The behavior of `select` for the typechecker monad/thingy is that if the
@@ -508,8 +506,8 @@ ty =
   | '(?' ty* '?'? ')'  ## type hole
   | '(' '|' ')'        ## empty type (Void/never)
   | '[' aspect* ']'                 ## vector literal
-  | '{'  (string '=' aspect)*  '}'  ## hash literal
-  | '{.' (string '=' aspect)* '.}'  ## enumerated record literal
+  | '{'  (string '=' aspect)*  '}'  ## enumerated record literal
+  | '{.' (string '=' aspect)* '.}'  ## hash literal
 ```
 
 <details class="Example">
@@ -518,64 +516,65 @@ ty =
 
 ```tmttmt
 (# primitive #)
-#type(Void)( (|) )
+%type(Void)( (|) )
 
-#type(Unit)( [] )
+%type(Unit)( [] )
 
-#type(Wrap a)( [a] )
+%type(Wrap a)( [a] )
 
 (# sugar for `$$ | ""` #)
-#type(String)($)
+%type(String)($)
 (# primitive #)
-#type(NEString)($$)
+%type(NEString)($$)
 
 (# `Maybe a` can be coerced to `List a` #)
-#type(Maybe a)([] | [a])
+%type(Maybe a)([] | [a])
 
-Maybe2List:: #forall(a)(Maybe a -> List a)
+Maybe2List:: %forall(a)((Maybe a) -> (List a))
 Maybe2List: a => a
 
 (# sugar for `+a | []` #)
-#type(List a)(*a)
+%type(List a)(*a)
 (# primitive #)
-#type(NEList a)(+a)
+%type(NEList a)(+a)
 
-#type(Cons a)([] | [a (Cons a)])
-#type(Snoc a)([] | [(Snoc a) a])
+%type(Cons a)([] | [a (Cons a)])
+%type(Snoc a)([] | [(Snoc a) a])
 
-#type(Endo a)(a -> a)
+%type(Endo a)(a -> a)
 
-#type(Tuple a b)([a b])
+%type(Tuple a b)([a b])
 
-#type(Either a b)(
+%type(Either a b)(
   | ["L" a]
   | ["R" b]
 )
 
 (# newtype (once I have nominal types) #)
-#type(Validation a b)(Either a b)
+%type(Validation a b)(Either a b)
 
-#type(These a b)(
-  | Either a b
+%type(These a b)(
+  | (Either a b)
   | ["B" a b]
 )
 
 (# strings and lists, recursively #)
-#type(AnyData)(
+%type(AnyData)(
   | $
   | *AnyData
 )
 
 (# strings, lists, and functions, recursively #)
 (# for an untyped language #)
-#type(UniType)(
-  | AnyData
+%type(UniType)(
+  | $
+  | *UniType
   | (UniType -> UniType)
 )
 
 (# sorry not sorry #)
 (# (you will appreciate me later) #)
-#type(Nat)([] | [Nat])
+%type(Nat)([] | [Nat])
 ```
 
 </details>

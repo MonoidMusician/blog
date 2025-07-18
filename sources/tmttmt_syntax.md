@@ -4,38 +4,42 @@ title: "tmTTmt Syntax"
 
 ## Overview
 
+A programming language syntax with good parsability and prosody, hopefully.
+
 - Top-level structure
-  - `name:: type`{.tmttmt} type signature, like `name :: Type`{.haskell} in Haskell
+  - `name:: Type`{.tmttmt} type signature, like `name :: Type`{.haskell} in Haskell
   - `name: inputs… => output;`{.tmttmt} function case, like `name inputs… = output`{.haskell}
     - `name: inputs… => output: stmts…`{.tmttmt} for a function body
-  - `#pragma(arg)(u)(ments)`{.tmttmt}
+  - `name := value`{.tmttmt} direct definition (not a function)
+  - `%pragma(arg)(u)(ments)`{.tmttmt}
 
 - General structure / design philosophy:
   - `[…]`{.tmttmt} for vectors
   - `{…}`{.tmttmt} for hashes/records
-    - `{ "K"=V … }` for hashes, which allow implicit weakening
-      - [e.g.]{t=} `{ "type"="error" "error"=$$ } | { "type"="result" "value"=$ }`{.tmttmt}
-    - `{. "K"=V … .}` for records, which allow matching on the exact field names
-      - [e.g.]{t=} `{. "error"=$$ .} | {. "result"=$ .}`{.tmttmt}
+    - `{. K=V … .}`{.tmttmt} for hashes, which allow implicit weakening
+      - [e.g.]{t=} `{. type="error" error=$$ .} | {. type="result" value=$ .}`{.tmttmt}
+    - `{ K=V … }`{.tmttmt} for records, which allow matching on the exact field names
+      - [e.g.]{t=} `{ error=$$ } | { result=$ }`{.tmttmt}
   - `{{…}}`{.tmttmt} for other block structure
-    - `{{# … #}}`{.tmttmt} nested comments
-    - `{{@annotation}}`{.tmttmt}
-    - `{{: … :}}`{.tmttmt} type/kind annotation
+    - `{: … :}`{.tmttmt} type/kind annotation
+    - `{# … #}`{.tmttmt} nested leading/prefix comments
+    - `@{annotation}`{.tmttmt} prefix attribute annotation
+      - `@name`{.tmttmt} simple prefix annotation
     - `{{! … }}`{.tmttmt} function block
     - `{{{ … }}}`{.tmttmt} module block
   - `(…)`{.tmttmt} for parenthetical or grouped structure
-    - `(# … #)`{.tmttmt} nested comments
-    - `(@annotation)`{.tmttmt}
     - `(: … :)`{.tmttmt} type/kind annotation
+    - `(# … #)`{.tmttmt} nested trailing/postfix comments
+    - `(@annotation)`{.tmttmt} postfix attribute annotation
 
     - `(| … )`{.tmttmt}, `(! … )`{.tmttmt}, `(\ … )`{.tmttmt} lambdas (see below)
     - `(? … )`{.tmttmt} type(d) hole
 
-    - future: `(= …)` for infix operator expressions, possibly [distfix](https://dl.acm.org/doi/pdf/10.1145/5657.5659) too
+    - future: `(= …)`{.tmttmt} for infix operator expressions, possibly [distfix](https://dl.acm.org/doi/pdf/10.1145/5657.5659) too
 
 - Comments
-  - Leading comments: `{{# look at this: #}} "this"`{.tmttmt}
-  - Trailing comments: `"thing" (# <- this thing does this #)`{.tmttmt}
+  - Leading/prefix comments: `{# look at this: #} "this"`{.tmttmt}
+  - Trailing/postfix comments: `"thing" (# <- this thing does this #)`{.tmttmt}
   - Line comments: `## comment`{.tmttmt}, `#!tmttmt`{.tmttmt}
 
 - Functions
@@ -58,7 +62,7 @@ title: "tmTTmt Syntax"
     | "0" i1 => r:
       f a b c i1 => r
     | "1" i2 => r:
-      f a b c i2
+      f a b c i2 => r
     )
     ```
   - Block of statements:
@@ -87,8 +91,10 @@ title: "tmTTmt Syntax"
 ```bnf
 ## Fundamentals
 
+no-match
 name = /(?![0-9])[-a-zA-Z0-9_]+/
 qual = name | qual'.'name
+variable = name('#'('#'|/\d+/))?
 string = '"' strchar* '"'  ## string literal
 strchar = /[^\"]+|\\./
 
@@ -96,22 +102,26 @@ int = /\d+/
 
 ## Main syntactic categories
 
-structures(aspect) =
-  | '[' aspect* ']'                 ## vector literal
-  | '{'  (string '=' aspect)*  '}'  ## hash literal
-  | '{.' (string '=' aspect)* '.}'  ## enumerated record literal
+structures(syntax, pun = no-match) =
+  | '['              syntax       *  ']'  ## vector literal
+  | '{'  (string '=' syntax | pun)*  '}'  ## hash literal
+  | '{.' (string '=' syntax | pun)* '.}'  ## enumerated record literal
 
 
 ## Term syntax
 ## (It is a subset of balanced syntax,
 ## for modularity of parsing)
-tm (< any_balanced_stringly) =
-  | name('#'('#'|/\d+/))?      ## variable
-  | qual'.'name               ## qualified name
+tm (< any_balanced_syntax) =
+  | variable                   ## variable
+  | qual'.'name                ## qualified name
   | '#'int                     ## template variable
   | string                     ## string literal
 
-  | structures(tm)             ## vector/hash/record literals
+  | structures(tm, variable)   ## vector/hash/record literals
+  | '['                        ## list annotated with element type
+      '(' ':' ty ('::' ty)? ':'? ')'
+      tm*
+    ']'
 
   | tyannotated(tm)            ## term with a type or comment or custom annotation
 
@@ -126,10 +136,9 @@ lambda =
   ## absurd :: Void -> forall a. a
   | '?!'
   ## full lambda syntax
-  | '('
+  | '(' '|'?
       ('|' casedecl)+
-      '!'?
-    ')'
+    '|'? '!'? ')'
   ## positional hole syntax, e.g.
   ## (!2 append #1 #0 !)
   | '(' ('!'{1,4} | '!'int) tm+ '!'? ')'
@@ -149,9 +158,9 @@ casedecl =
   ## type annotation of the (whole / remaining) function
   | '{{' ':' ty ':'? '}}' casedecl
   ## comment for the function case
-  | '{{#' any_balanced_comment '#}}' casedecl
+  | '{#' any_balanced_comment '#}' casedecl
   ## annotation for the function case
-  | '{{' '@' annotation '}}' casedecl
+  | '@' '{' annotation '}' casedecl
   | '@' annotation_name casedecl
 
 ## top-level type signature
@@ -160,7 +169,7 @@ typesig =
 
 arrow =
   ## fall-through call (tries the next case if it fails)
-  | '?' '=>'
+  | '?' '=>' | '=>' '?'
   ## irrevocable call
   | '=>'
   ## annotate the call specifically
@@ -171,8 +180,8 @@ stmt =
   ## normal call (applicative/monad style)
   | '?'? tm+ arrow tm
   ## case call (selective applicative style)
-  | '?'? tm+ '?'? select_case* '!'
-  | '{{' '@' annotation '}}' stmt  ## duplicates the term annotation for the stmt
+  | '?'? tm+ '?'? select_case* '??'? '!'
+  | '@' '{' annotation '}' stmt  ## duplicates the term annotation for the stmt
   | '@' annotation_name stmt       ## duplicates the term annotation for the stmt
   ## top-level declarations (function-local module scope)
   | '{{{' top_level '}}}'
@@ -182,37 +191,37 @@ select_case =
   | '?' tm ':' stmt*
 
 ## Type syntax
-ty (< any_balanced_stringly) =
-  | structures(ty)     ## vector/hash/record literals
-  | '+' ty             ## non-empty list
-  | '*' ty             ## possibly-empty list, sugar for `'+' ty '|' '[' ']'`
-  | '?' ty             ## optional, sugar for `'[' ty ']' '|' '[' ']'`
-  | ty '|' ty          ## union (may also have leading bars, or trailing bars, if within parentheses)
-  | '$$'               ## non-empty strings
-  | '$'                ## strings, sugar for `'$$' '|' '"' '"'`
-  | string             ## string singleton
-  | ty '->' ty         ## function type
-  | name               ## type variable
-  | quantified(ty)     ## quantifiers (#forall, #exists)
-  | '(' ty+ ')'        ## type application (maybe?)
-  | '(?' ty* '?'? ')'  ## type hole
-  | '(' '|' ')'        ## empty type (Void/never)
-  | tyannotated(ty)    ## annotations
+ty (< any_balanced_syntax) =
+  | structures(ty, name)  ## vector/hash/record literals
+  | '+' ty                ## non-empty list
+  | '*' ty                ## possibly-empty list, sugar for `'+' ty '|' '[' ']'`
+  | '?' ty                ## optional, sugar for `'[' ty ']' '|' '[' ']'`
+  | ty '|' ty             ## union (may also have leading bars, or trailing bars, if within parentheses)
+  | '$$'                  ## non-empty strings
+  | '$'                   ## strings, sugar for `'$$' '|' '"' '"'`
+  | string                ## string singleton
+  | ty '->' ty            ## function type
+  | name                  ## type variable
+  | quantified(ty)        ## quantifiers (#forall, #exists)
+  | '(' ty+ ')'           ## type application (maybe?)
+  | '(?' ty* '?'? ')'     ## type hole
+  | '(' '|' ')'           ## empty type (Void/never)
+  | tyannotated(ty)       ## annotations
 
 ## Pragmas are not technically allowed to stand for types (yet),
 ## but we can at least special case it, since the syntax is
 ## reserved and could work like this anyways
-quantified(aspect) =
-  | '#'('forall'|'exists')
+quantified(syntax) =
+  | '%'('forall'|'exists')
     '(' tyannotated(name)* ')'  ## variables, annotated with kinds
-    '(' aspect ')'
+    '(' syntax ')'
   | ('∀'|'∃')
     tyannotated(name)*
-    ':'
-    aspect
+    ','
+    syntax
 
 pragma =
-  | '#'name
+  | '%'name
     ('(' (tm* | ty* | stmt*) ')')*
   | tyannotated(pragma)
 
@@ -224,9 +233,11 @@ top_level =
 annotation_name = name (':' name)*
 annotation = annotation_name annotation_term*
 ## terms used in custom annotations, so everything is parsed properly
-annotation_term (< any_balanced_stringly) =
+annotation_term (< any_balanced_syntax) =
   ## bare string
   | string
+  ## bare name
+  | name
   ## data structures / non leaf nodes
   | structures(annotation_term)
   ## labeled syntactic categories
@@ -234,6 +245,7 @@ annotation_term (< any_balanced_stringly) =
   | '('  'stmt' ':' stmt  ')'
   | '('  'tm'   ':' tm    ')'
   | '('  'ty'   ':' ty    ')'
+  | '(' 'json'  ':' json  ')'
   | '(' '*name' ':' name* ')'
   | '(' '*stmt' ':' stmt* ')'
   | '(' '*tm'   ':' tm*   ')'
@@ -245,34 +257,34 @@ annotation_term (< any_balanced_stringly) =
 
 
 ## Annotation or type annotation
-tyannotated(aspect) =
-  | aspect '(' ':' ty ('::' ty)? ':'? ')'    ## suffix type annotation
-  | '{{' ':' ty ':'? '}}' aspect             ## prefix type annotation
-  | annotated(aspect)
+tyannotated(syntax) =
+  | syntax '(' ':' ty ('::' ty)? ':'? ')'    ## suffix type annotation
+  | '{{' ':' ty ':'? '}}' syntax             ## prefix type annotation
+  | annotated(syntax)
 ## Annotation or comment
-annotated(aspect) (< any_balanced_stringly) =
-  | aspect '(#' any_balanced_comment* '#)'    ## suffix comment
-  | '{{#' any_balanced_comment* '#}}' aspect  ## prefix comment
-  | aspect '(' '@' annotation ')'             ## suffix parameterized annotation
-  | '{{' '@' annotation '}}' aspect           ## prefix parameterized annotation
-  | '@' annotation_name aspect                ## prefix simple annotation
+annotated(syntax) (< any_balanced_syntax) =
+  | syntax '(#' any_balanced_comment* '#)'    ## suffix comment
+  | '{#' any_balanced_comment* '#}' syntax  ## prefix comment
+  | syntax '(' '@' annotation ')'             ## suffix parameterized annotation
+  | '@' '{' annotation '}' syntax           ## prefix parameterized annotation
+  | '@' annotation_name syntax                ## prefix simple annotation
 
 
 any_balanced_comment =
   | '(#' any_balanced_comment '#)'
-  | '{{#' any_balanced_comment '#}}'
+  | '{#' any_balanced_comment '#}'
   | /./  ## any single character
   | any_balanced_comment*
 
-any_balanced_stringly (< any_balanced_comment) =
+any_balanced_syntax (< any_balanced_comment) =
   | '(#' any_balanced_comment '#)'
-  | '{{#' any_balanced_comment '#}}'
-  | '(' any_balanced_stringly ')'
-  | '[' any_balanced_stringly ']'
-  | '{' any_balanced_stringly '}'
+  | '{#' any_balanced_comment '#}'
+  | '('  any_balanced_syntax   ')'
+  | '['  any_balanced_syntax   ']'
+  | '{'  any_balanced_syntax   '}'
   | string
   | /./  ## any single character
-  | any_balanced_stringly*
+  | any_balanced_syntax*
 ```
 
 ## Examples
@@ -284,9 +296,9 @@ normalize: ["if" cond "then" result "else" result] => result;
 normalize: ["if" cond "then" result#1 "else" result#2] => result#0:
   eq result#1 result#2 => result#0
 
-build-options:: { "X"=boolean "Y"=("built-in" | ["provided" $$]) "args"=*$ } -> *$
-build-options: { "X"=X "Y"=Y "args"=args } => options##:
-  {{# start with empty options #}}
+build-options:: { X=Boolean Y=("built-in" | ["provided" $$]) args=*$ } -> *$
+build-options: { X=X Y=Y args=args } => options##:
+  {# start with empty options #}
   [] => options##
   X ? "true":
     append2 options## [ "--use-X" ] => options##
@@ -305,7 +317,7 @@ build-options: { "X"=X "Y"=Y "args"=args } => options##:
     append3 options## [ "--" ] args => options##
   !
 
-build-options-with-monad: { "X"=X "Y"=Y "args"=args } => options:
+build-options-with-monad: { X=X Y=Y args=args } => options:
   run-writer-monad (| [] => []:
     X ? "true":
       appending1 [ "--use-X" ] => []
@@ -342,26 +354,32 @@ build-options-with-monad: { "X"=X "Y"=Y "args"=args } => options:
 
 ## Dynamic
 
+### Keywords
+
+`%forall(<names>)(<ty>)`{.tmttmt} or `%F`{.tmttmt}, `%exists(<names>)(<ty>)`{.tmttmt} or `%E`{.tmttmt} quantifiers
+
+`%constr(<ty>+)(<ty>)`{.tmttmt} or `%C`{.tmttmt} to constrain a type
+
+`%TYPE`{.tmttmt} the type of types: `%TYPE (: %TYPE :)`{.tmttmt}, it has no runtime representation
+
 ### Pragmas
 
-`#forall(<names>)(<ty>)`{.tmttmt}, `#exists(<names>)(<ty>)`{.tmttmt} quantifiers
+`%type(<name> <arg_name...>)(<ty>)`{.tmttmt} like `data`{.haskell}
 
-`#type(<name> <arg_name...>)(<ty>)`{.tmttmt} like `data`{.haskell}
+`%newtype(<name> <arg_name...>)(<ty>)`{.tmttmt} like `newtype`{.haskell}
 
-`#newtype(<name> <arg_name...>)(<ty>)`{.tmttmt} like `newtype`{.haskell}
+`%synonym(<name> <arg_name...>)(<ty>)`{.tmttmt} like `type`{.haskell}
 
-`#synonym(<name> <arg_name...>)(<ty>)`{.tmttmt} like `type`{.haskell}
+`%localize(<name>)(<suffix...>)`{.tmttmt}: for each `<suffix>`{.tmttmt} and for each `<arg_name>`{.tmttmt} when `<name>`{.tmttmt} was declared, if `<arg_name ~ suffix>`{.tmttmt} is a type variable in scope, use it to specialize `<name ~ suffix>`{.tmttmt}, otherwise use `<arg_name>`{.tmttmt}, otherwise leave it as a visible argument.
 
-`#localize(<name>)(<suffix...>)`{.tmttmt}: for each `<suffix>`{.tmttmt} and for each `<arg_name>`{.tmttmt} when `<name>`{.tmttmt} was declared, if `<arg_name ~ suffix>`{.tmttmt} is a type variable in scope, use it to specialize `<name ~ suffix>`{.tmttmt}, otherwise use `<arg_name>`{.tmttmt}, otherwise leave it as a visible argument.
+`%eval(<tm>+)`{.tmttmt}, eval and print
 
-`#eval(<tm>+)`{.tmttmt}, eval and print
+`%print(<tm>+)`{.tmttmt}, print without evaluating
 
-`#print(<tm>+)`{.tmttmt}, print without evaluating
-
-`#infer(<tm>+)`{.tmttmt}, print the inferred type
+`%infer(<tm>+)`{.tmttmt}, print the inferred type
 
 ### Attributes
 
-`@comment`{.tmttmt} syntax check, but do not incorporate, the attributed aspect
+`@comment`{.tmttmt} syntax check, but do not incorporate, the attributed piece of syntax
 
 `@log`{.tmttmt}
