@@ -6,8 +6,8 @@
         <RegExpr attribute="Function" context="#stay" String="^\s*[-a-zA-Z0-9_]+(::?|(?=\s*:=))"/>
         <RegExpr attribute="Normal Text" context="#stay" String="[-a-zA-Z0-9_]+(#(#|\d+))?"/>
         <RegExpr attribute="Keyword" context="#stay" String="%[-a-zA-Z_][-a-zA-Z0-9_]*"/>
-        <RegExpr attribute="Annotation" context="#stay" String="@[-a-zA-Z_][-a-zA-Z0-9_]*"/>
-        <RegExpr attribute="Keyword" context="#stay" String="-&gt;|\$\$|\$|\(\|\)|=?=&gt;|:=|\?\s*=&gt;|=&gt;\s*\?"/>
+        <RegExpr attribute="Annotation" context="#stay" String="@[-a-zA-Z_][-a-zA-Z0-9_]*:?"/>
+        <RegExpr attribute="Keyword" context="#stay" String="\{\{\{|\}\}\}|-&gt;|\$\$|\$|\(\|\)|=?=&gt;|:=|\?\s*=&gt;|=&gt;\s*\?"/>
         <RegExpr attribute="Meta" context="#stay" String="…|&lt;[^][(){}&lt;&gt;]+&gt;"/>
         <IncludeRules context="FindOperators"/>
         <IncludeRules context="FindComments"/>

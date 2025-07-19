@@ -103,9 +103,9 @@ int = /\d+/
 ## Main syntactic categories
 
 structures(syntax, pun = no-match) =
-  | '['              syntax       *  ']'  ## vector literal
-  | '{'  (string '=' syntax | pun)*  '}'  ## hash literal
-  | '{.' (string '=' syntax | pun)* '.}'  ## enumerated record literal
+  | '['            syntax       *  ']'  ## vector literal
+  | '{'  (name '=' syntax | pun)*  '}'  ## hash literal
+  | '{.' (name '=' syntax | pun)* '.}'  ## enumerated record literal
 
 
 ## Term syntax
@@ -150,7 +150,7 @@ lambda =
 ## top-level declaration of a case of a function
 casedecl =
   ## a case declaration
-  | qual':'             ## function we are defining
+  | qual':'              ## function we are defining
       tm+                ## arguments
       arrow
       tm                 ## return value
@@ -160,8 +160,8 @@ casedecl =
   ## comment for the function case
   | '{#' any_balanced_comment '#}' casedecl
   ## annotation for the function case
-  | '@' '{' annotation '}' casedecl
-  | '@' annotation_name casedecl
+  | '{' '@' annotation '}' casedecl
+  | '@' annotation_name ':' casedecl
 
 ## top-level type signature
 typesig =
@@ -181,8 +181,8 @@ stmt =
   | '?'? tm+ arrow tm
   ## case call (selective applicative style)
   | '?'? tm+ '?'? select_case* '??'? '!'
-  | '@' '{' annotation '}' stmt  ## duplicates the term annotation for the stmt
-  | '@' annotation_name stmt       ## duplicates the term annotation for the stmt
+  | '{' '@' annotation '}' stmt   ## duplicates the term annotation for the stmt
+  | '@' annotation_name ':' stmt  ## duplicates the term annotation for the stmt
   ## top-level declarations (function-local module scope)
   | '{{{' top_level '}}}'
 
@@ -223,6 +223,7 @@ quantified(syntax) =
 pragma =
   | '%'name
     ('(' (tm* | ty* | stmt*) ')')*
+    ('{{{' top_level '}}}')?
   | tyannotated(pragma)
 
 top_level =
@@ -258,16 +259,16 @@ annotation_term (< any_balanced_syntax) =
 
 ## Annotation or type annotation
 tyannotated(syntax) =
-  | syntax '(' ':' ty ('::' ty)? ':'? ')'    ## suffix type annotation
-  | '{{' ':' ty ':'? '}}' syntax             ## prefix type annotation
+  | syntax '(' ':' ty ('::' ty)? ':'? ')'  ## suffix type annotation
+  | '{{' ':' ty ':'? '}}' syntax           ## prefix type annotation
   | annotated(syntax)
 ## Annotation or comment
 annotated(syntax) (< any_balanced_syntax) =
-  | syntax '(#' any_balanced_comment* '#)'    ## suffix comment
+  | syntax '(#' any_balanced_comment* '#)'  ## suffix comment
   | '{#' any_balanced_comment* '#}' syntax  ## prefix comment
-  | syntax '(' '@' annotation ')'             ## suffix parameterized annotation
-  | '@' '{' annotation '}' syntax           ## prefix parameterized annotation
-  | '@' annotation_name syntax                ## prefix simple annotation
+  | syntax '(' '@' annotation ')'           ## suffix parameterized annotation
+  | '{' '@' annotation '}' syntax           ## prefix parameterized annotation
+  | '@' annotation_name ':' syntax          ## prefix simple annotation
 
 
 any_balanced_comment =
@@ -377,6 +378,10 @@ build-options-with-monad: { X=X Y=Y args=args } => options:
 `%print(<tm>+)`{.tmttmt}, print without evaluating
 
 `%infer(<tm>+)`{.tmttmt}, print the inferred type
+
+`%module(<name>){{{…}}}`{.tmttmt} make a submodule
+
+`%typeclass(<name> <ty>*){{{…}}}`{.tmttmt}
 
 ### Attributes
 
