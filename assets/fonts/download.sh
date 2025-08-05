@@ -12,12 +12,19 @@ curl $FLAGS -OL https://github.com/CatharsisFonts/Cormorant/releases/download/v3
 unzip -u -d . Cormorant_Webfonts_v3.609.zip "*.woff2"
 mkdir -p Cormorant
 cp Cormorant_Webfonts_v3.609/*/Cormorant{Upright,}-*.woff2 Cormorant
-rm -rf Cormorant_Webfonts_v3.609
+rm -rf Cormorant_Webfonts_v3.609{,.zip}
 
 curl $FLAGS -OL https://github.com/tonsky/FiraCode/releases/download/6.2/Fira_Code_v6.2.zip
 unzip -u -d Fira_Code_v6.2{,.zip} "*.woff2"
 mkdir -p fira_code
 cp Fira_Code_v6.2/woff2/*.woff2 fira_code
+rm -rf Fira_Code_v6.2{,.zip}
+
+curl $FLAGS -OL https://github.com/alerque/libertinus/releases/download/v7.051/Libertinus-7.051.zip
+unzip -u -d . Libertinus-7.051.zip "*.woff2"
+mkdir -p Libertinus
+cp Libertinus-7.051/static/WOFF2/*.woff2 Libertinus
+rm -rf Libertinus-7.051{,.zip}
 
 # https://neverpanic.de/blog/2014/03/19/downloading-google-web-fonts-for-local-hosting/
 

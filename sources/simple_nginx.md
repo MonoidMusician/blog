@@ -12,7 +12,7 @@ You can easily add upstreams to be reverse proxied, or whatever other features y
 
 You need to run it with `nginx -c "$(realpath nginx.conf)" -p "$PWD" -e stderr`{.sh} (of course, substituting the path to `nginx.conf` if needed, or choosing another location than `$PWD`{.sh}, and so on).
 
-It does **not** run in daemon mode, thus it exits on Ctrl-C.
+It does **not** run in daemon mode, thus it exits on <kbd>Ctrl</kbd>+<kbd>C</kbd>.
 This, in addition to the locality of running from any directory, is the main difference from conventional nginx configs, which usually are meant to be run persistently by the system.
 
 [[Raw]](/assets/misc/simple_nginx.conf) / [[Download]](/assets/misc/simple_nginx.conf){download=""}
