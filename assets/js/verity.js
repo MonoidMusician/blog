@@ -1441,5 +1441,54 @@ Verity = Ve = {};
 
   //////////////////////////////////////////////////////////////////////////////
 
+  Ve.Interface = function(init=undefined) {
+    const object = init || {};
+    const prev = Object.assign({}, object);
+    let shared;
+
+    const interfaces = [];
+
+    const mkHandler = handler => {
+      if (typeof handler === 'function') return handler;
+      return (type, ...arg) => {
+        return handler[type]?.(...arg);
+      };
+    };
+    const handle = (idx, type, ...arg) => {
+      interfaces.forEach((handler, i) => {
+        if (i !== idx) handler(type, ...arg);
+      });
+    };
+
+    return (handler=undefined, loopback=undefined) => {
+      if (loopback) {
+        interfaces.push(mkHandler(loopback));
+      }
+      let idx;
+      if (handler) {
+        idx = interfaces.length;
+        interfaces.push(mkHandler(handler));
+      }
+      if (!handler && !loopback) {
+        if (shared) return shared;
+      }
+      const iface = new Proxy(init, {
+        set: (_target, property, newValue, _thisArg) => {
+          const oldValue = property in prev ? [prev[property]] : [];
+          object[property] = newValue;
+          prev[property] = newValue;
+          handle(idx, property, newValue, ...oldValue);
+          return true;
+        },
+      });
+      if (!handler && !loopback) {
+        shared = iface;
+      }
+      return iface;
+    };
+  };
+
+  //////////////////////////////////////////////////////////////////////////////
+
   return this;
 }).call(Verity);

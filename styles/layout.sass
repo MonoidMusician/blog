@@ -37,6 +37,9 @@ body section > .Box
         margin-left: calc(-5svw - 2px)
         margin-right: calc(-5svw - 2px)
 
+body > section > table:not([style]):not([class])
+  width: 100%
+
 .h-scroll
   overflow-x: auto
 
@@ -186,6 +189,8 @@ div.sourceCode[data-lang], pre.sourceCode
     content: "HTML"
   &:not([data-lang]).markdown::before
     content: "Markdown"
+  &:not([data-lang]).nginx::before
+    content: "Nginx Config"
   &[data-lang]::before
     content: attr(data-lang)
   div.sourceCode[data-lang] > &::before
@@ -489,3 +494,9 @@ h2, h3, h4, h5, h6
 iframe
   border: none
   width: 100%
+
+details > summary
+  &, code, span
+    width: max-content
+    word-wrap: normal
+    white-space: pre

@@ -10,9 +10,19 @@
 {# True or False #}
 %type(Bool)("TT" (@name "true") | "FF" (@name "false")) (@enum) (@deriving Eq Ord Enum)
 {# The result of comparing within a total order #}
-%type(ComparedTotal)("LT" | "EQ" | "GT") (@enum) (@deriving Eq Ord Enum)
+%type(ComparedTotal)(
+  | "LT" (@name "less-than")
+  | "EQ" (@name "equal-to")
+  | "GT" (@name "greater-than")
+) (@enum) (@deriving Eq Ord Enum)
 {# A comparison to perform within a total order #}
-%type(ComparisonTotal)("LT" | "LE" | "EQ" | "GE" | "GT") (@enum) (@deriving Eq Ord Enum)
+%type(ComparisonTotal)(
+  | "LT" (@name "less-than")
+  | "LE" (@name "less-than-or-equal-to")
+  | "EQ" (@name "equal-to")
+  | "GE" (@name "greater-than-or-equal-to")
+  | "GT" (@name "greater-than")
+) (@enum) (@deriving Eq Ord Enum)
 
 %typeclass(Eq t (: Type :)){{{
   {# Check if two values are equal #}
