@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ```{.xml .skylighting}``` -->
+<!-- https://docs.kde.org/stable5/en/kate/katepart/highlight.html -->
+<language name="hatstack" casesensitive="1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="language.xsd">
+  <general>
+    <keywords additionalDeliminator="…" />
+  </general>
+  <highlighting>
+    <list name="commands">
+      <item>try</item>
+      <item>throw</item>
+      <item>catch</item>
+      <item>rethrow</item>
+      <item>recover</item>
+      <item>end</item>
+      <item>begin</item>
+      <item>while</item>
+      <item>continue</item>
+      <item>break</item>
+      <item>if</item>
+      <item>match</item>
+      <item>else</item>
+      <item>def</item>
+      <item>return</item>
+      <item>exit</item>
+
+      <item>set</item>
+    </list>
+
+    <contexts>
+      <context name="Root" attribute="Normal Text" lineEndContext="#stay">
+        <IncludeRules context="FindComments"/>
+        <RegExpr attribute="Control Flow" String="(def|set):?" context="DefName"/>
+        <RegExpr attribute="Control Flow" String="(alias)(::)?" context="Def2Name"/>
+        <keyword attribute="Control Flow" String="commands" />
+        <RegExpr attribute="Operator" String="\{\.\}|\{#\}"/>
+        <RegExpr attribute="PrevStackVar" String="\.[0-9]+"/>
+        <RegExpr attribute="ThisStackVar" String="\$[0-9]+"/>
+        <RegExpr attribute="Number" String="(0d)?[0-9]+|0b[01]+|0o[0-7]+|0x[0-9a-fA-F]+|0q[0-3]+"/>
+        <RegExpr attribute="Control Flow" String="#?\{|\}#?|#?\[|\]#?"/>
+        <RegExpr attribute="Annotation" String="\b(Set|Nat|Num|Bin|Dec|Hex|Oct|Qua|HFS)\b"/>
+        <RegExpr attribute="Operator" String="(?!…)[^][{}(), a-zA-Z0-9][^][{}(), a-zA-Z]*"/>
+        <!-- <RegExpr attribute="Function" String="^[a-zA-Z][a-zA-Z0-9]*$"/> -->
+      </context>
+
+      <context name="FindComments" attribute="Comment">
+        <StringDetect attribute="Comment" context="LineComment" String="##"/>
+        <StringDetect attribute="Comment" context="LineComment" String="#!"/>
+      </context>
+
+      <context name="LineComment" attribute="Comment" lineEndContext="#pop">
+      </context>
+
+      <context name="DefName" lineEndContext="#stay">
+        <RegExpr String="…" context="#pop"/>
+        <keyword attribute="Error" String="commands" context="#pop" />
+        <RegExpr attribute="Function" String="[a-zA-Z][a-zA-Z0-9]*" context="#pop"/>
+        <RegExpr attribute="Operator" String="(?!…)[^][{}(), a-zA-Z0-9][^][{}(), a-zA-Z]*" context="#pop"/>
+      </context>
+      <context name="Def2Name" lineEndContext="#stay">
+        <RegExpr String="…" context="#pop"/>
+        <keyword attribute="Error" String="commands" context="#pop" />
+        <RegExpr attribute="Function" String="[a-zA-Z][a-zA-Z0-9]*" context="#pop DefName"/>
+        <RegExpr attribute="Operator" String="(?!…)[^][{}(), a-zA-Z0-9][^][{}(), a-zA-Z]*" context="#pop DefName"/>
+      </context>
+    </contexts>
+
+    <itemDatas>
+      <itemData name="Control Flow"   defStyleNum="dsControlFlow" />
+      <itemData name="Function"       defStyleNum="dsFunction"/>
+      <itemData name="ThisStackVar"   defStyleNum="dsString"/>
+      <itemData name="PrevStackVar"   defStyleNum="dsSpecialChar"/>
+      <itemData name="Number"         defStyleNum="dsDecVal"/>
+      <itemData name="Comment"        defStyleNum="dsComment"/>
+      <itemData name="Operator"       defStyleNum="dsOperator"/>
+
+      <itemData name="Annotation"     defStyleNum="dsAnnotation"/>
+
+      <itemData name="Variable"       defStyleNum="dsVariable"/>
+      <itemData name="Keyword"        defStyleNum="dsKeyword"/>
+      <itemData name="Builtin"        defStyleNum="dsBuiltIn"/>
+      <itemData name="Import"         defStyleNum="dsImport"/>
+      <itemData name="Data Type"      defStyleNum="dsDataType"/>
+      <itemData name="Normal Text"    defStyleNum="dsNormal"/>
+
+      <itemData name="Error"          defStyleNum="dsError"/>
+    </itemDatas>
+  </highlighting>
+</language>

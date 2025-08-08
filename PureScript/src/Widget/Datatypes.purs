@@ -258,9 +258,9 @@ abbreviations = Map.fromFoldable
   , "FP" /\ Acronym "Functional Programming"
   , "OOP" /\ Acronym "Object-Oriented Programming"
   , "LR(1)" /\ Jargon "LtR, Rightmost Deriv., lookahead 1 token" FormatParen "Automaton parser to handle left-recursion"
-  , "DOM" /\ Jargon "Document Object Model" FormatComma "Represents HTML at runtime"
-  , "VDOM" /\ Jargon "Virtual DOM" FormatComma "Abstract DOM to render to real DOM"
-  , "ADT" /\ Jargon "Algebraic Data Type" FormatComma "Data as a sum of products; Haskell-style"
+  , "DOM" /\ Jargon "Document Object Model" FormatComma "represents HTML at runtime"
+  , "VDOM" /\ Jargon "Virtual DOM" FormatComma "abstract DOM to render to real DOM"
+  , "ADT" /\ Jargon "Algebraic Data Type" FormatComma "data as a sum of products; Haskell-style"
   , "MIDI" /\ Acronym "Musical Instrument Digital Interface"
   , "ASCII" /\ Jargon "Basic character set" FormatNone ""
   , "Unicode" /\ Jargon "Universal character set" FormatParen "fancy characters"
@@ -276,6 +276,9 @@ abbreviations = Map.fromFoldable
   , "NF" /\ Acronym "Normal Form"
   , "AST" /\ Acronym "Abstract Syntax Tree"
   , "CST" /\ Acronym "Concrete Syntax Tree"
+  , "WASM" /\ Acronym "Web Assembly"
+  , "SKI" /\ Jargon "SKI Combinator Calculus" FormatColon "a minimal foundation for computation"
+  , "API" /\ Jargon "Application Programming Interface" FormatEquiv "interface of components for programming"
   ]
 
 matching :: String -> Array String

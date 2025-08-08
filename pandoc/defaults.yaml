@@ -6,6 +6,8 @@ template: pandoc/post
 preserve-tabs: true
 wrap: preserve
 filters:
+  - pandoc/lua/save-to.lua
+  - pandoc/lua/load-from.lua
   - pandoc/lua/LilyPond.lua
   - pandoc/lua/PureScript.lua
   - pandoc/lua/sidenotes.lua
@@ -23,7 +25,8 @@ syntax-definition:
   - pandoc/skylighting/fish.xml
   - pandoc/skylighting/purescript.xml
   - pandoc/skylighting/bnf.xml
-  - pandoc/skylighting/tmttmt.xml
   - pandoc/skylighting/nginx.xml
+  - pandoc/skylighting/tmttmt.xml
+  - pandoc/skylighting/hatstack.xml
 metadata:
   lang: en

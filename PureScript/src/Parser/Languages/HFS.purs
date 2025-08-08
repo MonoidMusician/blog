@@ -6,10 +6,12 @@ import Control.Alternative (guard)
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap)
+import Data.Bitraversable (bitraverse)
 import Data.Bounded.Generic (genericBottom, genericTop)
 import Data.Enum (class BoundedEnum, enumFromTo)
 import Data.Enum.Generic (genericCardinality, genericFromEnum, genericPred, genericSucc, genericToEnum)
 import Data.Generic.Rep (class Generic)
+import Data.Int as Int
 import Data.Lazy (Lazy, defer, force)
 import Data.List (List(..), (:))
 import Data.List as List
@@ -90,6 +92,8 @@ derive instance eqBase :: Eq Base
 data HFS
   = NumLike Base BigNat
   | SetLike Int (Set HFS)
+
+instance showHFSinstance :: Show HFS where show = showHFS
 
 instance eqHFS :: Eq HFS where
   eq (NumLike _ n1) (NumLike _ n2) = n1 == n2
@@ -323,7 +327,15 @@ hfsUnpack :: HFS -> Array HFS
 hfsUnpack (NumLike _ n) = bnUnpack n <#> NumLike Hex
 hfsUnpack (SetLike _ members) = Set.toUnfoldable members
 
--- Functions to set preferred
+hfsPowerset :: HFS -> HFS
+hfsPowerset = hfs >>> Set.toUnfoldable >>> \items ->
+  setLike $ Set.fromFoldable $
+    Array.range 0 (Int.pow 2 (Array.length items) - 1) <#>
+      setLike <<< Set.fromFoldable <<< \nth ->
+        Array.catMaybes $ items # Array.mapWithIndex \i item ->
+          if Int.pow 2 i .|. nth == nth then Just (item) else Nothing
+
+-- Functions to set preferred display notation
 
 hfsAsSet :: HFS -> HFS
 hfsAsSet = setLike <<< hfs
@@ -350,6 +362,13 @@ hfsAsHFS = setLike <<< Set.map (\x -> hfsAsHFS x) <<< hfs
 
 stdlib :: String
 stdlib = """
+## Aliases for builtins
+## alias <existing> <additionalName>
+alias ++ +1
+alias -- -1
+alias powerset 𝒫
+
+
 def single
   1#{}
 end
@@ -373,27 +392,33 @@ end
 0 set false
 1 set true
 
+alias false ⊥
+alias true  ⊤
+
+alias not ¬
 def not
   0 ==
 end
 
 ## Unpack a singleton set
 def unsingle
-  $#
+  #
   1 != if
     throw
   end
 end
 
 ## Kuratowski encoding of ordered pairs
+alias pair >-
 def pair
   2#[ {{.0}, {.0, .1}} ]
 end
 
 ## Unpack an ordered pair
+alias unpair -<
 def unpair
-  $#
-  dup 2 == if
+  #
+  2 match
     drop
     2#[
       .0 .1 .\ unsingle
@@ -401,7 +426,7 @@ def unpair
     ]
     return
   end
-  dup 1 == if
+  1 match
     drop
     unsingle
     dup
@@ -424,24 +449,23 @@ end
 
 ## Maps are (finite) graphs of functions,
 ## a set of pairs
+alias apply @@
 def apply
   2#[ .1# .0 ]
-  begin
-    $1 while
-    3#[ .1-- , .0 , .2 ]
-    unpair
-    $2 == if
-      $2 3+ #[ .0 ]
-      return
-    end
-    drop
-  end
+  ⎛ $1 while
+  ⎜ 3#[ .1-- .0  .2 ]
+  ⎜ unpair
+  ⎜ $2 == if
+  ⎜   $2 3+ #[ .0 ]
+  ⎜   return
+  ⎜ end
+  ⎝ drop
   throw
 end
 
 ## Domain of a map
 def domain
-  $#
+  #
   {}
   begin
     $1 while
@@ -452,15 +476,12 @@ end
 
 ## Range of a map
 def range
-  $#
+  #
   {}
-  begin
-    $1 while
-    3#[ .1-- , .0 , .2 snd {.} | ]
-  end
-  swap drop
+  ⎛ $1 while
+  ⎝ 3#[ .1-- , .0 , .2 snd {.} | ]
+  2#[ .0 ]
 end
-
 
 ## The Zermelo encoding of natural numbers
 ## as nested singleton sets
@@ -485,9 +506,10 @@ end
 
 ## Truncating integer square root, adapted from
 ## https://github.com/waldemarhorwat/integer-roots
+alias sqrt √
 def sqrt
   ## Special case 0
-  dup 0 == if
+  0 match
     return
   end
   ## Compute the initial estimate
@@ -567,21 +589,6 @@ def unpairElegant 1#[
 ] end
 """
 
-{-
-def apply
-  2#[ .1# .0 ]
-  ⎛ $1 while
-  ⎜ 3#[ .1-- .0  .2 ]
-  ⎜ unpair
-  ⎜ $2 == if
-  ⎜   $2 3+ #[ .0 ]
-  ⎜   return
-  ⎜ end
-  ⎝ drop
-  throw
-end
--}
-
 stdenv :: Lazy Env
 stdenv = defer \_ ->
   case String.trim stdlib # force theParser of
@@ -658,6 +665,9 @@ data Op
   | PLE
   | PGT
   | PGE
+derive instance genericOp :: Generic Op _
+instance showOp :: Show Op where
+  show = genericShow
 
 -- | Data about each binary operator.
 data OpMeta
@@ -772,31 +782,35 @@ chooseIdOp = case _ of
   booly f x y = if f (x /= zero) (y /= zero) then one else zero
 
 -- | Parser for the n-ary and binary operators, respectively.
-op :: Comber (Either Op Op)
-op = "op"#: do
-  piggyback
-    { errors: []
-    , name: "op_reparse"
-    , pattern: rawr bigRegex
-    } $ choices do
-      opMeta >>= case _ of
-        Symm r dflt toks bigops _doc -> (Array.cons dflt toks) >>= \tok ->
-          [ Right r <$ token tok
-          , Left r <$ (token ("#" <> tok) <|> token (tok <> "#"))
-          , Left r <$ if tok == dflt then oneOfMap token bigops else empty
-          ]
-        Sided l r dflt toks _doc -> (Array.cons dflt toks) >>= \tok ->
-          [ Right l <$ token (tok <> ".")
-          , Left l <$ token ("#" <> tok)
-          , Right r <$ token ("." <> tok)
-          , Left r <$ token (tok <> "#")
-          ]
-        Order l tl tls r tr trs _doc ->
-          [ Right l <$ oneOfMap token (Array.cons tl tls)
-          , Left l <$ oneOfMap (token <<< ("#" <> _)) (Array.cons tl tls)
-          , Right r <$ oneOfMap token (Array.cons tr trs)
-          , Left r <$ oneOfMap (token <<< ("#" <> _)) (Array.cons tr trs)
-          ]
+matchBuiltin :: String -> Instr
+matchBuiltin =
+  case _ of
+    "++" -> Fn Incr
+    "--" -> Fn Decr
+    op -> Map.lookup op allSymbols # maybe (Var op) (either OpFold Op)
+  where
+  allSymbols = Map.fromFoldable $ (bitraverse identity pure =<< _) $
+    opMeta >>= case _ of
+      Symm r dflt toks bigops _doc -> (Array.cons dflt toks) >>= \tok ->
+        [ Tuple [ tok ] (Right r)
+        , Tuple [ "#" <> tok, tok <> "#" ] (Left r)
+        , Tuple (if tok == dflt then bigops else empty) (Left r)
+        ]
+      Sided l r dflt toks _doc -> (Array.cons dflt toks) >>= \tok ->
+        [ Tuple [ tok <> "." ] (Right l)
+        , Tuple [ "#" <> tok ] (Left l)
+        , Tuple [ "." <> tok ] (Right r)
+        , Tuple [ tok <> "#" ] (Left r)
+        ]
+      Order l tl tls r tr trs _doc ->
+        [ Tuple (Array.cons tl tls) (Right l)
+        , Tuple (map ("#" <> _) (Array.cons tl tls)) (Left l)
+        , Tuple (Array.cons tr trs) (Right r)
+        , Tuple (map ("#" <> _) (Array.cons tr trs)) (Left r)
+        ]
+
+builtinsRegex :: String
+builtinsRegex = bigRegex
   where
   reEscape = Regex.replace (unsafeRegex "[.*+?^${}()|[\\]\\\\]" global) "\\$&"
   options toks = "(?:" <> intercalateMap "|" reEscape (Array.reverse (Array.sort toks)) <> ")"
@@ -829,6 +843,7 @@ data Fn
   | Single
   | Unpack
   | Pack
+  | Powerset
   | ToSet
   | ToNat
   | ToBin
@@ -840,6 +855,9 @@ data Fn
   | NoOp
   | Decr
   | Incr
+derive instance genericFn :: Generic Fn _
+instance showFn :: Show Fn where
+  show = genericShow
 
 -- | Parse for these builtins.
 fn :: Comber Fn
@@ -848,8 +866,9 @@ fn = "fn"#: choices
   , Width <$ token "width"
   , Depth <$ token "depth"
   , Single <$ token "{.}"
-  , Unpack <$ do token "unpack" <|> token "$#"
+  , Unpack <$ do token "unpack" <|> token "#"
   , Pack <$ do token "pack" <|> token "{#}"
+  , Powerset <$ do token "powerset"
   , ToSet <$ token "Set"
   , ToNat <$ (token "Nat" <|> token "Num")
   , ToBin <$ token "Bin"
@@ -859,9 +878,6 @@ fn = "fn"#: choices
   , ToQua <$ token "Qua"
   , ToHFS <$ token "HFS"
   , NoOp <$ token ","
-  , NoOp <$ rawr "##[^\n]*(\n|$)"
-  , Decr <$ token "--"
-  , Incr <$ token "++"
   ]
 
 data Braces
@@ -873,6 +889,9 @@ data Braces
   | NStartSet
   | EndSet
   | NEndSet
+derive instance genericBraces :: Generic Braces _
+instance showBraces :: Show Braces where
+  show = genericShow
 
 braces :: Comber Braces
 braces = "braces"#: choices
@@ -884,6 +903,33 @@ braces = "braces"#: choices
   , NStartSet <$ token "#{"
   , EndSet <$ token "}"
   , NEndSet <$ token "}#"
+  ]
+
+moreBraces :: Comber Instr
+moreBraces = "moreBraces"#: choices
+  [ Ctrl Begin <$                token "⎛"
+  , Fn NoOp <$                   token "⎜"
+  , Defer (Ctrl End) <$          token "⎝"
+  , Fn NoOp <$                   token "⎞"
+  , Fn NoOp <$                   token "⎟"
+  , Fn NoOp <$                   token "⎠"
+  , Braces StartStack <$         token "⎡"
+  , Fn NoOp <$                   token "⎢"
+  , Defer (Braces EndStack) <$   token "⎣"
+  , Braces NStartStack <$        token "#⎡"
+  , Defer (Braces NEndStack) <$  token "#⎣"
+  , Fn NoOp <$                   token "⎤"
+  , Fn NoOp <$                   token "⎥"
+  , Fn NoOp <$                   token "⎦"
+  , Braces StartSet <$           token "⎧"
+  , Fn NoOp <$                   token "⎨"
+  , Defer (Braces EndSet) <$     token "⎩"
+  , Braces NStartSet <$          token "#⎧"
+  , Defer (Braces NEndSet) <$    token "#⎩"
+  , Fn NoOp <$                   token "⎪"
+  , Fn NoOp <$                   token "⎫"
+  , Fn NoOp <$                   token "⎬"
+  , Fn NoOp <$                   token "⎭"
   ]
 
 -- | Control flow!
@@ -900,6 +946,7 @@ data Ctrl
   | Continue
   | Break
   | If
+  | Match
   | Else
   | Def
   | Return
@@ -939,6 +986,12 @@ data Instr
   | PeekThis Int Boolean
   | Var String
   | Set String
+  | Alias Instr String
+  | Newline
+  | Defer Instr
+derive instance genericInstr :: Generic Instr _
+instance showInstr :: Show Instr where
+  show x = genericShow x
 
 -- TODO:
 -- - stack variables `[.$]\d+`, with priority (cannot be a substring of another identifier)
@@ -950,20 +1003,50 @@ data Instr
 -- - so basically you cannot mix identifier characters and operator characters together,
 --   but you can mix them with numbers
 
+-- rID_Start = rawr
+--   "(?![\\p{Pattern_Syntax}\\p{Pattern_White_Space}])[\\p{L}\\p{Nl}]"
+-- rID_Continue = rawr
+--   "(?![\\p{Pattern_Syntax}\\p{Pattern_White_Space}])[\\p{L}\\p{Nl}\\p{Mn}\\p{Mc}\\p{Nd}\\p{Pc}]"
+-- rOp = rawr
+--   "[\\p{Pattern_Syntax}]"
+
+rID :: String
+rID =
+  "(?:(?![\\p{Pattern_Syntax}\\p{Pattern_White_Space}])[_\\p{L}\\p{Nl}])" <>
+  "(?:(?![\\p{Pattern_Syntax}\\p{Pattern_White_Space}])[\\p{L}\\p{Nl}\\p{Mn}\\p{Mc}\\p{Nd}\\p{Pc}])*"
+-- HatStack quirk: Allow numbers in operators' continue set too
+rOp :: String
+rOp =
+  "(?:(?![.$]\\d+))" <>
+  "(?:(?![][}{)(,\\u239B-\\u23AD\\u23B0-\\u23B1])[\\p{Pattern_Syntax}])" <>
+  "(?:(?![][}{)(,\\u239B-\\u23AD\\u23B0-\\u23B1])[\\p{Pattern_Syntax}\\p{Mn}\\p{Nd}])*"
+
+opID :: Comber String
+opID = rawr rID <|> rawr rOp
+
 parser :: Comber (Array Instr)
 parser = pure [] <|> do
-  map NEA.toArray $
-    many1SepBy "actions" ws $ choices
-      [ either OpFold Op <$> op
-      , Fn <$> fn
+  map (\xs -> NEA.toArray xs <> [ Newline ]) $
+    many1Leapfrog "actions" trackNewline $ choices
+      [ Fn <$> fn
       , Lit <$> lit
       , Ctrl <$> ctrl
       , Braces <$> braces
-      , rawr "\\." *> (PeekPrev <$> int <*> do isJust <$> optional (token "#"))
-      , token "$" *> (PeekThis <$> int <*> do isJust <$> optional (token "#"))
-      , Var <$> rawr "[a-zA-Z_-]+"
-      , Set <$> do token "set" *> ws *> rawr "[a-zA-Z_-]+"
+      , moreBraces
+      , rawr "\\." *> (PeekPrev <$> int <@> false)
+      , rawr "\\$" *> (PeekThis <$> int <@> false)
+      , matchBuiltin <$> opID
+      , Set <$> do token "set" *> ws *> opID
+      , Alias <$> (token "alias" *> ws *> (instrFromId <$> opID) <* ws) <*> opID
+      , Newline <$ token "##" <* rawr "[^\n]*(\n|$)"
       ]
+  where
+  trackNewline = sourceOf ws <#> \s ->
+    if String.contains (String.Pattern "\n") s || String.contains (String.Pattern "\r") s
+      then Newline else Fn NoOp
+  instrFromId x = case force theParser x of
+    Right [y] -> y
+    _ -> matchBuiltin x
 
 -- ⟨⟩ ()
 
@@ -1011,6 +1094,8 @@ type Env =
   , vars :: Map String HFS
   -- A map of procedures (not closures)
   , funs :: Map String Pointer
+  -- A map of aliases
+  , aliases :: Map String Instr
   -- The stack of stacks
   , stacks :: NonEmpty List Stack
   -- Which stack is referenced by `.0` et al.
@@ -1020,6 +1105,8 @@ type Env =
   , flow :: List { here :: Flow, prev :: Boolean }
   -- The list of instructions currently running
   , instrs :: Array Instr
+  -- Instructions to run at newline
+  , newlinePending :: List Instr
   -- Whether it is currently running, or not
   , running :: Boolean
   -- The current instruction pointer
@@ -1049,7 +1136,7 @@ data Flow
   -- (No data, just a marker)
   | InFunDef
   -- Pointer to return to
-  | InFunCall Pointer
+  | InFunCall { instr :: Pointer, newlinePending :: List Instr }
   | BuildingSet Int HFS
   | BuildingStack Int Int
 
@@ -1059,18 +1146,30 @@ emptyEnv =
   { error: Nothing
   , vars: Map.empty
   , funs: Map.empty
+  , aliases: Map.empty
   , stacks: Nil :| Nil
   , pointed: 0
   , flow: Nil
   , running: true
   , instrs: []
+  , newlinePending: Nil
   , instruction: 0
   }
+
+resolve :: Env -> Instr -> Instr
+resolve env (Var name) | Just new <- Map.lookup name env.aliases = resolve env new
+resolve _ instr = instr
 
 -- | Run a single instruction. (Assumed to be the instruction that
 -- | `env.instruction` is pointing at.)
 interpret :: Instr -> Env -> Env
-interpret instr original = case instr, env of
+interpret instr original = case resolve env instr, env of
+  Defer x, _ -> env { newlinePending = x : env.newlinePending }
+  Newline, _ ->
+    let
+      go Nil = identity
+      go (x : xs) = go xs <<< interpret x <<< _ { instruction = original.instruction }
+    in go env.newlinePending env { newlinePending = Nil }
   -- Control flow is implemented in the laziest, most inefficient way possible:
   -- there are no jump aheads, only jump behinds, and you just have to keep
   -- fake-running code (keeping track of control flow constructs). This does have
@@ -1155,6 +1254,24 @@ interpret instr original = case instr, env of
           { flow = { prev: env.running, here: InIf false } : env.flow
           , error = env.error <|> Just do underflow 1
           }
+    -- Match pops one, compares to the next
+    Match ->
+      case env of
+        -- Track scope without affecting the stack
+        _ | not env.running || isJust env.error -> env
+          { flow = { prev: false, here: InIf false } : env.flow
+          }
+        -- Pop and use that to take this branch (or wait for Else to resume it)
+        { stacks: (operand1 : operand2 : stack) :| stacks } ->
+          let branchChosen = operand1 == operand2 in env
+          { stacks = (operand2 : stack) :| stacks
+          , flow = { prev: env.running, here: InIf branchChosen } : env.flow
+          , running = branchChosen
+          }
+        _ -> env
+          { flow = { prev: env.running, here: InIf false } : env.flow
+          , error = env.error <|> Just do underflow 1
+          }
     -- Else flips the condition from If, but only if it was running in the first place
     Else ->
       case env of
@@ -1166,8 +1283,8 @@ interpret instr original = case instr, env of
           { flow = { prev: env.running, here: InElse false } : env.flow
           , error = env.error <|> Just (RuntimeError original "Bad else")
           }
-    Def ->
-      case env.instrs Array.!! env.instruction of
+    Def | { instruction } <- skipnoops env ->
+      case env.instrs Array.!! instruction of
         _ | not env.running -> env
           { flow = { prev: false, here: InFunDef } : env.flow
           }
@@ -1175,12 +1292,13 @@ interpret instr original = case instr, env of
         -- end to resume execution
         Just (Var name) -> env
           { flow = { prev: env.running, here: InFunDef } : env.flow
-          , funs = Map.insert name (env.instruction + 1) env.funs
-          , instruction = env.instruction + 1
+          , funs = Map.insert name (instruction + 1) env.funs
+          , instruction = instruction + 1
           , running = false
           }
         _ -> env
           { flow = { prev: env.running, here: InFunDef } : env.flow
+          , error = env.error <|> Just (RuntimeError original "Bad def")
           , running = false
           }
     -- Return just stops running until the end of the function
@@ -1213,10 +1331,11 @@ interpret instr original = case instr, env of
           , running = true
           }
         -- return to the caller
-        { prev: true, here: InFunCall jmp } : flows -> env
+        { prev: true, here: InFunCall { instr: jmp, newlinePending } } : flows -> env
           { flow = flows
           , instruction = jmp
           , running = true
+          , newlinePending = newlinePending
           }
         flow : flows -> env
           { flow = flows
@@ -1228,7 +1347,7 @@ interpret instr original = case instr, env of
   -- (Control flow needs to run always!)
   _, { running: false } -> env
   _, { error: Just _ } -> env
-  -- Look up variables as values or functions.
+  -- Look up variables as values or functions (already resolved aliases above).
   Var name, _ ->
     case Map.lookup name env.vars, Map.lookup name env.funs of
       Nothing, Nothing -> env { error = Just $ RuntimeError original $ "Unknown name " <> show name }
@@ -1236,14 +1355,16 @@ interpret instr original = case instr, env of
       Just val, Nothing | stack :| stacks <- env.stacks ->
         env { stacks = val : stack :| stacks }
       Nothing, Just jmp -> env
-        { flow = { prev: true, here: InFunCall env.instruction } : env.flow
+        { flow = { prev: true, here: InFunCall { instr: env.instruction, newlinePending: env.newlinePending } } : env.flow
         , instruction = jmp
+        , newlinePending = Nil
         }
   Set name, { stacks: (val : stack) :| stacks } -> env
     { vars = Map.insert name val env.vars
     , stacks = stack :| stacks
     }
   Set _, _ -> env { error = Just $ underflow 1 }
+  Alias oldName newName, _ -> env { aliases = Map.insert newName oldName env.aliases }
   PeekPrev idx unpack, _ ->
     case env.stacks of
       this :| stacks | Just prev <- stacks List.!! (env.pointed - 1) ->
@@ -1275,6 +1396,7 @@ interpret instr original = case instr, env of
     Single -> stack1 hfsSingle
     Unpack -> stacking hfsUnpack
     Pack -> stackN $ Right <<< foldMap (hfsShL one)
+    Powerset -> stack1 hfsPowerset
     ToSet -> stack1 hfsAsSet
     ToNat -> stack1 hfsAsNat
     ToBin -> stack1 hfsAsBin
@@ -1354,6 +1476,10 @@ interpret instr original = case instr, env of
   Lit l, _ -> onStack do stack0 l
   where
   env = original { instruction = original.instruction + 1 }
+  skipnoops vne = case vne.instrs Array.!! vne.instruction of
+    Just (Fn NoOp) -> skipnoops vne { instruction = vne.instruction + 1 }
+    Just Newline | Nil <- vne.newlinePending -> skipnoops vne { instruction = vne.instruction + 1 }
+    _ -> vne
 
   -- For `Return`/`Continue`/`Break`: stop running control frames up to the
   -- most recent running `InFunCall`/`InWhile` control frame (which it can modify)
@@ -1440,8 +1566,8 @@ unsafeCatch f i = unsafePerformEffect do
 
 isBuilding :: { here :: Flow, prev :: Boolean } -> Boolean
 isBuilding = case _ of
-  { here: BuildingStack _ i } -> true
-  { here: BuildingSet _ s } -> true
+  { here: BuildingStack _ _ } -> true
+  { here: BuildingSet _ _ } -> true
   _ -> false
 
 type StacksInfo = NonEmptyArray

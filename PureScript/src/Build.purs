@@ -70,6 +70,8 @@ mainJson = do
 
   log $ show $ thingy
 
+  FS.writeTextFile UTF8 ("./assets/misc/stdlib.hatstack") $ String.trim HFS.stdlib <> "\n"
+
   process Show.lazyTop "show-parser-states"
   process CSS.selector_list "css-parser-states"
   process TMTTMT.declarationsP "tmttmt-parser-states"

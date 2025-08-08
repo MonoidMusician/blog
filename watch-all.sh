@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 trap 'trap - SIGTERM && kill 0' EXIT SIGTERM
 make live >/dev/null &
 spago build || exit 1

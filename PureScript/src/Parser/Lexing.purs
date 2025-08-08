@@ -49,8 +49,7 @@ import Parser.Types (Fragment, ICST(..), OrEOF(..), Part(..), ShiftReduce(..), S
 import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
 import Type.Proxy (Proxy(..))
-import Unsafe.Coerce (unsafeCoerce)
-import Whitespace (MaybeWS, ParseWS, mkParseWS, unParseWS)
+import Whitespace (ParseWS, mkParseWS, unParseWS)
 
 data Scanning i = Scanning Int i
 derive instance functorScanning :: Functor Scanning

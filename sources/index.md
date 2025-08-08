@@ -10,9 +10,9 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 
 ## Posts <a class="icon iconoir" href="rss.xml"><?xml version="1.0" encoding="UTF-8"?><svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
 
-- Quapteryx: a Quaternary Combinator Calculus in C/WASM [2025/05/10 – 2025/05/11]{.dated}
+- Quapteryx: a Quaternary Combinator Calculus in C/[WASM]{t=} [2025/05/10 – 2025/05/11]{.dated}
 
-  - [Part I: On the SKI Combinator Calculus](quapteryx1.html) [2025/05/10]{.dated}
+  - [Part I: On the [SKI]{t=} Combinator Calculus](quapteryx1.html) [2025/05/10]{.dated}
   - [Part II: Ojo: a Bitflipped Jot, and a Real Flop](quapteryx2.html) [2025/05/10]{.dated}
   - [Part III: Quaternary Combinators](quapteryx3.html) [2025/05/11]{.dated}
   - [Part IV: Efficient Quapteryx Evaluator](quapteryx4.html) [2025/05/11]{.dated}
@@ -152,7 +152,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 ## Series
 - Riverdragon [FRP]{t=} documentation
   #. [Implementing [FRP]{t=} and Why](riverdragon_implementation.html) [2025/02/22]{.dated}
-- [Live PureScript editing](live.html) (custom front-end using TryPureScriptʼs API)
+- [Live PureScript editing](live.html) (custom front-end using TryPureScriptʼs [API]{t=})
   #. [live_parser.html](live_parser.html)
   #. [live_frp.html](live_frp.html)
   #. [live_synth.html](live_synth.html)
@@ -174,7 +174,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   #. [TODO]{t=}: magic constants (in hexadecimal and base64) for file hacking
   #.
     [TODO]{t=}: Unit/base calculator and such ([cf.]{t=} [insect](https://github.com/sharkdp/insect) and [numbat](https://github.com/sharkdp/numbat))
-    - Would be cool to have better precision than `Number`{.purescript}, or even use [Towards an API for the Real Numbers](https://dl.acm.org/doi/pdf/10.1145/3385412.3386037).
+    - Would be cool to have better precision than `Number`{.purescript}, or even use [Towards an [API]{t=} for the Real Numbers](https://dl.acm.org/doi/pdf/10.1145/3385412.3386037).
   #. [TODO]{t=}: [QR]{t=} code generator and reader and formats and suchs, and bar code, and PDF417, ...
   #. [CSS]{t=} → [Sass]{t=}
 

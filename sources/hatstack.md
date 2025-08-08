@@ -61,12 +61,12 @@ Each closing operator will close off the stack, and they must correspond to the 
 
 They are used in combination with variables `.0`{.hatstack}, `.1`{.hatstack}, [et al.]{t=} to bring in data from the outside stacks.
 You may also use the variables `$0`{.hatstack} and so on to refer to the *current* stack, whatever that is, just like you can at the top level.
-(So `$0`{.hatstack} always means `dup`{.hatstack}, for example.)
+(So `$0`{.hatstack} always means `dup`{.fu}, for example.)
 
 #### Stack manipulation
 
 The stack manipulation operators are really cool.
-As a warmup, `swap`{.hatstack} can be expressed as `2 #[ .0 .1 ]`{.hatstack}.
+As a warmup, `swap`{.fu} can be expressed as `2 #[ .0 .1 ]`{.hatstack}.
 We can describe its execution on the stack `{} {{}}`{.hatstack} like so:
 
 - Queue the deletion of `2`{.hatstack} items from the stack, namely `{}`{.hatstack} and `{{}}`{.hatstack}
@@ -166,9 +166,14 @@ As mentioned above, there is no compile-time checking for these constructs, they
   - This gives you both `while () {}`{.c} and `do {} while()`{.c} and an unholy mix of the two!
 - `if…end`{.hatstack} and `if…else…end`{.hatstack}
   - `if`{.hatstack} pops the condition
-- `def…end`{.hatstack} with `return`{.hatstack}
+- `match…end`{.hatstack} and `match…else…end`{.hatstack}
+  - `match`{.hatstack} acts like `$1 == if`{.hatstack}: it pops the top of the stack and takes the branch if it matches the item, which it leaves on the stack for another match (and also the branch body)
+- `def FUN…end`{.hatstack} with `return`{.hatstack}
+- `set VAR`{.hatstack}: pops a value and sets `VAR`{.fu} to that value, `VAR`{.fu} will push that value ([e.g.]{t=} `dup set VAR`{.hatstack} is the same as `set VAR, VAR`{.hatstack})
+- `alias OLD NEW`{.hatstack}: `NEW`{.fu} now refers to `OLD`{.fu}
 - `try…catch…end`{.hatstack} with `throw`{.hatstack} and `rethrow`{.hatstack}
 - `recover…end`{.hatstack} with `rethrow`{.hatstack} (maybe scuffed??)
+- `exit`{.hatstack}
 
 ### Builtins/stdlib
 
@@ -184,30 +189,36 @@ As mentioned above, there is no compile-time checking for these constructs, they
 
 #### Sets
 
-`single`{.hatstack} (`{.}`{.hatstack}, `1#{}`{.hatstack}, `1 .<<`, `2 .^`{.hatstack})
+`single`{.fu} (`{.}`{.hatstack}, `1#{}`{.hatstack}, `1 .<<`{.hatstack}, `2 .^`{.hatstack})
 :   Create a singleton set (pop one, push one).
 
-`pack`{.hatstack} (`{#}`{.hatstack})
+`pack`{.fu} (`{#}`{.hatstack})
 :   Turn a stack-list into a set.
 
-`unpack`{.hatstack} (`$#`{.hatstack})
+`unpack`{.fu} (`#`{.hatstack})
 :   Turn a set into a stack-list, with the smallest member on top (after the length of the set).
 
-#### Constants
+`powerset`{.fu} (`𝒫`{.hatstack})
+:   Return the set of all subsets of the argument, of size \(2^n\).
+
+#### Booleans
 
 <!-- 22A5 -->
-`false`{.hatstack}, `⊥`{.hatstack} (`0`{.hatstack}, `{}`{.hatstack})
+`false`{.fu}, `⊥`{.hatstack} (`0`{.hatstack}, `{}`{.hatstack})
 :   An empty set.
 
 <!-- 22A4 -->
-`true`{.hatstack}, `⊤`{.hatstack} (`1`{.hatstack}, `{{}}`{.hatstack})
+`true`{.fu}, `⊤`{.hatstack} (`1`{.hatstack}, `{{}}`{.hatstack})
 :   A nice non-empty set.
+
+`not`{.fu}, `¬`{.hatstack}
+:   Returns `1`{.hatstack} if `0`{.hatstack}, else `0`{.hatstack}.
 
 #### Ordered pairs and maps
 
 Finite maps are encoded as [graphs of functions](https://en.wikipedia.org/wiki/Graph_of_a_function#Definition): a set of pairs indicating the mapping from domain to range.
 
-`pair`{.hatstack}, `>-`{.hatstack}
+`pair`{.fu}, `>-`{.hatstack}
 :   Make an ordered pair, where the top item of the stack `$0`{.hatstack} is considered the first element of the pair, and the second item `$1`{.hatstack} the second element.
 
     :::Note
@@ -226,31 +237,34 @@ Finite maps are encoded as [graphs of functions](https://en.wikipedia.org/wiki/G
     Note that it looks backwards!
     :::
 
-`unpair`{.hatstack}, `-<`{.hatstack}
+`unpair`{.fu}, `-<`{.hatstack}
 :   Destruct an ordered pair, putting the first element on top of the stack with the second element below it.
     Will throw if its argument is not an ordered pair.
 
-`apply`{.hatstack}, `@@`{.hatstack}
+`apply`{.fu}, `@@`{.hatstack}
 :   Apply an argument `$0`{.hatstack} to the finite map `$1`{.hatstack}, looking it up.
     Will throw if it discovers the map is invalid, or if the argument is not in the map.
 
 #### Stack shuffling
 
-`dup`{.hatstack} (`$0`{.hatstack}, `[.0]`{.hatstack} or `1#[.0 .0]`{.hatstack})
+`dup`{.fu} (`$0`{.hatstack}, `[.0]`{.hatstack} or `1#[.0 .0]`{.hatstack})
 :   Duplicate the top item on the stack.
 
-`swap`{.hatstack} (`2#[.0 .1]`{.hatstack})
+`swap`{.fu} (`2#[.0 .1]`{.hatstack})
 :   Swap the top two items.
 
-`rot`{.hatstack} (`3#[.1 .0 .2]`{.hatstack})
+`rot`{.fu} (`3#[.1 .0 .2]`{.hatstack})
 :   Pull the third item to the top.
 
 <!-- bury -->
 
 #### Stdlib source
 
-:::{widget="Parser.Main.HFS.stdlib"}
-:::
+<!-- :::{widget="Parser.Main.HFS.stdlib"}
+::: -->
+
+```hatstack {load-from=assets/misc/stdlib.hatstack}
+```
 
 ### Glossary
 

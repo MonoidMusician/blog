@@ -9,6 +9,7 @@ import Data.Either (Either(..), either, hush, isLeft)
 import Data.Filterable (filterMap)
 import Data.Foldable (fold, foldMap)
 import Data.FoldableWithIndex (foldMapWithIndex)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe(..))
 import Data.String as String
 import Data.Time.Duration (Milliseconds(..))
@@ -19,10 +20,10 @@ import Effect.Uncurried (EffectFn2, runEffectFn2)
 import Foreign.Object as FO
 import Idiolect (intercalateMap)
 import Parser.Comb.Dragon (renderParseError)
-import Parser.Languages.HFS (HFList, HFS, IsPointed(..), OpMeta(..), RuntimeError(..), emptyEnv, hfsCount, hfsFromInt, hfsToTree, opMeta, showHFS, stacksInfo, stdlib)
+import Parser.Languages.HFS (Base(..), HFList, HFS(..), IsPointed(..), OpMeta(..), RuntimeError(..), bnBin, bnDec, bnHex, bnOct, bnQua, emptyEnv, hfs, hfsCount, hfsFromInt, hfsToTree, opMeta, stacksInfo, stdlib)
 import Parser.Languages.HFS as HFS
 import Riverdragon.Dragon (Dragon)
-import Riverdragon.Dragon.Bones (($$), ($<), ($<>), ($~~), (.$), (.$$), (.$~~), (<:>), (<>$), (=:=), (>$), (>@))
+import Riverdragon.Dragon.Bones (text, ($$), ($~~), (.$), (.$$), (.$~~), (<:>), (=:=), (>$), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (hatching, sourceCode)
 import Riverdragon.River (createRiver)
@@ -39,10 +40,10 @@ widgets = FO.fromFoldable
   , "Parser.Main.HFS.stdlib" /\ widget_stdlib
   ]
 
-foreign import renderHFS :: EffectFn2 HFList Element Unit
+foreign import displayHFS :: EffectFn2 HFList Element Unit
 
 graphHFS :: HFS -> Element -> Effect Unit
-graphHFS hfs el = runEffectFn2 renderHFS (hfsToTree hfs) el
+graphHFS hfs el = runEffectFn2 displayHFS (hfsToTree hfs) el
 
 data OpsGroup = All | Binaries | NAries
 
@@ -99,11 +100,22 @@ code cls c = D.code [ D.className =:= cls ] $$ c
 span :: String -> String -> Dragon
 span cls c = D.span [ D.className =:= cls ] $$ c
 
-color :: String -> String -> Dragon
-color clr v = D.span [ D.style =:= ("color:"<>clr) ] $$ v
+color :: String -> Dragon -> Dragon
+color clr v = D.span [ D.style =:= ("color:"<>clr) ] $ v
 
 half :: Dragon -> Dragon
 half = D.span [ D.style =:= "opacity:0.6" ]
+
+renderHFS :: HFS -> Dragon
+renderHFS (NumLike b n) = case b of
+  Bin -> span "dv" $ bnBin n
+  Dec -> span "dv" $ bnDec n
+  Hex -> span "dv" $ bnHex n
+  Oct -> span "dv" $ bnOct n
+  Qua -> span "dv" $ bnQua n
+renderHFS (SetLike _ members) = (\m -> span "cf" "{" <> m <> span "cf" "}") $
+  intercalateMap (text ", ") renderHFS (Array.reverse (Array.fromFoldable members))
+
 
 widget :: Widget
 widget _ = pure $ hatching \shell -> do
@@ -111,26 +123,42 @@ widget _ = pure $ hatching \shell -> do
   done <- shell.store $ pure (false /\ Right emptyEnv) <|>
     map HFS.parseAndRun' <$> debounce (100.0 # Milliseconds) (dedup valueSet)
   let
-    wrapOutput content =
-      D.div [ D.className =:= "sourceCode", D.style =:= "" ] $
-        D.pre.$ D.code [ D.style =:= "margin: 0" ] $ content
-    renderOutput = wrapOutput <<< foldMap \{ building, pointed, values } ->
-      D.div.$~~
-        [ values # foldMapWithIndex \i { value, dequeued } -> D.div.$~~
-            [ case pointed of
-                NotPointed -> D.text "  "
-                Pointed -> color "#7f2db9" $ "." <> show i
-                Current -> color "#7f2db9" $ "$" <> show i
-            , D.text " "
-            , (if dequeued then color "#ff6565" else span "dv") $ showHFS value
-            ]
-        , D.div.$ building # foldMap \x ->
-            (\y -> "--- " $< span "dv" y >$ " ---") case x of
-              Left hfs | hfs == mempty -> "{"
-              Left hfs -> showHFS (hfsCount hfs) <> "#{"
-              Right 0 -> "["
-              Right n -> show n <> "#["
+    clear = [ D.style =:= "border: 0; padding: 0" ]
+    hr =
+      D.html_"hr" [ D.style =:= "width: 100%" ] mempty
+    hr' =
+      D.html_"hr" [ D.style =:= "width: 100%; transform: scaleX(-1)" ] mempty
+    andHr x = D.div [ D.style =:= "display: flex" ] $~~ [ x, hr ]
+    cells = D.tr clear <<< foldMapWithIndex \i ->
+      D.td if i == 0 then [ D.style =:= "border: 0; width: max-content; max-width: 40px; padding: 0" ] else clear
+    strikethrough = """
+      text-decoration: underline rgb(255, 101, 101);
+      text-underline-offset: -38%;
+      text-decoration-skip-ink: none;
+    """
+    renderOutput segments = D.table [ D.style =:= "border: 0; width: 100%"] $~~
+      [ D.html_"colgroup".$~~
+        [ D.html_"col" [ D.attr "span" =:= 1, D.style =:= "width: max-content; max-width: 40px" ] mempty
+        , D.html_"col" [ D.attr "span" =:= 1, D.style =:= "width: auto" ] mempty
         ]
+      , segments # foldMap \{ building, pointed, values } -> fold
+        [ D.tbody clear $~~ values # mapWithIndex \i { value, dequeued } -> cells
+            [ case pointed of
+                NotPointed -> mempty
+                Pointed -> D.code.$ color "#7f2db9" $$ "." <> show i
+                Current -> D.code.$ color "#7f2db9" $$ "$" <> show i
+            , D.code (if dequeued then [ D.style =:= strikethrough ] else []) $
+                renderHFS value
+            ]
+        , building # foldMap \x -> D.tbody clear $ cells $
+            (\y -> [ hr', andHr (D.code.$y) ]) case x of
+              Left pending | pending == mempty -> span "cf" "{"
+              Left pending -> renderHFS (hfsCount pending) <> span "cf" "#{" <>
+                foldMap (\z -> renderHFS z >$ ", ") (hfs pending)
+              Right 0 -> span "cf" "["
+              Right n -> span "dv" (show n) <> span "cf" "#["
+        ]
+      ]
   pure $ D.div.$~~
     [ D.div.$ (pure (hfsFromInt 157842) <|> dedup (filterMap topOfStack done)) >@
         \hfs -> D.div [ pure $ D.Self $ map mempty <<< graphHFS hfs ] mempty
@@ -144,7 +172,7 @@ widget _ = pure $ hatching \shell -> do
               , D.style =:= "height: 20svh"
               , D.asCodeInput
               ]
-      , D.div [ D.style =:= "flex: 0 0 50%; overflow: auto; font-size: 70%" ] $
+      , D.div [ D.style =:= "flex: 0 0 50%; overflow: auto; font-size: 100%" ] $
           gateSuccess identity done >@
             either
               (either renderParseError \(RuntimeError _ s) -> D.text $ "Runtime error: " <> s)

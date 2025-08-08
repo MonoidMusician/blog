@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<language name="tmTTmt" casesensitive="1">
+<!-- ```{.xml .skylighting}``` -->
+<!-- https://docs.kde.org/stable5/en/kate/katepart/highlight.html -->
+<language name="tmTTmt" casesensitive="1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="language.xsd">
   <highlighting>
     <contexts>
       <context name="Root" attribute="Normal Text" lineEndContext="#stay">
@@ -12,7 +14,7 @@
         <IncludeRules context="FindOperators"/>
         <IncludeRules context="FindComments"/>
         <IncludeRules context="FindStrings"/>
-        <RegExpr attribute="Annotation" name="StartAnnotationBlock" context="AnnotationBlock" String="@{\s*[-a-zA-Z_][-a-zA-Z0-9_]*"/>
+        <RegExpr attribute="Annotation" context="AnnotationBlock" String="@{\s*[-a-zA-Z_][-a-zA-Z0-9_]*"/>
       </context>
 
       <context name="AnnotationBlock">

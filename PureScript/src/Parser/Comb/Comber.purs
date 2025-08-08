@@ -459,6 +459,10 @@ many1SepBy :: forall x a. String -> Comber x -> Comber a -> Comber (NonEmptyArra
 many1SepBy n s p = NEA.fromFoldable1 <$> n #-> \more ->
   lift2 NEL.cons' p (pure Nil <|> NEL.toList <$> (s *> more))
 
+many1Leapfrog :: forall a. String -> Comber a -> Comber a -> Comber (NonEmptyArray a)
+many1Leapfrog n s p = NEA.fromFoldable1 <$> n #-> \more ->
+  lift2 NEL.cons' p (pure Nil <|> Cons <$> s <*> (NEL.toList <$> more))
+
 -- | For `Monoid`s. Use `optional` if you want to return a `Maybe`.
 opt :: forall a. Monoid a => Comber a -> Comber a
 opt a = pure mempty <|> a
@@ -474,9 +478,9 @@ opt a = pure mempty <|> a
 ws :: Comber Unit
 ws = wss <|> pure unit
 
--- | Required whitespace.
+-- | Required whitespace. `[\p{Pattern_White_Space}&\p{Space}]`
 wss :: Comber Unit
-wss = "wss"#: void (rawr "\\s+")
+wss = "wss"#: void (rawr "[\\u0009-\\u000D\\u0085\\u2028\\u2029\\u0020]+")
 
 -- | Surround the parser with optional whitespace. Will cause issues if the
 -- | parser can parse the empty string.

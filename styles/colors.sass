@@ -15,12 +15,15 @@ $selection: rgb(3 182 140)
   @if not $highcontrast
     $background-color: #fcf4e6
     // $background-image: url("../assets/images/circle_texture.png") 0 0 / 150px 150px
+    $background-image: url("../assets/images/halfanise-light.svg") -2.5px -2.5px / 60px 60px
   @else
     $background-color: white
   $text: #210b06
   $text2: #390c03
   $stark: black
   $selection: rgb(140 222 202)
+@else
+  $background-image: url("../assets/images/halfanise.svg") -2.5px -2.5px / 60px 60px
 
 $background: $background-color
 @if $background-image
@@ -42,12 +45,32 @@ h2, h3, h4, h5
   @if $highcontrast
     color: $stark
 
-h3
+h3, h4
   border-bottom-color: $text
+  border-bottom-style: solid
+  border-bottom-width: 1px
+h3
+  line-height: 0.9
+  @if $light
+    border-image: linear-gradient(to right, var(--rainbow)) 1
+  @else
+    border-image: linear-gradient(to left, var(--rainbow)) 1
+h4
+  line-height: 0.9
+  width: max-content
+  @if $light
+    border-image: linear-gradient(to left, var(--rainbow)) 1
+  @else
+    border-image: linear-gradient(to right, var(--rainbow)) 1
 
 hr
   border: none
-  border-bottom: 1px solid $text
+  border-bottom-style: solid
+  border-bottom-width: 1px
+  @if $light
+    border-image: linear-gradient(to right, var(--rainbow)) 1
+  @else
+    border-image: linear-gradient(to left, var(--rainbow)) 1
   opacity: 0.6
 
 // TODO: abstraction
@@ -372,3 +395,8 @@ table:not(.data-table)
       transition: border-top-color 0.2s
     & th:hover
       border-top-color: color.adjust($text, $alpha: -0.2)
+
+:root
+  /* A rainbow! */
+  /* adapted from https://github.com/holoviz/colorcet/blob/main/assets/CET/rainbow_bgyrm_35-85_c69_n256.csv */
+  --rainbow: rgba(101,0,168), rgba(90,0,192), rgba(76,0,229), rgba(65,31,240), rgba(20,74,218), rgba(25,94,190), rgba(24,110,164), rgba(38,122,139), rgba(54,133,115), rgba(62,143,90), rgba(65,154,63), rgba(71,163,36), rgba(90,171,19), rgba(114,177,16), rgba(138,183,20), rgba(183,194,27), rgba(225,203,34), rgba(249,195,35), rgba(250,184,33), rgba(248,158,28), rgba(245,132,23), rgba(243,118,21), rgba(241,103,21), rgba(240,90,28), rgba(248,92,81), rgba(253,103,115), rgba(256,113,149), rgba(256,125,183), rgba(256,136,219)
