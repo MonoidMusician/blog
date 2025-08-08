@@ -33,14 +33,15 @@
         <RegExpr attribute="Control Flow" String="(def|set):?" context="DefName"/>
         <RegExpr attribute="Control Flow" String="(alias)(::)?" context="Def2Name"/>
         <keyword attribute="Control Flow" String="commands" />
+        <RegExpr attribute="Control Flow" String="[&#x239B;-&#x23AD;&#x23B0;-&#x23B1;]"/> <!-- [\x239B-\x23AD\x23B0-\x23B1] -->
         <RegExpr attribute="Operator" String="\{\.\}|\{#\}"/>
+        <RegExpr attribute="Control Flow" String="#?\{|\}#?|#?\[|\]#?"/>
         <RegExpr attribute="PrevStackVar" String="\.[0-9]+"/>
         <RegExpr attribute="ThisStackVar" String="\$[0-9]+"/>
         <RegExpr attribute="Number" String="(0d)?[0-9]+|0b[01]+|0o[0-7]+|0x[0-9a-fA-F]+|0q[0-3]+"/>
-        <RegExpr attribute="Control Flow" String="#?\{|\}#?|#?\[|\]#?"/>
         <RegExpr attribute="Annotation" String="\b(Set|Nat|Num|Bin|Dec|Hex|Oct|Qua|HFS)\b"/>
         <RegExpr attribute="Operator" String="(?!…)[^][{}(), a-zA-Z0-9][^][{}(), a-zA-Z]*"/>
-        <!-- <RegExpr attribute="Function" String="^[a-zA-Z][a-zA-Z0-9]*$"/> -->
+        <RegExpr attribute="Function" String="^[a-zA-Z][a-zA-Z0-9]*$"/>
       </context>
 
       <context name="FindComments" attribute="Comment">

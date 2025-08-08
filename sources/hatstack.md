@@ -173,7 +173,7 @@ As mentioned above, there is no compile-time checking for these constructs, they
 - `alias OLD NEW`{.hatstack}: `NEW`{.fu} now refers to `OLD`{.fu}
 - `try…catch…end`{.hatstack} with `throw`{.hatstack} and `rethrow`{.hatstack}
 - `recover…end`{.hatstack} with `rethrow`{.hatstack} (maybe scuffed??)
-- `exit`{.hatstack}
+- `exit`{.hatstack} (ends the program)
 
 ### Builtins/stdlib
 

@@ -88,16 +88,14 @@ end
 alias apply @@
 def apply
   2#[ .1# .0 ]
-  begin
-    $1 while
-    3#[ .1-- , .0 , .2 ]
-    unpair
-    $2 == if
-      $2 3+ #[ .0 ]
-      return
-    end
-    drop
-  end
+  ⎛ $1 while
+  ⎜ 3#[ .1-- .0  .2 ]
+  ⎜ unpair
+  ⎜ $2 == if
+  ⎜   $2 3+ #[ .0 ]
+  ⎜   return
+  ⎜ end
+  ⎝ drop
   throw
 end
 
@@ -116,13 +114,10 @@ end
 def range
   #
   {}
-  begin
-    $1 while
-    3#[ .1-- , .0 , .2 snd {.} | ]
-  end
-  swap drop
+  ⎛ $1 while
+  ⎝ 3#[ .1-- , .0 , .2 snd {.} | ]
+  2#[ .0 ]
 end
-
 
 ## The Zermelo encoding of natural numbers
 ## as nested singleton sets
