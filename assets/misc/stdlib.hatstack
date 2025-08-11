@@ -60,14 +60,12 @@ def unpair
       .0 .1 .\ unsingle
       .0 unsingle
     ]
-    return
-  end
+  ret
   1 match
     drop
     unsingle
     dup
-    return
-  end
+  ret
   throw
 end
 
@@ -97,6 +95,20 @@ def apply
   ⎜ end
   ⎝ drop
   throw
+end
+
+alias apply0 @?
+def apply0
+  2#[ .1# .0 ]
+  ⎛ $1 while
+  ⎜ 3#[ .1-- .0  .2 ]
+  ⎜ unpair
+  ⎜ $2 == if
+  ⎜   $2 3+ #[ .0 ]
+  ⎜   return
+  ⎜ end
+  ⎝ drop
+  2#[ 0 ]
 end
 
 ## Domain of a map
@@ -223,3 +235,96 @@ def unpairElegant 1#[
     $1 -.
   end
 ] end
+
+def un 2#[
+  .1 # .0 != if throw end
+] end
+
+def entry
+  2#[
+    .1 .0 depth++ loop {.} end
+    .0
+  ] 2#{}
+end
+def unentry
+  2un 2#[
+    .1 .0 depth++ loop 1un end
+    .0
+  ]
+end
+
+alias cons !>
+def cons 2#[
+  .0  .1 count entry
+  {.} .1 |
+] end
+def <! swap !> end
+
+alias index !!
+def index
+  2#[ .1# .0 ]
+  ⎛ $1 while
+  ⎜ 3#[ .1-- .0  .2 ]
+  ⎜ unentry
+  ⎜ $2 == if
+  ⎜   $2 3+ #[ .0 ]
+  ⎜   return
+  ⎜ end
+  ⎝ drop
+  throw
+end
+
+alias index0 !?
+def index0
+  2#[ .1# .0 ]
+  ⎛ $1 while
+  ⎜ 3#[ .1-- .0  .2 ]
+  ⎜ unentry
+  ⎜ $2 == if
+  ⎜   $2 3+ #[ .0 ]
+  ⎜   return
+  ⎜ end
+  ⎝ drop
+  2#[ 0 ]
+end
+
+def uncons 1#[
+  .0  .0 count--  index
+  $0  .0 count--  entry
+    {.} .0 .\
+  swap
+] end
+
+def tuple
+  {} swap loop swap !> end
+end
+
+alias untuple ..
+def untuple
+  dup count loop uncons swap end drop
+end
+
+alias list #..
+def list
+  {} swap loop swap !> end
+end
+
+alias unlist ..#
+def unlist
+  1#[ dup count loop uncons swap end drop .0 count ]
+end
+
+
+## Turing machines
+
+{} set TMtable
+1  set TMstate
+{} set TMtape
+
+## Actions
+enum TMA_(
+  L ## Left
+  R ## Right
+  N ## Neutral
+  H ## Halt
+)

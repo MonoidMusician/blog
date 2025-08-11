@@ -3,7 +3,7 @@
 <!-- https://docs.kde.org/stable5/en/kate/katepart/highlight.html -->
 <language name="hatstack" casesensitive="1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="language.xsd">
   <general>
-    <keywords additionalDeliminator="…" />
+    <keywords additionalDeliminator="…"/>
   </general>
   <highlighting>
     <list name="commands">
@@ -15,6 +15,9 @@
       <item>end</item>
       <item>begin</item>
       <item>while</item>
+      <item>loop</item>
+      <item>for</item>
+      <item>between</item>
       <item>continue</item>
       <item>break</item>
       <item>if</item>
@@ -22,17 +25,19 @@
       <item>else</item>
       <item>def</item>
       <item>return</item>
+      <item>ret</item>
       <item>exit</item>
 
       <item>set</item>
+      <item>enum</item>
     </list>
 
     <contexts>
-      <context name="Root" attribute="Normal Text" lineEndContext="#stay">
+      <context name="Root" attribute="Normal" lineEndContext="#stay">
         <IncludeRules context="FindComments"/>
         <RegExpr attribute="Control Flow" String="(def|set):?" context="DefName"/>
         <RegExpr attribute="Control Flow" String="(alias)(::)?" context="Def2Name"/>
-        <keyword attribute="Control Flow" String="commands" />
+        <keyword attribute="Control Flow" String="commands"/>
         <RegExpr attribute="Control Flow" String="[&#x239B;-&#x23AD;&#x23B0;-&#x23B1;]"/> <!-- [\x239B-\x23AD\x23B0-\x23B1] -->
         <RegExpr attribute="Operator" String="\{\.\}|\{#\}"/>
         <RegExpr attribute="Control Flow" String="#?\{|\}#?|#?\[|\]#?"/>
@@ -52,22 +57,30 @@
       <context name="LineComment" attribute="Comment" lineEndContext="#pop">
       </context>
 
-      <context name="DefName" lineEndContext="#stay">
+      <context name="DefName" lineEndContext="#stay" attribute="Normal">
         <RegExpr String="…" context="#pop"/>
-        <keyword attribute="Error" String="commands" context="#pop" />
+        <keyword attribute="Error" String="commands" context="#pop"/>
         <RegExpr attribute="Function" String="[a-zA-Z][a-zA-Z0-9]*" context="#pop"/>
         <RegExpr attribute="Operator" String="(?!…)[^][{}(), a-zA-Z0-9][^][{}(), a-zA-Z]*" context="#pop"/>
       </context>
-      <context name="Def2Name" lineEndContext="#stay">
+      <context name="Def2Name" lineEndContext="#stay" attribute="Normal">
         <RegExpr String="…" context="#pop"/>
-        <keyword attribute="Error" String="commands" context="#pop" />
+        <keyword attribute="Error" String="commands" context="#pop"/>
         <RegExpr attribute="Function" String="[a-zA-Z][a-zA-Z0-9]*" context="#pop DefName"/>
         <RegExpr attribute="Operator" String="(?!…)[^][{}(), a-zA-Z0-9][^][{}(), a-zA-Z]*" context="#pop DefName"/>
+      </context>
+      <context name="EnumStart" lineEndContext="#stay" attribute="Normal">
+        <RegExpr attribute="Normal" String="\(" context="#pop EnumList"/>
+      </context>
+      <context name="EnumList" lineEndContext="#stay" attribute="Normal">
+        <RegExpr attribute="Normal" String="\)" context="#pop"/>
       </context>
     </contexts>
 
     <itemDatas>
-      <itemData name="Control Flow"   defStyleNum="dsControlFlow" />
+      <itemData name="Normal"         defStyleNum="dsNormal"/>
+
+      <itemData name="Control Flow"   defStyleNum="dsControlFlow"/>
       <itemData name="Function"       defStyleNum="dsFunction"/>
       <itemData name="ThisStackVar"   defStyleNum="dsString"/>
       <itemData name="PrevStackVar"   defStyleNum="dsSpecialChar"/>
@@ -82,7 +95,6 @@
       <itemData name="Builtin"        defStyleNum="dsBuiltIn"/>
       <itemData name="Import"         defStyleNum="dsImport"/>
       <itemData name="Data Type"      defStyleNum="dsDataType"/>
-      <itemData name="Normal Text"    defStyleNum="dsNormal"/>
 
       <itemData name="Error"          defStyleNum="dsError"/>
     </itemDatas>

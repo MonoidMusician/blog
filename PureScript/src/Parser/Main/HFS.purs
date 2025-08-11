@@ -11,6 +11,7 @@ import Data.Foldable (fold, foldMap)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe(..))
+import Data.Set as Set
 import Data.String as String
 import Data.Time.Duration (Milliseconds(..))
 import Data.Tuple (Tuple(..), snd)
@@ -113,8 +114,11 @@ renderHFS (NumLike b n) = case b of
   Hex -> span "dv" $ bnHex n
   Oct -> span "dv" $ bnOct n
   Qua -> span "dv" $ bnQua n
-renderHFS (SetLike _ members) = (\m -> span "cf" "{" <> m <> span "cf" "}") $
-  intercalateMap (text ", ") renderHFS (Array.reverse (Array.fromFoldable members))
+renderHFS (SetLike _ members) | Set.isEmpty members = span "" "∅"
+renderHFS (SetLike _ members) | Set.size members == 1, [member] <- Set.toUnfoldable members =
+  span "cf" "{" <> renderHFS member <> span "cf" "}"
+renderHFS (SetLike _ members) = (\m -> span "cf" "{ " <> m <> span "cf" " }") $
+  intercalateMap (text ", ") renderHFS (Array.reverse (Set.toUnfoldable members))
 
 
 widget :: Widget

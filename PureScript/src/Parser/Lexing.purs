@@ -349,6 +349,11 @@ bestRegexOrString options = options # guessBest <<< prioritize case _ of
   (_ /\ _ /\ _ /\ (Continue (Similar cat)) /\ _ /\ Continue i) -> Just $ Tuple (isLeft cat) (negate (len i))
   _ -> Nothing
 
+longestRegexOrString :: forall err s r. Best err s r (OrEOF (Similar String Rawr)) (OrEOF String) (OrEOF String)
+longestRegexOrString options = options # guessBest <<< prioritize case _ of
+  (_ /\ _ /\ _ /\ (Continue (Similar cat)) /\ _ /\ Continue i) -> Just $ Tuple (negate (len i)) (isLeft cat)
+  _ -> Nothing
+
 lazyBest :: forall err s r. Best err s r (OrEOF (Similar String Rawr)) (OrEOF String) (OrEOF String)
 lazyBest = note [] <<< ltraverse decide <<< NEA.head <<< prioritize case _ of
   (_ /\ _ /\ _ /\ (Continue (Similar cat)) /\ _ /\ Continue i) -> Just $ Tuple (isLeft cat) (negate (len i))

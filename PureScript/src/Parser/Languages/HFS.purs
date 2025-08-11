@@ -28,6 +28,8 @@ import Data.String.Regex.Unsafe (unsafeRegex)
 import Effect.Exception (message, try)
 import Effect.Unsafe (unsafePerformEffect)
 import Parser.Comb as Comb
+import Parser.Lexing (longestRegexOrString)
+import Whitespace (defaultWS)
 
 -- | `HFList`: an `Array`-based representation for FFI
 newtype HFList = HFList (Array HFList)
@@ -170,6 +172,9 @@ isSubsetOf l r = Set.subset (hfs l) (hfs r)
 -- | Deserialize from a simple `Int`.
 hfsFromInt :: Int -> HFS
 hfsFromInt = NumLike Dec <<< fromInt
+
+hfsToInt :: HFS -> Int
+hfsToInt = toInt <<< bn
 
 hfsFromFoldable :: forall f. Foldable f => f HFS -> HFS
 hfsFromFoldable = setLike <<< Set.fromFoldable
@@ -424,14 +429,12 @@ def unpair
       .0 .1 .\ unsingle
       .0 unsingle
     ]
-    return
-  end
+  ret
   1 match
     drop
     unsingle
     dup
-    return
-  end
+  ret
   throw
 end
 
@@ -461,6 +464,20 @@ def apply
   ⎜ end
   ⎝ drop
   throw
+end
+
+alias apply0 @?
+def apply0
+  2#[ .1# .0 ]
+  ⎛ $1 while
+  ⎜ 3#[ .1-- .0  .2 ]
+  ⎜ unpair
+  ⎜ $2 == if
+  ⎜   $2 3+ #[ .0 ]
+  ⎜   return
+  ⎜ end
+  ⎝ drop
+  2#[ 0 ]
 end
 
 ## Domain of a map
@@ -587,6 +604,141 @@ def unpairElegant 1#[
     $1 -.
   end
 ] end
+
+def un 2#[
+  .1 # .0 != if throw end
+] end
+
+def entry
+  2#[
+    .1 .0 depth++ loop {.} end
+    .0
+  ] 2#{}
+end
+def unentry
+  2un 2#[
+    .1 .0 depth++ loop 1un end
+    .0
+  ]
+end
+
+alias cons !>
+def cons 2#[
+  .0  .1 count entry
+  {.} .1 |
+] end
+def <! swap !> end
+
+alias index !!
+def index
+  2#[ .1# .0 ]
+  ⎛ $1 while
+  ⎜ 3#[ .1-- .0  .2 ]
+  ⎜ unentry
+  ⎜ $2 == if
+  ⎜   $2 3+ #[ .0 ]
+  ⎜   return
+  ⎜ end
+  ⎝ drop
+  throw
+end
+
+alias index0 !?
+def index0
+  2#[ .1# .0 ]
+  ⎛ $1 while
+  ⎜ 3#[ .1-- .0  .2 ]
+  ⎜ unentry
+  ⎜ $2 == if
+  ⎜   $2 3+ #[ .0 ]
+  ⎜   return
+  ⎜ end
+  ⎝ drop
+  2#[ 0 ]
+end
+
+def uncons 1#[
+  .0  .0 count--  index
+  $0  .0 count--  entry
+    {.} .0 .\
+  swap
+] end
+
+def tuple
+  {} swap loop swap !> end
+end
+
+alias untuple ..
+def untuple
+  dup count loop uncons swap end drop
+end
+
+alias list #..
+def list
+  {} swap loop swap !> end
+end
+
+alias unlist ..#
+def unlist
+  1#[ dup count loop uncons swap end drop .0 count ]
+end
+
+
+## Turing machines
+
+## TMtable: Map (Pair TMstate TMsymbol) (Pair (Pair TMstate TMsymbol) TMaction)
+{} set TMtable
+1  set TMstate
+{} set TMtape
+0  set TMindex
+
+## Actions
+enum TMa(
+  L ## Left
+  N ## Neutral
+  R ## Right
+  H ## Halt
+)
+## States
+enum TMs(
+  0 Halt
+  1 Start
+)
+
+def TMentry 5#[
+  .4 .3 pair
+  .2 .1 pair .0 pair
+  pair
+] end
+
+def TMstep
+  TMstate TMsHalt == if 0 ret
+  TMtape TMindex !?
+    set TMsymbol
+  TMtable  TMstate TMsymbol >-  @?
+    dup 0 == if ret
+  -< 2#[ .1 -< .0 ]
+  3#[
+    .2 set TMstate
+    TMtape
+      { TMsymbol TMindex entry } \.
+      { .1       TMindex entry } |
+      set TMtape
+    .0
+      TMaL match drop
+        TMindex-- set TMindex
+      1 ret
+      TMaR match drop
+        TMindex++ set TMindex
+      1 ret
+      TMaN match drop
+        TMindex set TMindex
+      1 ret
+      begin ## fallthrough
+        TMsHalt set TMstate
+      0 ret
+  ]
+end
 """
 
 stdenv :: Lazy Env
@@ -943,6 +1095,9 @@ data Ctrl
   | Begin
   -- TODO: labeled
   | While
+  | Loop
+  | For
+  | Between
   | Continue
   | Break
   | If
@@ -950,6 +1105,7 @@ data Ctrl
   | Else
   | Def
   | Return
+  | Ret
   | Exit
 
 derive instance eqCtrl :: Eq Ctrl
@@ -987,6 +1143,7 @@ data Instr
   | Var String
   | Set String
   | Alias Instr String
+  | Enum String (Array (Either HFS String))
   | Newline
   | Defer Instr
 derive instance genericInstr :: Generic Instr _
@@ -1017,9 +1174,9 @@ rID =
 -- HatStack quirk: Allow numbers in operators' continue set too
 rOp :: String
 rOp =
-  "(?:(?![.$]\\d+))" <>
-  "(?:(?![][}{)(,\\u239B-\\u23AD\\u23B0-\\u23B1])[\\p{Pattern_Syntax}])" <>
-  "(?:(?![][}{)(,\\u239B-\\u23AD\\u23B0-\\u23B1])[\\p{Pattern_Syntax}\\p{Mn}\\p{Nd}])*"
+  "(?:(?![.$]\\d+))" <> -- exclude `.0`, `$0`
+  "(?:(?![\\[\\]\\{\\}\\(\\),\\u239B-\\u23AD\\u23B0-\\u23B1])[\\p{Pattern_Syntax}])" <>
+  "(?:(?![\\[\\]\\{\\}\\(\\),\\u239B-\\u23AD\\u23B0-\\u23B1])[\\p{Pattern_Syntax}\\p{Mn}\\p{Nd}])*"
 
 opID :: Comber String
 opID = rawr rID <|> rawr rOp
@@ -1036,11 +1193,20 @@ parser = pure [] <|> do
       , rawr "\\." *> (PeekPrev <$> int <@> false)
       , rawr "\\$" *> (PeekThis <$> int <@> false)
       , matchBuiltin <$> opID
-      , Set <$> do token "set" *> ws *> opID
-      , Alias <$> (token "alias" *> ws *> (instrFromId <$> opID) <* ws) <*> opID
-      , Newline <$ token "##" <* rawr "[^\n]*(\n|$)"
+      , Set <$> do token "set" *> wscomment *> opID
+      , Alias <$> (token "alias" *> wscomment *> (instrFromId <$> opID) <* wscomment) <*> opID
+      , Enum <$> (token "enum" *> opt (wscomment *> rawr rID)) <*> (
+          map NEA.toArray $ opt wscomment *>
+
+          token "(" *> opt wscomment *>
+            many1 "enum_parts" ((lit \|/ rawr rID) <* opt wscomment)
+          <* token ")"
+        )
+      , Newline <$ comment
       ]
   where
+  wscomment = void $ rawr "(?:##[^\n\r]*(?:\r?\n|$)|[\\u0009-\\u000D\\u0085\\u2028\\u2029\\u0020]+)+"
+  comment = token "##" <* rawr "[^\n\r]*(?:\r?\n|$)"
   trackNewline = sourceOf ws <#> \s ->
     if String.contains (String.Pattern "\n") s || String.contains (String.Pattern "\r") s
       then Newline else Fn NoOp
@@ -1064,7 +1230,7 @@ type Stack = List HFS
 
 theParser :: Lazy (String -> Either FullParseError (Array Instr))
 theParser = defer \_ ->
-  Comb.parseRegex topName (unwrap parser)
+  Comb.parseWith { best: longestRegexOrString, defaultSpace: defaultWS } topName (unwrap parser)
 
 parseAndRun :: String -> Either String String
 parseAndRun = parseAndRun' >>> bimap
@@ -1133,6 +1299,7 @@ data Flow
   | InBegin Pointer
   -- Pointer to the previous begin
   | InWhile (Maybe Pointer)
+  | InBetween { instr :: Pointer, silent :: Boolean, current :: Int, noContinue :: Int }
   -- (No data, just a marker)
   | InFunDef
   -- Pointer to return to
@@ -1236,7 +1403,54 @@ interpret instr original = case resolve env instr, env of
           { flow = { prev: env.running, here: InWhile Nothing } : env.flow
           , error = env.error <|> Just (RuntimeError original "Bad while")
           }
-    -- If pops a condition off the stack
+    Loop ->
+      case env of
+        -- Track scope without affecting the stack
+        _ | not env.running || isJust env.error -> env
+          { flow = { prev: false, here: InBetween { instr: env.instruction, silent: true, current: 0, noContinue: 0 } } : env.flow
+          }
+        -- Pop and use that to take this branch (or wait for Else to resume it)
+        { stacks: (num : stack) :| stacks } | n <- hfsToInt num -> env
+          { stacks = stack :| stacks
+          , flow = { prev: env.running, here: InBetween { instr: env.instruction, silent: true, current: 0, noContinue: max 0 (n-1) } } : env.flow
+          , running = n /= 0
+          }
+        _ -> env
+          { flow = { prev: env.running, here: InBetween { instr: env.instruction, silent: true, current: 0, noContinue: 0 } } : env.flow
+          , error = env.error <|> Just do underflow 1
+          }
+    For ->
+      case env of
+        -- Track scope without affecting the stack
+        _ | not env.running || isJust env.error -> env
+          { flow = { prev: false, here: InBetween { instr: env.instruction, silent: false, current: 0, noContinue: 0 } } : env.flow
+          }
+        -- Pop and use that to take this branch (or wait for Else to resume it)
+        { stacks: (num : stack) :| stacks } | n <- hfsToInt num -> env
+          { stacks = if n /= 0 then hfsFromInt 0 : stack :| stacks else stack :| stacks
+          , flow = { prev: env.running, here: InBetween { instr: env.instruction, silent: false, current: 0, noContinue: max 0 (n-1) } } : env.flow
+          , running = n /= 0
+          }
+        _ -> env
+          { flow = { prev: env.running, here: InBetween { instr: env.instruction, silent: false, current: 0, noContinue: 0 } } : env.flow
+          , error = env.error <|> Just do underflow 1
+          }
+    Between ->
+      case env of
+        -- Track scope without affecting the stack
+        _ | not env.running || isJust env.error -> env
+          { flow = { prev: false, here: InBetween { instr: env.instruction, silent: false, current: 0, noContinue: 0 } } : env.flow
+          }
+        -- Pop and use that to take this branch (or wait for Else to resume it)
+        { stacks: (to : from : stack) :| stacks } | i <- hfsToInt from, j <- hfsToInt to, current <- if i > j then i-1 else i -> env
+          { stacks = if i /= j then hfsFromInt current : stack :| stacks else stack :| stacks
+          , flow = { prev: env.running, here: InBetween { instr: env.instruction, silent: false, current, noContinue: if i > j then j else j-1 } } : env.flow
+          , running = i /= j
+          }
+        _ -> env
+          { flow = { prev: env.running, here: InBetween { instr: env.instruction, silent: false, current: 0, noContinue: 0 } } : env.flow
+          , error = env.error <|> Just do underflow 2
+          }
     If ->
       case env of
         -- Track scope without affecting the stack
@@ -1308,11 +1522,16 @@ interpret instr original = case resolve env instr, env of
     -- Continue stops running until the while loop loops
     Continue -> returnTo case _ of
       r@(InWhile (Just _)) -> Just r
+      r@(InBetween _) -> Just r
       _ -> Nothing
     -- Break stops running and makes the while loop stop
     Break -> returnTo case _ of
       InWhile _ -> Just (InWhile Nothing)
+      InBetween r -> Just (InBetween r { current = r.noContinue })
       _ -> Nothing
+    Ret -> interpret (Ctrl End) $
+      (interpret (Ctrl Return) original)
+      { instruction = original.instruction }
     End ->
       case env.flow of
         Nil -> env
@@ -1330,6 +1549,16 @@ interpret instr original = case resolve env instr, env of
           , instruction = jmp
           , running = true
           }
+        { prev: true, here: InBetween { instr: jmp, silent, current, noContinue } } : flows
+          | env.running, current /= noContinue
+          , next <- if noContinue < current then current - 1 else current + 1 -> env
+            { flow = { prev: true, here: InBetween { instr: jmp, silent, current: next, noContinue } } : flows
+            , instruction = jmp
+            , running = true
+            , stacks = case env.stacks of
+                stack :| more | not silent -> hfsFromInt next : stack :| more
+                _ -> env.stacks
+            }
         -- return to the caller
         { prev: true, here: InFunCall { instr: jmp, newlinePending } } : flows -> env
           { flow = flows
@@ -1365,6 +1594,13 @@ interpret instr original = case resolve env instr, env of
     }
   Set _, _ -> env { error = Just $ underflow 1 }
   Alias oldName newName, _ -> env { aliases = Map.insert newName oldName env.aliases }
+  Enum prefix items, _ -> env { vars = _ }
+    let
+      go Nil _ vars = vars
+      go (Left st : more) _ vars = go more st vars
+      go (Right name : more) st vars =
+        go more (hfsAdd st (hfsFromInt 1)) $ Map.insert (prefix <> name) st vars
+    in go (List.fromFoldable items) (hfsFromInt 0) env.vars
   PeekPrev idx unpack, _ ->
     case env.stacks of
       this :| stacks | Just prev <- stacks List.!! (env.pointed - 1) ->

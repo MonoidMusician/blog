@@ -162,13 +162,19 @@ As mentioned above, there is no compile-time checking for these constructs, they
 
 - `begin…end`{.hatstack} (no-op, does **not** loop)
 - `begin…while…end`{.hatstack} (loops), with `continue`{.hatstack} and `break`{.hatstack}
-  - `while`{.hatstack} pops the condition, `end`{.hatstack} loops back to `begin`{.hatstack}
+  - `while: -c`{.hatstack} pops the condition, `end`{.hatstack} loops back to `begin`{.hatstack}
   - This gives you both `while () {}`{.c} and `do {} while()`{.c} and an unholy mix of the two!
+- `loop…end`{.hatstack}, `for…end`{.hatstack}, `between…end`{.hatstack}
+  - `loop: -n`{.hatstack}, `for: -n +i`{.hatstack}, `between: -i -j +k`{.hatstack}
+  - `loop`{.hatstack} is `for drop`{.hatstack}, and `for`{.hatstack} is `0 swap between`{.hatstack}: they both loop \(n\) times and `for`{.hatstack} puts the index on the stack every iteration
+  - `i j between`{.hatstack} loops \(|i-j|\) times: it either counts up from \(i\) to \(j-1\), inclusive, or down from \(i-1\) to \(j\), inclusive (and if \(i = j\) then it does nothing)
 - `if…end`{.hatstack} and `if…else…end`{.hatstack}
-  - `if`{.hatstack} pops the condition
+  - `if: -c`{.hatstack} pops the condition
 - `match…end`{.hatstack} and `match…else…end`{.hatstack}
-  - `match`{.hatstack} acts like `$1 == if`{.hatstack}: it pops the top of the stack and takes the branch if it matches the item, which it leaves on the stack for another match (and also the branch body)
+  - `match: =x -y`{.hatstack} acts like `$1 == if`{.hatstack}: it pops the top of the stack and takes the branch if it matches the item, which it leaves on the stack for another match (and also the branch body)
 - `def FUN…end`{.hatstack} with `return`{.hatstack}
+  - `return: -r`{.hatstack} and `ret: -r`{.hatstack}
+  - `ret`{.hatstack} stands for `return end`{.hatstack}
 - `set VAR`{.hatstack}: pops a value and sets `VAR`{.fu} to that value, `VAR`{.fu} will push that value ([e.g.]{t=} `dup set VAR`{.hatstack} is the same as `set VAR, VAR`{.hatstack})
 - `alias OLD NEW`{.hatstack}: `NEW`{.fu} now refers to `OLD`{.fu}
 - `try…catch…end`{.hatstack} with `throw`{.hatstack} and `rethrow`{.hatstack}
@@ -244,6 +250,26 @@ Finite maps are encoded as [graphs of functions](https://en.wikipedia.org/wiki/G
 `apply`{.fu}, `@@`{.hatstack}
 :   Apply an argument `$0`{.hatstack} to the finite map `$1`{.hatstack}, looking it up.
     Will throw if it discovers the map is invalid, or if the argument is not in the map.
+
+#### Tuples/lists
+
+`!>`{.hatstack}
+:   Cons
+
+`!!`{.hatstack}
+:   Index
+
+`..#`{.hatstack}
+:   Unpack
+
+`#..`{.hatstack}
+:   Pack
+
+`entry`{.hatstack}
+:    Make an entry
+
+`unentry`{.hatstack}
+:    Unpack an entry
 
 #### Stack shuffling
 
