@@ -48,14 +48,14 @@ squeaky-clean : clean
 	rm -rf dist-newstyle
 	rm -rf .spago
 
-sass : $(BUILDIR)/styles/bundles.css
+sass : $(BUILDIR)/styles/bundled.css
 
 .PHONY : watch-sass
 watch-sass : | $(BUILDIR)
 	rm -f $(BUILDIR)/styles/bundled*.css.gz
 	sass -w styles/bundled.sass:$(BUILDIR)/styles/bundled.css styles/bundled_light.sass:$(BUILDIR)/styles/bundled_light.css styles/bundled_sans.sass:$(BUILDIR)/styles/bundled_sans.css styles/bundled_light_sans.sass:$(BUILDIR)/styles/bundled_light_sans.css
 
-$(BUILDIR)/styles/bundles.css : styles/*.sass | $(BUILDIR)
+$(BUILDIR)/styles/bundled.css : styles/*.sass | $(BUILDIR)
 	rm -f $(BUILDIR)/styles/bundled*.css.gz
 	sass styles/bundled.sass:$(BUILDIR)/styles/bundled.css styles/bundled_light.sass:$(BUILDIR)/styles/bundled_light.css styles/bundled_sans.sass:$(BUILDIR)/styles/bundled_sans.css styles/bundled_light_sans.sass:$(BUILDIR)/styles/bundled_light_sans.css
 	gzip -f9k $(BUILDIR)/styles/bundled*.css
@@ -69,14 +69,14 @@ $(BUILDIR) : | rendered
 
 pandoc : $(HTMLS)
 
-$(BUILDIR)/%.html : $(TXTDIR)/%.md pandoc/defaults.yaml pandoc/post.html PureScript/src/PureScript/Highlight.purs | cache
+$(BUILDIR)/%.html : $(TXTDIR)/%.md pandoc/defaults.yaml pandoc/post.html PureScript/src/PureScript/Highlight.purs | cache $(BUILDIR)
 	pandoc --defaults=pandoc/defaults.yaml --syntax-definition=<(./pandoc/skylighting/from_post.sh $<) $< -o $@
 
 .PHONY : watch-pandoc
 watch-pandoc :
 	watchexec -w pandoc -f 'pandoc/**' -w $(TXTDIR) -f '$(TXTDIR)/*.md' -r -- make pandoc
 
-prod-ps : $(BUILDIR) PureScript/src PureScript/directives.txt spago.yaml PureScript/spago.yaml
+prod-ps : PureScript/src PureScript/directives.txt spago.yaml PureScript/spago.yaml | $(BUILDIR)
 	rm -f $(BUILDIR)/widgets.js.gz
 	spago build
 	purs-backend-es bundle-app --directives PureScript/directives.txt --main Main --to $(BUILDIR)/widgets.js
@@ -88,7 +88,7 @@ assets-ps : assets/json
 	time spago run -m Build
 	(for f in assets/json/*-parser-states.json; do gzip -f9k "$$f"; done)
 
-ps : $(BUILDIR) PureScript/src spago.yaml PureScript/spago.yaml
+ps : PureScript/src spago.yaml PureScript/spago.yaml | $(BUILDIR)
 	rm -f $(BUILDIR)/widgets.js.gz
 	spago bundle --bundle-type app --module Main --outfile ../$(BUILDIR)/widgets.js
 	make assets-ps
@@ -101,12 +101,12 @@ trypurescript : PureScript/src sources.txt
 	watchexec -w $(BUILDIR)/widgets.js -r --shell=bash 'set -o noglob; trypurescript 6565 $$(cat sources.txt)'
 
 .PHONY : watch-ps
-watch-ps : $(BUILDIR)
+watch-ps : | $(BUILDIR)
 	rm -f $(BUILDIR)/widgets.js.gz
 	watchexec -w PureScript/src -f 'PureScript/src/**/*.{purs,js}' -r --shell=bash 'spago bundle --bundle-type app --module Main --outfile ../$(BUILDIR)/widgets.js'
 
 .PHONY : watch-ps-ide
-watch-ps-ide : $(BUILDIR)
+watch-ps-ide : | $(BUILDIR)
 	rm -f $(BUILDIR)/widgets.js.gz
 	rm -rf output/.full-build
 	watchexec -w output/cache-db.json --no-vcs-ignore --debounce 1500ms -rq --shell=bash 'if test output/cache-db.json -nt output/.full-build; then spago bundle --bundle-type app --module Main --outfile ../$(BUILDIR)/widgets.js; touch output/.full-build; fi'
