@@ -357,6 +357,19 @@ blockquote
   @include Box(str-replace(str-slice("#{&}", 2), "_", " "))
 
 
+p > span.dated:only-child
+  float: left
+  clear: left
+  margin-left: calc(-30% - 1em)
+  width: calc(30% - 1em)
+  margin-top: 0.3rem
+  margin-bottom: 0
+  // font-size: 0.75em
+  line-height: 0.85
+  vertical-align: baseline
+  position: relative
+  text-align: right
+
 body
   counter-reset: sidenote-counter
   counter-reset: katexEqnNo mmlEqnNo sidenote-counter !important

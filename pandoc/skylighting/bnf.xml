@@ -4,6 +4,8 @@
     <contexts>
       <context name="Root" attribute="Normal Text" lineEndContext="#stay">
         <DetectChar attribute="Comment" context="Comment" char="#"/>
+        <Detect2Chars attribute="Comment" context="Comment" char="/" char1="/"/>
+        <RegExpr attribute="Variable" context="#stay" String="\$[-\w]+"/>
         <IncludeRules context="FindOperators"/>
         <IncludeRules context="FindStrings"/>
         <IncludeRules context="FindRegex"/>
@@ -11,7 +13,7 @@
 
       <context name="FindOperators" attribute="Normal Text" lineEndContext="#stay">
         <!-- <keyword attribute="Operator" context="#stay" String="operators"/> -->
-        <RegExpr attribute="Operator" context="#stay" String="[=|&lt;+*?]"/>
+        <RegExpr attribute="Operator" context="#stay" String="[:=|&lt;+*?]|::?=|&lt;-|-&gt;"/>
       </context>
 
       <context name="Comment" attribute="Comment" lineEndContext="#pop">
