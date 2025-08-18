@@ -226,6 +226,7 @@ abbreviations = Map.fromFoldable
   , "QED" /\ Foreign "la" "quod erat de\x0304mo\x0304nstrandum"
       (Just "https://en.wiktionary.org/wiki/Q.E.D.#English")
       ["which was to be proved"]
+  , "wrt" /\ Acronym "with regard to"
   , "NbE" /\ Acronym "Normalization by Evaluation"
   , "GC" /\ Acronym "Garbage Collector"
   , "GCable" /\ Acronym "Garbage Collectable"
@@ -243,6 +244,7 @@ abbreviations = Map.fromFoldable
   , "SDP" /\ Jargon "Session Description Protocol" FormatColon "data for WebRTC establishment"
   , "ICE" /\ Jargon "Interactive Connectivity Establishment" FormatNone ""
   , "WebRTC" /\ Jargon "Web Real Time-Communication" FormatColon "between browsers or browser and server"
+  , "CORS" /\ Acronym "Cross-Origin Resource Sharing"
   , "HTML" /\ Acronym "Hypertext Markup Language"
   , "XML" /\ Acronym "Extensible Markup Language"
   , "XHTML" /\ Acronym "XML-encoded HTML"

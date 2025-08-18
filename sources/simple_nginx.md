@@ -2,12 +2,13 @@
 title: Simple Local Nginx Config
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
+date: 2025/08/04
 ---
 
-I made this as a drop-in replacement for `python3 -m http.server 8998`{.sh} or the older Python 2 `python -m SimpleHTTPServer 8998`{.sh}, because I needed a file server that supported range requests.
+I made this as a drop-in replacement for `python3 -m http.server 8998`{.sh} or the older Python 2 `python -m SimpleHTTPServer 8998`{.sh}, because I needed a file server that supported range requests and [CORS]{t=}.
 
 That is, this is a simple nginx config that serves static files from the current directory `$PWD`{.sh}, with all the goodies that it supports out of the box: high performance, range requests, caching/ETags, directory indexes, error logging, and so on.
-This config includes wide-open CORS config since I often need that in these circumstances, but you should take it and customize it to your needs.
+This config includes wide-open [CORS]{t=} config since I often need that in these circumstances, but you should take it and customize it to your needs.
 You can easily add upstreams to be reverse proxied, or whatever other features you want.
 
 You need to run it with `nginx -c "$(realpath nginx.conf)" -p "$PWD" -e stderr`{.sh} (of course, substituting the path to `nginx.conf` if needed, or choosing another location than `$PWD`{.sh}, and so on).

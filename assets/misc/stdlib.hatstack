@@ -317,14 +317,56 @@ end
 
 ## Turing machines
 
+## TMtable: Map (Pair TMstate TMsymbol) (Pair (Pair TMstate TMsymbol) TMaction)
 {} set TMtable
 1  set TMstate
 {} set TMtape
+0  set TMindex
 
 ## Actions
-enum TMA_(
+enum TMa(
   L ## Left
-  R ## Right
   N ## Neutral
+  R ## Right
   H ## Halt
 )
+## States
+enum TMs(
+  0 Halt
+  1 Start
+)
+
+def TMentry 5#[
+  .4 .3 pair
+  .2 .1 pair .0 pair
+  pair
+] end
+
+def TMstep
+  TMstate TMsHalt == if 0 ret
+  TMtape TMindex !?
+    set TMsymbol
+  TMtable  TMstate TMsymbol >-  @?
+    dup 0 == if ret
+  -< 2#[ .1 -< .0 ]
+  3#[
+    .2 set TMstate
+    TMtape
+      { TMsymbol TMindex entry } \.
+      { .1       TMindex entry } |
+      set TMtape
+    .0
+      TMaL match drop
+        TMindex-- set TMindex
+      1 ret
+      TMaR match drop
+        TMindex++ set TMindex
+      1 ret
+      TMaN match drop
+        TMindex set TMindex
+      1 ret
+      begin ## fallthrough
+        TMsHalt set TMstate
+      0 ret
+  ]
+end

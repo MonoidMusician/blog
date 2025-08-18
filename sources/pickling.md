@@ -36,6 +36,7 @@ Iʼve identified some basic aspects of data:
       - [e.g.]{t=} file paths are probably your best indicator of intent – but if it was a temporary file, you could probably create a new temporary file instead!
         but oh now what if a different string is storing the path of the file, now you donʼt know how those pieces of data relate anymore and cannot update that string&nbsp;…
 #. Functions? *Are* functions data?? (Iʼm including closures and procedures and routines and all that stuff in my definition of functions, btw.)
+    - One way in which closures do not behave like normal kinds of data is that the data that they implicit enclose from outer scopes can be of any type (depending on instantiation and whatever is written in the code), not related to the type of the function itself, such that nice properties (like serializability) are not necessarily preserved [wrt]{t=} closures.
 #. Quotiented data (Agda, Lean, Rocq)
     - see [Subtypes/Quotients: Lies Told in Defense of the Truth](adt_lies_for_truth.html) ([WIP]{t=})
 

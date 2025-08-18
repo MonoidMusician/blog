@@ -320,6 +320,9 @@ label:not([for]):not(.sidenote-number):not(.margin-toggle)
       pointer-events: none
       /* Try to fix default triple-click text selection */
       user-select: none
+      visibility: hidden
+    & > .tooltip, &::before
+      /* Keep ::after displayed, as a ZWSP to prevent kerning */
       display: none
   &:hover
     & > .tooltip, &::before, &::after

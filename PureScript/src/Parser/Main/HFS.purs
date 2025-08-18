@@ -134,7 +134,7 @@ widget _ = pure $ hatching \shell -> do
       D.html_"hr" [ D.style =:= "width: 100%; transform: scaleX(-1)" ] mempty
     andHr x = D.div [ D.style =:= "display: flex" ] $~~ [ x, hr ]
     cells = D.tr clear <<< foldMapWithIndex \i ->
-      D.td if i == 0 then [ D.style =:= "border: 0; width: max-content; max-width: 40px; padding: 0" ] else clear
+      D.td if i == 0 then [ D.style =:= "border: 0; width: 3em; padding: 0" ] else clear
     strikethrough = """
       text-decoration: underline rgb(255, 101, 101);
       text-underline-offset: -38%;
@@ -142,7 +142,7 @@ widget _ = pure $ hatching \shell -> do
     """
     renderOutput segments = D.table [ D.style =:= "border: 0; width: 100%"] $~~
       [ D.html_"colgroup".$~~
-        [ D.html_"col" [ D.attr "span" =:= 1, D.style =:= "width: max-content; max-width: 40px" ] mempty
+        [ D.html_"col" [ D.attr "span" =:= 1, D.style =:= "width: 3em" ] mempty
         , D.html_"col" [ D.attr "span" =:= 1, D.style =:= "width: auto" ] mempty
         ]
       , segments # foldMap \{ building, pointed, values } -> fold

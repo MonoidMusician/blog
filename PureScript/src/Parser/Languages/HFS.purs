@@ -605,6 +605,7 @@ def unpairElegant 1#[
   end
 ] end
 
+def mk #{} end
 def un 2#[
   .1 # .0 != if throw end
 ] end

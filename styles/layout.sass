@@ -400,6 +400,12 @@ body
 .sidenote:before
   content: counter(sidenote-counter) " "
 
+.sidenote-number:before
+  /* Hover allowance */
+  content: ''
+  width: 0.5em
+  height: 1.3em
+  position: absolute
 
 blockquote .sidenote, blockquote .marginnote
   margin-right: -82%
@@ -431,6 +437,12 @@ label.sidenote-number:hover
     border-color: #77d9ff
     &::before
       color: #77d9ff
+  @if $light
+    color: #31a6d4
+    + input + .sidenote
+      border-color: #31a6d4
+      &::before
+        color: #31a6d4
 
 @media (max-width: $breakpoint)
   label.margin-toggle:not(.sidenote-number)
