@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+<atom:link href="https://blog.veritates.love/rss-lite.xml" rel="self" type="application/rss+xml" />
+<title>MonoidMusicianʼs blog</title>
+<link>https://blog.veritates.love</link>
+<description>MonoidMusicianʼs blog</description>
+<language>en-US</language>
+<copyright>GPLv3</copyright>
+<docs>https://www.rssboard.org/rss-specification</docs>
+<generator>pandoc-rss</generator>
+<item>
+<title>Simple Local Nginx Config</title>
+<pubDate>Mon, 04 Aug 2025 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/simple_nginx.html</guid>
+</item>
+<item>
+<title>Quapteryx Takes Flight!</title>
+<pubDate>Tue, 19 Aug 2025 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/quapteryx5.html</guid>
+</item>
+<item>
+<title>Efficient Quapteryx Evaluator</title>
+<pubDate>Sun, 11 May 2025 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/quapteryx4.html</guid>
+</item>
+<item>
+<title>Quaternary Combinators</title>
+<pubDate>Sun, 11 May 2025 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/quapteryx3.html</guid>
+</item>
+<item>
+<title>Ojo: a Bitflipped Jot, and a Real Flop</title>
+<pubDate>Sat, 10 May 2025 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/quapteryx2.html</guid>
+</item>
+<item>
+<title>On the SKI Combinator Calculus</title>
+<pubDate>Sat, 10 May 2025 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/quapteryx1.html</guid>
+</item>
+<item>
+<title>Implementing FRP and Why</title>
+<pubDate>Sat, 22 Feb 2025 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/riverdragon_implementation.html</guid>
+</item>
+<item>
+<title>Perfect Vector Graphics for a QR code</title>
+<pubDate>Wed, 29 Jan 2025 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/svgqr.html</guid>
+</item>
+<item>
+<title>WebRTC over QR Connection Protocol</title>
+<pubDate>Sun, 26 Jan 2025 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/webrtc_over_qr.html</guid>
+</item>
+<item>
+<title>Code golf for computing a 32-byte QR code!</title>
+<pubDate>Fri, 20 Dec 2024 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/qrinqr.html</guid>
+</item>
+<item>
+<title>Design your programming languages right!</title>
+<pubDate>Mon, 16 Dec 2024 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/design_it_right.html</guid>
+</item>
+<item>
+<title>Self-names (paths)</title>
+<pubDate>Mon, 16 Dec 2024 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/selfnames.html</guid>
+</item>
+<item>
+<title>Monoids in Public</title>
+<pubDate>Wed, 18 Sep 2024 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/monoids_in_public.html</guid>
+</item>
+<item>
+<title>Infodumping About Selective Applicative Functors</title>
+<pubDate>Wed, 10 Apr 2024 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/infodump_selective_applicatives.html</guid>
+</item>
+<item>
+<title>Pickling Tasty Data</title>
+<pubDate>Sun, 28 Jan 2024 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/pickling.html</guid>
+</item>
+<item>
+<title>A Semiring From Any Semilattice</title>
+<pubDate>Sat, 28 Oct 2023 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/semilattice_semiring.html</guid>
+</item>
+<item>
+<title>TransMorphism Type Theory MetaTheory</title>
+<pubDate>Fri, 13 Oct 2023 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/tmttmt.html</guid>
+</item>
+<item>
+<title>The Best Errors for Solving Dependency Versions</title>
+<pubDate>Sat, 21 Jan 2023 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/version_solver.html</guid>
+</item>
+<item>
+<title>Impossible Bézier Calligraphy</title>
+<pubDate>Sun, 23 Apr 2023 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/bezier_calligraphy.html</guid>
+</item>
+<item>
+<title>Interactive Parser Explanations</title>
+<pubDate>Wed, 20 Jul 2022 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/parser.html</guid>
+</item>
+<item>
+<title>Eudoxus Real Numbers as Slopes of Pixelated Graphs</title>
+<pubDate>Wed, 20 Jul 2022 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/Eudoxus.html</guid>
+</item>
+</channel>
+</rss>
