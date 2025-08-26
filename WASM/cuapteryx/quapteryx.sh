@@ -49,6 +49,7 @@ set -euo pipefail
       # "-Wl,--extra-features=mutable-globals" # does nothing
 
       "-Wl,--export-all"
+      "-Wl,--export=__stack_pointer"
       # "-Wl,--export-dynamic"
       # "-Wl,--export-memory"
       # "-Wl,--export=input_words"

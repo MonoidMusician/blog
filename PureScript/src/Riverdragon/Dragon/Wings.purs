@@ -10,11 +10,11 @@ import Data.String as String
 import Data.Time.Duration (Milliseconds)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
-import Idiolect (filterFst, nonEmpty, (#..), (==<))
+import Idiolect (type (-!>), filterFst, nonEmpty, (#..), (==<))
 import Riverdragon.Dragon (AttrProp, Dragon(..), renderElSt)
 import Riverdragon.Dragon.Bones (($$), ($~~), (.$), (.$$), (.$$~), (.<>), (:.), (:~), (<:>), (=!=), (=:=), (=?=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.River (Lake, Stream, createRiverStore, instantiate, limitTo, makeLake, oneStream)
+import Riverdragon.River (Lake, Stream, createRiver, createRiverStore, instantiate, limitTo, makeLake, oneStream)
 import Riverdragon.River as River
 import Riverdragon.River.Bed (Allocar, accumulator, eventListener, rolling)
 import Riverdragon.River.Bed as Bed
@@ -36,8 +36,14 @@ type Shell =
   , inst :: forall flowIn flowOut a. Stream flowIn a -> Allocar (Stream flowOut a)
   , store :: forall flowIn flowOut a. Stream flowIn a -> Allocar (Stream flowOut a)
   , storeLast :: forall flow a. a -> Stream flow a -> Allocar (Allocar a)
-  , subscribe :: forall flow a. Stream flow a -> (a -> Effect Unit) -> Allocar Unit
   , destructor :: Allocar Unit -> Allocar Unit
+
+  , subscribe :: forall flow a. Stream flow a -> (a -> Effect Unit) -> Allocar Unit
+
+  , createRiver :: forall flow a. Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
+  , createStore :: forall flow a. a -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit, current :: Effect a }
+  , createRiverStore :: forall flow a. Maybe a -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit, current :: Effect (Maybe a) }
+  , createRiverBurst :: forall flow a. Allocar (Array a) -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
   }
 
 hatching :: (Shell -> Allocar Dragon) -> Dragon
@@ -64,6 +70,16 @@ hatching cont = Egg do
     subscribe :: forall flow a. Stream flow a -> (a -> Effect Unit) -> Allocar Unit
     subscribe stream cb = destructors.put =<< River.subscribe stream cb
 
+
+    createRiver :: forall flow a. Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
+    createRiver = track River.createRiver
+    createStore :: forall flow a. a -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit, current :: Effect a }
+    createStore = track <<< River.createStore
+    createRiverStore :: forall flow a. Maybe a -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit, current :: Effect (Maybe a) }
+    createRiverStore = track <<< River.createRiverStore
+    createRiverBurst :: forall flow a. Allocar (Array a) -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
+    createRiverBurst = track <<< River.createRiverBurst
+
     release dragon = destructors.get <#> { destroy: _, dragon }
   release =<< cont
     { track
@@ -71,6 +87,10 @@ hatching cont = Egg do
     , store
     , storeLast
     , subscribe
+    , createRiver
+    , createStore
+    , createRiverStore
+    , createRiverBurst
     , destructor: destructors.put
     }
 

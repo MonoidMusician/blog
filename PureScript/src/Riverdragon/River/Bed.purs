@@ -317,6 +317,7 @@ ordMap :: forall k v. Ord k => Allocar
   , traverse :: (k -> v -> Allocar Unit) -> Allocar Unit
   , onKey :: k -> (v -> Allocar Unit) -> Allocar Unit
   , reset :: Allocar (Map k v)
+  , restore :: Map k v -> Allocar Unit
   -- , destroy :: Allocar (Map k v)
   }
 ordMap = newSTR Map.empty <#> \ref ->
@@ -332,6 +333,7 @@ ordMap = newSTR Map.empty <#> \ref ->
         Just v -> f v
         Nothing -> pure unit
   , reset: ref <&= Map.empty
+  , restore: (ref &= _)
   }
 
 ordSet :: forall k. Ord k => Allocar
@@ -424,6 +426,25 @@ prealloc2 defaultL defaultR =
       , swapL: \v -> swapSTR refL v
       , swapR: \v -> swapSTR refR v
       }
+
+refc :: Allocar
+  { get :: Allocar Int
+  , set :: Int -> Allocar Unit
+  , incr :: Allocar Unit
+  , decr :: Allocar Unit
+  , delta :: Int -> Allocar Unit
+  , bracket :: Aff ~> Aff
+  }
+refc = prealloc 0 <#> \{ get, set } ->
+  let delta d = set <<< (_ + d) =<< get in
+  { get: get
+  , set: set
+  , incr: delta 1
+  , decr: delta (-1)
+  , delta
+  , bracket:
+    (\act -> Aff.bracket (liftEffect $ delta 1) (const (liftEffect $ delta (-1))) (const act)) :: Aff ~> Aff
+  }
 
 lazyAlloc :: forall a. Allocar a -> Allocar (Allocar a)
 lazyAlloc how = prealloc Nothing <#> \alloced ->

@@ -166,6 +166,37 @@ createBiquadFilterNode ::
     )
 createBiquadFilterNode = unsafeCreateNode
 
+type BufferSourceNode =
+  AudioNode "BufferSourceNode" True
+    ()
+    ( buffer :: AudioBuffer
+    , loop :: Boolean
+    , loopStart :: Number
+    , loopEnd :: Number
+    )
+    ( detune :: ARate
+    , playbackRate :: ARate
+    )
+createBufferSourceNode ::
+  CreateNodeType "AudioBufferSourceNode" True
+    ( buffer :: Maybe AudioBuffer
+    , loop :: Maybe Boolean
+    , loopStart :: Maybe Number
+    , loopEnd :: Maybe Number
+    , detune :: Maybe Float
+    , playbackRate :: Maybe Float
+    )
+    ()
+    ( buffer :: AudioBuffer
+    , loop :: Boolean
+    , loopStart :: Number
+    , loopEnd :: Number
+    )
+    ( detune :: ARate
+    , playbackRate :: ARate
+    )
+createBufferSourceNode = unsafeCreateNode
+
 type ChannelMergerNode =
   AudioNode "ChannelMergerNode" False () () ()
 createChannelMergerNode ::

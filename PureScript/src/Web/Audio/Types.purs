@@ -54,6 +54,10 @@ instance Eq (AudioNode name source read write params) where eq = unsafeRefEq
 
 foreign import data AudioBuffer :: Type
 
+instance FFI AudioBuffer AudioBuffer where
+  toFFI = identity
+  fromFFI = identity
+
 getProp ::
   forall name source read write' write params prop t d.
     FFI t d =>
