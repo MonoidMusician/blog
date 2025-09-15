@@ -27,6 +27,7 @@ _[Overflow](knowlish_overflow.html)_
 
 - SIGINFO: Ctrl+T, https://stuff-things.net/2016/04/06/that-one-stupid-dd-trick-and-the-ballad-of-siginfo/
 - Clipboard: `pbpaste`{.bash}/`pbcopy`{.bash} (stdout/stdin only)
+- [Fix Home and End keys in Terminal](https://apple.stackexchange.com/questions/12997/can-home-and-end-keys-be-mapped-when-using-terminal/114528#114528): map Home to `\033[H` and End to `\033[F` in Profiles > Keyboard, add a “Send Text” shortcut and paste those codes in or use the Esc key to enter `\033`. (These shortcuts work in `vim`, whereas Ctrl-A/Ctrl-E aka `\001` and `\005` do not.)
 - Network name (SSID): [`/System/Library/PrivateFrameworks/Apple80211.framework/Resources/airport -I  | awk -F' SSID: '  '/ SSID: / {print $2}'`{.bash}](https://stackoverflow.com/questions/4481005/get-wireless-ssid-through-shell-script-on-mac-os-x#answer-4481019)
 
 ### Ubuntu (GNOME?)

@@ -12,7 +12,7 @@ import Data.Compactable (compact)
 import Data.Int as Int
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (Maybe, fromMaybe)
 import Data.Monoid.Dual (Dual(..))
 import Data.Newtype (unwrap)
 import Data.Number as Number
@@ -25,7 +25,7 @@ import Effect.Class (liftEffect)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Prim.Row as Row
-import Riverdragon.River (Lake, Stream, alwaysBurst, dam, unsafeRiver, (>>~))
+import Riverdragon.River (type (-!>), Allocar, Lake, Stream, alwaysBurst, dam, unsafeRiver, (>>~))
 import Riverdragon.River as River
 import Riverdragon.River.Bed (cleanup, runningAff)
 import Riverdragon.River.Bed as Bed
@@ -75,7 +75,7 @@ type ScoreLive =
   }
 
 perform ::
-  forall options unused ffi flow.
+  forall options unused ffi flow result.
     Row.Union options unused
       ( latencyHint :: LatencyHint
       , sampleRate :: Int
@@ -88,7 +88,25 @@ perform ::
     , destroy :: Effect Unit
     , waitUntilReady :: Aff Unit
     }
-perform options creator = do
+perform options creator = perform' options (creator >>> map { result: unit, audio: _ })
+  <#> \{ ctx, destroy, waitUntilReady } -> { ctx, destroy, waitUntilReady }
+
+perform' ::
+  forall options unused ffi flow result.
+    Row.Union options unused
+      ( latencyHint :: LatencyHint
+      , sampleRate :: Int
+      ) =>
+    FFI (Record options) ffi =>
+  Record options ->
+  (AudioContext -> ScoreM { audio :: Stream flow (Array RoarO), result :: result }) ->
+  Effect
+    { result :: result
+    , ctx :: AudioContext
+    , destroy :: Effect Unit
+    , waitUntilReady :: Aff Unit
+    }
+perform' options creator = do
   ctx <- createAudioContext options
   temperament <- storeInterface
   temperament.send temperaments.equal
@@ -101,13 +119,14 @@ perform options creator = do
       , worklets: Map.empty
       }
   written <- Ref.new mempty
-  Tuple _state outputs <- runReaderT (runMutStateT state0 (creator ctx)) { ctx, written, iface }
+  Tuple _state { audio: outputs, result } <- runReaderT (runMutStateT state0 (creator ctx)) { ctx, written, iface }
   { destroy: Dual destroy1, ready } <- Ref.read written <* Ref.write mempty written
   destroy2 <- liftEffect $ connecting (dam outputs) (destination ctx)
   destroy <- liftEffect $ cleanup $ destroy1 <> destroy2 <> Context.close ctx
   waitUntilReady <- runningAff $ unit <$ sequential ready
   pure
-    { ctx
+    { result
+    , ctx
     , destroy
     , waitUntilReady
     }
@@ -197,6 +216,17 @@ putScore eep = do
     { destroy: Dual eep.destroy
     , ready: parallel eep.ready
     }
+
+destructor :: Effect Unit -> ScoreM Unit
+destructor destroy = putScore { destroy, ready: mempty }
+
+track :: forall r.
+  Allocar { destroy :: Allocar Unit | r } ->
+  ScoreM { destroy :: Allocar Unit | r }
+track mk = do
+  r@{ destroy } <- liftEffect mk
+  r <$ destructor destroy
+
 
 
 roars :: Array Roar -> ScoreM Roar
@@ -349,3 +379,26 @@ pwm { width, frequency, detune } = do
   undefault <- offset { offset: -0.5 }
   widthOffset <- offset { offset: width }
   binarize [ timing, undefault, widthOffset ]
+
+instM :: forall flowIn flowOut a. Stream flowIn a -> ScoreM (Stream flowOut a)
+instM input = _.stream <$> track do River.instantiate input
+
+storeM :: forall flowIn flowOut a. Stream flowIn a -> ScoreM
+  { burst :: Array a
+  , stream :: Stream flowOut a
+  , current :: Effect (Maybe a)
+  , destroy :: Allocar Unit
+  }
+storeM input = track do River.store input
+
+subscribeM :: forall flow a. Stream flow a -> (a -> Effect Unit) -> ScoreM Unit
+subscribeM stream cb = void $ track $ { destroy: _ } <$> River.subscribe stream cb
+
+createRiverM :: forall flow a. ScoreM { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
+createRiverM = track River.createRiver
+createStoreM :: forall flow a. a -> ScoreM { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit, current :: Effect a }
+createStoreM = track <<< River.createStore
+createRiverStoreM :: forall flow a. Maybe a -> ScoreM { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit, current :: Effect (Maybe a) }
+createRiverStoreM = track <<< River.createRiverStore
+createRiverBurstM :: forall flow a. Allocar (Array a) -> ScoreM { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
+createRiverBurstM = track <<< River.createRiverBurst

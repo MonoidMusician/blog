@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
-media-tunnel.py: transports audio from one ffmpeg to another (port 2958 by default)
-  *doesn't really support video yet, but it could!
+media-tunnel.py: python helper to transport audio from one ffmpeg to another
+  e.g. from microphones on one machine to speakers on another
+  (doesn't really support video yet, but it could!)
+
+The media goes directly over port 2958 by default (TCP or UDP depending on settings),
+*not* tunneled over SSH, while the next sequential port (thus 2959 by default) *is*
+tunneled if needed for additional communication (encryption parameters, SDP, etc.)
 
 Select the mode first:
     ( [[--ssh] | --ssh-tx | --ssh-rx] [user@]hostname[:ssh_port] | --as-tx | --as-rx | --local )
@@ -11,9 +16,9 @@ Add options for ffmpeg/ffplay (rx defaults to ffplay):
     [ffmpeg_tx...] [-- ffplay_rx... [-- ffmpeg_shared...]]
 """
 
-usage = __doc__
+usage = __doc__ # printed with --usage
 
-version = "0.1.0"
+version = "0.1.1"
 
 examples = ["""
 media-tunnel.py --ssh myothercomputer -f avfoundation -i :default -- -nodisp
@@ -47,12 +52,15 @@ import inspect
 import re
 import json
 import shlex
+import urllib
+import random
+import socket
 
 # FIXME!! TCP does not really work, since it does not wait for the socket to open
-# FIXME: lost UDP packets
+# FIXME: lost UDP packets from stream startup? lost RTP packets??
 # TODO: tmux/screen support (needs to call itself, to avoid piping stdin through)
 # TODO: DTLS and TLS
-# TODO: SDP, via python-to-python UDP socket?
+# TODO: SDP, via python-to-python TCP socket?
 
 ################################################################################
 ## Utilities                                                                  ##
@@ -121,7 +129,17 @@ ssh_exec_cmd = [
     'ssh',
         '-x', # no X server forwarding
         '-4', # IPv4 speeds up connection times for me
-        lambda: args.destination, # user@hostname, FIXME port
+        lambda: opt('-p', args.side.ssh_port),
+        lambda: when(args.side.aux_local is not None, '-R', ':'.join(to_args([
+            args.side.aux_port or (args.side.tunnel + 1),
+            '127.0.0.1',
+            args.side.aux_local,
+        ]))),
+        lambda: args.side.ssh_opt,
+        lambda: ''.join(to_args([
+            args.username+'@' if args.username else '',
+            args.hostname
+        ])), # user@hostname,
         'exec', # leave the shell immediately
 ]
 ssh_python_cmd = ssh_exec_cmd + [
@@ -233,6 +251,7 @@ global_options = {
     'usage': False,
     'help': False,
     'examples': False,
+    # 'example': int, # print a particular or random example (handled in `class Args`)
     'version': False,
     # 'argparse': False, # handled in `class Args`
 
@@ -253,9 +272,12 @@ txrx_options = {
     'outlive': Help(False, "Let it outlive its parent process (e.g. ssh disconnects) [Not Recommended]"),
     'ffplay': Help(True, "Receive with ffplay, else use ffmpeg"),
 
-    'tunnel': Help(2958, "Port for media RX/TX"), # --tunnel=2958
-    'bind': Help(str, "IP address to bind receiver, set by default from $SSH_CONNECTION, use 0.0.0.0 for all interfaces"),
+    'bind': Help(str, "IP address to bind receiver, set by default from $SSH_CONNECTION (use 0.0.0.0 for all interfaces)"),
     'accept': Help(str, "Accept connections from these IPs (UDP only), set by default from $SSH_CONNECTION"),
+    'tunnel': Help(2958, "Port for media RX/TX (not tunneled through SSH)"), # --tunnel=2958
+    'ssh-port': Help(int, "Port for SSH (usually 22 by default)"), # --ssh-port=22
+    'aux-port': Help(int, "Auxiliary port (tunneled through SSH, $tunnel+1 by default)"), # --aux-port=2959
+    'aux-local': Help(int, "Local auxiliary port (random free port)"), # --aux-local=0
 
     'sleep': Help(float, "Wait seconds before starting, e.g. --tx-sleep=0.5"), # --tx-sleep=0.5
 
@@ -264,6 +286,7 @@ txrx_options = {
     'channels': list(audio_layouts.keys()), # --stereo
 
     'env': Help(list, "Set environment variables, e.g. --rx-env DISPLAY=:0"),
+    'ssh-opt': Help(list, "Options for ssh"),
 
     # TODO: --recommended, but as individual flags
     # TODO: --list
@@ -358,7 +381,7 @@ class OptParser:
                         broke=True;break
                 elif aspect == list and argname in [flagname, flagname+'s']:
                     if value is None: value = argv.pop(0)
-                    if argname == flagname+'s': value = value.split(' ')
+                    if argname == flagname+'s': value = value.split()
                     else: value = [value]
                     modify = lambda existing: existing + value
                     broke=True;break
@@ -541,19 +564,28 @@ class Args:
             self.version,
             self.wants_argparse,
         ])
+    @property
+    def destination(self):
+        destination = self.hostname or '0.0.0.0'
+        if self.username:
+            destination = self.username + '@' + destination
+        if self.ssh_port:
+            destination = destination + ':' + self.ssh_port
+        return destination
     _destination_regex = re.compile(r'(?:([-_.\w]+)@)?([-_.\w]+)(?:[:](\d+))?')
-    @property
-    def username(self):
-        try: return self._destination_regex.fullmatch(self.destination)[1]
-        except: return None
-    @property
-    def hostname(self):
-        try: return self._destination_regex.fullmatch(self.destination)[2]
-        except: return None
-    @property
-    def ssh_port(self):
-        try: return self._destination_regex.fullmatch(self.destination)[3]
-        except: return None
+    @destination.setter
+    def destination(self, value):
+        try:
+            matched = self._destination_regex.fullmatch(value)
+            self.hostname = matched[2]
+            if matched[2]: self.username = matched[1]
+            if matched[3]: self.ssh_port = matched[3]
+        except:
+            pass
+
+    specific_example = None
+    def example(self, nr=0):
+        self.specific_example = int(nr)
 # Copy over to `global_options` and `helptexts`
 for attr, value in Args.__dict__.items():
     if attr.startswith('_'): continue
@@ -570,7 +602,7 @@ def parse_sys_argv():
     args = Args(sys.argv[1:])
 
     try:
-        (client_ip, _out_port, server_ip, _in_port) = os.environ['SSH_CONNECTION'].split(' ')
+        (client_ip, _out_port, server_ip, _in_port) = os.environ['SSH_CONNECTION'].split()
         if args.rx.bind is None:
             args.rx.bind = server_ip
         if args.rx.accept is None:
@@ -581,6 +613,7 @@ def parse_sys_argv():
     for name in ['tx', 'rx']:
         other = {'tx':'rx','rx':'tx'}[name]
         side = getattr(args, name)
+        args.side = side
         side._ffmpeg_strat = to_args(strategies[args.format or list(strategies.keys())[0]][name])
         if name == 'rx' and not side.ffplay:
             side._ffmpeg_strat = side._ffmpeg_strat[:-1] + ['-i', side._ffmpeg_strat[-1]]
@@ -608,6 +641,7 @@ def parse_sys_argv():
             else:
                 side._cmd = to_args(ssh_exec_cmd) + side._cmd
             side._active = 'ssh'
+        del args.side
 
         # for k,v in side.__dict__.items():
         #     if k.startswith('_'):
@@ -651,7 +685,7 @@ if args.help:
             grouped.get(group_by.get('--'+flagname), rows).append([
                 '--'+flagname,
                 '--no-'+flagname,
-                "true",
+                "false",
                 helptext,
             ])
         elif aspect == list:
@@ -695,6 +729,16 @@ if args.usage:
 if args.version:
     print(version)
     sys.exit(0)
+if args.examples:
+    for i,ex in enumerate(examples):
+        print(ex.rstrip())
+    sys.exit(0)
+if args.specific_example is not None:
+    if 0 < args.specific_example <= len(examples):
+        print(examples[args.specific_example - 1].rstrip())
+    else:
+        print(random.choice(examples).rstrip())
+    sys.exit(0)
 if args._infomode:
     print('Oops')
     sys.exit(1)
@@ -708,16 +752,29 @@ if args._infomode:
 please_exit_everything = asyncio.Event()
 
 @contextlib.asynccontextmanager
-async def until_event(event, loop=None):
-    """A context manager to event when an event fires"""
+async def until_awaitable(awaitable, loop=None):
+    """Run the context until the awaitable returns: provides a function to, uhm,
+    cancel the canceler (exit the context early, essentially)."""
     current_task = asyncio.current_task(loop)
 
     async def cancel_when_completes():
-        await event.wait()
+        try:
+            await awaitable
+        except asyncio.CancelledError:
+            return
         current_task.cancel()
     cancel_task = asyncio.create_task(cancel_when_completes())
-    try:  yield cancel_task
-    finally:    cancel_task.cancel()
+    try:
+        yield cancel_task.cancel
+    finally:
+        cancel_task.cancel()
+
+@contextlib.asynccontextmanager
+async def until_event(event, loop=None):
+    """A context manager to cancel the context when an event fires"""
+    if event.is_set(): raise asyncio.CancelledError
+    async with until_awaitable(event.wait(), loop) as canceler:
+        yield canceler
 
 async def monitor_subprocess(processpromise, *actions, cleanup=None, name=None, exit_everything=True):
     """This monitors a subprocess to see if it goes away, and to make sure it goes away"""
@@ -767,6 +824,260 @@ async def command(args, dry_run=None, stdin=None, process_group=True, name=None,
         stdin=stdin,
         process_group=process_group
     ), name=name, exit_everything=exit_everything)
+
+# Creates a server on a random free port, returns the port, the passwords used
+# for authentication on either end, and an async context manager that waits
+# for a caller with the right password, then stops accepting new connections
+# and cleans up the connection when the context exits, or cancels it when
+# the client exits
+async def alloc_server(host='127.0.0.1'):
+    # basic handshake protocol
+    passwords = (random.randbytes(32).hex(), random.randbytes(32).hex())
+
+    # how to wait for the right client to connect
+    right_client: Optional[Tuple[asyncio.StreamReader, asyncio.StreamWriter]] = None
+    got_client = asyncio.Event()
+    async def check_right_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        nonlocal right_client
+        # Check for a client who knows the passcode
+        # https://docs.python.org/3/library/asyncio-stream.html#asyncio.StreamWriter.get_extra_info
+        # https://docs.python.org/3/library/asyncio-protocol.html#asyncio.BaseTransport.get_extra_info
+        # https://docs.python.org/3/library/socket.html#socket.socket.getpeername
+        if writer.get_extra_info('peername')[0] == '127.0.0.1':
+            # https://docs.python.org/3/library/asyncio-stream.html#asyncio.StreamReader.readexactly
+            if await reader.readexactly(len(passwords[0])) == passwords[0].encode():
+                # And reassure them that we do too
+                # https://docs.python.org/3/library/asyncio-stream.html#asyncio.StreamWriter.write
+                writer.write(passwords[1].encode())
+                await writer.drain()
+                # ... i guess hope that they stay connected here?
+                right_client = (reader, writer)
+                got_client.set()
+                return
+        writer.close()
+        await writer.wait_closed()
+
+    # https://docs.python.org/3/library/asyncio-stream.html#asyncio.start_server
+    # https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.loop.create_server
+    # https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.Server
+    # https://docs.python.org/3/library/socket.html#socket.socket
+    server = await asyncio.start_server(
+        check_right_client,
+        host=host, port=None,
+        family=socket.AF_INET,
+        # dualstack_ipv6=False, # ??
+        start_serving=False,
+    )
+    # https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.Server.sockets
+    # https://docs.python.org/3/library/socket.html#socket.socket.getsockname
+    port = server.sockets[0].getsockname()[1]
+
+    # wait for the right client and then do stuff while it stays open and close it when done
+    @contextlib.asynccontextmanager
+    async def with_right_client():
+        async with server:
+            # https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.Server.start_serving
+            await server.start_serving()
+            await got_client.wait()
+            # https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.Server.close
+            server.close() # "leaves existing connections open"
+            try:
+                yield right_client
+            finally:
+                right_client[1].close()
+                await right_client[1].wait_closed()
+
+    return (port, passwords), with_right_client
+
+# The counterpart to `alloc_server()[2]`: given `alloc_server()[:2]`, it
+# constructs the matching client
+@contextlib.asynccontextmanager
+async def connect_client(port_and_passwords, host='127.0.0.1'):
+    (port, passwords) = port_and_passwords
+    # https://docs.python.org/3/library/asyncio-stream.html#asyncio.open_connection
+    # https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.loop.create_connection
+    # https://docs.python.org/3/library/socket.html#socket.socket
+    (reader, writer) = await asyncio.open_connection(
+        host=host,
+        port=port,
+        family=socket.AF_INET,
+    )
+    writer.write(passwords[0].encode())
+    await writer.drain()
+    returned = await reader.readexactly(len(passwords[1]))
+    assert returned == passwords[1].encode()
+    try:
+        yield (reader, writer)
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
+
+class MuxJSON:
+    """Handles bidirectional newline-delimited JSON, muxed by singleton key or custom matcher."""
+    def __init__(self, reader, writer):
+        self.reader = reader
+        self.writer = writer
+
+        self.id = 0
+        self.needs_reader = asyncio.Event()
+        self.readers = dict()
+        self.handled = True
+        # Messages that have not found a handler are put here
+        self.backlog = []
+
+        self.is_running = False
+        self.stopped = asyncio.Event()
+    async def __aenter__(self):
+        async def loop():
+            try:
+                async with until_event(self.stopped):
+                    while self.is_running:
+                        # Always drain the write queue first
+                        await self.writer.drain()
+                        # Then wait for a message to come in
+                        encoded = await self.reader.readline()
+                        if not encoded:
+                            # EOF
+                            self.is_running = False
+                            self.stopped.set()
+                            return
+                        decoded = json.loads(encoded.decode())
+                        while not len(self.readers):
+                            await self.needs_reader.wait()
+                            self.needs_reader = asyncio.Event()
+                        self.handled = False
+                        for matcher, reader in list(self.readers.values()):
+                            try:
+                                matched = matcher(decoded)
+                                if matched is not ValueError and not isinstance(matched, ValueError):
+                                    reader(matched)
+                                    self.handled = True
+                            except: continue
+                        if not self.handled:
+                            self.backlog.append(decoded)
+            except asyncio.CancelledError:
+                pass
+        self.is_running = True
+        self.running = asyncio.ensure_future(loop())
+        return self
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        self.is_running = False
+        self.stopped.set()
+        self.running.cancel()
+    def __aiter__(self):
+        return self
+    async def __anext__(self):
+        return await self.read1()
+    @staticmethod
+    def matcher(mux_name_or_matcher=None, mux_value=None):
+        """Construct a matcher function for a name and/or value."""
+        if mux_name_or_matcher is None:
+            if mux_value is None:
+                return lambda v: v
+            else:
+                return lambda decoded: decoded if decoded == value else ValueError()
+        if type(mux_name_or_matcher) is not str:
+            assert callable(mux_name_or_matcher)
+            assert mux_value is None
+            return mux_name_or_matcher
+        def match_name(decoded):
+            if len(decoded) == 1:
+                if type(decoded) is dict and len(decoded) == 1:
+                    k, v = list(decoded.items())[0]
+                    if k == mux_name_or_matcher:
+                        if mux_value is None or v == mux_value:
+                            return v
+            raise ValueError
+        return match_name
+    async def read1(self, mux_name_or_matcher=None, mux_value=None):
+        matcher = MuxJSON.matcher(mux_name_or_matcher, mux_value)
+        # Check the backlog first
+        for replay in self.backlog:
+            try:
+                matched = matcher(replay)
+                if matched is ValueError or isinstance(matched, ValueError):
+                    raise matched
+            except ValueError: continue
+            # Pause for a breath, in case another compatible handler is added
+            # synchronously
+            breath = asyncio.Event()
+            asyncio.get_event_loop().call_soon(breath.set)
+            await breath.wait()
+            # Make sure we were the first to handle it
+            for stillpresent in self.backlog:
+                # by checking identity not equality
+                if stillpresent is replay:
+                    self.backlog.remove(replay)
+                    break
+            return matched
+        # Otherwise wait for something new to come in
+        try:
+            async with until_event(self.stopped):
+                waiting = asyncio.Event()
+                fulfilled = None
+                i = self.id
+                self.id += 1
+                def reader(matched):
+                    nonlocal fulfilled
+                    fulfilled = matched
+                    del self.readers[i]
+                    waiting.set()
+                self.readers[i] = matcher, reader
+                self.needs_reader.set()
+                await waiting.wait()
+                return fulfilled
+        except asyncio.CancelledError:
+            raise StopAsyncIteration
+    async def reading(self, mux_name_or_matcher=None, mux_value=None):
+        matcher = MuxJSON.matcher(mux_name_or_matcher, mux_value)
+        while self.is_running:
+            yield await read1(matcher)
+    @staticmethod
+    def encode(muxed):
+        return json.dumps(muxed).encode()+b'\n'
+    def write_and_forget(self, muxed):
+        assert self.is_running
+        self.writer.write(MuxJSON.encode(muxed))
+    def writing(self, mux_name, value=Ellipsis):
+        if value is Ellipsis: return lambda value: self.writing(mux_name, value)
+        self.writer.write(MuxJSON.encode({ mux_name: value }))
+        return self.writer.drain()
+    async def __getitem__(self, mux_name):
+        # muxed[...] = muxed.read1()
+        if mux_name is Ellipsis:
+            return await self.read1()
+        elif type(mux_name) is slice:
+            # muxed[mux_name::mux_value] = muxed.read1(mux_name, mux_value)
+            if mux_name.step is not None:
+                assert mux_name.stop is None
+                return await self.read1(mux_name.start, mux_name.step)
+            # muxed[mux_name:mux_value] = muxed.writing(mux_name, mux_value)
+            else:
+                assert mux_name.step is None
+                await self.writing(mux_name.start, mux_name.stop)
+                return None
+        else:
+            # muxed[mux_name] = muxed.read1(mux_name)
+            return await self.read1(mux_name)
+    def __setitem__(self, mux_name, mux_value):
+        self.write_and_forget({ mux_name: mux_value })
+
+async def alloc_mux_server(*args, **kwargs):
+    port_and_passwords, with_server = await alloc_server(*args, **kwargs)
+    @contextlib.asynccontextmanager
+    async def with_mux_server():
+        async with with_server() as server:
+            async with MuxJSON(*server) as muxed:
+                yield muxed
+    return port_and_passwords, with_mux_server
+
+@contextlib.asynccontextmanager
+async def connect_mux_client(*args, **kwargs):
+    async with connect_client(*args, **kwargs) as client:
+        async with MuxJSON(*client) as muxed:
+            yield muxed
+
 
 async def main():
     """Start the RX/TX commands that were assembled by the argument parser"""

@@ -90,7 +90,7 @@ class Directive:
             block.append(Token("{"))
             for child in self.children:
                 if not isinstance(child, Directive) or child.name is not None:
-                    block.append("  " + str(child).replace('\n', '\n  '))
+                    block.append('    ' + str(child).replace('\n', '\n    '))
             block.append(Token("}"))
             parts.append("\n".join(block))
             return " ".join(parts)

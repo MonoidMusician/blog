@@ -39,6 +39,7 @@ import Control.Monad.ST.Internal as STRef
 import Data.Array as Array
 import Data.Array.ST as STA
 import Data.Either (Either(..))
+import Data.Int as Int
 import Data.List as List
 import Data.Map (Map)
 import Data.Map as Map
@@ -49,10 +50,11 @@ import Data.Set as Set
 import Data.Tuple (Tuple(..), fst, uncurry)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect, foreachE)
-import Effect.Aff (Aff, launchAff)
+import Effect.Aff (Aff, Milliseconds(..), launchAff)
 import Effect.Aff as Aff
 import Effect.Class (liftEffect)
 import Effect.Ref as Ref
+import Effect.Timer as Timer
 import Effect.Unsafe (unsafePerformEffect)
 import Idiolect (type (-!>))
 import Idiolect (type (-!>)) as ReExports
@@ -126,6 +128,12 @@ newSTR :: forall v. v -> Allocar (STRef Global v)
 newSTR v = liftST do STRef.new v
 getSTR :: forall v. STRef Global v -> Allocar v
 getSTR r = liftST do STRef.read r
+ofSTR :: forall v r. (v -> r) -> STRef Global v -> Allocar r
+ofSTR f = map f <<< getSTR
+infix 1 ofSTR as $&
+fromSTR :: forall v r. STRef Global v -> (v -> r) -> Allocar r
+fromSTR = flip ofSTR
+infix 1 fromSTR as &#
 runSTR :: forall v. STRef Global (Allocar v) -> Allocar v
 runSTR r = join (getSTR r)
 setSTR :: forall v. STRef Global v -> v -> Allocar Unit
@@ -183,13 +191,13 @@ cleanupFn' :: forall d.
 cleanupFn' act = do
   cleanupArg <- newSTR Nothing
   let
-    shouldRun = isNothing <$> getSTR cleanupArg
+    shouldRun = isNothing $& cleanupArg
   pure
     { cleanup: \d -> do
         whenM shouldRun do
           cleanupArg &= Just d
           act d
-    , running: isNothing <$> getSTR cleanupArg
+    , running: isNothing $& cleanupArg
     , finished: getSTR cleanupArg
     }
 
@@ -313,27 +321,31 @@ ordMap :: forall k v. Ord k => Allocar
   , set :: k -> v -> Allocar Unit
   , swap :: k -> v -> Allocar (Maybe v)
   , get :: k -> Allocar (Maybe v)
+  , has :: k -> Allocar Boolean
   , remove :: k -> Allocar (Maybe v)
   , traverse :: (k -> v -> Allocar Unit) -> Allocar Unit
   , onKey :: k -> (v -> Allocar Unit) -> Allocar Unit
   , reset :: Allocar (Map k v)
   , restore :: Map k v -> Allocar Unit
   -- , destroy :: Allocar (Map k v)
+  , size :: Allocar Int
   }
 ordMap = newSTR Map.empty <#> \ref ->
   { read: getSTR ref
   , set: \k v -> ref &~ Map.insert k v
+  , has: \k -> Map.member k $& ref
   , swap: \k v -> liftST do STRef.modify' (\m -> { value: Map.lookup k m, state: Map.insert k v m }) ref
-  , get: \k -> Map.lookup k <$> getSTR ref
+  , get: \k -> Map.lookup k $& ref
   , remove: \k -> liftST do STRef.modify' (\m -> { value: Map.lookup k m, state: Map.delete k m }) ref
-  , traverse: \f -> getSTR ref >>= Map.toUnfoldable >>> flip foreachE (uncurry f)
+  , traverse: \f -> (ref &# Map.toUnfoldable) >>= flip foreachE (uncurry f)
   , onKey: \k f -> do
-      mv <- Map.lookup k <$> getSTR ref
+      mv <- Map.lookup k $& ref
       case mv of
         Just v -> f v
         Nothing -> pure unit
   , reset: ref <&= Map.empty
   , restore: (ref &= _)
+  , size: Map.size $& ref
   }
 
 ordSet :: forall k. Ord k => Allocar
@@ -351,11 +363,11 @@ ordSet = newSTR Set.empty <#> \ref ->
   { read: getSTR ref
   , set: \k -> ref &~ Set.insert k
   , swap: \k -> liftST do STRef.modify' (\m -> { value: Set.member k m, state: Set.insert k m }) ref
-  , get: \k -> Set.member k <$> getSTR ref
+  , get: \k -> Set.member k $& ref
   , remove: \k -> liftST do STRef.modify' (\m -> { value: Set.member k m, state: Set.delete k m }) ref
   , traverse: \f -> getSTR ref >>= Set.toUnfoldable >>> flip foreachE f
   , whenPresent: \k f -> do
-      mv <- Set.member k <$> getSTR ref
+      mv <- Set.member k $& ref
       case mv of
         true -> f
         false -> pure unit
@@ -541,6 +553,14 @@ requestAnimationFrame :: Effect Unit -> Effect (Effect Unit)
 requestAnimationFrame cb = do
   w <- HTML.window
   Window.cancelAnimationFrame <$> Window.requestAnimationFrame cb w <@> w
+
+timeout :: Milliseconds -> Effect Unit -> Effect (Effect Unit)
+timeout (Milliseconds delay) cb = do
+  Timer.setTimeout (Int.round delay) cb <#> Timer.clearTimeout
+
+interval :: Milliseconds -> Effect Unit -> Effect (Effect Unit)
+interval (Milliseconds period) cb = do
+  Timer.setInterval (Int.round period) cb <#> Timer.clearInterval
 
 runningAff :: forall a. Aff a -> Effect (Aff a)
 runningAff act = do

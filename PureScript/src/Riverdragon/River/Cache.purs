@@ -36,6 +36,9 @@ lru defaultAllowance = do
       untouched <- cacheState.read
       over >>= case _ of
         true | Just { key, value: tgt } <- Map.findMin untouched -> do
+          void $ cacheState.remove key
+          allow <- allowance.get
+          alloc <- allocated.get
           tgt.pleaseUnalloc >>= case _ of
             true -> do
               -- Removed
@@ -67,8 +70,8 @@ lru defaultAllowance = do
     }
 
 makeCached :: forall t. Cacheable t =>
-  LRU t -> Aff t -> Allocar (Aff (Allocar t))
-makeCached (LRU { register }) acquire = do
+  LRU t -> (Boolean -> Allocar Unit) -> Aff t -> Allocar (Aff (Allocar t))
+makeCached (LRU { register }) activeOrEjected acquire = do
   demand <- Bed.refc
   bump <- Bed.prealloc (pure unit :: Allocar Unit)
   obtaining <- Bed.prealloc false
@@ -90,6 +93,7 @@ makeCached (LRU { register }) acquire = do
         0 -> do
           void $ AVarE.tryTake cached
           bump.set (pure unit)
+          void $ Aff.try $ activeOrEjected false
           pure true
         _ -> pure false
 
@@ -116,6 +120,7 @@ makeCached (LRU { register }) acquire = do
 
     obtain :: Aff (Allocar t)
     obtain = bracketUsage do
+      void $ Aff.try $ liftEffect $ activeOrEjected true
       liftEffect obtaining.get >>= case _ of
         true ->
           -- Wait for the other thread to do the work
@@ -129,3 +134,42 @@ makeCached (LRU { register }) acquire = do
               void $ AVar.tryTake cached -- clear out any error
               obtainDirectly # notifyFailure
   pure obtain
+
+lruCache ::
+  forall k t.
+    Ord k =>
+    Cacheable t =>
+  { allowance :: Int
+  , acquire :: k -> Aff t
+  } -> Allocar
+  { obtain :: k -> Aff (Allocar t)
+  , cached :: k -> Allocar Boolean
+  , check :: Allocar { allowed :: Int, current :: Int, active :: Int }
+  , reset :: Int -> Allocar Unit
+  }
+lruCache { allowance, acquire } = do
+  manager <- lru allowance
+  cacheStore <- Bed.ordMap
+  let
+    obtain k = do
+      -- Always check `cacheStore` first
+      liftEffect (cacheStore.get k) >>= case _ of
+        -- We already have a cached/caching `downloadDecode` action available
+        Just act -> act
+        -- Make our own and put it in the LRU cache and cache store
+        Nothing -> join $ liftEffect do
+          let
+            removeIfNotActive true = pure unit
+            removeIfNotActive false = void $ cacheStore.remove k
+          obtainer <- makeCached manager removeIfNotActive (acquire k)
+          void $ cacheStore.set k obtainer
+          pure obtainer
+  pure
+    { obtain
+    , cached: cacheStore.has
+    , check: do
+        { allowed, current } <- (case manager of LRU c -> c).check
+        active <- cacheStore.size
+        pure { allowed, current, active }
+    , reset: (case manager of LRU c -> c).reset
+    }

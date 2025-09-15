@@ -637,6 +637,7 @@ store ::
   Allocar
     { burst :: Array a
     , stream :: Stream flowOut a
+    , current :: Effect (Maybe a)
     , destroy :: Allocar Unit
     }
 store (Stream _ stream) = do
@@ -647,7 +648,7 @@ store (Stream _ stream) = do
   case Array.last burst of
     Just v -> lastValue.set v
     _ -> pure unit
-  pure { burst, stream: streamDependingOn sources, destroy: unsubscribe <> destroy }
+  pure { burst, stream: streamDependingOn sources, current: lastValue.get, destroy: unsubscribe <> destroy }
 
 -- | This function memoizes rivers, because it is safe to do so. It does not
 -- | memoize lakes.
