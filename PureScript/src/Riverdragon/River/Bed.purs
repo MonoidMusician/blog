@@ -565,9 +565,9 @@ interval (Milliseconds period) cb = do
 runningAff :: forall a. Aff a -> Effect (Aff a)
 runningAff act = do
   launchAff act >>= Left >>> prealloc >>= \settled -> pure do
-      liftEffect settled.get >>= case _ of
-        Left fiber -> do
-          result <- Aff.joinFiber fiber
-          liftEffect $ settled.set (Right result)
-          pure result
-        Right result -> pure result
+    liftEffect settled.get >>= case _ of
+      Left fiber -> do
+        result <- Aff.joinFiber fiber
+        liftEffect $ settled.set (Right result)
+        pure result
+      Right result -> pure result
