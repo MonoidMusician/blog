@@ -4,15 +4,17 @@ import Prelude
 
 import Control.Alt ((<|>))
 import Control.Monad.Reader (ask)
+import Control.Monad.ResourceM (addDestructor, addWaiter, destr, liftResourceM, selfScope, trackA, waitr)
+import Control.Monad.ResourceT (Dir(..), scopedRun)
 import Data.Maybe (Maybe(..))
 import Effect.Class (liftEffect)
 import Riverdragon.River (createRiverStore)
-import Riverdragon.River.Bed (cleanup, postHocDestructors, runningAff)
+import Riverdragon.River.Bed (runningAff)
 import Riverdragon.River.Beyond (affToLake)
 import Riverdragon.Roar.Knob (class ToKnob, renderKnobs)
-import Riverdragon.Roar.Types (class ToRoars, Roar, connecting, toRoars)
 import Riverdragon.Roar.Score (ScoreM)
 import Riverdragon.Roar.Score as Y
+import Riverdragon.Roar.Types (class ToRoars, Roar, connecting, toRoars)
 import Web.Audio.Node (intoNode, outOfNode)
 import Web.Audio.Types (ARate)
 import Web.Audio.Worklet (AudioWorkletNode, mkAudioWorkletteNode)
@@ -20,9 +22,9 @@ import Web.Audio.Worklet (AudioWorkletNode, mkAudioWorkletteNode)
 pinkNoise :: ScoreM Roar
 pinkNoise = do
   { ctx } <- ask
-  destr <- liftEffect postHocDestructors
-  creating <- liftEffect $ runningAff do
-    { node, destroy, send } <- mkAudioWorkletteNode
+  scope <- selfScope
+  creating <- liftEffect $ runningAff $ _.result <$> scopedRun scope do
+    { node, send } <- trackA $ mkAudioWorkletteNode
       { name: "PinkNoiseGenerator"
       , function:
         """
@@ -58,9 +60,9 @@ pinkNoise = do
         , outputChannelCount: [1]
         , parameterData: {}
         }
-    liftEffect $ destr.destructor $ send unit <> destroy
+    destr do send unit
     pure $ outOfNode node 0
-  Y.putScore { destroy: destr.finalize, ready: void creating }
+  waitr do void creating
   output <- Y.gain 1 creating
   pure output
 
@@ -69,12 +71,12 @@ pinkNoise = do
 pow :: forall knob roar. ToKnob knob => ToRoars roar => knob -> roar -> ScoreM Roar
 pow knob input = do
   { ctx } <- ask
-  destr <- liftEffect postHocDestructors
-  { stream: whenDestroyed, send: destroyOutput } <- liftEffect $ createRiverStore Nothing
-  liftEffect $ destr.destructor $ destroyOutput Nothing
+  { stream: whenDestroyed, send: destroyOutput } <- createRiverStore Nothing
+  addDestructor $ destroyOutput Nothing
   let { defaults, apply: applyKnobs } = renderKnobs { pow: knob } ctx
-  creating <- liftEffect $ runningAff do
-    { node, destroy: destroy0, send } <- mkAudioWorkletteNode
+  scope <- selfScope
+  creating <- liftEffect $ runningAff $ _.result <$> scopedRun scope do
+    { node, send } <- trackA $ mkAudioWorkletteNode
       { name: "RescalePowerNode"
       , function:
         """
@@ -112,12 +114,11 @@ pow knob input = do
         -- , outputChannelCount: [1]
         , parameterData: defaults
         }
-    destroy1 <- liftEffect $ cleanup =<< do applyKnobs $ (node :: AudioWorkletNode ( pow :: ARate ))
-    destroy2 <- liftEffect $ cleanup =<< do connecting (toRoars input) (intoNode node 0)
-    let destroy = destroy2 <> destroy1 <> destroy0
-    liftEffect $ destr.destructor $ destroy2 <> destroy1 <> send unit <> destroy
+    liftResourceM do applyKnobs (node :: AudioWorkletNode ( pow :: ARate ))
+    connecting (toRoars input) (intoNode node 0)
+    destr $ send unit
     pure $ outOfNode node 0
-  Y.putScore { destroy: destr.finalize, ready: void creating }
+  addWaiter zero Par do void creating
   output <- Y.gain 1 (affToLake creating <|> whenDestroyed)
   pure output
 

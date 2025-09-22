@@ -19,10 +19,10 @@ import Data.String (CodePoint)
 import Data.String as String
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested ((/\))
+import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
-import Riverdragon.Dragon.Bones (Dragon, (.$~~), (<:>), (=:=), (=?=))
+import Riverdragon.Dragon.Bones (Dragon(..), (.$~~), (<:>), (=:=), (=?=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (hatching)
 import Riverdragon.River as River
 import Riverdragon.River.Beyond as Beyond
 import Web.DOM.AttrName (AttrName(..))
@@ -54,7 +54,7 @@ datatypes :: Map String DatatypeWidget
 datatypes = Map.fromFoldable
   [ "abbr" /\
     { recognize: isJust <<< unabbreviate
-    , widget: \{ text, content } -> do
+    , widget: \{ text, content } -> liftEffect do
         abbr <- text
         case unabbreviate abbr of
           Just meaning -> do
@@ -103,7 +103,7 @@ datatypes = Map.fromFoldable
     }
   , "color" /\
     { recognize: const false
-    , widget: \{ text, content } -> do
+    , widget: \{ text, content } -> liftEffect do
         color <- text
         embed <- content
         pure
@@ -116,7 +116,7 @@ datatypes = Map.fromFoldable
     }
   , "unicode" /\
     { recognize: isJust <<< String.stripPrefix (String.Pattern "U+")
-    , widget: \{ text, content, rawAttr } -> do
+    , widget: \{ text, content, rawAttr } -> liftEffect do
         textValue <- text
         case parseUnicode textValue of
           Nothing -> do
@@ -140,13 +140,13 @@ datatypes = Map.fromFoldable
     }
   , "etym" /\
     { recognize: ff
-    , widget: \{ content, rawAttr } -> do
+    , widget: \{ content, rawAttr } -> liftEffect do
         mainContent <- content
         replacement <- rawAttr (AttrName "data-etym")
-        pure $ hatching \shell -> do
-          { stream: upstream, send } <- shell.track $ River.createStore false
-          stream <- shell.store $ Beyond.dedup upstream
-          shell.destructor =<< Beyond.keyEvents \{ mod } -> do
+        pure $ Egg do
+          { stream: upstream, send } <- River.createStore false
+          { stream } <- River.store $ Beyond.dedup upstream
+          Beyond.keyEvents \{ mod } -> do
             let bti = if _ then 1 else 0
             send (mod.shift && bti mod.ctrl + bti mod.alt + bti mod.meta >= 2)
           let
@@ -291,8 +291,8 @@ matching t =
 
 widget :: Widget
 widget interface@{ text, rawAttr } = do
-  givenDatatype <- rawAttr (AttrName "data-t") <#> fromMaybe ""
-  t <- text
+  givenDatatype <- liftEffect do rawAttr (AttrName "data-t") <#> fromMaybe ""
+  t <- liftEffect text
   datatype <- pure case givenDatatype of
     "" | [obvious] <- matching t -> obvious
     _ -> givenDatatype

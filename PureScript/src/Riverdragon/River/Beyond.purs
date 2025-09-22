@@ -3,12 +3,14 @@ module Riverdragon.River.Beyond where
 import Prelude
 
 import Control.Alt ((<|>))
+import Control.Monad.ResourceM (class MonadResource, track)
+import Control.Monad.ResourceT (start)
 import Data.Array as Array
 import Data.DateTime.Instant (Instant)
 import Data.DateTime.Instant as Instant
 import Data.Either (Either(..), hush, isLeft)
 import Data.Filterable (compact, partitionMap)
-import Data.Foldable (fold)
+import Data.Foldable (fold, for_)
 import Data.Int as Int
 import Data.Map as Map
 import Data.Maybe (Maybe(..), isJust, maybe)
@@ -20,9 +22,9 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect, foreachE, whileE)
 import Effect.Aff (Aff)
 import Effect.Aff as Aff
+import Effect.Class (liftEffect)
 import Effect.Now (now)
 import Effect.Timer (clearInterval, clearTimeout, setInterval, setTimeout)
-import Idiolect ((#..))
 import Partial.Unsafe (unsafePartial)
 import Riverdragon.Dragon.Breath (microtask)
 import Riverdragon.River (Allocar, Lake, River, Stream, allStreams, dam, fixPrjBurst, foldStream, mailboxRiver, makeLake, makeLake', mapAl, oneStream, singleShot, statefulStream, subscribeIsh, unsafeCopyFlowing, withInstantiated, (<?*>), (>>~))
@@ -43,7 +45,7 @@ delayWith :: forall flow.
   (Effect Unit -> Allocar (Allocar Unit)) ->
   Stream flow ~> Stream flow
 delayWith delaying stream =
-  unsafeCopyFlowing stream $ makeLake' \selfDestruct cb -> do
+  unsafeCopyFlowing stream $ makeLake' \selfDestruct cb -> void $ track do
     isDestroyed <- prealloc false
     ids <- freshId
     inflight <- ordMap
@@ -61,8 +63,8 @@ delayWith delaying stream =
             whenM (Map.isEmpty <$> inflight.read) do
               selfDestruct
         inflight.set id cancelIt
-    unsub <- subscribeIsh upstreamDestroyed stream receive
-    pure $ unsub <> inflight.traverse (const identity)
+    { destroy: unsub } <- start do subscribeIsh upstreamDestroyed stream receive
+    pure { destroy: unsub <> inflight.traverse (const identity) }
 
 delay :: forall flow. Milliseconds -> Stream flow ~> Stream flow
 delay (Milliseconds ms) = delayWith \cb -> do
@@ -209,17 +211,18 @@ dedup = dedupBy eq
 
 
 affToLake :: forall a. Aff a -> Lake (Maybe a)
-affToLake aff = makeLake' \finished cb -> do
+affToLake aff = makeLake' \finished cb -> void $ track do
   fiber <- Aff.runAff (\result -> cb (hush result) <* finished) aff
-  pure $ Aff.launchAff_ $ Aff.killFiber (Aff.error "event unsubscribed") fiber
+  pure { destroy: Aff.launchAff_ $ Aff.killFiber (Aff.error "event unsubscribed") fiber }
 
 interval :: Milliseconds -> Lake Int
-interval (Milliseconds ms) = makeLake \cb -> do
+interval (Milliseconds ms) = makeLake \cb -> void $ track do
   counted <- freshId
-  clearInterval <$> setInterval (Int.floor ms) (cb =<< counted)
+  id <- setInterval (Int.floor ms) (cb =<< counted)
+  pure { destroy: clearInterval id }
 
 everyFrame :: Lake Int
-everyFrame = makeLake \cb -> do
+everyFrame = makeLake \cb -> void $ track do
   counted <- freshId
   cancelRequest <- prealloc Nothing
   let
@@ -231,7 +234,7 @@ everyFrame = makeLake \cb -> do
     destroy = do
       fold =<< cancelRequest.get
       cancelRequest.set Nothing
-  destroy <$ next
+  { destroy } <$ next
 
 animationLoop :: forall state out.
   state -> out ->
@@ -313,13 +316,13 @@ fallingLeaves p upstream f =
     in joinLeave tracked
 
 
-documentEvent :: forall e.
+documentEvent :: forall e m. MonadResource m =>
   EventType ->
   (Event.Event -> Maybe e) ->
   (e -> Effect Unit) ->
-  Allocar (Allocar Unit)
+  m Unit
 documentEvent eventType conv handle = do
-  doc <- window >>= document
+  doc <- liftEffect do window >>= document
   eventListener
     { eventPhase: Bubbling
     , eventTarget: HTMLDocument.toEventTarget doc
@@ -376,11 +379,11 @@ keyPhase event =
     EventType "keydown", false -> KeyDown
     _, _ -> KeyUp
 
-keyEvents ::
+keyEvents :: forall m. MonadResource m =>
   (KeyEvent -> Effect Unit) ->
-  Allocar (Allocar Unit)
+  m Unit
 keyEvents cb =
-  [ "keydown", "keyup" ] #.. \ty ->
+  for_ [ "keydown", "keyup" ] \ty ->
     documentEvent (EventType ty) mkKeyEvent cb
 
 foreign import _devicePixelRatio ::
@@ -389,6 +392,7 @@ foreign import _devicePixelRatio ::
   }
 
 devicePixelRatio :: River Number
-devicePixelRatio = River.mayMemoize $ River.unsafeRiver $ makeLake \cb -> do
-  cb =<< _devicePixelRatio.now
-  _devicePixelRatio.subscribe cb
+devicePixelRatio = River.mayMemoize $ River.unsafeRiver $
+  makeLake \cb -> void $ track do
+    cb =<< _devicePixelRatio.now
+    { destroy: _ } <$> _devicePixelRatio.subscribe cb

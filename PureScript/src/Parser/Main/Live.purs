@@ -11,15 +11,16 @@ import Data.String as String
 import Data.Tuple.Nested ((/\))
 import Dodo as Dodo
 import Effect (Effect)
+import Effect.Class (liftEffect)
 import Idiolect (tripleQuoted)
 import Parser.Comb.Comber (Comber, Printer, parse, printGrammarWsn)
 import PureScript.CST.Parser as CST.Parser
 import PureScript.CST.Types as CST.T
-import Riverdragon.Dragon (Dragon, renderId)
+import Riverdragon.Dragon (Dragon(..), renderId)
 import Riverdragon.Dragon.Bones ((.$), (.$$), (.$$~), (:.), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (hatching, sourceCode, tabSwitcher)
-import Riverdragon.River (Lake, createRiverStore, dam, makeLake)
+import Riverdragon.Dragon.Wings (sourceCode, tabSwitcher)
+import Riverdragon.River (Lake, createRiverStore, dam, makeLake, store)
 import Riverdragon.Roar.Live (discardDecls)
 import Runtime (aSideChannel)
 import Runtime as Runtime
@@ -103,10 +104,10 @@ pipeline = Runtime.Live.pipeline
   }
 
 embed :: Lake String -> Dragon
-embed incomingRaw = hatching \shell -> do
-  incoming <- shell.store do incomingRaw
-  pipelined <- shell.track do Runtime.Live.ofPipeline (pipeline incoming)
-  gotParser <- shell.store $ makeLake \cb -> mempty <$ _sideChannel.installChannel cb
+embed incomingRaw = Egg do
+  { stream: incoming } <- store do incomingRaw
+  pipelined <- Runtime.Live.ofPipeline (pipeline incoming)
+  { stream: gotParser } <- store $ makeLake \cb -> liftEffect do _sideChannel.installChannel cb
   codeURL <- Runtime.configurable "codeURL" "https://tryps.veritates.love/assets/purs"
   let
     assetFrame asset = D.html_"iframe"
@@ -126,7 +127,7 @@ embed incomingRaw = hatching \shell -> do
       [ D.div [ D.id =:= "grammar" ] mempty
       , gotParser >@ \parser -> D.Egg do
           { send: setValue, stream: getValue } <- createRiverStore Nothing
-          pure $ { destroy: mempty, dragon: _ } $ D.Fragment
+          pure $ D.Fragment
             [ sourceCode "In" :."sourceCode unicode".$
                 D.textarea
                   [ D.onInputValue =:= setValue

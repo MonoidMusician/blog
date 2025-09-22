@@ -14,6 +14,7 @@ import Data.String as String
 import Data.Traversable (foldMap, for_, traverse)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
+import Effect.Class (liftEffect)
 import Effect.Ref as Ref
 import Foreign (unsafeToForeign)
 import Foreign.Object (Object)
@@ -21,9 +22,10 @@ import Foreign.Object as Object
 import Idiolect ((>==))
 import Parsing (runParser)
 import Riverdragon.River (Lake, makeLake, subscribe)
+import Riverdragon.River.Bed (eventListener)
 import URI.Extra.QueryPairs as QueryPairs
 import URI.Query as Query
-import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
+import Web.Event.EventPhase (EventPhase(..))
 import Web.HTML (window)
 import Web.HTML.Event.PopStateEvent.EventTypes (popstate)
 import Web.HTML.History as History
@@ -76,32 +78,33 @@ setQueryKeys overwriting = do
 
 queryChanges :: Lake (Object Json)
 queryChanges = makeLake \push -> do
-  w <- window
-  e <- eventListener \_ -> push =<< getQueryKeys
-  addEventListener popstate e false (Window.toEventTarget w)
-  pure $ removeEventListener popstate e false (Window.toEventTarget w)
+  w <- liftEffect window
+  eventListener
+    { eventPhase: Bubbling
+    , eventTarget: Window.toEventTarget w
+    , eventType: popstate
+    } \_ -> push =<< getQueryKeys
 
 sideInterface :: String -> Array { key :: String, io :: Interface Json } -> Lake (Object Json)
 sideInterface prefix interfaces = makeLake \k -> do
-  initial <- map (map unwrap) $ getQueryKeys <#> \q -> interfaces # foldMap \{ key } ->
+  initial <- map (map unwrap) $ liftEffect getQueryKeys <#> \q -> interfaces # foldMap \{ key } ->
     Object.lookup (prefix <> key) q # foldMap (Last >>> Object.singleton key)
-  ref <- Ref.new initial
-  sub1 <- interfaces # foldMap \(r :: { key :: String, io :: Interface Json }) -> do
+  ref <- liftEffect do Ref.new initial
+  for_ interfaces \(r :: { key :: String, io :: Interface Json }) -> do
     subscribe r.io.receive \value -> do
       setQueryKeys (Object.singleton (prefix <> r.key) value)
       Ref.modify_ (Object.insert r.key value) ref
-  sub2 <- subscribe (pure initial <|> queryChanges) \kvs -> do
+  subscribe (pure initial <|> queryChanges) \kvs -> do
     for_ interfaces \{ key, io } -> do
       for_ (Object.lookup (prefix <> key) kvs) \value -> do
         io.current >>= case _ of
           Just v | v == value -> pure unit
           _ -> io.send value
         Ref.modify_ (Object.insert key value) ref
-  k initial
-  pure $ sub1 <> sub2
+  liftEffect do k initial
 
 widget :: Widget
-widget { interface, attrs } = do
+widget { interface, attrs } = liftEffect do
   prefix <- attrs "prefix" <#> Json.toString >>> maybe "" (_ <> "-")
   keys <- map (fromMaybe []) $ attrs "keys" <#>
     (Json.toArray >=> traverse Json.toString) <>

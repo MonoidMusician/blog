@@ -42,6 +42,7 @@ import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Debug (spy)
 import Effect (Effect)
+import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
 import Effect.Class.Console as Log
 import Effect.Unsafe (unsafePerformEffect)
@@ -56,10 +57,10 @@ import Parser.Samples (defaultEOF, defaultTopName, defaultTopRName)
 import Parser.Types (AST(..), CST(..), Grammar(..), Part(..), SAST, SAugmented, SCParseSteps, SCST, SCStack, SFragment, SGrammar, SProducible, SState, SStateInfo, SStateItem, SStates, SZipper, ShiftReduce(..), State(..), States(..), Zipper(..), prune, unNonTerminal, unSPart, unTerminal)
 import Partial.Unsafe (unsafePartial)
 import Random.LCG as LCG
-import Riverdragon.Dragon.Bones (AttrProp, Dragon, smarties, ($$), ($<), ($~~), (.$), (.$$), (.$$~), (.$~~), (:!), (:.), (:~), (<!>), (<:>), (=!=), (=!?=), (=:=), (=?=), (>@), (>~~), (@<))
+import Riverdragon.Dragon.Bones (AttrProp, Dragon(..), smarties, ($$), ($<), ($~~), (.$), (.$$), (.$$~), (.$~~), (:!), (:.), (:~), (<!>), (<:>), (=!=), (=!?=), (=:=), (=?=), (>@), (>~~), (@<))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (hatching, inputValidated)
-import Riverdragon.River (Lake, River, Stream, createRiver, createRiverStore, foldStream, sampleOnRightOp, selfGating, subscribe, (<**>))
+import Riverdragon.Dragon.Wings (inputValidated)
+import Riverdragon.River (Lake, River, Stream, createRiver, createRiverStore, foldStream, sampleOnRightOp, selfGating, store, store', subscribe, (<**>))
 import Riverdragon.River as River
 import Riverdragon.River.Beyond (animationLoop, dedup, dedupOn, delay, delayMicro, interval)
 import Stylish.Types (Classy(..))
@@ -117,7 +118,7 @@ renderParseTable :: forall r.
   SGrammar ->
   SStates ->
   Dragon
-renderParseTable info (MkGrammar grammar) (States states) = hatching \_ -> do
+renderParseTable info (MkGrammar grammar) (States states) = Egg do
   { stream: stateHighlighted, send: push } <- createRiverStore $ Just Nothing
   let
     terminals /\ nonTerminals = getHeader (States states)
@@ -559,7 +560,7 @@ grammarComponent :: forall flow.
   (SAugmented -> Effect Unit) ->
   Dragon
 grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
-  (pure reallyInitialGrammar <|> forceGrammar) >@ \initialGrammar -> hatching \shell -> do
+  (pure reallyInitialGrammar <|> forceGrammar) >@ \initialGrammar -> Egg do
     let
       initialTop =
         case Array.head (unwrap initialGrammar.augmented) of
@@ -615,10 +616,10 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
           $ pure { topName: _, eof: _, entry: _, top: _ }
       counted = add (Array.length initialRules) <$>
         (pure 0 <|> (add 1 <$> fst <$> actions.addRule.stream))
-    getCurrentText <- shell.storeLast mempty currentText
-    getCounted <- shell.storeLast (Array.length initialRules) counted
-    currentTop <- shell.store $ currentTop
-    currentRules <- shell.store $ foldStream initialRules ruleChanges changeRule
+    { current: getCurrentText } <- store' mempty currentText
+    { current: getCounted } <- store' (Array.length initialRules) counted
+    { stream: currentTop } <- store $ currentTop
+    { stream: currentRules } <- store $ foldStream initialRules ruleChanges changeRule
     let
       currentNTs = {- dedup $ -} map (spy "currentNTs" <<< longestFirst) $
         (<**>)
@@ -657,7 +658,7 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
               ]
           , D.tbody[] $
               (oneOfMap pure initialRules <|> actions.addRule.stream) >~~
-              \(i /\ txt) -> hatching \_ -> do
+              \(i /\ txt) -> Egg do
                 this <- createRiver
                 pure $ D.Replacing $
                   ( pure $ D.tr
@@ -797,7 +798,7 @@ explorerComponent ::
   SProducible ->
   (Array CodePoint -> Effect Unit) ->
   Dragon
-explorerComponent grammar sendUp = hatching \shell -> do
+explorerComponent grammar sendUp = Egg do
   let { produced: producedRules, grammar: { augmented: MkGrammar rules, start: { pName: entry } } } = grammar
   actions <- sequenceRecord
     { focus: createRiver
@@ -807,7 +808,7 @@ explorerComponent grammar sendUp = hatching \shell -> do
     currentParts = actions.select.stream
     firstNonTerminal = Array.head <<< foldMapWithIndex
       \i v -> maybe [] (\r -> [ i /\ r ]) (unNonTerminal v)
-  currentFocused <- shell.store
+  { stream: currentFocused } <- store
     (pure (Just (0 /\ entry)) <|> actions.focus.stream <|> map firstNonTerminal currentParts)
   let
     activity here = here <#> if _ then "active" else "inactive"
@@ -878,7 +879,7 @@ randomComponent ::
   SProducible ->
   (Array CodePoint -> Effect Unit) ->
   Dragon
-randomComponent grammar sendUp = hatching \_ -> do
+randomComponent grammar sendUp = Egg do
   let { produced: producedRules, grammar: { start: { pName: entry } } } = grammar
   let
     initialSize = 50
@@ -1000,7 +1001,7 @@ computeInput { grammar, states, stateIndex } =
         }
 
 widgetGrammar :: Widget
-widgetGrammar { interface, attrs } = do
+widgetGrammar { interface, attrs } = liftEffect do
   let
     io =
       { grammar: adaptInterface grammarCodec (interface "grammar")
@@ -1072,13 +1073,16 @@ widgetInput { interface, attrs } = do
       io.state.send c.state
       io.validTokens.send c.validTokens
       io.validNTs.send c.validNTs
-  void $ subscribe io.input.receive \x -> do
+  subscribe io.input.receive \x -> do
     log $ "LOCAL RECEIVE INPUT " <> show x
     sendOthers x
-  initialGrammar <- fromMaybe sampleGrammar <$> io.grammar.current
-  fallbackInput <- fromMaybe' (\_ -> sampleS (withProducible initialGrammar)) <<< Json.toString <$> attrs "input"
-  initialInput <- fromMaybe fallbackInput <$> io.input.current
-  void $ subscribe io.grammar.receive \_ ->
+  initialGrammar <- liftEffect do
+    fromMaybe sampleGrammar <$> io.grammar.current
+  fallbackInput <- liftEffect do
+    fromMaybe' (\_ -> sampleS (withProducible initialGrammar)) <<< Json.toString <$> attrs "input"
+  initialInput <- liftEffect do
+    fromMaybe fallbackInput <$> io.input.current
+  subscribe io.grammar.receive \_ ->
     io.input.current >>= fromMaybe initialInput >>> sendOthers
   let
     sendInput = sendOthers <> io.input.send
@@ -1089,7 +1093,7 @@ widgetInput { interface, attrs } = do
       }
   -- For all of the other data, it might not be updated (e.g. because we only
   -- received a grammar from the query)
-  sendOthers initialInput
+  liftEffect do sendOthers initialInput
   pure $
     inputComponent initialInput upstream.receive upstream.send
       { grammar: io.grammar.receive
@@ -1144,7 +1148,7 @@ widgetStateTable { interface } = do
     \(x /\ getCurrentState) -> renderStateTable { getCurrentState } x
 
 widgetParseTable :: Widget
-widgetParseTable { interface } = do
+widgetParseTable { interface } = liftEffect do
   let
     stateIdI = adaptInterface CA.int (interface "stateId")
     currentGetCurrentState = spotlightBeh stateIdI.receive
@@ -1175,11 +1179,11 @@ inputComponent :: forall r flow.
   | r
   } ->
   Dragon
-inputComponent initialInput inputStream sendInput current = hatching \shell -> do
-  { send: pushInput, stream: localInput } <- shell.track $ createRiverStore Nothing
-  currentValue <- shell.store (pure initialInput <|> inputStream <|> localInput)
-  getCurrentValue <- shell.storeLast initialInput currentValue
-  getCurrentProducible <- shell.storeLast Nothing (Just <$> current.producible)
+inputComponent initialInput inputStream sendInput current = Egg do
+  { send: pushInput, stream: localInput } <- createRiverStore Nothing
+  { stream: currentValue } <- store (pure initialInput <|> inputStream <|> localInput)
+  { current: getCurrentValue } <- store' initialInput currentValue
+  { current: getCurrentProducible } <- store' Nothing (Just <$> current.producible)
   let
     currentValue' = {- notFrom localInput -} currentValue
     currentParseSteps = current.parseSteps
@@ -1223,7 +1227,7 @@ inputComponent initialInput inputStream sendInput current = hatching \shell -> d
                 x <#> renderNTHere
           ]
       , D.div.$ D.span :."terminal".$ inputC' "Source text" "" currentValue' (pushInput <> sendInput)
-      , currentParseSteps >@ \todaysSteps -> hatching \_ -> do
+      , currentParseSteps >@ \todaysSteps -> Egg do
           actions <- sequenceRecord
             { toggleL: createRiver -- Unit
             , toggleR: createRiver -- Unit
@@ -1283,7 +1287,7 @@ inputComponent initialInput inputStream sendInput current = hatching \shell -> d
             -- Maintain the current index, clamped between 0 and nEntitities
             -- (Note: it is automatically reset, since `switcher` resubscribes,
             -- creating new state for it)
-          currentState <- shell.store fullState
+          { stream: currentState } <- store fullState
           let stackIndex = dedupOn _.idx currentState
           let isRunning = _.running <$> currentState
           sweeper <- spotlightBeh (map _.idx stackIndex)

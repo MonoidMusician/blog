@@ -8,13 +8,14 @@ import Data.Foldable (fold)
 import Data.Maybe (Maybe(..))
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
+import Effect.Class (liftEffect)
 import Idiolect (tripleQuoted)
 import PureScript.CST.Types as CST.T
-import Riverdragon.Dragon (Dragon, renderEl)
+import Riverdragon.Dragon (Dragon(..), renderEl)
 import Riverdragon.Dragon.Bones ((.$$), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (hatching, sourceCode, tabSwitcher)
-import Riverdragon.River (Lake, dam, makeLake)
+import Riverdragon.Dragon.Wings (sourceCode, tabSwitcher)
+import Riverdragon.River (Lake, dam, makeLake, store)
 import Runtime (aSideChannel)
 import Runtime as Runtime
 import Runtime.Live (ImportsExprDecls(..), Status, compileInterface, fetchHighlight)
@@ -55,10 +56,10 @@ pipeline = Runtime.Live.pipeline
   }
 
 embed :: Lake String -> Dragon
-embed incomingRaw = hatching \shell -> do
-  incoming <- shell.store do incomingRaw
-  pipelined <- shell.track do Runtime.Live.ofPipeline (pipeline incoming)
-  gotRenderer <- shell.store $ makeLake \cb -> mempty <$ _sideChannel.installChannel cb
+embed incomingRaw = Egg do
+  { stream: incoming } <- store do incomingRaw
+  pipelined <- Runtime.Live.ofPipeline (pipeline incoming)
+  { stream: gotRenderer } <- store $ makeLake \cb -> liftEffect do _sideChannel.installChannel cb
   codeURL <- Runtime.configurable "codeURL" "https://tryps.veritates.love/assets/purs"
   let
     assetFrame asset = D.html_"iframe"
@@ -106,10 +107,10 @@ widget _ = pure $ compileInterface "Riverdragon.Main.Live" embed $ tripleQuoted 
     D.div :."centered".$
       -- A context where we can run some effects
       -- (really: lifecycle management)
-      hatching \shell -> do
+      Egg do
         -- Create a stream that we will destroy when unloaded
         -- (not really necessary here, but good hygiene)
-        { stream: clicked, send: onClick } <- shell.track $ createRiver
+        { stream: clicked, send: onClick } <- createRiver
         -- Render a fixed list of items
         pure $ D.Fragment
           -- The first item is a button that triggers the above event

@@ -15,6 +15,7 @@ import Data.Traversable (sequence)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested ((/\))
 import Effect.Aff (Aff)
+import Effect.Class (liftEffect)
 import Fetch (fetch)
 import Foreign.Object (Object)
 import Foreign.Object as Object
@@ -23,8 +24,8 @@ import Parser.Languages.CSS (mkCSSParser)
 import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones (($~~), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (hatching, inputValidated)
-import Riverdragon.River (Stream, createRiver, foldStream)
+import Riverdragon.Dragon.Wings (inputValidated)
+import Riverdragon.River (Stream, createRiver, foldStream, store)
 import Riverdragon.River.Beyond (affToLake)
 import Widget (Widget, adaptInterface)
 
@@ -37,7 +38,7 @@ widgets = Object.fromFoldable $
   ]
 
 widgetCSS :: Widget
-widgetCSS { interface, attrs } = do
+widgetCSS { interface, attrs } = liftEffect do
   example <- attrs "example"
   let
     initial = hush $ CA.decode (CA.array CA.string) example
@@ -46,7 +47,7 @@ widgetCSS { interface, attrs } = do
   pure $ component resetting
 
 sendExample :: Widget
-sendExample { interface, attrs } = do
+sendExample { interface, attrs } = liftEffect do
   let push = (interface "css-example").send
   example <- attrs "example"
   pure $ D.buttonW "" "Try this example" (push example)
@@ -68,10 +69,10 @@ fetchParser :: Aff String
 fetchParser = _.text =<< fetch "assets/json/css-parser-states.json" {}
 
 component :: forall flow. Stream flow (Array String) -> Dragon
-component resetting = hatching \shell -> do
-  { stream: pushedRaw, send: pushUpdate } <- shell.track createRiver
-  getParser <- shell.store $ mkCSSParser <$> affToLake fetchParser
-  currentRaw <- shell.store $
+component resetting = Egg do
+  { stream: pushedRaw, send: pushUpdate } <- createRiver
+  { stream: getParser } <- store $ mkCSSParser <$> affToLake fetchParser
+  { stream: currentRaw } <- store $
     foldStream (true /\ ["",""]) (Reset <$> resetting <|> pushedRaw)
       \(_ /\ last) -> case _ of
         Add -> true /\ (last <> [ "" ])

@@ -4,12 +4,12 @@ import Prelude
 
 import Control.Alt ((<|>))
 import Control.Monad.Reader (ask)
-import Data.Argonaut.Decode.Decoders (decodeMap)
+import Control.Monad.ResourceM (destr, selfDestructor, track_)
+import Control.Monad.ResourceT (run)
 import Data.Array as A
 import Data.Array as Array
-import Data.Either (Either(..))
 import Data.Filterable (filter)
-import Data.Foldable (fold, for_, traverse_)
+import Data.Foldable (fold, traverse_)
 import Data.HeytingAlgebra (ff)
 import Data.Int as Int
 import Data.Lens (Prism', prism')
@@ -21,20 +21,16 @@ import Data.Tuple (Tuple(..), snd)
 import Data.Tuple.Nested ((/\))
 import Debug (traceM)
 import Effect (Effect)
-import Effect.Aff (Aff, Canceler(..), Milliseconds(..), makeAff, sequential)
+import Effect.Aff (Aff, Milliseconds(..))
 import Effect.Class (liftEffect)
-import Effect.Timer (clearTimeout, setTimeout)
 import Idiolect (intercalateMap)
-import Riverdragon.Dragon (Dragon)
-import Riverdragon.Dragon.Bones (($<), (.$), (.$~~), (=:=), (>@), (>~~), (?.), (~~<))
+import Riverdragon.Dragon (Dragon(..))
+import Riverdragon.Dragon.Bones ((.$), (.$~~), (=:=), (>@), (~~<))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (Shell, hatching)
-import Riverdragon.Dragon.Wings as W
 import Riverdragon.Dragon.Wings as Wings
 import Riverdragon.River (Stream, createRiverStore, createStore, dam, mailboxRiver, makeLake, mapArray, mayMemoize, singleShot, stillRiver, unsafeRiver)
 import Riverdragon.River as River
-import Riverdragon.River.Bed as Bed
-import Riverdragon.River.Beyond (KeyPhase(..), affToLake, delay, interval, mkKeyEvent)
+import Riverdragon.River.Beyond (KeyPhase(..), affToLake, delay, mkKeyEvent)
 import Riverdragon.River.Streamline as S
 import Riverdragon.Roar.Dimensions (aWeighting, temperaments)
 import Riverdragon.Roar.Knob (toKnob)
@@ -101,31 +97,30 @@ init :: Launchkey -> Aff
   , output :: _
   , ui :: Dragon
   }
-init lk = do
-  finish <- liftEffect Bed.postHocDestructors
+init lk = _.result <$> run do
   traceM lk
-  logger <- liftEffect $ finish.track River.createRiver
+  logger <- River.createRiver
   let
     logging which event = logger.send (Tuple which event)
     midiCmd = MIDI.send lk.midiOut <> logging MidiOut
-    midiStream = mayMemoize $ unsafeRiver $ makeLake do MIDI.onmidimessage lk.midiIn
+    midiStream = mayMemoize $ unsafeRiver $ makeLake \cb -> track_ do MIDI.onmidimessage lk.midiIn cb
     dawCmd = MIDI.send lk.dawOut <> logging DawOut
-    dawStream = mayMemoize $ unsafeRiver $ makeLake do MIDI.onmidimessage lk.dawIn
+    dawStream = mayMemoize $ unsafeRiver $ makeLake \cb -> track_ do MIDI.onmidimessage lk.dawIn cb
     dawFocus = mailboxRiver $ dawStream # mapArray
       \midi -> Array.range 0 (Array.length midi) <#> \l ->
         let r = Array.splitAt l midi in
         { key: r.before, value: r.after }
     dawWait = dawFocus >>> singleShot
-  liftEffect $ finish.destructor =<< River.subscribe midiStream do logging MidiIn
-  liftEffect $ finish.destructor =<< River.subscribe dawStream do logging DawIn
+  River.subscribe midiStream do logging MidiIn
+  River.subscribe dawStream do logging DawIn
 
-  liftEffect do
+  do
     -- Enter DAW Mode
-    dawCmd [0x9F, 0x0C, 0x7F]
+    liftEffect $ dawCmd [0x9F, 0x0C, 0x7F]
     -- Exit DAW Mode
-    finish.destructor $ dawCmd [0x9F, 0x0C, 0x00]
+    destr $ dawCmd [0x9F, 0x0C, 0x00]
     -- Relative encoders, pivot around 0x40 = 0
-    dawCmd [0xB6, 0x45, 0x01]
+    liftEffect $ dawCmd [0xB6, 0x45, 0x01]
     -- Drum colors
     -- finish.destructor =<< River.subscribe (interval (Milliseconds 1200.0)) \loop ->
     --   for_ (Array.range 0 15) \idx -> do
@@ -145,9 +140,9 @@ init lk = do
       D.code.$ D.text $ dir whence <> " " <>
         let pad s = if String.length s == 1 then "0" <> s else s in
         intercalateMap " " (pad <<< Int.toStringAs Int.hexadecimal) event
-    ui = W.hatching \shell -> do
-      { stream: cleared, send: clear } <- shell.track $ River.createRiver
-      input <- shell.track $ createStore ""
+    ui = Egg do
+      { stream: cleared, send: clear } <- River.createRiver
+      input <- createStore ""
       let
         sendDaw = do
           val <- input.current
@@ -175,8 +170,9 @@ init lk = do
             ]
         , D.buttonW "" "Send" sendDaw
         ]
+  destroy <- selfDestructor
   pure
-    { destroy: finish.finalize
+    { destroy
     , input:
       { midiStream, dawStream, dawFocus, dawWait
       }
@@ -190,12 +186,12 @@ widget :: Widget
 widget _ = pure $ D.Replacing $ map fold $ affToLake $ do
   lkInterface <- MIDI.requestMIDI {} >>= _.access >>> detect
   lk <- maybe mempty init lkInterface
-  pure $ hatching \shell -> do
-    lazyDragon <- shell.track $ createRiverStore Nothing
-    { send: sendScopeParent, stream: scopeParent } <- shell.track $ createRiverStore Nothing
-    synth <- shell.track $ installSynth \noteStream -> do
+  pure $ Egg do
+    lazyDragon <- createRiverStore Nothing
+    { send: sendScopeParent, stream: scopeParent } <- createRiverStore Nothing
+    synth <- installSynth \noteStream -> do
       { iface } <- ask
-      { dragon, voice } <- liftEffect $ mkDragonVoice shell iface
+      { dragon, voice } <- mkDragonVoice iface
 
       liftEffect $ iface.temperament.send temperaments.kirnbergerIII
       liftEffect $ iface.pitch.send 441.0
@@ -215,7 +211,7 @@ widget _ = pure $ D.Replacing $ map fold $ affToLake $ do
 
       scopeEl1 <- oscilloscope { width: 1024, height: 512 } antialiased
       scopeEl2 <- spectrogram { height: 512, width: 400 } antialiased
-      void $ liftEffect $ River.subscribe scopeParent \el -> do
+      River.subscribe scopeParent \el -> do
         Node.appendChild (HTMLCanvasElement.toNode scopeEl1) (Element.toNode el)
         Node.appendChild (HTMLCanvasElement.toNode scopeEl2) (Element.toNode el)
       pure $ toRoars antialiased
@@ -228,9 +224,9 @@ widget _ = pure $ D.Replacing $ map fold $ affToLake $ do
       , D.div [ D.Self =:= \el -> mempty <$ sendScopeParent el ] mempty
       ]
 
-mkDragonVoice :: Shell -> ScoreLive -> Effect { dragon :: Dragon, voice :: Int -> Stream _ Unit -> ScoreM { value :: Array Roar, leave :: Stream _ Unit } }
-mkDragonVoice = \shell iface@{ pitch, temperament } -> do
-  perfectOvertones <- valueInterface false
+mkDragonVoice :: ScoreLive -> ScoreM { dragon :: Dragon, voice :: Int -> Stream _ Unit -> ScoreM { value :: Array Roar, leave :: Stream _ Unit } }
+mkDragonVoice = \iface@{ pitch, temperament } -> do
+  perfectOvertones <- liftEffect do valueInterface false
   let
     -- A gentle organ voice to start off with
     voice semitones release = do

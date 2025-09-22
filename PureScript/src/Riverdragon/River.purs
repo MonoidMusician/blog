@@ -90,6 +90,8 @@ module Riverdragon.River
   , makeLake
   , makeLake'
   , subscribe
+  , subscribeM
+  , subscribeM1
   , subscribeIsh
   , onDestroyed
   , dam
@@ -102,6 +104,7 @@ module Riverdragon.River
   , alwaysBurst
   , instantiate
   , store
+  , store'
   , mayMemoize
   , memoize
   , cumulate
@@ -137,6 +140,8 @@ import Prelude
 
 import Control.Alt (class Alt, (<|>))
 import Control.Apply (lift2)
+import Control.Monad.ResourceM (class MonadResource, destr, inSubScope, selfDestructor, selfScope, track)
+import Control.Monad.ResourceT (ResourceM, oneSubScopeAtATime, scopedStart, scopedStart_, start, start_)
 import Control.Plus (class Plus, empty)
 import Data.Array as Array
 import Data.Bifoldable (bifoldMap)
@@ -149,9 +154,10 @@ import Data.These (These(..))
 import Data.Traversable (class Foldable, foldMap, mapAccumL, traverse, traverse_)
 import Data.Tuple (Tuple(..), fst, snd)
 import Effect (Effect, foreachE)
+import Effect.Class (liftEffect)
 import Idiolect ((#..))
 import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar) as ReExports
-import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar, accumulator, allocLazy, breaker, cleanup, globalId, iteM, loadingBurst, ordMap, prealloc, prealloc2, pushArray, rolling, storeLast, storeUnsubscriber, subscriptions, threshold, unsafeAllocate)
+import Riverdragon.River.Bed (type (-!>), type (-&>), Allocar, allocLazy, breaker, cleanup, globalId, iteM, loadingBurst, ordMap, prealloc, prealloc2, pushArray, rolling, storeLast, storeUnsubscriber, subscriptions, threshold, unsafeAllocate)
 
 -- | A notion of event streams that comes with a few more features in addition
 -- | to the usual subscribe and unsubscribe.
@@ -385,12 +391,14 @@ infixl 4 tupleOnRight as /?*\
 -- | Create a river as a message channel, that broadcasts any message to all of
 -- | its subscribers (and then commits). This is effectful since each allocation
 -- | creates a separate stream that does not affect other instantiations.
-createRiver :: forall flow a. Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
+createRiver :: forall flow a m. MonadResource m =>
+  m { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
 createRiver = createRiverBurst mempty
 
 -- | Create a river that has specific burst behavior.
-createRiverBurst :: forall flow a. Allocar (Array a) -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
-createRiverBurst burst = do
+createRiverBurst :: forall flow a m. MonadResource m =>
+  Allocar (Array a) -> m { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
+createRiverBurst burst = track do
   id <- globalId
   { push, notify, destroy, running } <- subscriptions
   pure
@@ -410,18 +418,19 @@ createRiverBurst burst = do
 -- | too). Each time a new subscriber joins, it sends the last value it has
 -- | seen, so that the subscriber is not missing anything.
 createRiverStore ::
-  forall flow a.
+  forall flow a m.
+    MonadResource m =>
   Maybe a ->
-  Allocar
+  m
     { send :: a -!> Unit
     , stream :: Stream flow a
     , destroy :: Allocar Unit
     , current :: Effect (Maybe a)
     }
 createRiverStore initialValue = do
-  lastValue <- storeLast
+  lastValue <- liftEffect storeLast
   case initialValue of
-    Just a -> lastValue.set a
+    Just a -> liftEffect do lastValue.set a
     _ -> pure unit
   r <- createRiverBurst $ lastValue.get <#> case _ of
     Just a -> [a]
@@ -434,15 +443,15 @@ createRiverStore initialValue = do
     }
 
 createStore ::
-  forall flow a.
+  forall flow a m. MonadResource m =>
   a ->
-  Allocar
+  m
     { send :: a -!> Unit
     , stream :: Stream flow a
     , destroy :: Allocar Unit
     , current :: Effect a
     }
-createStore = prealloc >=> \lastValue -> do
+createStore = prealloc >>> liftEffect >=> \lastValue -> do
   r <- createRiverBurst $ Array.singleton <$> lastValue.get
   pure
     { send: \a -> lastValue.set a *> r.send a
@@ -478,14 +487,14 @@ createProxy' burst = do
 
 -- | Make a lake whose event stream gets allocated per subscriber, e.g. for
 -- | timeouts or the like.
-makeLake :: forall a. ((a -!> Unit) -> Allocar (Allocar Unit)) -> Stream NotFlowing a
+makeLake :: forall a. ((a -!> Unit) -> ResourceM Unit) -> Stream NotFlowing a
 makeLake = makeLake' <<< const
 
-makeLake' :: forall a. (Allocar Unit -> (a -!> Unit) -> Allocar (Allocar Unit)) -> Stream NotFlowing a
+makeLake' :: forall a. (Allocar Unit -> (a -!> Unit) -> ResourceM Unit) -> Stream NotFlowing a
 makeLake' streamTemplate = Stream NotFlowing \cbs -> do
   id <- globalId
   loadingBurst \whenLoaded -> do
-    unsubscribe <- streamTemplate cbs.destroyed do
+    unsubscribe <- map _.destroy $ start_ $ streamTemplate cbs.destroyed do
       \a -> whenLoaded a do
         cbs.receive a
         cbs.commit id
@@ -497,12 +506,25 @@ makeLake' streamTemplate = Stream NotFlowing \cbs -> do
 -- |
 -- | Burst events are applied before `subscribe` returns: you do not need to
 -- | handle them manually.
-subscribe :: forall flow a. Stream flow a -> (a -!> Unit) -> Allocar (Allocar Unit)
+subscribe :: forall flow a m. MonadResource m => Stream flow a -> (a -!> Unit) -> m Unit
 subscribe = subscribeIsh mempty
 
+-- | Helper to run callbacks in the same scope as the subscribe is done in.
+subscribeM :: forall flow a m. MonadResource m => Stream flow a -> (a -> ResourceM Unit) -> m Unit
+subscribeM stream cb = do
+  scope <- selfScope
+  subscribe stream \a -> void $ scopedStart_ scope $ cb a
+
+subscribeM1 :: forall flow a m. MonadResource m => Stream flow a -> (a -> ResourceM Unit) -> m Unit
+subscribeM1 stream cb = do
+  revolving <- selfScope >>= oneSubScopeAtATime
+  subscribe stream \a -> do
+    newScope <- revolving
+    void $ scopedStart_ newScope $ cb a
+
 -- | Subscribe with an additional callback for when the stream is destroyed.
-subscribeIsh :: forall flow a. Allocar Unit -> Stream flow a -> (a -!> Unit) -> Allocar (Allocar Unit)
-subscribeIsh destroyed (Stream _ stream) receive = do
+subscribeIsh :: forall flow a m. MonadResource m => Allocar Unit -> Stream flow a -> (a -!> Unit) -> m Unit
+subscribeIsh destroyed (Stream _ stream) receive = destr =<< liftEffect do
   -- We delete the unsubscriber when the stream is destroyed, to avoid leaking
   -- resources from the closure of it.
   unsubscriber <- storeUnsubscriber
@@ -520,7 +542,7 @@ subscribeIsh destroyed (Stream _ stream) receive = do
   -- this stages `destroyed`
   pure unsubscriber.unsub
 
-onDestroyed :: forall a. Effect Unit -> River a -> Effect Unit
+onDestroyed :: forall a m. MonadResource m => Effect Unit -> River a -> m Unit
 onDestroyed cb stream = void $ subscribeIsh cb stream mempty
 
 -- | Dam.
@@ -576,15 +598,15 @@ data Course a
   | Bursting (Effect (Array a) -> Effect (Array a))
   | History
 
-coursing :: forall flowIn flowOut a.
+coursing :: forall flowIn flowOut a m. MonadResource m =>
   Course a ->
   Stream flowIn a ->
-  Allocar
+  m
     { burst :: Array a
     , stream :: Stream flowOut a
     , destroy :: Allocar Unit
     }
-coursing chosenCourse strm@(Stream _ stream) = case chosenCourse of
+coursing chosenCourse strm@(Stream _ stream) = track case chosenCourse of
   StoreDedup equalitor -> do
     lastValue <- storeLast
     { send, commit, stream: streamDependingOn, destroy } <- createProxy' (Array.fromFoldable <$> lastValue.get)
@@ -613,9 +635,10 @@ coursing chosenCourse strm@(Stream _ stream) = case chosenCourse of
 -- | It inherits burst behavior from upstream, by subscribing to it and
 -- | immediately unsubscribing.
 instantiate ::
-  forall flowIn flowOut a.
+  forall flowIn flowOut a m.
+    MonadResource m =>
   Stream flowIn a ->
-  Allocar
+  m
     { burst :: Array a
     , stream :: Stream flowOut a
     , destroy :: Allocar Unit
@@ -623,7 +646,7 @@ instantiate ::
 instantiate (Stream Flowing stream) = pure
   -- FIXME: burst from flowing?
   { burst: [], stream: Stream Flowing stream, destroy: pure unit }
-instantiate strm@(Stream _ stream) = do
+instantiate strm@(Stream _ stream) = track do
   { send, commit, stream: streamDependingOn, destroy } <- createProxy' (burstOf strm)
   { burst, sources, unsubscribe } <-
     stream { receive: send, commit, destroyed: destroy }
@@ -632,17 +655,37 @@ instantiate strm@(Stream _ stream) = do
 -- | Instantiate a stream and inform each new subscriber of the last value that
 -- | it saw.
 store ::
-  forall flowIn flowOut a.
+  forall flowIn flowOut a m. MonadResource m =>
   Stream flowIn a ->
-  Allocar
+  m
     { burst :: Array a
     , stream :: Stream flowOut a
     , current :: Effect (Maybe a)
     , destroy :: Allocar Unit
     }
-store (Stream _ stream) = do
+store (Stream _ stream) = track do
   lastValue <- storeLast
   { send, commit, stream: streamDependingOn, destroy } <- createProxy' (Array.fromFoldable <$> lastValue.get)
+  { burst, sources, unsubscribe } <-
+    stream { receive: lastValue.set <> send, commit, destroyed: destroy }
+  case Array.last burst of
+    Just v -> lastValue.set v
+    _ -> pure unit
+  pure { burst, stream: streamDependingOn sources, current: lastValue.get, destroy: unsubscribe <> destroy }
+
+store' ::
+  forall flowIn flowOut a m. MonadResource m =>
+  a ->
+  Stream flowIn a ->
+  m
+    { burst :: Array a
+    , stream :: Stream flowOut a
+    , current :: Effect a
+    , destroy :: Allocar Unit
+    }
+store' a (Stream _ stream) = track do
+  lastValue <- prealloc a
+  { send, commit, stream: streamDependingOn, destroy } <- createProxy' (Array.singleton <$> lastValue.get)
   { burst, sources, unsubscribe } <-
     stream { receive: lastValue.set <> send, commit, destroyed: destroy }
   case Array.last burst of
@@ -791,8 +834,8 @@ withInstantiated :: forall flow a b.
   (Array a -> River a -> Lake b) ->
   Lake b
 withInstantiated toFlow f = alLake do
-  { burst, stream, destroy } <- instantiate toFlow
-  pure { lake: f burst stream, destroy }
+  { burst, stream } <- instantiate toFlow
+  pure (f burst stream)
 
 mapArray :: forall flow a b. (a -> Array b) -> Stream flow a -> Stream flow b
 mapArray f (Stream t g) = mayMemoize $ Stream t \cbs -> do
@@ -801,10 +844,10 @@ mapArray f (Stream t g) = mayMemoize $ Stream t \cbs -> do
 
 
 alLake :: forall a.
-  Allocar { lake :: Lake a, destroy :: Allocar Unit } ->
+  ResourceM (Lake a) ->
   Lake a
 alLake mkLake = Stream NotFlowing \cbs -> do
-  { lake: Stream _ lake, destroy } <- mkLake
+  { result: Stream _ lake, destroy } <- start mkLake
   r <- lake cbs
   pure r { unsubscribe = r.unsubscribe <> destroy }
 
@@ -891,31 +934,29 @@ infixl 1 latestStream as >>~
 latestStreamEf ::
   forall flowIn flowInner a b.
   Stream flowIn a ->
-  (a -> Allocar (Stream flowInner b)) ->
+  (a -> ResourceM (Stream flowInner b)) ->
   Lake b
 latestStreamEf source mkStream = makeLake \cb -> do
-  replace <- rolling
-  unsubscribe <- subscribe source \a -> do
-    -- Unsubscribe first in case one of the next actions would have triggered
-    -- the old stream to emit any more events before the subscription got
-    -- properly replaced
-    replace mempty
-    stream <- mkStream a
-    replace =<< subscribe stream cb
-  pure $ replace mempty <> unsubscribe
+  revolving <- selfScope >>= oneSubScopeAtATime
+  subscribe source \a -> do
+    -- Unsubscribe first (by creating a new revolving scope) in case one of the
+    -- next actions would have triggered the old stream to emit any more events
+    -- before the subscription got properly replaced
+    newScope <- revolving
+    void $ scopedStart_ newScope do
+      stream <- mkStream a
+      subscribe stream cb
 
 -- | Will subscribe to all streams produced. Use with care!
 allStreamsEf ::
   forall flowIn flowInner a b.
   Stream flowIn a ->
-  (a -> Allocar (Stream flowInner b)) ->
+  (a -> ResourceM (Stream flowInner b)) ->
   Lake b
 allStreamsEf source mkStream = makeLake \cb -> do
-  unsubscribes <- accumulator
-  unsubscribe <- subscribe source \a -> do
+  subscribeM source \a -> do
     stream <- mkStream a
-    unsubscribes.put =<< subscribe stream cb
-  pure $ join unsubscribes.get <> unsubscribe
+    subscribe stream cb
 
 allStreams ::
   forall flowIn flowInner a b.
@@ -939,7 +980,7 @@ fix :: forall flow1 flow2 flow3 o i.
   Lake o
 fix f = fix' \feedback ->
   let { loopback, output } = f feedback in
-  pure { loopback, output, destroy: mempty }
+  pure { loopback, output }
 
 -- | Fix with two projections, so that there is a single subscription that
 -- | generates both the output and loopback.
@@ -949,10 +990,10 @@ fixPrj :: forall flow1 flow2 i r o.
   (Stream flow1 i -> Stream flow2 r) ->
   Lake o
 fixPrj p1 p2 f = fix' \feedback -> do
-  { stream: common, destroy } <- instantiate (f feedback)
+  { stream: common } <- instantiate (f feedback)
   let loopback = filterMap p1 common
   let output = filterMap p2 common
-  pure { loopback, output, destroy }
+  pure { loopback, output }
 
 fixPrjBurst :: forall flow1 flow2 i r o.
   Maybe i -> (r -> Maybe i) ->
@@ -973,19 +1014,17 @@ fixPrjBurst bi p1 bo p2 f =
 -- |   on demand, when a subscriber arrives.
 fix' :: forall flow1 flow2 flow3 o i.
   ( Stream flow1 i ->
-    Allocar
+    ResourceM
       { loopback :: Stream flow2 i
       , output :: Stream flow3 o
-      , destroy :: Allocar Unit
       }
   ) ->
   Lake o
 fix' mkLoop = makeLake \cb -> do
-  { stream: feedback, send, destroy: destroy1 } <- createRiver
-  { loopback, output, destroy: destroy2 } <- mkLoop feedback
-  unsub1 <- subscribe loopback send
-  unsub2 <- subscribe output cb
-  pure $ unsub2 <> unsub1 <> destroy2 <> destroy1
+  { stream: feedback, send } <- createRiver
+  { loopback, output } <- mkLoop feedback
+  subscribe loopback send
+  subscribe output cb
 
 -- | This efficiently sorts “mail” values based on their key, so that upstream
 -- | only receives on listener and the downstream rivers only get pinged for
@@ -996,23 +1035,24 @@ fix' mkLoop = makeLake \cb -> do
 -- | behave differently than `filterMap`, which preserves stream ID and thus has
 -- | to pass commits through even for filtered events. For `mailbox`, each
 -- | stream counts as its own stream and does its own commit immediately.
-mailbox :: forall flowIn flowOut k v. Ord k =>
+mailbox :: forall flowIn flowOut k v m.
+    Ord k =>
+    MonadResource m =>
   Stream flowIn { key :: k, value :: v } ->
-  Allocar { byKey :: k -> Stream flowOut v, destroy :: Allocar Unit }
-mailbox upstream = do
+  m (k -> Stream flowOut v)
+mailbox upstream = inSubScope do
+  scope <- selfScope
   -- the reason i created allocar tbh
-  mailboxes <- ordMap
-  destroyers <- accumulator
-  destroyed <- prealloc false
-  let
-    -- When upstream goes away, downstreams need to also inform that they are
-    -- going away
-    destroyDownstreams = do
-      destroyed.set true
-      join destroyers.reset
-      void mailboxes.reset
-  unsubscribe <- subscribeIsh
-    destroyDownstreams
+  mailboxes <- liftEffect do ordMap
+  destroyed <- liftEffect do prealloc false
+  -- When upstream goes away, downstreams need to also inform that they are
+  -- going away
+  destr do
+    destroyed.set true
+    void mailboxes.reset
+  destroyer <- selfDestructor
+  subscribeIsh
+    destroyer
     upstream
     \{ key, value } -> do
       -- this runs only if there has been a subscriber for the event
@@ -1020,17 +1060,16 @@ mailbox upstream = do
         downstreamSend value
   -- if we're been keep good track of Alloc vs Effect, allocLazy is slightly
   -- nicer than raw unsafePerformEffect
-  byKey <- allocLazy $ pure \selected -> do
+  byKey <- liftEffect $ allocLazy $ pure \selected -> do
     -- if it has been destroyed, return an empty stream
-    iteM destroyed.get (pure empty) do
+    iteM destroyed.get (pure empty) $ map _.result $ scopedStart scope do
       downstream <- createRiver
-      destroyers.put downstream.destroy
-      mailboxes.set selected downstream.send
+      liftEffect do mailboxes.set selected downstream.send
       pure downstream.stream
-  pure { byKey, destroy: unsubscribe <> destroyDownstreams }
+  pure byKey
 
 mailboxRiver :: forall flowOut k v. Ord k =>
   River { key :: k, value :: v } ->
   (k -> Stream flowOut v)
-mailboxRiver = _.byKey <<< unsafeAllocate <<< mailbox
+mailboxRiver = _.result <<< unsafeAllocate <<< start <<< mailbox
 

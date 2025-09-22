@@ -2,10 +2,12 @@ module Riverdragon.Test where
 
 import Prelude
 
+import Control.Monad.ResourceT (start_)
 import Data.Either (either)
 import Data.Foldable (oneOfMap)
 import Data.Time.Duration (Milliseconds(..))
 import Effect (Effect)
+import Effect.Class (liftEffect)
 import Effect.Console as Console
 import Idiolect ((/|\), (\|/))
 import Riverdragon.Dragon (Dragon, renderId)
@@ -17,14 +19,14 @@ import Web.DOM.ElementId (ElementId(..))
 import Widget (Widget)
 
 logging :: forall flow6 t8. Show t8 => Stream flow6 t8 -> Effect Unit
-logging event = void $ subscribe event Console.logShow
+logging event = void $ start_ do subscribe event Console.logShow
 
 rendering :: Dragon -> Effect (Effect Unit)
 rendering = renderId (ElementId "render-target")
 
 main :: Effect Unit
 main = do
-  single <- instantiateListenInput true (ElementId "test-input")
+  { result: single } <- start_ do instantiateListenInput true (ElementId "test-input")
   let doubled = single /|\ single
   logging doubled
   let tupled = listenInput false (ElementId "test-input1") /|\ listenInput false (ElementId "test-input2")
@@ -39,4 +41,4 @@ main = do
   pure unit
 
 widget :: Widget
-widget _ = main $> mempty
+widget _ = liftEffect main $> mempty

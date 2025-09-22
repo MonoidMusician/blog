@@ -42,11 +42,10 @@ import Parser.Printer.Types as IO
 import Parser.Proto (Stack(..), topOf)
 import Parser.Types (ICST(..), ShiftReduce(..), State(..), Zipper(..))
 import Parser.Types as P
-import Riverdragon.Dragon (Dragon)
+import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Ansi (ansiToAttrs)
 import Riverdragon.Dragon.Bones (smarties, ($$), ($~~), (.$), (.$$), (.$~~), (:.), (:~), (<:>), (=!=), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (hatching)
 import Riverdragon.River (Lake, River)
 import Riverdragon.River as River
 import Stylish.Types (Classy(..))
@@ -383,8 +382,8 @@ executeLive conf0 { states: { stateMap, start, states: states0 }, resultants, op
         , failReason: Lexing.UserRejection { userErr }
         }
     addInput withInput (Just input) = withInput input
-    addInput withInput Nothing = hatching \shell -> do
-      { stream: input, send } <- shell.track River.createRiver
+    addInput withInput Nothing = Egg do
+      { stream: input, send } <- River.createRiver
       pure $ D.div.$~~
         [ D.div.$ D.label :."input-wrapper text".$~~
           [ D.span.$$ "Input text"
@@ -414,7 +413,7 @@ executeLive conf0 { states: { stateMap, start, states: states0 }, resultants, op
       [ D.div:."result".$ result
       , D.div:."result-stack full stack".$ renderStack stack
       ]
-  addInput \inputStream -> hatching \shell -> do
+  addInput \inputStream -> Egg do
     pure $ D.div.$~~
       [ D.div [] $ inputStream >@ parseInput >>> renderParsed
       , D.html_"hr" [] mempty
@@ -480,7 +479,7 @@ renderParseTable :: forall r.
   { getCurrentState :: Int -> Lake Boolean | r } ->
   Comber.States ->
   Dragon
-renderParseTable info (P.States states) = hatching \_ -> do
+renderParseTable info (P.States states) = Egg do
   { stream: stateHighlighted, send: push } <- River.createRiverStore $ Just Nothing
   let
     terminals /\ nonTerminals = Parser.Main.getHeader (P.States states)

@@ -2,20 +2,21 @@ module Riverdragon.Dragon.Components.Envelope where
 
 import Prelude
 
+import Control.Monad.ResourceM (inSubScope, selfDestructor)
+import Control.Monad.ResourceT (ResourceM)
 import Data.Foldable (fold, traverse_)
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
+import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Effect.Ref as Ref
 import Riverdragon.Dragon (Dragon)
 import Riverdragon.Dragon.Bones (smarts, ($~~), (<:>), (=:=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (Shell)
-import Riverdragon.River (Allocar, River, createRiverStore, (/?*\))
+import Riverdragon.River (River, createRiverStore, (/?*\))
 import Riverdragon.River as River
-import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (documentEvent)
 import Riverdragon.River.Streamline (Interval(..), Pt, bbInterval, clamp2D, linmap2D, linmapClamp)
 import Riverdragon.Roar.Knob (Envelope)
@@ -23,14 +24,14 @@ import Web.Event.Event (EventType(..))
 import Web.UIEvent.MouseEvent as MouseEvent
 
 envelopeComponent ::
-  Shell -> Envelope ->
-  Allocar
+  Envelope ->
+  ResourceM
     { ui :: Dragon
     , stream :: River Envelope
     }
-envelopeComponent shell init = do
-  { send, stream } <- shell.track $ createRiverStore $ Just init
-  svgRef <- Ref.new Nothing
+envelopeComponent init = do
+  { send, stream } <- createRiverStore $ Just init
+  svgRef <- liftEffect do Ref.new Nothing
 
   let
     width = 200.0
@@ -40,11 +41,10 @@ envelopeComponent shell init = do
     external = { x: Interval 0.0 (width + pudding), y: Interval 0.0 (height + pudding) }
     graphExternal = { x: Interval padding (width + padding), y: Interval (height + padding) padding }
 
-  { send: mouseDown, stream: dragging } <- shell.track $ createRiverStore
+  { send: mouseDown, stream: dragging } <- createRiverStore
     (Nothing :: Maybe (Pt Number -> Effect Unit))
-  shell.destructor =<< River.subscribe (stream /?*\ dragging) \(Tuple _current selected) -> do
-    unsubs <- Bed.accumulator
-    unsub1 <- documentEvent (EventType "mousemove") MouseEvent.fromEvent \event -> do
+  River.subscribeM (stream /?*\ dragging) \(Tuple _current selected) -> inSubScope do
+    documentEvent (EventType "mousemove") MouseEvent.fromEvent \event -> do
       Ref.read svgRef >>= traverse_ \svg -> do
         bb <- bbInterval svg
         let
@@ -53,12 +53,11 @@ envelopeComponent shell init = do
             , y: Int.toNumber (MouseEvent.clientY event)
             }
         selected ptExternal
-    unsubs.put unsub1
-    unsub2 <- documentEvent (EventType "mouseup") Just \_ -> do
+    destroy <- selfDestructor
+    documentEvent (EventType "mouseup") Just \_ -> do
       -- TODO: confirm or cancel? stuff like that
-      join unsubs.get
+      destroy
     -- TODO: listen for escape key to cancel?
-    unsubs.put unsub2
     pure unit
 
   let

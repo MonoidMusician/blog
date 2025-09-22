@@ -3,7 +3,7 @@ module Control.Monad.MutStateT where
 import Prelude
 
 import Control.Monad.Error.Class (class MonadError, class MonadThrow)
-import Control.Monad.Reader (class MonadAsk, class MonadReader, class MonadTrans, ReaderT(..), ask, lift, local)
+import Control.Monad.Reader (class MonadAsk, class MonadReader, class MonadTrans, ReaderT(..), ask, lift, local, mapReaderT)
 import Control.Monad.State (class MonadState)
 import Control.Monad.Writer (class MonadTell, class MonadWriter)
 import Data.Tuple (Tuple(..))
@@ -25,6 +25,12 @@ runMutStateT s (MutStateT (ReaderT sma)) = do
   a <- sma ref
   s' <- liftEffect $ Ref.read ref
   pure (Tuple s' a)
+
+unMutStateT :: forall s m a. MutStateT s m a -> (Ref s -> m a)
+unMutStateT = coerce
+
+mapMutStateT :: forall s m1 m2 a b. (m1 a -> m2 b) -> MutStateT s m1 a -> MutStateT s m2 b
+mapMutStateT = coerce (mapReaderT :: (m1 a -> m2 b) -> ReaderT (Ref s) m1 a -> ReaderT (Ref s) m2 b)
 
 derive newtype instance functorMutStateT :: Functor m => Functor (MutStateT s m)
 derive newtype instance applyMutStateT :: Monad m => Apply (MutStateT s m)

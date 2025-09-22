@@ -2,11 +2,13 @@ module Riverdragon.Roar.Types where
 
 import Prelude
 
+import Control.Monad.ResourceM (class MonadResource, destr)
 import Data.Compactable (compact)
 import Data.Foldable (foldMap, traverse_)
 import Data.Maybe (Maybe)
 import Data.RecordOverloads (class RecordOverloads, overloads)
 import Effect.Aff (Aff)
+import Effect.Class (liftEffect)
 import Riverdragon.River (Allocar, Lake, Stream, cumulate, dam, mapAl, oneStream, (>>~))
 import Riverdragon.River as River
 import Riverdragon.River.Bed (diffingArraySet)
@@ -38,16 +40,14 @@ type RoarCtl =
 withCurrentTime :: forall flow a. AudioContext -> Stream flow (Time -> a) -> Stream flow a
 withCurrentTime ctx = mapAl \f -> f <$> (currentTime ctx)
 
-connecting :: Lake (Array RoarO) -> RoarI -> Allocar (Allocar Unit)
+connecting :: forall m. MonadResource m => Lake (Array RoarO) -> RoarI -> m Unit
 connecting srcsStream dest = do
-  srcs <- diffingArraySet
-  unsub <- River.subscribe srcsStream \newSrcs -> do
+  srcs <- liftEffect diffingArraySet
+  destr $ traverse_ (AudioNode.disConnect true <@> dest) =<< srcs.destroy
+  River.subscribe srcsStream \newSrcs -> do
     { added, removed } <- srcs.swap newSrcs
     traverse_ (AudioNode.disConnect true <@> dest) removed
     traverse_ (AudioNode.disConnect false <@> dest) added
-  pure do
-    unsub
-    traverse_ (AudioNode.disConnect true <@> dest) =<< srcs.destroy
 
 
 class ToRoars i where toRoars :: i -> Lake (Array Roar)

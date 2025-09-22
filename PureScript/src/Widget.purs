@@ -3,6 +3,8 @@ module Widget where
 import Prelude
 
 import Control.Bind (bindFlipped)
+import Control.Monad.ResourceM (destr, selfDestructor, track_)
+import Control.Monad.ResourceT (ResourceM, start, start_)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
 import Control.Plus (empty)
@@ -87,10 +89,10 @@ stillInterface i =
   }
 
 storeInterface :: forall a. Ord a => Allocar (Interface a)
-storeInterface = do
+storeInterface = _.result <$> start do
+  destroy <- selfDestructor
   stream <- createRiverStore Nothing
-  -- destroyed by upstream.destroy
-  { byKey } <- mailbox (map { key: _, value: unit } stream.stream)
+  byKey <- mailbox (map { key: _, value: unit } stream.stream)
   pure $ stillInterface
     { send: stream.send
     -- Here we don't have a notion of actors, so receive = loopback,
@@ -99,14 +101,14 @@ storeInterface = do
     , loopback: stream.stream
     , mailbox: byKey
     , current: stream.current
-    , destroy: stream.destroy
+    , destroy
     }
 
 valueInterface :: forall a. Ord a => a -> Allocar (Interface a)
-valueInterface v0 = do
+valueInterface v0 = _.result <$> start do
+  destroy <- selfDestructor
   stream <- createStore v0
-  -- destroyed by upstream.destroy
-  { byKey } <- mailbox (map { key: _, value: unit } stream.stream)
+  byKey <- mailbox (map { key: _, value: unit } stream.stream)
   pure $ stillInterface
     { send: stream.send
     -- Here we don't have a notion of actors, so receive = loopback,
@@ -115,7 +117,7 @@ valueInterface v0 = do
     , loopback: stream.stream
     , mailbox: byKey
     , current: Just <$> stream.current
-    , destroy: stream.destroy
+    , destroy
     }
 
 
@@ -137,10 +139,10 @@ makeKeyedInterface = allocLazy do
 sessionStorageInterface :: Allocar (String -> Interface String)
 sessionStorageInterface = allocLazy do
   storage <- window >>= sessionStorage
-  pure \key -> do
-    stream <- createRiverStore =<< Storage.getItem key storage
-    -- destroyed by upstream.destroy
-    { byKey } <- mailbox (map { key: _, value: unit } stream.stream)
+  pure \key -> _.result <$> start do
+    destroy <- selfDestructor
+    stream <- createRiverStore =<< liftEffect do Storage.getItem key storage
+    byKey <- mailbox (map { key: _, value: unit } stream.stream)
     pure $ stillInterface
       { send: (Storage.setItem key <@> storage) <> stream.send
       -- Here we don't have a notion of actors, so receive = loopback,
@@ -149,7 +151,7 @@ sessionStorageInterface = allocLazy do
       , loopback: stream.stream
       , mailbox: byKey
       , current: stream.current
-      , destroy: stream.destroy
+      , destroy
       }
 
 type KeyedInterface = String -> Interface Json
@@ -202,7 +204,7 @@ type KeyedInterfaceWithAttrs =
   , content :: Effect Dragon
   }
 
-type Widget = KeyedInterfaceWithAttrs -> Effect Dragon
+type Widget = KeyedInterfaceWithAttrs -> ResourceM Dragon
 type Widgets = Object Widget
 
 -- <div data-widget="Parser.Grammar" data-widget-datakey="default or lab1 or sandboxed" data-widget-data-grammar="add-sub-mul-exp"></div>
@@ -238,17 +240,18 @@ collectAttrs target = pure \name ->
         Left _ -> Json.fromString astr
 
 instantiateWidget :: Widgets -> DataShare -> Element -> Effect (Effect Unit)
-instantiateWidget widgets share target = do
-  widget <- lookupWidget widgets target
-  interface <- lookupInterface share target
-  attrs <- collectAttrs target
+instantiateWidget widgets share target = _.destroy <$> start_ do
+  widget <- liftEffect do lookupWidget widgets target
+  interface <- liftEffect do lookupInterface share target
+  attrs <- liftEffect do collectAttrs target
   -- data-widget-parent lets it teleport to a different spot on the page
   -- based on the specified selector
-  getAttribute (AttrName "data-widget-parent") target >>= traverse_ \search ->
-    window >>= document >>= HTMLDocument.toParentNode >>> querySelectorAll (QuerySelector search) >>= NodeList.toArray >>= case _ of
-      [newParent] -> appendChild (Element.toNode target) newParent
-      [] -> log $ "No elements found matching selector " <> search
-      _ -> log $ "Multiple elements found matching selector " <> search
+  liftEffect do
+    getAttribute (AttrName "data-widget-parent") target >>= traverse_ \search ->
+      window >>= document >>= HTMLDocument.toParentNode >>> querySelectorAll (QuerySelector search) >>= NodeList.toArray >>= case _ of
+        [newParent] -> appendChild (Element.toNode target) newParent
+        [] -> log $ "No elements found matching selector " <> search
+        _ -> log $ "Multiple elements found matching selector " <> search
   -- call the widget code
   dragon <- widget
     { interface
@@ -268,11 +271,11 @@ instantiateWidget widgets share target = do
         pure $ Array.fold $ Array.catMaybes snapshots
     }
   -- run the tree in the target
-  unsub <- renderEl target dragon
+  track_ do renderEl target dragon
 
   -- final stuff
-  removeAttribute (AttrName "data-widget-loading") target
-  pure $ unsub <> removeChildNodes target
+  liftEffect do removeAttribute (AttrName "data-widget-loading") target
+  destr do removeChildNodes target
 
 raf :: Aff Unit
 raf = makeAff \cb -> do

@@ -4,6 +4,8 @@ import Prelude
 
 import Control.Alt ((<|>))
 import Control.Monad.Except (runExcept)
+import Control.Monad.ResourceM (destr)
+import Control.Monad.ResourceT (ResourceM)
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
@@ -26,6 +28,7 @@ import Dodo as Dodo
 import Effect (Effect)
 import Effect.Aff (Aff, error, launchAff_, message, runAff, throwError)
 import Effect.Aff as Aff
+import Effect.Class (liftEffect)
 import Fetch (Method(..), fetch)
 import Foreign (readArray, readString)
 import Foreign.Index (readProp)
@@ -42,12 +45,12 @@ import PureScript.CST.Print as CST.Print
 import PureScript.CST.TokenStream as CST.TokenStream
 import PureScript.CST.Types as CST.T
 import PureScript.Highlight as PureScript.Highlight
-import Riverdragon.Dragon (Dragon)
+import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones (($$), (.$), (=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Breath (microtask)
-import Riverdragon.Dragon.Wings (hatching, sourceCode)
-import Riverdragon.River (Lake, River, Stream, dam, makeLake, subscribe)
+import Riverdragon.Dragon.Wings (sourceCode)
+import Riverdragon.River (Lake, River, Stream, dam, makeLake, store, store', subscribe)
 import Riverdragon.River as River
 import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (affToLake, counter)
@@ -176,12 +179,12 @@ fetchTemplate templateURL =
     runRecoveredParser (Left identity) <$> fetchText templateURL
 
 compileInterface :: forall flow. String -> (Stream flow String -> Dragon) -> String -> Dragon
-compileInterface sessionStorageName embed df = hatching \shell -> do
-  editorValue@{ send: setValue } <- sessionStorageInterface <@> sessionStorageName
+compileInterface sessionStorageName embed df = Egg do
+  editorValue@{ send: setValue } <- liftEffect do sessionStorageInterface <@> sessionStorageName
   let valueSet = fromMaybe df <<< filter (notEq "") <$> River.alwaysBurst editorValue.loopback
-  defaultValue <- fromMaybe df <<< Array.last <$> River.burstOf valueSet
-  lastValue <- shell.storeLast defaultValue valueSet
-  { stream: compiling, send: compileNow } <- shell.track $ River.createRiverStore Nothing
+  defaultValue <- liftEffect do fromMaybe df <<< Array.last <$> River.burstOf valueSet
+  { current: lastValue } <- store' defaultValue valueSet
+  { stream: compiling, send: compileNow } <- River.createRiverStore Nothing
   pure $ D.Fragment
     [ sourceCode "PureScript" .$ D.textarea
         [ D.onInputValue =:= setValue
@@ -194,7 +197,7 @@ compileInterface sessionStorageName embed df = hatching \shell -> do
     ]
 
 -- | Split off useful rivers from the main status stream.
-ofPipeline :: Lake Status -> Effect
+ofPipeline :: Lake Status -> ResourceM
   { asScript :: River Dragon
   , bundled :: River String
   , compileStatus :: River Dragon -- Does not include when you reset stuff!
@@ -202,19 +205,18 @@ ofPipeline :: Lake Status -> Effect
   , pipelined :: River Status
   , templated :: River String
   , highlighted :: Dragon
-  , destroy :: Effect Unit
   }
 ofPipeline pipelinedLake = do
-  { stream: pipelined, destroy: destroy0 } <- River.store $ pipelinedLake
-  { stream: templated, destroy: destroy1 } <- River.store $ pipelined # filterMap case _ of
+  { stream: pipelined } <- River.store $ pipelinedLake
+  { stream: templated } <- River.store $ pipelined # filterMap case _ of
     Compiling code -> Just code
     _ -> Nothing
-  { stream: compiled, destroy: destroy2 } <- River.store $ pipelined # filterMap case _ of
+  { stream: compiled } <- River.store $ pipelined # filterMap case _ of
     Compiled code -> Just code
     _ -> Nothing
   -- the browser does not want to eval the same JavaScript script tag again,
   -- so we prepend a unique int
-  { stream: bundled, destroy: destroy3 } <- River.store $
+  { stream: bundled } <- River.store $
     map (\(code /\ i) -> "/*"<>show i<>"*/" <> code) $
       counter $ pipelined <#?> case _ of
         Compiled result -> Just result
@@ -232,7 +234,6 @@ ofPipeline pipelinedLake = do
         ]
   pure
     { pipelined, templated, compiled
-    , destroy: destroy0 <> destroy1 <> destroy2 <> destroy3
     , bundled, asScript, highlighted: highlighting templated
     , compileStatus:
         pipelined <#> case _ of
@@ -253,7 +254,8 @@ pipeline :: forall parsed.
   , templating :: CST.T.Module Void -> parsed Void -> CST.T.Module Void
   } -> Lake String -> Lake Status
 pipeline behavior incoming = makeLake \sub -> do
-  cancel <- Bed.rolling
+  cancel <- liftEffect Bed.rolling
+  destr $ cancel mempty
   let
     cancelFiber fiber = launchAff_ (Aff.killFiber (error "Canceled due to new input") fiber)
     superviseAff :: forall r. Aff r -> (Either Aff.Error r -> Effect Unit) -> Effect Unit
@@ -261,7 +263,7 @@ pipeline behavior incoming = makeLake \sub -> do
       -- Microtask keeps the Aff from canceling itself ^^;
       fiber <- act # runAff \r -> microtask (cancel mempty *> cb r)
       cancel (cancelFiber fiber)
-  unsub <- subscribe incoming \userString -> do
+  subscribe incoming \userString -> do
     cancel mempty
     sub $ Fetching behavior.templateURL
     superviseAff (fetchTemplate behavior.templateURL) case _ of
@@ -283,9 +285,6 @@ pipeline behavior incoming = makeLake \sub -> do
               Right (Right compiled) -> do
                 codeURL <- Runtime.configurable "codeURL" "https://tryps.veritates.love/assets/purs"
                 sub $ Compiled $ bundle codeURL compiled
-  pure do
-    unsub
-    cancel mempty
 
 -- | Turn a token stream into an array of strings, for debugging.
 lexemes :: CST.TokenStream.TokenStream -> Array String

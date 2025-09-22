@@ -15,6 +15,7 @@ import Data.Tuple (Tuple(..), snd)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Aff (Aff)
+import Effect.Class (liftEffect)
 import Fetch (fetch)
 import Foreign.Object (Object)
 import Foreign.Object as Object
@@ -28,8 +29,8 @@ import Parser.Languages.TMTTMT.Types (Declaration(..))
 import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones ((.$), (:.), (<:>), (=:=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (hatching, sourceCode)
-import Riverdragon.River (Stream, createRiver, createRiverStore, foldStream)
+import Riverdragon.Dragon.Wings (sourceCode)
+import Riverdragon.River (Stream, createRiver, createRiverStore, foldStream, store)
 import Riverdragon.River.Beyond (affToLake)
 import Widget (Widget, adaptInterface)
 
@@ -123,7 +124,7 @@ example2/y/ "y" => "y";
   ]
 
 widgetTMTTMT :: Widget
-widgetTMTTMT { interface, attrs } = do
+widgetTMTTMT { interface, attrs } = liftEffect do
   example <- attrs "example"
   let
     initial = case CA.decode CA.string example of
@@ -135,7 +136,7 @@ widgetTMTTMT { interface, attrs } = do
   pure $ component stringInterface.send resetting
 
 sendExample :: Widget
-sendExample { interface, attrs } = do
+sendExample { interface, attrs } = liftEffect do
   let push = (interface "tmttmt-example").send
   example <- attrs "example"
   pure $ D.buttonW "" "Try this example" (push example)
@@ -193,10 +194,10 @@ fetchTypeParser :: Aff String
 fetchTypeParser = _.text =<< fetch "assets/json/tmttmt-types-parser-states.json" {}
 
 component :: forall flow. (String -> Effect Unit) -> Stream flow String -> Dragon
-component setGlobal resetting = hatching \shell -> do
-  { stream: pushedRaw, send: pushUpdate } <- shell.track createRiver
-  getParser <- shell.store $ mkTMTTMTParser <$> affToLake fetchParser
-  currentRaw <- shell.store $
+component setGlobal resetting = Egg do
+  { stream: pushedRaw, send: pushUpdate } <- createRiver
+  { stream: getParser } <- store do mkTMTTMTParser <$> affToLake fetchParser
+  { stream: currentRaw } <- store $
     foldStream (true /\ "") (Reset <$> resetting <|> pushedRaw)
       \_ -> case _ of
         Update v -> false /\ v
@@ -214,10 +215,10 @@ component setGlobal resetting = hatching \shell -> do
     ]
 
 widgetTypeSplit :: Widget
-widgetTypeSplit _ = pure $ hatching \shell -> do
-  { stream: pushedRaw, send: pushUpdate } <- shell.track $ createRiverStore $ Just dfTy
-  { stream: pushedPat, send: pushPat } <- shell.track $ createRiverStore $ Just dfPat
-  getParser <- shell.store $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
+widgetTypeSplit _ = pure $ Egg do
+  { stream: pushedRaw, send: pushUpdate } <- createRiverStore $ Just dfTy
+  { stream: pushedPat, send: pushPat } <- createRiverStore $ Just dfPat
+  { stream: getParser } <- store $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
   pure $ Fragment
     [ sourceCode "tmTTmt" .$ D.textarea
         [ D.onInputValue =:= pushUpdate
@@ -252,10 +253,10 @@ widgetTypeSplit _ = pure $ hatching \shell -> do
       testPatternsResult $ testPatterns pats ty
 
 widgetSubType :: Widget
-widgetSubType _ = pure $ hatching \shell -> do
-  { stream: pushedRaw, send: pushUpdate } <- shell.track $ createRiverStore $ Just dfTy
-  { stream: pushedPat, send: pushPat } <- shell.track $ createRiverStore $ Just dfPat
-  getParser <- shell.store $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
+widgetSubType _ = pure $ Egg do
+  { stream: pushedRaw, send: pushUpdate } <- createRiverStore $ Just dfTy
+  { stream: pushedPat, send: pushPat } <- createRiverStore $ Just dfPat
+  { stream: getParser } <- store $ mkTMTTMTTypeParser <$> affToLake fetchTypeParser
   pure $ Fragment
     [ sourceCode "tmTTmt" .$ D.textarea
         [ D.onInputValue =:= pushUpdate

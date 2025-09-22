@@ -2,6 +2,7 @@ module Riverdragon.Dragon where
 
 import Prelude
 
+import Control.Monad.ResourceT (ResourceM, start, start_)
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Maybe (Maybe(..), maybe)
@@ -47,7 +48,7 @@ import Web.HTML.Window (document)
 
 data Dragon
   = Fragment (Array Dragon)
-  | Egg (Effect { dragon :: Dragon, destroy :: Effect Unit })
+  | Egg (ResourceM Dragon)
   -- Only renders one `Dragon` at once (which may be a `Fragment`, `Appending`,
   -- or whatever)
   | Replacing (Lake Dragon)
@@ -114,15 +115,14 @@ renderProps el stream = do
         case mcb of
           Nothing -> pure unit
           Just cb -> do
-            let
-              doIt = eventListener
+            r <- _.destroy <$> start_ do
+              eventListener
                 { eventPhase: Bubbling
                 , eventTarget: Element.toEventTarget el
                 , eventType: EventType ty
-                }
-            r <- doIt cb
+                } cb
             listeners.set ty r
-  unsubscribe <- subscribe stream receive
+  { destroy: unsubscribe } <- start do subscribe stream receive
   pure do
     unsubscribe
     listeners.reset >>= traverse_ identity
@@ -199,19 +199,20 @@ renderEl el dragon = do
 renderElSt :: forall flow. Stream flow Element -> Dragon -> Effect (Effect Unit)
 renderElSt stream dragon = do
   destroyLast <- rolling
-  unsub <- subscribe stream \el -> do
+  { destroy: unsub } <- start $ subscribe stream \el -> do
     destroyLast =<< renderEl el dragon
   pure $ unsub <> destroyLast mempty
 
 renderDragonIn :: EffectFn3 RndrMgr (Node -> Effect Unit) Dragon Rendered
 renderDragonIn = mkEffectFn3 \mgr insert -> case _ of
-  Egg egg -> egg >>=
-    \{ dragon, destroy } -> runEffectFn3 renderDragonIn mgr insert dragon <#>
+  Egg egg -> start egg >>=
+    \{ result: dragon, destroy } -> runEffectFn3 renderDragonIn mgr insert dragon <#>
       \r -> r { destroy = r.destroy <> destroy }
   Text changingValue -> do
     el <- Text.toNode <$> createTextNode "" mgr.doc
-    unsubscribe <- subscribe (mgr.renderThread changingValue) \newValue -> do
-      setTextContent newValue el
+    { destroy: unsubscribe } <- start $
+      subscribe (mgr.renderThread changingValue) \newValue -> do
+        setTextContent newValue el
     insert el
     pure $ only el do
       unsubscribe
@@ -238,9 +239,10 @@ renderDragonIn = mkEffectFn3 \mgr insert -> case _ of
     Tuple bookmarks insert' <- mkBookmarks mgr insert
     unsubPrev <- rolling
     let inactive = for_ bookmarks (Comment.toNode >>> removeSelf)
-    unsubscribe <- subscribeIsh inactive (mgr.renderThread revolving) \newValue -> do
-      unsubPrev mempty
-      unsubPrev <<< _.destroy =<< runEffectFn3 renderDragonIn mgr insert' newValue
+    { destroy: unsubscribe } <- start $
+      subscribeIsh inactive (mgr.renderThread revolving) \newValue -> do
+        unsubPrev mempty
+        unsubPrev <<< _.destroy =<< runEffectFn3 renderDragonIn mgr insert' newValue
     pure $ fromBookmarks bookmarks do
       unsubscribe
       unsubPrev mempty
@@ -249,8 +251,9 @@ renderDragonIn = mkEffectFn3 \mgr insert -> case _ of
     Tuple bookmarks insert' <- mkBookmarks mgr insert
     unsubAll <- accumulator
     let inactive = for_ bookmarks (Comment.toNode >>> removeSelf)
-    unsubscribe <- subscribeIsh inactive (mgr.renderThread items) \newChild -> do
-      unsubAll.put <<< _.destroy =<< runEffectFn3 renderDragonIn mgr insert' newChild
+    { destroy: unsubscribe } <- start $
+      subscribeIsh inactive (mgr.renderThread items) \newChild -> do
+        unsubAll.put <<< _.destroy =<< runEffectFn3 renderDragonIn mgr insert' newChild
     pure $ fromBookmarks bookmarks do
       unsubscribe
       join (unsubAll.reset)

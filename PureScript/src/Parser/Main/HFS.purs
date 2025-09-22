@@ -23,11 +23,11 @@ import Idiolect (intercalateMap)
 import Parser.Comb.Dragon (renderParseError)
 import Parser.Languages.HFS (Base(..), HFList, HFS(..), IsPointed(..), OpMeta(..), RuntimeError(..), bnBin, bnDec, bnHex, bnOct, bnQua, emptyEnv, hfs, hfsCount, hfsFromInt, hfsToTree, opMeta, stacksInfo, stdlib)
 import Parser.Languages.HFS as HFS
-import Riverdragon.Dragon (Dragon)
+import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones (text, ($$), ($~~), (.$), (.$$), (.$~~), (<:>), (=:=), (>$), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (hatching, sourceCode)
-import Riverdragon.River (createRiver)
+import Riverdragon.Dragon.Wings (sourceCode)
+import Riverdragon.River (createRiver, store)
 import Riverdragon.River.Beyond (debounce, dedup)
 import Web.DOM (Element)
 import Widget (Widget)
@@ -122,9 +122,9 @@ renderHFS (SetLike _ members) = (\m -> span "cf" "{ " <> m <> span "cf" " }") $
 
 
 widget :: Widget
-widget _ = pure $ hatching \shell -> do
-  { stream: valueSet, send: setValue } <- shell.track createRiver
-  done <- shell.store $ pure (false /\ Right emptyEnv) <|>
+widget _ = pure $ Egg do
+  { stream: valueSet, send: setValue } <- createRiver
+  { stream: done } <- store $ pure (false /\ Right emptyEnv) <|>
     map HFS.parseAndRun' <$> debounce (100.0 # Milliseconds) (dedup valueSet)
   let
     clear = [ D.style =:= "border: 0; padding: 0" ]

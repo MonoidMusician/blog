@@ -3,6 +3,7 @@ module Riverdragon.Dragon.Wings where
 import Prelude
 
 import Control.Alt ((<|>))
+import Control.Monad.ResourceM (class MonadResource, destr)
 import Data.Array as Array
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
@@ -10,14 +11,13 @@ import Data.String as String
 import Data.Time.Duration (Milliseconds)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
-import Idiolect (type (-!>), filterFst, nonEmpty, (#..), (==<))
+import Effect.Class (liftEffect)
+import Idiolect (filterFst, nonEmpty)
 import Riverdragon.Dragon (AttrProp, Dragon(..), renderElSt)
 import Riverdragon.Dragon.Bones (($$), ($~~), (.$), (.$$), (.$$~), (.<>), (:.), (:~), (<:>), (=!=), (=:=), (=?=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.River (Lake, Stream, createRiver, createRiverStore, instantiate, limitTo, makeLake, oneStream)
-import Riverdragon.River as River
-import Riverdragon.River.Bed (Allocar, accumulator, eventListener, rolling)
-import Riverdragon.River.Bed as Bed
+import Riverdragon.River (Lake, Stream, createRiverStore, instantiate, limitTo, makeLake, oneStream)
+import Riverdragon.River.Bed (eventListener, rolling)
 import Riverdragon.River.Beyond (delay)
 import Web.DOM.ElementId (ElementId)
 import Web.DOM.NonElementParentNode (getElementById)
@@ -29,78 +29,12 @@ import Web.HTML.HTMLInputElement as InputElement
 import Web.HTML.Window (document)
 import Widget (Interface)
 
-type Shell =
-  { track :: forall r.
-      Allocar { destroy :: Allocar Unit | r } ->
-      Allocar { destroy :: Allocar Unit | r }
-  , inst :: forall flowIn flowOut a. Stream flowIn a -> Allocar (Stream flowOut a)
-  , store :: forall flowIn flowOut a. Stream flowIn a -> Allocar (Stream flowOut a)
-  , storeLast :: forall flow a. a -> Stream flow a -> Allocar (Allocar a)
-  , destructor :: Allocar Unit -> Allocar Unit
-
-  , subscribe :: forall flow a. Stream flow a -> (a -> Effect Unit) -> Allocar Unit
-
-  , createRiver :: forall flow a. Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
-  , createStore :: forall flow a. a -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit, current :: Effect a }
-  , createRiverStore :: forall flow a. Maybe a -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit, current :: Effect (Maybe a) }
-  , createRiverBurst :: forall flow a. Allocar (Array a) -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
-  }
-
-hatching :: (Shell -> Allocar Dragon) -> Dragon
-hatching cont = Egg do
-  destructors <- accumulator
-  let
-    track :: forall r.
-      Allocar { destroy :: Allocar Unit | r } ->
-      Allocar { destroy :: Allocar Unit | r }
-    track act = act >>= \r -> r <$ destructors.put r.destroy
-
-    inst :: forall flowIn flowOut a. Stream flowIn a -> Allocar (Stream flowOut a)
-    inst = _.stream ==< track <<< River.instantiate
-
-    store :: forall flowIn flowOut a. Stream flowIn a -> Allocar (Stream flowOut a)
-    store = _.stream ==< track <<< River.store
-
-    storeLast :: forall flow a. a -> Stream flow a -> Allocar (Allocar a)
-    storeLast df stream = do
-      lastValue <- Bed.prealloc df
-      destructors.put =<< River.subscribe stream lastValue.set
-      pure lastValue.get
-
-    subscribe :: forall flow a. Stream flow a -> (a -> Effect Unit) -> Allocar Unit
-    subscribe stream cb = destructors.put =<< River.subscribe stream cb
-
-
-    createRiver :: forall flow a. Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
-    createRiver = track River.createRiver
-    createStore :: forall flow a. a -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit, current :: Effect a }
-    createStore = track <<< River.createStore
-    createRiverStore :: forall flow a. Maybe a -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit, current :: Effect (Maybe a) }
-    createRiverStore = track <<< River.createRiverStore
-    createRiverBurst :: forall flow a. Allocar (Array a) -> Allocar { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
-    createRiverBurst = track <<< River.createRiverBurst
-
-    release dragon = destructors.get <#> { destroy: _, dragon }
-  release =<< cont
-    { track
-    , inst
-    , store
-    , storeLast
-    , subscribe
-    , createRiver
-    , createStore
-    , createRiverStore
-    , createRiverBurst
-    , destructor: destructors.put
-    }
-
-
 
 listenInput :: Boolean -> ElementId -> Lake String
 listenInput includeFirst id = makeLake \cb -> do
-  mel <- getElementById id <<< HTMLDocument.toNonElementParentNode =<< document =<< window
-  mel >>= InputElement.fromElement #.. \el -> do
-    when includeFirst do cb =<< InputElement.value el
+  mel <- liftEffect do getElementById id <<< HTMLDocument.toNonElementParentNode =<< document =<< window
+  for_ (mel >>= InputElement.fromElement) \el -> do
+    when includeFirst do liftEffect do cb =<< InputElement.value el
     eventListener
       { eventType: EventType "input"
       , eventPhase: None
@@ -108,7 +42,7 @@ listenInput includeFirst id = makeLake \cb -> do
       } \_ -> do
         cb =<< InputElement.value el
 
-instantiateListenInput :: forall flow. Boolean -> ElementId -> Allocar (Stream flow String)
+instantiateListenInput :: forall flow m. MonadResource m => Boolean -> ElementId -> m (Stream flow String)
 instantiateListenInput includeFirst id = _.stream <$> instantiate (listenInput includeFirst id)
 
 vanishing :: Milliseconds -> Lake Dragon -> Lake Dragon
@@ -156,10 +90,11 @@ pushButtonRadio { send, loopback } options =
       ] $ content
 
 tabSwitcher :: Maybe String -> Array (String /\ Dragon) -> Dragon
-tabSwitcher initial tabs = hatching \shell -> do
-  destroyLast <- rolling
-  { stream: mounted, send: sendMounted } <- shell.track $ createRiverStore Nothing
-  { stream: selected, send: select } <- shell.track $ createRiverStore initial
+tabSwitcher initial tabs = Egg do
+  destroyLast <- liftEffect rolling
+  destr do destroyLast mempty
+  { stream: mounted, send: sendMounted } <- createRiverStore Nothing
+  { stream: selected, send: select } <- createRiverStore initial
   let
     onMounted el = do
       sendMounted el

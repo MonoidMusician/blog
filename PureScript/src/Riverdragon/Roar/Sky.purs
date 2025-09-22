@@ -39,8 +39,6 @@ import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon (Dragon(..), renderId, renderEl, snapshot)
 import Riverdragon.Dragon (Dragon(..), renderId, renderEl, snapshot) as ReExports
 import Riverdragon.Dragon as Dragon
-import Riverdragon.Dragon.Wings (hatching, Shell)
-import Riverdragon.Dragon.Wings (hatching, Shell) as ReExports
 import Riverdragon.Dragon.Wings as Wings
 import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), alLake, alLake', allStreams, allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, createStore, cumulate, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapAl, mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, singleShot, statefulStream, stillRiver, store, subscribe, subscribeIsh, tupleOnLeft, tupleOnRight, unsafeCopyFlowing, unsafeRiver, withInstantiated, (/*?\), (/?*\), (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~))
 import Riverdragon.River (type (-!>), type (-&>), Allocar, Flowing, Id, IsFlowing(..), Lake, NotFlowing, River, Stream(..), alLake, alLake', allStreams, allStreamsEf, alwaysBurst, applyOp, burstOf, bursting, combineStreams, createProxy', createRiver, createRiverBurst, createRiverStore, createStore, cumulate, dam, emitState, fix, fix', fixPrj, fixPrjBurst, foldStream, instantiate, latestStream, latestStreamEf, limitTo, mailbox, mailboxRiver, makeLake, makeLake', mapAl, mapLatest, mayMemoize, memoize, noBurst, onDestroyed, oneStream, sampleOnLeft, sampleOnLeftOp, sampleOnRight, sampleOnRightOp, selfGating, selfGatingEf, singleShot, statefulStream, stillRiver, store, subscribe, subscribeIsh, tupleOnLeft, tupleOnRight, unsafeCopyFlowing, unsafeRiver, withInstantiated, (/*?\), (/?*\), (<**>), (<**?>), (<*?>), (<?**>), (<?*>), (>>~)) as ReExports
@@ -54,6 +52,7 @@ import Widget (Interface, KeyedInterface, disconnected, stillInterface, storeInt
 import Widget as Widget
 import Riverdragon.Roar.Live as Riverdragon.Roar.Live
 
+import Control.Monad.ResourceT (ResourceM)
 import Parser.Comb.Comber
 import Parser.Comb.Comber as ReExports
 import Parser.Comb (Comb(..))
@@ -195,8 +194,8 @@ import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Coerce (unsafeCoerce) as ReExports
 
 main :: Effect Unit
-main = Riverdragon.Roar.Live.mainForRoar \shell iface -> do
-  r <- dragonVoice shell iface
+main = Riverdragon.Roar.Live.mainForRoar \iface -> do
+  r <- dragonVoice iface
   pure
     { dragon: r.dragon
     , voice: \note leave ->
@@ -211,6 +210,6 @@ synthSetup = mempty
 
 synthParameters = { pitch: 441.0, temperament: [0.0] }
 
-dragonVoice :: Shell -> ScoreLive -> Effect { dragon :: Dragon, voice :: Int -> Stream _ Unit -> ScoreM { value :: Array Roar, leave :: Stream _ Unit } }
-dragonVoice = const $ const $ pure { dragon: mempty, voice: mempty }
+dragonVoice :: ScoreLive -> ResourceM { dragon :: Dragon, voice :: Int -> Stream _ Unit -> ScoreM { value :: Array Roar, leave :: Stream _ Unit } }
+dragonVoice = const $ pure { dragon: mempty, voice: mempty }
 

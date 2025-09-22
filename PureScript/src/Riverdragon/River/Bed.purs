@@ -32,6 +32,7 @@ module Riverdragon.River.Bed ( module Riverdragon.River.Bed, module ReExports ) 
 
 import Prelude
 
+import Control.Monad.ResourceM (class MonadResource, destr)
 import Control.Monad.ST.Class (class MonadST, liftST)
 import Control.Monad.ST.Global (Global)
 import Control.Monad.ST.Internal (STRef)
@@ -291,17 +292,17 @@ subscriptions = do
     }
 
 -- | Register an event listener on a target. Returns a cleanup procedure.
-eventListener ::
+eventListener :: forall m. MonadResource m =>
   { eventType :: Web.EventType
   , eventPhase :: EventPhase
   , eventTarget :: EventTarget
   } ->
-  (Web.Event -> Effect Unit) -&> Allocar Unit
+  (Web.Event -> Effect Unit) -> m Unit
 eventListener { eventType, eventPhase, eventTarget } cb = do
   let capture = eventPhase == Capturing
-  listener <- Event.eventListener cb
-  Event.addEventListener eventType listener capture eventTarget $>
-    Event.removeEventListener eventType listener capture eventTarget
+  listener <- liftEffect do Event.eventListener cb
+  liftEffect do Event.addEventListener eventType listener capture eventTarget
+  destr do Event.removeEventListener eventType listener capture eventTarget
 
 
 -- | Allocate an accumulator, that always adds in from the monoid. Useful for

@@ -2,6 +2,7 @@ module Riverdragon.Roar.Synth where
 
 import Prelude
 
+import Control.Monad.ResourceM (class MonadResource, inSubScope, liftResourceM, selfDestruct, track, track_)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable (for_)
@@ -18,11 +19,9 @@ import Riverdragon.Dragon.Bones ((=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.River (Lake, River, Stream, createRiver, createRiverStore, stillRiver, (/?*\))
 import Riverdragon.River as River
-import Riverdragon.River.Bed (postHocDestructors)
-import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (KeyPhase(..), fallingLeaves, keyEvents)
-import Riverdragon.Roar.Types (Roar)
 import Riverdragon.Roar.Score (ScoreM, perform, scoreScope)
+import Riverdragon.Roar.Types (Roar)
 import Unsafe.Coerce (unsafeCoerce)
 import Web.Audio.Context (LatencyHint(..))
 import Web.Audio.MIDI as MIDI
@@ -39,7 +38,7 @@ notesToNoises ::
     ScoreM { value :: Array roar, leave :: Stream flow3 Unit }
   ) ->
   ScoreM (Lake (Array roar))
-notesToNoises envStreams noteStream oneVoice = do
+notesToNoises envStreams noteStream oneVoice = inSubScope do
   { run: startAudio } <- scoreScope
   let
     -- Passively listen the the environment streams and take their most recent
@@ -51,12 +50,12 @@ notesToNoises envStreams noteStream oneVoice = do
 
     activeSynths = join <$> fallingLeaves attackOrRelease notesWithEnv \{ key } env release -> do
       -- This manual wiring is a bit ugly ...
-      { result, destroy } <- startAudio do
-        oneVoice env key (stillRiver release)
-      -- Need to `destroy` the node when it leaves
-      _ <- liftEffect $ River.subscribe result.leave \_ -> destroy
-      -- Return the result
-      pure result
+      startAudio do
+        result <- oneVoice env key (stillRiver release)
+        -- Need to `destroy` the node when it leaves
+        River.subscribeM result.leave \_ -> selfDestruct
+        -- Return the result
+        pure result
   pure activeSynths
 
 
@@ -112,41 +111,33 @@ keymap =
   , "BracketRight"
   ]
 
-installSynth ::
+installSynth :: forall m. MonadResource m =>
   (River { key :: Int, pressed :: Boolean } -> ScoreM (Lake (Array Roar))) ->
-  Effect
-    { destroy :: Effect Unit
-    , playPause :: Dragon
+  m
+    { playPause :: Dragon
     , midi :: Dragon
     , noteStream :: River { key :: Int, pressed :: Boolean }
     }
 installSynth synthVoices = do
-  shell <- postHocDestructors
+  { send: setPlaying, stream: isPlaying } <- createRiverStore Nothing
+  { send: sendNote, stream: noteStream } <- createRiver
 
-  { send: setPlaying, stream: isPlaying } <- shell.track $ createRiverStore Nothing
-  { send: sendNote, stream: noteStream } <- shell.track createRiver
-
-  destroyLastSynth <- Bed.rolling
-  shell.destructor $ destroyLastSynth mempty
   let
     startSynth = do
-      destroyLastSynth mempty
-      { destroy: stopSynth } <- perform { latencyHint: Interactive, sampleRate: 48000 } \_ctx -> do
+      track $ perform { latencyHint: Interactive, sampleRate: 48000 } \_ctx -> do
         synthVoices noteStream
-      destroyLastSynth stopSynth
 
-  -- FIXME
-  startSynth
-  void $ River.subscribe isPlaying if _
+  -- FIXME(?)
+  void do liftResourceM startSynth
+  River.subscribeM1 isPlaying if _
     then void startSynth
-    else destroyLastSynth mempty
+    else pure unit
 
   -- Install inputs (keyboard and MIDI)
-  inputs <- shell.track $ synthInputs sendNote
+  inputs <- synthInputs sendNote
 
   pure
-    { destroy: shell.finalize
-    , playPause: D.Fragment
+    { playPause: D.Fragment
       [ D.button
         [ D.onClick =:= \_ -> setPlaying true
         ] $ D.text "Play"
@@ -160,17 +151,15 @@ installSynth synthVoices = do
     , noteStream
     }
 
-synthInputs :: forall flow.
+synthInputs :: forall flow m. MonadResource m =>
   ( { key :: Int
     , pressed :: Boolean
     } -> Effect Unit
-  ) -> Effect
-  { destroy :: Effect Unit
-  , grabMIDI :: Effect Unit
+  ) -> m
+  { grabMIDI :: Effect Unit
   , midiMessages :: Stream flow (Array Int)
   }
 synthInputs sendNote = do
-  shell <- postHocDestructors
   let
     -- Transform a `KeyEvent` into a note value
     getNote kb
@@ -180,7 +169,7 @@ synthInputs sendNote = do
     getNote _ = Nothing
 
   -- Listen for keydown and keyup events on `document`
-  shell.destructor =<< keyEvents case _ of
+  keyEvents case _ of
     event | Array.elem event.targetType [ "body", "a", "button" ], Just note <- getNote event -> do
       event.preventDefault
       case event.phase of
@@ -189,30 +178,30 @@ synthInputs sendNote = do
         KeyUp -> sendNote { key: note, pressed: false }
     _ -> pure unit
 
-  midiAccess <- shell.track $ createRiverStore Nothing
+  midiAccess <- createRiverStore Nothing
   let
     grabMIDI = launchAff_ do
       Console.log "Requesting"
       { access } <- MIDI.requestMIDI {}
       Console.log $ unsafeCoerce access
       liftEffect $ midiAccess.send access
-  launchAff_ $ MIDI.getPermissionStatusMIDI {} >>= case _ of
+  -- TODO: track
+  liftEffect $ launchAff_ $ MIDI.getPermissionStatusMIDI {} >>= case _ of
     MIDI.Granted -> liftEffect grabMIDI
     _ -> pure unit
-  midiMessages <- shell.track createRiver
-  shell.destructor =<< River.subscribe midiAccess.stream \access -> do
-    { inputs } <- MIDI.access access
+  midiMessages <- createRiver
+  River.subscribeM midiAccess.stream \access -> do
+    { inputs } <- liftEffect do MIDI.access access
     for_ inputs \input -> do
       Console.log $ "Input " <> (MIDI.getInfo input).name
-      shell.destructor =<< MIDI.onmidimessage input midiMessages.send
-  shell.destructor =<< River.subscribe midiMessages.stream case _ of
+      track_ do MIDI.onmidimessage input midiMessages.send
+  River.subscribe midiMessages.stream case _ of
     [0x90, note, velocity] -> sendNote { key: note, pressed: velocity > 0 }
     [0x80, note, _velocity] -> sendNote { key: note, pressed: false }
     _ -> pure unit
 
   pure
-    { destroy: shell.finalize
-    , midiMessages: midiMessages.stream
+    { midiMessages: midiMessages.stream
     , grabMIDI
     }
 

@@ -3,6 +3,8 @@ module Riverdragon.Roar.Live where
 import Prelude
 
 import Control.Monad.Reader (ask)
+import Control.Monad.ResourceM (liftResourceM)
+import Control.Monad.ResourceT (ResourceM)
 import Control.Plus ((<|>))
 import Data.Array as Array
 import Data.Either (Either(..))
@@ -13,11 +15,11 @@ import Effect (Effect)
 import Effect.Class (liftEffect)
 import Idiolect (tripleQuoted)
 import PureScript.CST.Types as CST.T
-import Riverdragon.Dragon (Dragon, renderEl)
+import Riverdragon.Dragon (Dragon(..), renderEl)
 import Riverdragon.Dragon.Bones ((.$$), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (Shell, hatching, sourceCode, tabSwitcher)
-import Riverdragon.River (Lake, River, createRiverStore, dam, makeLake)
+import Riverdragon.Dragon.Wings (sourceCode, tabSwitcher)
+import Riverdragon.River (Lake, River, createRiverStore, dam, makeLake, store)
 import Riverdragon.River as River
 import Riverdragon.Roar.Score (ScoreM, ScoreLive)
 import Riverdragon.Roar.Score as Y
@@ -37,7 +39,7 @@ import Web.HTML.HTMLCanvasElement as HTMLCanvasElement
 import Widget (Widget)
 
 type DragonVoice =
-  Shell -> ScoreLive -> Effect
+  ScoreLive -> ResourceM
   { dragon :: Dragon
   , voice :: (Int -> River Unit -> ScoreM { value :: Array (Lake (Array Roar)), leave :: Lake Unit })
   , synthSetup :: ScoreM Unit
@@ -50,12 +52,12 @@ type DragonVoice =
 mainForRoar :: DragonVoice -> Effect Unit
 mainForRoar mkDragonVoice = do
   _sideChannel.messageInABottle
-    { renderToEl: renderEl <@> hatching \shell -> do
-        lazyDragon <- shell.track $ createRiverStore Nothing
-        { send: sendScopeParent, stream: scopeParent } <- shell.track $ createRiverStore Nothing
-        synth <- shell.track $ installSynth \noteStream -> do
+    { renderToEl: renderEl <@> Egg do
+        lazyDragon <- createRiverStore Nothing
+        { send: sendScopeParent, stream: scopeParent } <- createRiverStore Nothing
+        synth <- installSynth \noteStream -> do
           { iface } <- ask
-          { dragon, voice, synthSetup, synthParameters } <- liftEffect $ mkDragonVoice shell iface
+          { dragon, voice, synthSetup, synthParameters } <- liftResourceM do mkDragonVoice iface
 
           liftEffect $ iface.temperament.send synthParameters.temperament
           liftEffect $ iface.pitch.send synthParameters.pitch
@@ -77,7 +79,7 @@ mainForRoar mkDragonVoice = do
 
           scopeEl1 <- oscilloscope { width: 1024, height: 512 } antialiased
           scopeEl2 <- spectrogram { height: 512, width: 400 } antialiased
-          void $ liftEffect $ River.subscribe scopeParent \el -> do
+          River.subscribe scopeParent \el -> do
             Node.appendChild (HTMLCanvasElement.toNode scopeEl1) (Element.toNode el)
             Node.appendChild (HTMLCanvasElement.toNode scopeEl2) (Element.toNode el)
           pure $ toRoars antialiased
@@ -126,10 +128,10 @@ pipeline = Runtime.Live.pipeline
   }
 
 embed :: Lake String -> Dragon
-embed incomingRaw = hatching \shell -> do
-  incoming <- shell.store do incomingRaw
-  pipelined <- shell.track do Runtime.Live.ofPipeline (pipeline incoming)
-  gotRenderer <- shell.store $ makeLake \cb -> mempty <$ _sideChannel.installChannel cb
+embed incomingRaw = Egg do
+  { stream: incoming } <- store do incomingRaw
+  pipelined <- Runtime.Live.ofPipeline (pipeline incoming)
+  { stream: gotRenderer } <- store $ makeLake \cb -> liftEffect do _sideChannel.installChannel cb
   codeURL <- Runtime.configurable "codeURL" "https://tryps.veritates.love/assets/purs"
   let
     assetFrame asset = D.html_"iframe"

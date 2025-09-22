@@ -36,26 +36,39 @@ import Safe.Coerce (coerce)
 
 newtype ResourceT :: (Type -> Type) -> (Type -> Type)
 newtype ResourceT m a = ResourceT (Scope -> m a)
+type ResourceM = ResourceT Effect
 
 -- TODO: catch error? cancel self if Aff? supervise?
 start :: forall m r. MonadEffect m => ResourceT m r -> m { result :: r, wait :: Fiber Unit, destroy :: Effect Unit, scope :: Scope }
 start computation = do
   scope <- liftEffect (mkSubscope mempty)
-  scopeStart scope computation <#> \{ result, wait, destroy } -> { result, wait, destroy, scope }
+  scopedStart scope computation <#> \{ result, wait, destroy } -> { result, wait, destroy, scope }
+
+start_ :: forall m r. MonadEffect m => ResourceT m r -> m { result :: r, destroy :: Effect Unit, scope :: Scope }
+start_ computation = do
+  { result, wait, destroy, scope } <- start computation
+  liftEffect do Aff.launchAff_ do Aff.joinFiber wait
+  pure { result, destroy, scope }
 
 run :: forall m r. MonadAff m => ResourceT m r -> m { result :: r, destroy :: Effect Unit, scope :: Scope }
 run = start >=> \{ result, wait, destroy, scope } -> { result, destroy, scope } <$ liftAff (Aff.joinFiber wait)
 
-scopeStart :: forall m r. MonadEffect m => Scope -> ResourceT m r -> m { result :: r, wait :: Fiber Unit, destroy :: Effect Unit }
-scopeStart here@(Scope { wait: App wait, destroy, destroyed }) (ResourceT computation) = do
+scopedStart :: forall m r. MonadEffect m => Scope -> ResourceT m r -> m { result :: r, wait :: Fiber Unit, destroy :: Effect Unit }
+scopedStart here@(Scope { wait: App wait, destroy, destroyed }) (ResourceT computation) = do
   liftEffect do
     whenM (coerce destroyed) do
       throw "ResourceM already destroyed"
   result <- computation here
   pure { result, wait, destroy }
 
-scopeRun :: forall m r. MonadAff m => Scope -> ResourceT m r -> m { result :: r, destroy :: Effect Unit }
-scopeRun scope = scopeStart scope >=> \{ result, wait, destroy } -> { result, destroy } <$ liftAff (Aff.joinFiber wait)
+scopedStart_ :: forall m r. MonadEffect m => Scope -> ResourceT m r -> m { result :: r, destroy :: Effect Unit }
+scopedStart_ here computation = do
+  { result, wait, destroy } <- scopedStart here computation
+  liftEffect do Aff.launchAff_ do Aff.joinFiber wait
+  pure { result, destroy }
+
+scopedRun :: forall m r. MonadAff m => Scope -> ResourceT m r -> m { result :: r, destroy :: Effect Unit }
+scopedRun scope = scopedStart scope >=> \{ result, wait, destroy } -> { result, destroy } <$ liftAff (Aff.joinFiber wait)
 
 -- The `Aff` is killed when the scope is destroyed
 monitor :: Scope -> (Aff ~> Aff)
@@ -95,6 +108,15 @@ newtype Scope = Scope
 derive newtype instance Monoid Scope
 derive newtype instance Semigroup Scope
 
+oneSubScopeAtATime :: forall m. MonadEffect m => Scope -> m (Effect Scope)
+oneSubScopeAtATime parent = liftEffect do
+  lastDestroy <- Ref.new mempty
+  pure do
+    join do Ref.read lastDestroy
+    scope@(Scope { destroy }) <- mkSubscope parent
+    Ref.write destroy lastDestroy
+    pure scope
+
 type ResourceState =
   { destructors :: Dual (Effect Unit)
   , destroyed :: Disj Boolean
@@ -107,8 +129,8 @@ _noop = mempty :: ResourceState
 noWaitScope :: Scope -> Scope
 noWaitScope (Scope s) = Scope s { wait = mempty }
 
-mkSubscope :: Scope -> Effect Scope
-mkSubscope (Scope parent) = do
+mkSubscope :: forall m. MonadEffect m => Scope -> m Scope
+mkSubscope (Scope parent) = liftEffect do
   whenM (coerce parent.destroyed) do
     throw "ResourceM already destroyed"
   ref <- Ref.new (mempty :: ResourceState)

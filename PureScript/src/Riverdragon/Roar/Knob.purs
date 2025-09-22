@@ -3,7 +3,8 @@ module Riverdragon.Roar.Knob where
 import Prelude
 
 import Control.Alt ((<|>))
-import Control.Monad.Writer (WriterT(..), runWriterT)
+import Control.Monad.ResourceM (class MonadResource, destr, liftResourceM, whenReady)
+import Control.Monad.ResourceT (ResourceM)
 import Data.Array as Array
 import Data.Bifunctor (bimap)
 import Data.Foldable (sequence_, sum, traverse_)
@@ -12,13 +13,13 @@ import Data.Maybe (Maybe(..), maybe)
 import Data.RecordOverloads (class RecordOverloads, overloads)
 import Data.Symbol (class IsSymbol)
 import Data.Traversable (class Traversable, mapAccumL, traverse)
-import Data.Tuple (Tuple(..), uncurry)
+import Data.Tuple (Tuple, uncurry)
+import Effect.Class (liftEffect)
 import Prim.Row as Row
 import Prim.RowList as RL
 import Record as Record
 import Riverdragon.River (Allocar, Lake, Stream, dam, oneStream)
 import Riverdragon.River as River
-import Riverdragon.River.Bed (cleanup)
 import Riverdragon.Roar.Types (class ToRoars, Roar, RoarO, connecting, toRoars)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -48,7 +49,7 @@ data Knob
   -- | KMul (Array Knob)
   | KCmd Float (Lake (Time -> Allocar (Array AudioParamCmd)))
   | KAudio (Lake (Array RoarO))
-  | KAware (Maybe Float) (Allocar Float -> Allocar Knob)
+  | KAware (Maybe Float) (Allocar Float -> ResourceM Knob)
   | KStartFrom Float Knob
   | KCtx (AudioContext -> Allocar Time -> Knob)
 
@@ -185,11 +186,11 @@ renderKnob :: forall rate.
   Knob ->
   AudioContext ->
   { default :: Maybe Float
-  , apply :: AudioParam rate -> Allocar (Allocar Unit)
+  , apply :: AudioParam rate -> ResourceM Unit
   }
 renderKnob knob ctx = case knob of
-  KEmpty -> { default: Nothing, apply: mempty }
-  KConst v -> { default: Just v, apply: mempty }
+  KEmpty -> { default: Nothing, apply: const (pure unit) }
+  KConst v -> { default: Just v, apply: const (pure unit) }
   KCmd v cmds -> { default: Just v, apply: _ } \param -> do
     River.subscribe cmds \fire -> do
       cmdArray <- fire =<< currentTime ctx
@@ -199,12 +200,12 @@ renderKnob knob ctx = case knob of
   KAdd items ->
     let knobs = renderKnob <$> items <@> ctx in
     { default: sum $ knobs <#> _.default, apply: _ } \finalParam -> do
-      Tuple asAudio unsub <- knobsToAudios ctx items
+      asAudio <- knobsToAudios ctx items
       let
         wiring dis = sequence_ $
           Node.disConnect dis <$> asAudio <@> Node.intoParam finalParam
-      wiring false
-      cleanup $ wiring true <> unsub
+      liftEffect do wiring false
+      destr $ wiring true
   KAware default mkKnob -> { default, apply: _ } \param -> do
     nested <- mkKnob (AudioParam.currentValue param)
     (renderKnob nested ctx).apply param
@@ -214,17 +215,17 @@ renderKnob knob ctx = case knob of
 -- | Render a `Knob` to an `AudioNode` (specifically a `ConstantSourceNode`),
 -- | because an a-rate `AudioParam` can be represented as an audio signal
 -- | and vice-versa.
-knobToAudio :: AudioContext -> Knob -> Allocar (Tuple RoarO (Allocar Unit))
+knobToAudio :: forall m. MonadResource m => AudioContext -> Knob -> m RoarO
 knobToAudio ctx knob = do
   let { default, apply: applyKnob } = renderKnob knob ctx
-  node <- createConstantSourceNode ctx { offset: default }
-  Node.startNow node
-  unsub <- applyKnob (Audio.getParam node (Proxy :: Proxy "offset"))
-  pure $ Tuple (Node.outOfNode node 0) unsub
+  node <- liftEffect do createConstantSourceNode ctx { offset: default }
+  whenReady do Node.startNow node
+  liftResourceM do applyKnob (Audio.getParam node (Proxy :: Proxy "offset"))
+  pure $ Node.outOfNode node 0
 
-knobsToAudios :: forall f. Traversable f => AudioContext -> f Knob -> Allocar (Tuple (f RoarO) (Allocar Unit))
-knobsToAudios ctx knobs = runWriterT do
-  traverse (WriterT <<< knobToAudio ctx) knobs
+knobsToAudios :: forall m f. MonadResource m => Traversable f => AudioContext -> f Knob -> m (f RoarO)
+knobsToAudios ctx knobs = do
+  traverse (knobToAudio ctx) knobs
 
 audioToKnob :: forall roar. ToRoars roar => roar -> Knob
 audioToKnob = KAudio <<< toRoars
@@ -239,7 +240,7 @@ class KnobsRL
   renderKnobsRL :: forall name source read write.
     Record ir -> AudioContext ->
     { defaults :: Record dr
-    , apply :: AudioNode name source read write ar -> Allocar (Allocar Unit)
+    , apply :: AudioNode name source read write ar -> ResourceM Unit
     }
 
 instance KnobsRL () RL.Nil () ar where renderKnobsRL = mempty
@@ -269,7 +270,7 @@ class Knobs
   renderKnobs :: forall name source read write.
     Record ir -> AudioContext ->
     { defaults :: Record dr
-    , apply :: AudioNode name source read write ar -> Allocar (Allocar Unit)
+    , apply :: AudioNode name source read write ar -> ResourceM Unit
     }
 instance (RL.RowToList ir il, KnobsRL ir il dr ar) => Knobs ir dr ar where
   renderKnobs = renderKnobsRL @ir @il

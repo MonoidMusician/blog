@@ -2,9 +2,11 @@ module Riverdragon.Roar.Score where
 
 import Prelude
 
-import Control.Monad.MutStateT (MutStateT(..), runMutStateT)
-import Control.Monad.Reader (ReaderT(..), asks, runReaderT)
+import Control.Monad.MutStateT (MutStateT, mutStateT, runMutStateT, unMutStateT)
+import Control.Monad.Reader (ReaderT, asks, runReaderT)
 import Control.Monad.Reader.Class (ask)
+import Control.Monad.ResourceM (destr, liftResourceM, selfScope, waitr, whenReady)
+import Control.Monad.ResourceT (ResourceT, Scope, oneSubScopeAtATime, scopedRun, scopedStart_, start)
 import Control.Monad.State (get)
 import Data.Array ((!!))
 import Data.Array as Array
@@ -12,23 +14,18 @@ import Data.Compactable (compact)
 import Data.Int as Int
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe, fromMaybe)
-import Data.Monoid.Dual (Dual(..))
-import Data.Newtype (unwrap)
+import Data.Maybe (fromMaybe)
 import Data.Number as Number
 import Data.SequenceRecord (sequenceRecord)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
-import Effect.Aff (Aff, ParAff, parallel, sequential)
+import Effect.Aff (Aff, Fiber)
 import Effect.Class (liftEffect)
 import Effect.Ref (Ref)
-import Effect.Ref as Ref
 import Prim.Row as Row
-import Riverdragon.River (type (-!>), Allocar, Lake, Stream, alwaysBurst, dam, unsafeRiver, (>>~))
+import Riverdragon.River (Lake, Stream, alwaysBurst, dam, unsafeRiver, (>>~))
 import Riverdragon.River as River
-import Riverdragon.River.Bed (cleanup, runningAff)
-import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (affToLake)
 import Riverdragon.Roar.Dimensions (temperaments)
 import Riverdragon.Roar.Knob (class ToKnob, renderKnobs)
@@ -45,20 +42,14 @@ import Web.Audio.Types (AudioContext, BiquadFilterType, Float, Frequency, Oscill
 import Web.Audio.Types as Audio
 import Widget (Interface, storeInterface)
 
-type ScoreM = MutStateT ScoreSt (ReaderT ScoreRW Effect)
+type ScoreM = MutStateT ScoreSt (ReaderT ScoreRd (ResourceT Effect))
 type ScoreSt = Record (ScoreS + ())
-type ScoreRW = Record (ScoreR + ( written :: Ref (Record (ScoreW + ())) ))
+type ScoreRd = Record (ScoreR + ())
 
 -- Reader state
 type ScoreR r =
   ( ctx :: AudioContext
   , iface :: ScoreLive
-  | r
-  )
--- Writer state
-type ScoreW r =
-  ( destroy :: Dual (Effect Unit)
-  , ready :: ParAff Unit
   | r
   )
 -- Mutable state
@@ -75,7 +66,7 @@ type ScoreLive =
   }
 
 perform ::
-  forall options unused ffi flow result.
+  forall options unused ffi flow.
     Row.Union options unused
       ( latencyHint :: LatencyHint
       , sampleRate :: Int
@@ -86,10 +77,11 @@ perform ::
   Effect
     { ctx :: AudioContext
     , destroy :: Effect Unit
-    , waitUntilReady :: Aff Unit
+    , wait :: Fiber Unit
+    , scope :: Scope
     }
 perform options creator = perform' options (creator >>> map { result: unit, audio: _ })
-  <#> \{ ctx, destroy, waitUntilReady } -> { ctx, destroy, waitUntilReady }
+  <#> \{ ctx, destroy, wait, scope } -> { ctx, destroy, wait, scope }
 
 perform' ::
   forall options unused ffi flow result.
@@ -104,7 +96,8 @@ perform' ::
     { result :: result
     , ctx :: AudioContext
     , destroy :: Effect Unit
-    , waitUntilReady :: Aff Unit
+    , wait :: Fiber Unit
+    , scope :: Scope
     }
 perform' options creator = do
   ctx <- createAudioContext options
@@ -118,114 +111,47 @@ perform' options creator = do
       { id: 0
       , worklets: Map.empty
       }
-  written <- Ref.new mempty
-  Tuple _state { audio: outputs, result } <- runReaderT (runMutStateT state0 (creator ctx)) { ctx, written, iface }
-  { destroy: Dual destroy1, ready } <- Ref.read written <* Ref.write mempty written
-  destroy2 <- liftEffect $ connecting (dam outputs) (destination ctx)
-  destroy <- liftEffect $ cleanup $ destroy1 <> destroy2 <> Context.close ctx
-  waitUntilReady <- runningAff $ unit <$ sequential ready
+  r <- start do
+    Tuple _state { audio: outputs, result } <- runReaderT (runMutStateT state0 (creator ctx)) { ctx, iface }
+    connecting (dam outputs) (destination ctx)
+    destr do Context.close ctx
+    pure result
   pure
-    { result
+    { result: r.result
     , ctx
-    , destroy
-    , waitUntilReady
+    , destroy: r.destroy
+    , wait: r.wait
+    , scope: r.scope
     }
 
-
-type ScoreFn result =
-  { ctx :: AudioContext
-  , state :: ScoreSt
-  , ref :: Ref ScoreSt
-  } -> Effect
-  { destroy :: Effect Unit
-  , ready :: Aff Unit
-  , result :: result
+scoreScope :: ScoreM
+  { run :: ScoreM ~> Effect
+  , scope :: Scope
   }
-
-scoreElement :: forall result. ScoreFn result -> ScoreM result
-scoreElement f = do
-  { ctx, written } <- ask
-  state <- get
-  ref <- MutStateT (ReaderT pure)
-  r <- liftEffect $ f { ctx, state, ref }
-  isReady <- liftEffect $ Bed.prealloc false
+scoreScope = do
+  st <- mutStateT pure
+  ctx <- ask
+  scope <- selfScope
   let
-    ready = do
-      alreadyRun <- liftEffect $ isReady.get
-      when (not alreadyRun) r.ready
-      liftEffect $ isReady.set true
-  liftEffect $ written # Ref.modify_ \s -> s
-    { destroy = s.destroy <> Dual r.destroy
-    , ready = s.ready <> parallel ready
-    }
-  pure r.result
+    run :: ScoreM ~> Effect
+    run act = map _.result $ scopedStart_ scope $ flip runReaderT ctx $ flip unMutStateT st $ act
+  pure { run: run :: ScoreM ~> Effect, scope }
 
 scoreStream :: forall flow1 flow2 x. Stream flow1 (ScoreM x) -> ScoreM (Stream flow2 x)
 scoreStream upstream = do
-  rollingDestroy <- liftEffect Bed.rolling
-  { run } <- scoreScope
-  { destroy: destroyStream, stream } <- liftEffect $ River.instantiate $
-    upstream >>~ \act -> compact $ affToLake do
-      { destroy: newDestroy, waitForReady, result } <- liftEffect $ run act
-      liftEffect $ rollingDestroy newDestroy
-      result <$ waitForReady
-  { written } <- ask
-  liftEffect $ written # Ref.modify_ \s -> s <>
-    { destroy: Dual $ destroyStream <> rollingDestroy mempty
-    , ready: mempty
-    }
-  pure stream
-
-type RunScore =
-  forall x. ScoreM x -> Effect
-    { result :: x
-    , destroy :: Effect Unit
-    , waitForReady :: Aff Unit
-    }
-
--- | `scoreScope` creates a localized runner for `Score`. This is basically
--- | bracketed so you can destroy all of them at once, or individually.
--- | If you need to wait for asynchronous availability (e.g. of worklettes),
--- | you may use `waitForReady`, but this is not necessary.
-scoreScope :: ScoreM { run :: RunScore, destroyScoped :: Effect Unit }
-scoreScope = MutStateT $ ReaderT \state -> ReaderT \upper@{ ctx } -> do
-  destroyScoped <- Bed.accumulator
-  upper.written # Ref.modify_ \s -> s <>
-    { destroy: Dual $ join destroyScoped.get
-    , ready: mempty
-    }
+  st <- mutStateT pure
+  ctx <- ask
+  revolving <- selfScope >>= oneSubScopeAtATime
   let
-    run :: RunScore
-    run (MutStateT (ReaderT creator)) = do
-      writing <- Ref.new mempty
-      r <- runReaderT (creator state) { ctx, written: writing, iface: upper.iface }
-      written <- Ref.read writing <* Ref.write mempty writing
-      destroy <- liftEffect $ cleanup $ unwrap written.destroy
-      liftEffect $ destroyScoped.put destroy
-      waitForReady <- runningAff $ unit <$ sequential written.ready
-      pure { result: r, destroy, waitForReady }
-  pure ({ run, destroyScoped: join destroyScoped.get } :: { run :: RunScore | _ })
-
-putScore ::
-  { destroy :: Effect Unit
-  , ready :: Aff Unit
-  } -> ScoreM Unit
-putScore eep = do
-  { written } <- ask
-  liftEffect $ written # Ref.modify_ \s -> s <>
-    { destroy: Dual eep.destroy
-    , ready: parallel eep.ready
-    }
-
-destructor :: Effect Unit -> ScoreM Unit
-destructor destroy = putScore { destroy, ready: mempty }
-
-track :: forall r.
-  Allocar { destroy :: Allocar Unit | r } ->
-  ScoreM { destroy :: Allocar Unit | r }
-track mk = do
-  r@{ destroy } <- liftEffect mk
-  r <$ destructor destroy
+    runHere act = _.result <$> do
+      newScope <- liftEffect revolving
+      scopedRun newScope $ liftResourceM $
+        flip runReaderT ctx $
+          flip unMutStateT st $ act
+  { stream } <- River.instantiate $
+    upstream >>~ \act -> compact $ affToLake do
+      runHere act
+  pure stream
 
 
 
@@ -241,12 +167,13 @@ roarings = gain 1.0
 
 
 gain :: forall knob roar. ToKnob knob => ToRoars roar => knob -> roar -> ScoreM Roar
-gain knob input = scoreElement \{ ctx } -> liftEffect do
+gain knob input = do
+  { ctx } <- ask
   let { defaults, apply: applyKnobs } = renderKnobs { gain: knob } ctx
-  node <- AudioNode.createGainNode ctx defaults
-  destroy1 <- applyKnobs node
-  destroy2 <- connecting (toRoars input) (intoNode node 0)
-  pure { result: outOfNode node 0, destroy: destroy1 <> destroy2, ready: mempty }
+  node <- liftEffect do AudioNode.createGainNode ctx defaults
+  liftResourceM do applyKnobs node
+  connecting (toRoars input) (intoNode node 0)
+  pure (outOfNode node 0)
 
 osc ::
   forall flowOscillatorType oscType frequencyKnob detuneKnob.
@@ -258,33 +185,31 @@ osc ::
   , frequency :: frequencyKnob
   , detune :: detuneKnob
   } -> ScoreM Roar
-osc config@{ frequency, detune } = scoreElement \{ ctx } -> liftEffect do
+osc config@{ frequency, detune } = do
+  { ctx } <- ask
   let { defaults, apply: applyKnobs } = renderKnobs { frequency, detune } ctx
-  node <- AudioNode.createOscillatorNode ctx defaults
-  destroy1 <- applyKnobs node
-  destroy2 <- River.subscribe
+  node <- liftEffect do AudioNode.createOscillatorNode ctx defaults
+  liftResourceM $ applyKnobs node
+  River.subscribe
     (thingy <$> (toLake config.type :: Lake oscType) <@> ctx)
     (Node.setOscillatorType node)
-  pure
-    { result: outOfNode node 0
-    , destroy: destroy1 <> destroy2 <> Node.stopNow node
-    , ready: liftEffect $ Node.startNow node
-    }
+  whenReady do Node.startNow node
+  destr do Node.stopNow node
+  pure (outOfNode node 0)
 
 offset ::
   forall offsetKnob.
     ToKnob offsetKnob =>
   { offset :: offsetKnob
   } -> ScoreM Roar
-offset config = scoreElement \{ ctx } -> liftEffect do
+offset config = do
+  { ctx } <- ask
   let { defaults, apply: applyKnobs } = renderKnobs config ctx
-  node <- AudioNode.createConstantSourceNode ctx defaults
-  destroy1 <- applyKnobs node
-  pure
-    { result: outOfNode node 0
-    , destroy: destroy1 <> Node.stopNow node
-    , ready: liftEffect $ Node.startNow node
-    }
+  node <- liftEffect do AudioNode.createConstantSourceNode ctx defaults
+  liftResourceM $ applyKnobs node
+  whenReady do Node.startNow node
+  destr do Node.stopNow node
+  pure (outOfNode node 0)
 
 filter ::
   forall flowBiquadFilterType knobQ knobDetune knobFrequency knobGain roar.
@@ -301,7 +226,8 @@ filter ::
   , gain :: knobGain
   } ->
   roar -> ScoreM Roar
-filter config input = scoreElement \{ ctx } -> liftEffect do
+filter config input = do
+  { ctx } <- ask
   let
     { defaults, apply: applyKnobs } = renderKnobs
       { "Q": config."Q"
@@ -309,15 +235,11 @@ filter config input = scoreElement \{ ctx } -> liftEffect do
       , frequency: config.frequency
       , gain: config.gain
       } ctx
-  node <- AudioNode.createBiquadFilterNode ctx defaults
-  destroy1 <- applyKnobs node
-  destroy2 <- River.subscribe (toLake config.type) $ Audio.setProp node (Proxy :: Proxy "type")
-  destroy3 <- connecting (toRoars input) (intoNode node 0)
-  pure
-    { result: outOfNode node 0
-    , destroy: destroy1 <> destroy2 <> destroy3
-    , ready: mempty
-    }
+  node <- liftEffect do AudioNode.createBiquadFilterNode ctx defaults
+  liftResourceM do applyKnobs node
+  River.subscribe (toLake config.type) $ Audio.setProp node (Proxy :: Proxy "type")
+  connecting (toRoars input) (intoNode node 0)
+  pure (outOfNode node 0)
 
 -- | Convert a MIDI note number to a pitch frequency, based upon the currently
 -- | set temperament (e.g. equal temperament or Kirnberger III) and pitch
@@ -347,10 +269,11 @@ freqs :: forall flow knob. ToKnob knob => Stream flow (Array knob) -> ScoreM Roa
 freqs = roarings <=< scoreStream <<< map (traverse \frequency -> osc { type: Sine, frequency, detune: 0 })
 
 waveshape :: forall roar. ToRoars roar => Array Float -> roar -> ScoreM Roar
-waveshape curve input = scoreElement \{ ctx } -> liftEffect do
-  node <- AudioNode.createWaveShaperNode ctx { curve }
-  destroy <- connecting (toRoars input) (intoNode node 0)
-  pure { result: outOfNode node 0, destroy: destroy, ready: mempty }
+waveshape curve input = do
+  { ctx } <- ask
+  node <- liftEffect do AudioNode.createWaveShaperNode ctx { curve }
+  connecting (toRoars input) (intoNode node 0)
+  pure (outOfNode node 0)
 
 wavesample :: Int -> (Float -> Float) -> Array Float
 wavesample nsamples shaping =
@@ -379,26 +302,3 @@ pwm { width, frequency, detune } = do
   undefault <- offset { offset: -0.5 }
   widthOffset <- offset { offset: width }
   binarize [ timing, undefault, widthOffset ]
-
-instM :: forall flowIn flowOut a. Stream flowIn a -> ScoreM (Stream flowOut a)
-instM input = _.stream <$> track do River.instantiate input
-
-storeM :: forall flowIn flowOut a. Stream flowIn a -> ScoreM
-  { burst :: Array a
-  , stream :: Stream flowOut a
-  , current :: Effect (Maybe a)
-  , destroy :: Allocar Unit
-  }
-storeM input = track do River.store input
-
-subscribeM :: forall flow a. Stream flow a -> (a -> Effect Unit) -> ScoreM Unit
-subscribeM stream cb = void $ track $ { destroy: _ } <$> River.subscribe stream cb
-
-createRiverM :: forall flow a. ScoreM { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
-createRiverM = track River.createRiver
-createStoreM :: forall flow a. a -> ScoreM { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit, current :: Effect a }
-createStoreM = track <<< River.createStore
-createRiverStoreM :: forall flow a. Maybe a -> ScoreM { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit, current :: Effect (Maybe a) }
-createRiverStoreM = track <<< River.createRiverStore
-createRiverBurstM :: forall flow a. Allocar (Array a) -> ScoreM { send :: a -!> Unit, stream :: Stream flow a, destroy :: Allocar Unit }
-createRiverBurstM = track <<< River.createRiverBurst

@@ -32,6 +32,7 @@ import Data.Tuple (Tuple(..))
 import Dodo as Dodo
 import Effect (Effect)
 import Effect.Aff (Aff)
+import Effect.Class (liftEffect)
 import Fetch (fetch)
 import Idiolect (only, (/|\), (>==))
 import Parser.Languages.ShowFast (mkReShow)
@@ -40,11 +41,11 @@ import Prim.Row as Row
 import Prim.RowList (class RowToList)
 import Prim.RowList as RL
 import Record as Record
-import Riverdragon.Dragon (AttrProp, Dragon)
+import Riverdragon.Dragon (AttrProp, Dragon(Egg))
 import Riverdragon.Dragon.Bones (__textcursor, ($$), ($~~), (.$), (.$$~), (.$~~), (:.), (<!>), (<:>), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (hatching, sourceCode)
-import Riverdragon.River (Lake, Stream, createRiverStore, oneStream)
+import Riverdragon.Dragon.Wings (sourceCode)
+import Riverdragon.River (Lake, Stream, createRiverStore, oneStream, store, store')
 import Riverdragon.River.Beyond (affToLake, dedup)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Type.Proxy (Proxy(..))
@@ -52,7 +53,7 @@ import Web.Util.TextCursor as TC
 import Widget (Widget, adaptInterface)
 
 widget :: Widget
-widget { interface, attrs } = do
+widget { interface, attrs } = liftEffect do
   example <- attrs "unicode"
   let
     initial = hush $ CA.decode CA.string example
@@ -159,9 +160,9 @@ st :: Lake AttrProp
 st = D.style =:= "font-variant-numeric: lining-nums tabular-nums"
 
 component :: forall flow. (String -> Effect Unit) -> Stream flow String -> Dragon
-component setGlobal resetting = hatching \shell -> do
-  { stream: genned, send: genNew } <- shell.track $ createRiverStore Nothing
-  { stream: taState', send: taCb } <- shell.track $ createRiverStore Nothing
+component setGlobal resetting = Egg do
+  { stream: genned, send: genNew } <- createRiverStore Nothing
+  { stream: taState', send: taCb } <- createRiverStore Nothing
   let
     taState = dedup ((\s -> TC.mkTextCursor s "" "") <$> (pure "" <|> resetting) <|> taState')
     taValue = taState <#> TC.content
@@ -366,14 +367,14 @@ fetchParser :: Aff String
 fetchParser = _.text =<< fetch "assets/json/show-parser-states.json" {}
 
 widgetShow :: Widget
-widgetShow _ = pure $ hatching \shell -> do
-  reShow <- shell.store (mkReShow <$> affToLake fetchParser)
-  { send: setValue, stream: valueSet } <- shell.track $ createRiverStore Nothing
-  { send: set, stream: get } <- shell.track $ createRiverStore Nothing
+widgetShow _ = pure $ Egg do
+  { stream: reShow } <- store (mkReShow <$> affToLake fetchParser)
+  { send: setValue, stream: valueSet } <- createRiverStore Nothing
+  { send: set, stream: get } <- createRiverStore Nothing
 
-  indent <- shell.track $ createRiverStore $ Just 2
-  width <- shell.track $ createRiverStore $ Just 80
-  ribbon <- shell.track $ createRiverStore $ Just 0.50
+  indent <- createRiverStore $ Just 2
+  width <- createRiverStore $ Just 80
+  ribbon <- createRiverStore $ Just 0.50
   opts :: Stream _ Dodo.PrintOptions <- pure ado
     indentWidth <- indent.stream
     pageWidth <- width.stream
@@ -385,8 +386,8 @@ widgetShow _ = pure $ hatching \shell -> do
       , ribbonRatio
       }
 
-  formatted <- shell.store $ reShow <*> get <*> opts
-  lastValue <- shell.storeLast mempty formatted
+  { stream: formatted } <- store $ reShow <*> get <*> opts
+  { current: lastValue } <- store' mempty formatted
   pure $ D.Fragment
     [ sourceCode "Haskell" .$ D.textarea
         [ D.onInputValue =:= set

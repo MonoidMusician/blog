@@ -6,28 +6,25 @@ import Control.Monad.Reader (ask, asks)
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
 import Data.Number as Number
-import Data.Traversable (for, traverse)
-import Data.Tuple (fst)
-import Data.Tuple.Nested ((/\))
+import Data.Traversable (for)
 import Effect.Aff (Milliseconds(..))
 import Effect.Class (liftEffect)
 import Effect.Random (randomRange)
-import Riverdragon.Dragon.Bones ((=:=))
+import Riverdragon.Dragon.Bones (Dragon(..), (=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Components.Envelope (envelopeComponent)
-import Riverdragon.Dragon.Wings (hatching)
-import Riverdragon.River (Lake, River, createRiverStore, mapAl)
+import Riverdragon.River (Lake, River, createRiverStore)
 import Riverdragon.River as River
 import Riverdragon.River.Beyond (delay)
 import Riverdragon.River.Streamline (Interval(..), linmap)
 import Riverdragon.Roar.Dimensions (aWeighting, loudnessCorrection, temperaments)
 import Riverdragon.Roar.Knob (Envelope, Knob(..), knobToAudio, planned, toKnob)
 import Riverdragon.Roar.Roarlette as YY
+import Riverdragon.Roar.Score (ScoreM, mtf, mtf_)
+import Riverdragon.Roar.Score as Y
 import Riverdragon.Roar.Synth (installSynth, notesToNoises)
 import Riverdragon.Roar.Types (Roar, toRoars)
 import Riverdragon.Roar.Viz (oscilloscope, spectrogram)
-import Riverdragon.Roar.Score (ScoreM, mtf, mtf_)
-import Riverdragon.Roar.Score as Y
 import Web.Audio.Types (BiquadFilterType(..), OscillatorType(..))
 import Web.DOM.Element as Element
 import Web.DOM.Node as Node
@@ -79,7 +76,7 @@ harpsynthorgVoiceV1 _env semitones release = do
     rangeScaled' lo hi = linmap (Interval 36.0 83.0) (Interval lo hi) (Int.toNumber semitones)
     duration = rangeScaled' 6.0 3.5
   { ctx: _ctx } <- ask
-  baseRamp /\ destroyRamp <- liftEffect $ knobToAudio _ctx $ toKnob
+  baseRamp <- knobToAudio _ctx $ toKnob
     { adsr:
       { attack: 0.001
       , decay: duration
@@ -88,7 +85,6 @@ harpsynthorgVoiceV1 _env semitones release = do
       }
     , release
     }
-  Y.putScore { destroy: destroyRamp, ready: mempty }
   ramp0 <- pure baseRamp -- TODO: `scale~ 8. 8.`
   ramp1 <- YY.pow (8.0) ramp0
   ramp2 <- YY.pow (8.0 * 2.0) ramp0
@@ -146,14 +142,14 @@ harpsynthorgVoiceV1 _env semitones release = do
   pure { value: [{ audio: [ joined ], gain: toKnob ramp1 }], leave }
 
 widgetHarpsynthorg :: Widget
-widgetHarpsynthorg _ = pure $ hatching \shell -> do
-  { ui: pinkEnvUi, stream: pinkEnvStream } <- envelopeComponent shell
+widgetHarpsynthorg _ = pure $ Egg do
+  { ui: pinkEnvUi, stream: pinkEnvStream } <- envelopeComponent
     { attack: 0.10, decay: 0.95, sustain: 0.0, release: 0.1 }
-  { ui: sineEnvUi, stream: sineEnvStream } <- envelopeComponent shell
+  { ui: sineEnvUi, stream: sineEnvStream } <- envelopeComponent
     { attack: 0.05, decay: 0.95, sustain: 0.8, release: 0.3 }
-  { send: sendScopeParent, stream: scopeParent } <- shell.track $ createRiverStore Nothing
+  { send: sendScopeParent, stream: scopeParent } <- createRiverStore Nothing
 
-  synth <- shell.track $ installSynth \noteStream -> do
+  synth <- installSynth \noteStream -> do
     { ctx: _ctx } <- ask
     -- This triggers synthesizers and shuts them down when they are released
     activeSynths <- notesToNoises
@@ -179,15 +175,15 @@ widgetHarpsynthorg _ = pure $ hatching \shell -> do
       , "Q": 0.3
       , gain: unit
       }
-    let
-      debug :: Lake (Array Roar)
-      debug = activeSynths # mapAl do
-        traverse \{ gain: k } -> do
-          -- Console.log "Knob incoming!"
-          liftEffect $ fst <$> knobToAudio _ctx k
+    -- let
+    --   debug :: Lake (Array Roar)
+    --   debug = activeSynths # mapAl do
+    --     traverse \{ gain: k } -> do
+    --       -- Console.log "Knob incoming!"
+    --       knobToAudio _ctx k
     scopeEl1 <- oscilloscope { width: 1024, height: 512 } melody -- debug
     scopeEl2 <- spectrogram { height: 512, width: 400 } antialiased
-    void $ liftEffect $ River.subscribe scopeParent \el -> do
+    River.subscribe scopeParent \el -> do
       Node.appendChild (HTMLCanvasElement.toNode scopeEl1) (Element.toNode el)
       Node.appendChild (HTMLCanvasElement.toNode scopeEl2) (Element.toNode el)
     pure $ toRoars antialiased
