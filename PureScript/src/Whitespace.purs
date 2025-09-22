@@ -331,7 +331,7 @@ instance selectWithBoundaryF :: (FromWSF f, Select f, Applicative f) => Select (
   select (BddF r1) (BddF r2) = BddF
     { left: r1.left
     , wrapped: select r1.wrapped r2.wrapped
-    , right: r2.right
+    , right: r2.right -- FIXME
     }
 
 data WithBoundaryP :: (Type -> Type -> Type) -> Type -> Type -> Type

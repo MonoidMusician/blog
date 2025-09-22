@@ -8,18 +8,18 @@ import Data.Either (Either)
 import Data.Functor.Compose (Compose(..))
 import Data.Lazy (Lazy, defer, force)
 import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Newtype (unwrap, un)
-import Data.Tuple (Tuple(..))
-import Data.Tuple.Nested (type (/\), (/\))
+import Data.Newtype (unwrap)
 import Dodo as T
 import Dodo.Ansi as Dodo.Ansi
-import Dodo.Internal as T
+import Dodo.Internal as T.I
 import Parser.Comb as Comb
 import Parser.Comb.Comber as Comber
 import Parser.Comb.Dragon (annDragon, renderParseError)
+import Parser.Comb.Types (withCST'_)
 import Parser.Lexing as Lexing
-import Parser.Printer.Types (Ann(..), Opts, PrinterParser(..), applyBoundary)
+import Parser.Printer.Types (Ann, Opts, PrinterParser(..), applyBoundary)
 import Parser.Printer.Types as IO
+import Parser.Types (ICST(..))
 import Riverdragon.Dragon (Dragon)
 import Whitespace as WS
 
@@ -35,7 +35,7 @@ runPrinterParser :: forall i o.
         , dragon :: Lazy Dragon
         }
         (Parsed o)
-  , compiled :: Comber.Compiled (Parsed o)
+  , compiled :: Comber.Compiled { tree :: Array Comber.CST', result :: IO.Parsed o }
   }
 runPrinterParser (PrinterParser pp) =
   let
@@ -47,22 +47,25 @@ runPrinterParser (PrinterParser pp) =
       , string: defer \_ -> Comber.convertParseError error
       , dragon: defer \_ -> renderParseError error
       }
-    fromParsed (IO.Parsed p) =
-      { cst: renditions p.cst
+    fromParsed { before, result: { tree, result: IO.Parsed p }, after } =
+      -- FIXME: CST whitespace text
+      { cst: renditions \opts -> T.text before <> p.cst opts <> T.text after
       , ast: p.ast
+      , tree: [IAir before] <> tree <> [IAir after]
       }
     Compose (Comber.Comber parser) = applyBoundary pp.parser
     conf :: Comber.Conf
     conf = { best: Lexing.bestRegexOrString, defaultSpace: one }
-    compiled :: Comber.Compiled (Parsed o)
-    compiled = Comb.compile Comber.topName (fromParsed <$> parser)
+    compiled :: Comber.Compiled _
+    compiled = Comb.compile Comber.topName (withCST'_ (\_ tree f -> { tree, result: _ } <$> f unit) parser)
     parse0 = Comb.execute conf compiled
-    fullParse = parse0 >>> bimap fromError identity
+    fullParse = parse0 >>> bimap fromError fromParsed
     parse = fullParse >>> bimap (_.string >>> force) (_.ast >>> force)
   in { print, parse, fullParse, compiled }
 
 type Parsed o =
   { cst :: Renditions
+  , tree :: Array Comber.CST'
   , ast :: Lazy o
   }
 
@@ -84,14 +87,14 @@ renditions print =
 
 unravel :: forall ann. T.Doc (Array ann) -> T.Doc ann
 unravel = case _ of
-  T.Append l r -> T.Append (unravel l) (unravel r)
-  T.Indent d -> T.Indent (unravel d)
-  T.Align i d -> T.Align i (unravel d)
-  T.Annotate anns d -> Array.foldr T.Annotate (unravel d) anns
-  T.FlexSelect x y z -> T.FlexSelect (unravel x) (unravel y) (unravel z)
-  T.FlexAlt l r -> T.FlexAlt (unravel l) (unravel r)
-  T.WithPosition f -> T.WithPosition (f >>> unravel)
-  T.Local f -> T.Local (f >>> map unravel)
-  T.Text i s -> T.Text i s
-  T.Break -> T.Break
-  T.Empty -> T.Empty
+  T.I.Append l r -> T.I.Append (unravel l) (unravel r)
+  T.I.Indent d -> T.I.Indent (unravel d)
+  T.I.Align i d -> T.I.Align i (unravel d)
+  T.I.Annotate anns d -> Array.foldr T.I.Annotate (unravel d) anns
+  T.I.FlexSelect x y z -> T.I.FlexSelect (unravel x) (unravel y) (unravel z)
+  T.I.FlexAlt l r -> T.I.FlexAlt (unravel l) (unravel r)
+  T.I.WithPosition f -> T.I.WithPosition (f >>> unravel)
+  T.I.Local f -> T.I.Local (f >>> map unravel)
+  T.I.Text i s -> T.I.Text i s
+  T.I.Break -> T.I.Break
+  T.I.Empty -> T.I.Empty

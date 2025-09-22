@@ -882,8 +882,11 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
       Array.foldM take1 (true /\ [] /\ stack0) (Array.reverse parsed) >>= \(_wasEmpty /\ taken /\ stack) ->
         let
           air = case stack of
-            Snoc _ (IAir air) _ -> air
-            _ -> snd $ spy "FIXME spaceAirAhead" spaceAirAhead -- FIXME
+            Snoc _ (IAir _air) _ -> _air
+            -- If it is only space
+            Zero _ | _wasEmpty -> snd spaceAirAhead
+            -- _ | _ <- spy "stack" stack -> snd $ spy "FIXME spaceAirAhead" spaceAirAhead
+            _ -> snd spaceAirAhead
           stack' = case taken of
             [] -> Snoc stack (IAir mempty) (topOf stack)
             _ -> stack

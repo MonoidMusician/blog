@@ -7,16 +7,15 @@ import Control.Alternative (class Alt, class Plus)
 import Control.Apply (lift3)
 import Control.Comonad (extract)
 import Control.Plus (empty, (<|>))
-import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Compactable (compact, separateDefault)
-import Data.Either (Either(..), either, isLeft)
+import Data.Either (Either(..), either)
 import Data.Filterable (class Compactable, class Filterable, filter, filterMap, partitionDefaultFilter, partitionMapDefault)
 import Data.Foldable (foldMap)
 import Data.Functor.Compose (Compose(..))
 import Data.Lazy (Lazy)
 import Data.Lens as Q
-import Data.Maybe (Maybe)
+import Data.Maybe (Maybe(..))
 import Data.Monoid.Additive (Additive(..))
 import Data.Monoid.Endo (Endo)
 import Data.Newtype (class Newtype, over, un, unwrap)
@@ -26,7 +25,7 @@ import Data.Set (Set)
 import Data.These (These(..), these)
 import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.Tuple.Nested ((/\))
-import Debug (spyWith)
+import Debug (spy)
 import Dodo as O
 import Parser.Comb as Comb
 import Parser.Comb.Comber (Comber, UserError, lift2)
@@ -122,18 +121,29 @@ instance Filterable InnerParser where
   filterMap f = over InnerParser $ over Compose $ filterMap \(Parsed r) ->
     Parsed <<< r { ast = _ } <<< pure <$> f (extract r.ast)
 instance fromWSFInnerParser :: FromWSF InnerParser where
-  infixWSF l h r =
-    (/\) <$> l <* pureWSF h <*> r
-  circumfixWSF h1 a h2 =
-    pureWSF h1 *> a <* pureWSF h2
-  pureWSF h = InnerParser $ Compose $ Comber.Comber $ Comb.tokensSourceOf (Comb.space (WS.wsProps h)) <#>
-    spyWith "ws tokens" (map (either identity identity)) >>> \toks -> Parsed { ast: pure unit, cst: \_ -> O.text (extractWS toks), usedOpts: mempty }
+  infixWSF (InnerParser (Compose (Comber.Comber l))) h (InnerParser (Compose (Comber.Comber r))) =
+    spy "infixWSF" $ InnerParser $ Compose $ Comber.Comber $
+      Comb.squish infixWSparse l (Just (WS.wsProps h)) r
     where
-    extractWS :: Array (Either String _) -> String
-    extractWS toks =
-      let
-        surrounding = Array.takeWhile isLeft toks <> Array.reverse (Array.takeWhile isLeft (Array.reverse toks))
-      in surrounding # foldMap (either identity mempty)
+    infixWSparse (Parsed x) ws (Parsed y) = Parsed
+      { usedOpts: x.usedOpts <> y.usedOpts
+      , ast: (/\) <$> x.ast <*> y.ast
+      -- FIXME: CST whitespace text
+      , cst: \o -> x.cst o <> foldMap (O.text <<< spy "infixWS") ws <> y.cst o
+      }
+  circumfixWSF h1 a h2 =
+    spy "circumfixWSF" $ pureWSF h1 *> a <* pureWSF h2
+  pureWSF h = spy "pureWSF" $
+    InnerParser $ Compose $ Comber.Comber $ Comb.space (WS.wsProps h) $> pure unit
+    -- InnerParser $ Compose $ Comber.Comber $ Comb.tokensSourceOf (Comb.space (WS.wsProps h)) <#>
+    --   spyWith "ws tokens" (map (either identity identity)) >>> \toks -> Parsed { ast: pure unit, cst: \_ -> O.text (extractWS toks), usedOpts: mempty }
+    -- where
+    -- -- FIXME: CST whitespace text
+    -- extractWS :: Array (Either String _) -> String
+    -- extractWS toks =
+    --   let
+    --     surrounding = Array.takeWhile isLeft toks <> Array.reverse (Array.takeWhile isLeft (Array.reverse toks))
+    --   in surrounding # foldMap (either identity mempty)
   neverWSF = empty
 
 applyBoundary :: forall o. ParserMade o -> Compose Comber Parsed o

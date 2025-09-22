@@ -1231,7 +1231,7 @@ type Stack = List HFS
 
 theParser :: Lazy (String -> Either FullParseError (Array Instr))
 theParser = defer \_ ->
-  Comb.parseWith { best: longestRegexOrString, defaultSpace: defaultWS } topName (unwrap parser)
+  map _.result <<< Comb.parseWith { best: longestRegexOrString, defaultSpace: defaultWS } topName (unwrap parser)
 
 parseAndRun :: String -> Either String String
 parseAndRun = parseAndRun' >>> bimap

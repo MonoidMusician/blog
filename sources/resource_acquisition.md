@@ -92,11 +92,14 @@ Basically everything that the remote might care about now has to become a tracke
 
 Riverdragon has pretty simple resource behaviors and such.
 
-The only thing worth noting here is that a stream can destroy itself: declare that it will not output anything more and stuff downstream to clean up if they want.
+One thing worth noting here is that a stream can destroy itself: declare that it will not output anything more and stuff downstream to clean up if they want.
 
 (This was my compromise instead of adding errors to streams like RxJS has.)
 
 Keeping things from leaking with functional-style JavaScript is tricky…
+
+The other interesting part of a streamʼs lifecycle is the startup burst: synchronous events emitted while a subscription is first being set up.
+This needs to be handled explicitly in many places in the implementation, but because it is synchronous, it doesnʼt necessitate any overarching coordination between streams or other resources and doesnʼt leak out of the API.
 
 ## Implementations
 

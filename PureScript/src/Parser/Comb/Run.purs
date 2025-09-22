@@ -20,7 +20,7 @@ import Data.Tuple (Tuple(..), fst, snd, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
 import Parser.Algorithms (getResultICM', revertICST')
 import Parser.Comb.Combinators (buildTree, named)
-import Parser.Comb.Types (Associativity, CCST, CGrammar, CGrammarRule, COptions, CResultant, CSyntax, Comb(..), Options(..), Resultant(..), fullMapOptions, matchRule)
+import Parser.Comb.Types (Associativity, CCST, CGrammar, CGrammarRule, COptions, CResultant, CSyntax, Comb(..), Options(..), Resultant(..), fullMapOptions, matchRuleTop)
 import Parser.Lexing (class Tokenize, Best, FailReason(..), FailedStack(..), Rawr, ResolvePrec, Similar, bestRegexOrString, contextLexingParse, happyPrecedenceOrd, longest, screenPrecedence, (?), (??))
 import Parser.Optimized.Algorithms (statesNumberedMany)
 import Parser.Optimized.Types (unsafeFromJust)
@@ -78,7 +78,7 @@ parse ::
     Eq o =>
     HasDefaultWS space =>
   nt -> Comb (Rec err space air nt cat i o) err prec space air nt cat o a ->
-  (i -> Either (ParseError err space air nt cat i o) a)
+  (i -> Either (ParseError err space air nt cat i o) { before :: air, result :: a, after :: air })
 parse = parseWith { best: longest, defaultSpace: defaultWS }
 
 -- | Parsing optimized for regexes and string literals, where the string
@@ -95,7 +95,7 @@ parseRegex ::
     Monoid air =>
     HasDefaultWS space =>
   nt -> Comb (Rec err space air nt (Similar String Rawr) String String) err prec space air nt (Similar String Rawr) String a ->
-  (String -> Either (ParseError err space air nt (Similar String Rawr) String String) a)
+  (String -> Either (ParseError err space air nt (Similar String Rawr) String String) { before :: air, result :: a, after :: air })
 parseRegex = parseWith { best: bestRegexOrString, defaultSpace: defaultWS }
 
 parseWith ::
@@ -112,7 +112,7 @@ parseWith ::
     Monoid air =>
     Eq o =>
   CConf err prec space air nt cat i o -> nt -> Comb (Rec err space air nt cat i o) err prec space air nt cat o a ->
-  (i -> Either (ParseError err space air nt cat i o) a)
+  (i -> Either (ParseError err space air nt cat i o) { before :: air, result :: a, after :: air })
 parseWith conf name parser = snd (parseWith' conf name parser)
 
 parseWith' ::
@@ -129,7 +129,7 @@ parseWith' ::
     Monoid air =>
     Eq o =>
   CConf err prec space air nt cat i o -> nt -> Comb (Rec err space air nt cat i o) err prec space air nt cat o a ->
-  StateTable space nt cat /\ (i -> Either (ParseError err space air nt cat i o) a)
+  StateTable space nt cat /\ (i -> Either (ParseError err space air nt cat i o) { before :: air, result :: a, after :: air })
 parseWith' conf name parser = do
   -- First we build the LR(1) parsing table
   let compiled = compile name parser
@@ -147,7 +147,7 @@ parseRegex' ::
     Monoid air =>
     HasDefaultWS space =>
   nt -> Comb (Rec err space air nt (Similar String Rawr) String String) err prec space air nt (Similar String Rawr) String a ->
-  StateTable space nt (Similar String Rawr) /\ (String -> Either (ParseError err space air nt (Similar String Rawr) String String) a)
+  StateTable space nt (Similar String Rawr) /\ (String -> Either (ParseError err space air nt (Similar String Rawr) String String) { before :: air, result :: a, after :: air })
 parseRegex' = parseWith' { best: bestRegexOrString, defaultSpace: defaultWS }
 
 type FullCompiled rec err prec space air nt cat o a =
@@ -281,7 +281,7 @@ execute ::
     Eq o =>
   CConf err prec space air nt cat i o ->
   ExecuteCompiled (Rec err space air nt cat i o) err prec space air nt cat o a r ->
-  (i -> Either (ParseError err space air nt cat i o) a)
+  (i -> Either (ParseError err space air nt cat i o) { before :: air, result :: a, after :: air })
 execute conf0 { states: { stateMap, start, states: states0 }, resultants, options, precedences } = do
   let
     states = mapWSStates (fromMaybeWS conf0.defaultSpace) states0
@@ -328,7 +328,7 @@ execute conf0 { states: { stateMap, start, states: states0 }, resultants, option
     stack <- contextLexingParse conf (start /\ states) (options' (fst resultants) options) rec (Continue input)
     cst <- getResultICM' stack?? CrashedStack "Failed to extract result"
     -- Apply the function that parses from the CST to the desired result type
-    uncurry (matchRule rec) resultants cst? \userErr -> FailedStack
+    uncurry (matchRuleTop rec) resultants cst? \userErr -> FailedStack
       { states
       , lookupState: Array.index (unwrap states)
       , initialInput: Continue input
@@ -362,7 +362,7 @@ type Compiled prec space nt cat =
   , states :: CStates space nt cat
   , precedences :: Map cat (prec /\ Associativity) /\ Map (nt /\ Int) prec
   }
-type Parsing err space air nt cat i o a = i -> Either (ParseError err space air nt cat i o) a
+type Parsing err space air nt cat i o a = i -> Either (ParseError err space air nt cat i o) { before :: air, result :: a, after :: air }
 
 newtype Coll err prec space air nt cat i o parsers = Coll
   { grammar :: CGrammar prec space nt cat
@@ -464,6 +464,7 @@ collect conf (Coll { grammar: MkGrammar initialWithPrec, entrypoints, compilatio
 withReparserFor ::
   forall err prec space air nt cat i o a b c.
     Ord nt =>
+    Monoid air => -- bit hacky
   nt ->
   Comb (Rec err space air nt cat i o) err prec space air nt cat o a ->
   Comb (Rec err space air nt cat i o) err prec space air nt cat o b ->
@@ -483,7 +484,7 @@ withReparserFor name aux (Comb cb) f = do
         { result = \(Rec rec) csts ->
             let
               parser input = rec name input (buildTree name aux) $
-                matchRule (Rec rec) name (resultantsOf aux)
+                map _.result <<< matchRuleTop (Rec rec) name (resultantsOf aux)
             in (\x -> f parser x) <$> rr.result (Rec rec) csts
         }
       }

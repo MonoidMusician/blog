@@ -20,7 +20,7 @@ import Data.Array (intercalate, (!!))
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
-import Data.Bifunctor (lmap)
+import Data.Bifunctor (bimap, lmap)
 import Data.Codec as C
 import Data.Codec.Argonaut as CA
 import Data.Compactable (class Compactable)
@@ -183,9 +183,9 @@ parseWith' :: forall a. Conf -> Comber a -> StateTable /\ (String -> Either Pars
 parseWith' conf = map convertingParseError <<< Comb.parseWith' conf topName <<< un Comber
 
 convertingParseError :: forall a.
-  (String -> Either FullParseError a) ->
+  (String -> Either FullParseError { before :: String, result :: a, after :: String }) ->
   String -> Either ParseError a
-convertingParseError = map $ lmap convertParseError
+convertingParseError = map $ bimap convertParseError _.result
 
 convertParseError :: FullParseError -> ParseError
 convertParseError = case _ of
@@ -378,6 +378,7 @@ type StateItem = CombR.CStateItem ParseWS String (String ~ Rawr)
 type Resultant = CombT.CResultant Rec UserError String String String
 type Options = CombT.COptions Rec UserError ParseWS String String (String ~ Rawr) String
 type CST = ICST String (Either String String /\ Maybe Int) (OrEOF String)
+type CST' = ICST String (String /\ Int) (String)
 type StateTable =
   { stateMap :: Map String Int
   , start :: Int
@@ -406,7 +407,8 @@ withReparserFor ::
   ((String -> Either UserError a) -> b -> c) ->
   Comber c
 withReparserFor name (Comber aux) (Comber body) f =
-  Comber $ CombR.withReparserFor name aux body $ f <<< convertingParseError
+  Comber $ CombR.withReparserFor name aux body $
+    f <<< convertingParseError <<< compose (map { before: "", after: "", result: _ })
 
 
 -- | Soft rejection (prunes branches)
@@ -505,6 +507,8 @@ instance WS.FromWSF Comber where
   circumfixWSF h1 l h2 = WS.pureWSF h1 *> l <* WS.pureWSF h2
   neverWSF = empty
 
+squish :: forall a b c. (a -> Maybe String -> b -> c) -> Comber a -> Maybe ParseWS -> Comber b -> Comber c
+squish f (Comber l) h (Comber r) = Comber $ Comb.squish f l h r
 
 --------------------------------------------------------------------------------
 

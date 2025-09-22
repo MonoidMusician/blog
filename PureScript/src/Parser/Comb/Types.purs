@@ -26,10 +26,11 @@ import Data.Tuple.Nested (type (/\))
 import Parser.Algorithms (dropAdjWhitespace, dropWhitespace)
 import Parser.Comb.Syntax (Syntax(..))
 import Parser.Selective (class Casing, class Select, casingOn)
-import Parser.Types (Fragment, Grammar(..), GrammarRule, ICST(..))
+import Parser.Types (Fragment, Grammar(..), GrammarRule, ICST(..), Part(..))
 import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Reference (unsafeRefEq)
 import Util (memoizeEq)
+import Whitespace (Boundary)
 
 data Associativity = AssocL | AssocR | NoAssoc
 derive instance eqAssociativity :: Eq Associativity
@@ -325,6 +326,21 @@ matchRule rec name resultants (IBranch (Tuple _name i) children) | name == _name
   resultFrom resultant rec children
 matchRule _ _ _ _ = Left [] -- this is bad
 
+-- | c.f. `getResultIC`
+matchRuleTop :: forall rec err air nt o a. Ord nt => Monoid air => rec -> nt -> Array (CResultant rec err air nt o a) -> CCST air nt o -> Either (Array err) { before :: air, result :: a, after :: air }
+matchRuleTop rec name resultants (IBranch (Tuple _name i) childrenBdd)
+  | name == _name
+  , Just (IAir before) <- Array.head childrenBdd
+  , Just (IAir after) <- Array.last childrenBdd
+  , children <- Array.slice 1 (-1) childrenBdd = do
+  resultant <- note [] (resultants !! i)
+  { before, result: _, after } <$> resultFrom resultant rec children
+matchRuleTop rec name resultants (IBranch (Tuple _name i) [ IAir after ])
+  | name == _name = do
+  resultant <- note [] (resultants !! i)
+  { before: mempty, result: _, after } <$> resultFrom resultant rec []
+matchRuleTop _ _ _ _ = Left [] -- this is bad
+
 -- | Modify the result of the parser based on the CST fragment it receives.
 withCST :: forall rec err prec space air nt cat o a b. (Array (CCST air nt o) -> PartialResult err (a -> b)) -> Comb rec err prec space air nt cat o a -> Comb rec err prec space air nt cat o b
 withCST f = withCST' \_ csts prev -> f csts <*> prev unit
@@ -409,70 +425,80 @@ withRec f = withCST' \rec _ prev -> f rec <$> prev unit
 derive instance functorResultant :: Functor (Resultant err air r tok rec)
 derive instance profunctorResultant :: Profunctor (Resultant err air r tok)
 instance applyResultant :: Apply (Resultant err air r tok rec) where
-  apply (Resultant l@{ length: 0 }) (Resultant r@{ length: 0 }) = Resultant
-    { length: 0
-    , accepting: l.accepting <> r.accepting
-    , result: \rec i -> l.result rec [] <*> r.result rec []
-    }
-  apply (Resultant l@{ length: 0 }) (Resultant r) = Resultant
-    { length: r.length
-    , accepting: l.accepting <> r.accepting
-    , result: \rec i -> l.result rec [] <*> r.result rec i
-    }
-  apply (Resultant l) (Resultant r@{ length: 0 }) = Resultant
-    { length: l.length
-    , accepting: l.accepting <> shiftAccepting (l.length + 1) r.accepting
-    , result: \rec i -> l.result rec i <*> r.result rec []
-    }
-  apply (Resultant l) (Resultant r) = Resultant
-    { length: l.length + r.length + 1
-    , accepting: l.accepting <> shiftAccepting (l.length + 1) r.accepting
-    , result: \rec i ->
-        let { before: li, after: ri } = splitAt l.length (dropAdjWhitespace i) in
-        l.result rec li <*> r.result rec (Array.drop 1 ri)
-    }
+  apply = squishResultant \f _ a -> f a
 instance applicativeResultant :: Applicative (Resultant err air r tok rec) where
   pure a = Resultant { length: 0, accepting: mempty, result: \_ _ -> pure a }
 instance compactableResultant :: Compactable (Resultant err air r tok rec) where
   compact (Resultant r) = Resultant r { result = map (map compact) r.result }
   separate eta = separateDefault eta
 
-adjResultant :: forall err air r tok rec a b c d.
-  (a -> b -> c -> d) ->
+squishResultant :: forall err air r tok rec a b c.
+  (a -> Maybe air -> b -> c) ->
   Resultant err air r tok rec a ->
   Resultant err air r tok rec b ->
-  Resultant err air r tok rec c ->
-  Resultant err air r tok rec d
-adjResultant f (Resultant a) (Resultant b) (Resultant c) = Resultant
-  { length: a.length + b.length + c.length
-  , accepting: a.accepting <> shiftAccepting a.length b.accepting <> shiftAccepting (a.length + b.length) c.accepting
-  , result: \rec abci ->
+  Resultant err air r tok rec c
+squishResultant f (Resultant l@{ length: 0 }) (Resultant r@{ length: 0 }) = Resultant
+  { length: 0
+  , accepting: l.accepting <> r.accepting
+  , result: \rec _ -> f <$> l.result rec [] <@> Nothing <*> r.result rec []
+  }
+squishResultant f (Resultant l@{ length: 0 }) (Resultant r) = Resultant
+  { length: r.length
+  , accepting: l.accepting <> r.accepting
+  , result: \rec i -> f <$> l.result rec [] <@> Nothing <*> r.result rec i
+  }
+squishResultant f (Resultant l) (Resultant r@{ length: 0 }) = Resultant
+  { length: l.length
+  , accepting: l.accepting <> shiftAccepting l.length r.accepting
+  , result: \rec i -> f <$> l.result rec i <@> Nothing <*> r.result rec []
+  }
+squishResultant f (Resultant l) (Resultant r) = Resultant
+  { length: l.length + 1 + r.length
+  , accepting: l.accepting <> shiftAccepting (l.length + 1) r.accepting
+  , result: \rec lwri ->
       let
-        { before: ai, after: bci } = splitAt a.length abci
-        { before: bi, after: ci } = splitAt b.length bci
-      in f <$> a.result rec ai <*> b.result rec bi <*> c.result rec ci
+        { before: li, after: wri } = splitAt l.length lwri
+        { before: wi, after: ri } = splitAt 1 wri
+        air = case wi of
+          [IAir airTok] -> Just airTok
+          _ -> Nothing
+      in f <$> l.result rec li <@> air <*> r.result rec ri
   }
 
-adj :: forall rec err prec space air nt cat o a b c d.
-  (a -> b -> c -> d) ->
+squish :: forall rec err prec space air nt cat o a b c.
+  (a -> Maybe air -> b -> c) ->
   Comb rec err prec space air nt cat o a ->
+  Maybe space ->
   Comb rec err prec space air nt cat o b ->
-  Comb rec err prec space air nt cat o c ->
-  Comb rec err prec space air nt cat o d
-adj f (Comb a) (Comb b) (Comb c) = Comb
-  { grammar: a.grammar <> b.grammar <> c.grammar
-  , entrypoints: a.entrypoints <|> b.entrypoints <|> c.entrypoints
-  , pretty: map Conj <<< Conj <$> a.pretty <*> b.pretty <*> c.pretty
-  , prettyGrammar: a.prettyGrammar <|> b.prettyGrammar <|> c.prettyGrammar
-  , tokenPrecedence: a.tokenPrecedence <|> b.tokenPrecedence <|> c.tokenPrecedence
+  Comb rec err prec space air nt cat o c
+squish f (Comb a) Nothing (Comb b) = Comb
+  { grammar: a.grammar <> b.grammar
+  , entrypoints: a.entrypoints <|> b.entrypoints
+  , pretty: Conj <$> a.pretty <*> b.pretty
+  , prettyGrammar: a.prettyGrammar <|> b.prettyGrammar
+  , tokenPrecedence: a.tokenPrecedence <|> b.tokenPrecedence
   , rules: ado
       x <- a.rules
       y <- b.rules
-      z <- c.rules
       in
-        { rule: x.rule <|> y.rule <|> z.rule
-        , resultant: adjResultant f x.resultant y.resultant z.resultant
-        , prec: x.prec <> y.prec <> z.prec
+        { rule: x.rule <|> y.rule
+        , resultant: squishResultant f x.resultant y.resultant
+        , prec: x.prec <> y.prec
+        }
+  }
+squish f (Comb a) (Just space) (Comb b) = Comb
+  { grammar: a.grammar <> b.grammar
+  , entrypoints: a.entrypoints <|> b.entrypoints
+  , pretty: map Conj <<< Conj <$> a.pretty <@> Part (InterTerminal space) <*> b.pretty
+  , prettyGrammar: a.prettyGrammar <|> b.prettyGrammar
+  , tokenPrecedence: a.tokenPrecedence <|> b.tokenPrecedence
+  , rules: ado
+      x <- a.rules
+      y <- b.rules
+      in
+        { rule: x.rule <|> [InterTerminal space] <|> y.rule
+        , resultant: squishResultant f x.resultant y.resultant
+        , prec: x.prec <> y.prec
         }
   }
 
