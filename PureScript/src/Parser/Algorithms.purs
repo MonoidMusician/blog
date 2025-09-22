@@ -31,11 +31,10 @@ import Data.Traversable (traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested ((/\), type (/\))
-import Debug (spy)
 import Idiolect ((>==))
 import Parser.Proto (Stack(..), topOf)
 import Parser.Proto as Proto
-import Parser.Types (AST(..), Augmented, Augmenteds, CST(..), Fragment, Grammar(..), ICST(..), Lookahead, OrEOF(..), Part(..), Produced, Producible, SAugmented, SFragment, ShiftReduce(..), State(..), StateIndex, StateInfo, StateItem, States(..), Zipper(..), decide, isInterTerminal, isNonTerminal, isTerminal, minimizeState, minimizeStateCat, noInterTerminals, noInterTerminalz, notEOF, nubEqCat, unInterTerminal, unNonTerminal, unShift, unTerminal)
+import Parser.Types (AST(..), Augmented, Augmenteds, CST(..), Fragment, Grammar(..), ICST(..), Lookahead, OrEOF(..), Part(..), Produced, Producible, SAugmented, ShiftReduce(..), State(..), StateIndex, StateInfo, StateItem, States(..), Zipper(..), decide, isNonTerminal, isTerminal, minimizeState, minimizeStateCat, noInterTerminals, noInterTerminalz, notEOF, nubEqCat, unInterTerminal, unNonTerminal, unShift, unTerminal)
 import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
 

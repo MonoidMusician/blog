@@ -28,7 +28,7 @@ import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones ((.$), (.$~~), (=:=), (>@), (~~<))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings as Wings
-import Riverdragon.River (Stream, createRiverStore, createStore, dam, mailboxRiver, makeLake, mapArray, mayMemoize, singleShot, stillRiver, unsafeRiver)
+import Riverdragon.River (Flowing, NotFlowing, Stream, createRiverStore, createStore, dam, mailboxRiver, makeLake, mapArray, mayMemoize, singleShot, stillRiver, unsafeRiver)
 import Riverdragon.River as River
 import Riverdragon.River.Beyond (KeyPhase(..), affToLake, delay, mkKeyEvent)
 import Riverdragon.River.Streamline as S
@@ -73,6 +73,7 @@ data WhichInterface
   | MidiOut
   | DawOut
 
+drumColor :: Int -> Int -> Array Int
 drumColor idx clr_idx = [0x90, 0x60+idx + 8*(idx / 8), mod clr_idx 0x7F]
 
 detect :: MIDIAccess -> Aff (Maybe Launchkey)
@@ -91,10 +92,19 @@ detect = MIDI.access >>> liftEffect >=> case _ of
         -- pure $ Canceler \_ -> liftEffect finish.finalize
   _ -> pure Nothing
 
-init :: Launchkey -> Aff
+init :: forall flowing.
+  Launchkey -> Aff
   { destroy :: Effect Unit
-  , input :: _
-  , output :: _
+  , input ::
+    { dawFocus :: Array Int -> Stream flowing (Array Int)
+    , dawStream :: Stream Flowing (Array Int)
+    , dawWait :: Array Int -> Stream NotFlowing (Array Int)
+    , midiStream :: Stream flowing (Array Int)
+    }
+  , output ::
+    { dawCmd :: Array Int -> Effect Unit
+    , midiCmd :: Array Int -> Effect Unit
+    }
   , ui :: Dragon
   }
 init lk = _.result <$> run do
@@ -224,8 +234,8 @@ widget _ = pure $ D.Replacing $ map fold $ affToLake $ do
       , D.div [ D.Self =:= \el -> mempty <$ sendScopeParent el ] mempty
       ]
 
-mkDragonVoice :: ScoreLive -> ScoreM { dragon :: Dragon, voice :: Int -> Stream _ Unit -> ScoreM { value :: Array Roar, leave :: Stream _ Unit } }
-mkDragonVoice = \iface@{ pitch, temperament } -> do
+mkDragonVoice :: ScoreLive -> ScoreM { dragon :: Dragon, voice :: Int -> Stream Flowing Unit -> ScoreM { value :: Array Roar, leave :: Stream _ Unit } }
+mkDragonVoice = \{ pitch, temperament } -> do
   perfectOvertones <- liftEffect do valueInterface false
   let
     -- A gentle organ voice to start off with

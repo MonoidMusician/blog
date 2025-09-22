@@ -3,14 +3,14 @@ module Riverdragon.Roar.Score where
 import Prelude
 
 import Control.Monad.MutStateT (MutStateT, mutStateT, runMutStateT, unMutStateT)
-import Control.Monad.Reader (ReaderT, asks, runReaderT)
+import Control.Monad.Reader (class MonadReader, ReaderT, asks, runReaderT)
 import Control.Monad.Reader.Class (ask)
-import Control.Monad.ResourceM (destr, liftResourceM, selfScope, waitr, whenReady)
+import Control.Monad.ResourceM (class MonadResource, destr, liftResourceM, selfScope, waitr, whenReady)
 import Control.Monad.ResourceT (ResourceT, Scope, oneSubScopeAtATime, scopedRun, scopedStart_, start)
-import Control.Monad.State (get)
 import Data.Array ((!!))
 import Data.Array as Array
 import Data.Compactable (compact)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int as Int
 import Data.Map (Map)
 import Data.Map as Map
@@ -22,14 +22,15 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Aff (Aff, Fiber)
 import Effect.Class (liftEffect)
-import Effect.Ref (Ref)
+import Prim.Boolean (False, True)
 import Prim.Row as Row
 import Riverdragon.River (Lake, Stream, alwaysBurst, dam, unsafeRiver, (>>~))
 import Riverdragon.River as River
+import Riverdragon.River.Bed (runningAff)
 import Riverdragon.River.Beyond (affToLake)
 import Riverdragon.Roar.Dimensions (temperaments)
-import Riverdragon.Roar.Knob (class ToKnob, renderKnobs)
-import Riverdragon.Roar.Types (class ToLake, class ToOther, class ToRoars, Roar, RoarO, connecting, thingy, toLake, toRoars)
+import Riverdragon.Roar.Knob (class Knobs, class ToKnob, renderKnobs)
+import Riverdragon.Roar.Types (class ToLake, class ToOther, class ToRoars, Roar, connecting, thingy, toLake, toRoars)
 import Type.Proxy (Proxy(..))
 import Type.Row (type (+))
 import Web.Audio.Context (LatencyHint, createAudioContext)
@@ -38,11 +39,12 @@ import Web.Audio.FFI (class FFI)
 import Web.Audio.Node (destination, intoNode, outOfNode)
 import Web.Audio.Node as AudioNode
 import Web.Audio.Node as Node
-import Web.Audio.Types (AudioContext, BiquadFilterType, Float, Frequency, OscillatorType(..))
+import Web.Audio.Types (AudioContext, AudioNode, BiquadFilterType, Float, Frequency, OscillatorType(..))
 import Web.Audio.Types as Audio
 import Widget (Interface, storeInterface)
 
 type ScoreM = MutStateT ScoreSt (ReaderT ScoreRd (ResourceT Effect))
+type ScoreAsync = MutStateT ScoreSt (ReaderT ScoreRd (ResourceT Aff))
 type ScoreSt = Record (ScoreS + ())
 type ScoreRd = Record (ScoreR + ())
 
@@ -73,7 +75,7 @@ perform ::
       ) =>
     FFI (Record options) ffi =>
   Record options ->
-  (AudioContext -> ScoreM (Stream flow (Array RoarO))) ->
+  (AudioContext -> ScoreM (Stream flow (Array Roar))) ->
   Effect
     { ctx :: AudioContext
     , destroy :: Effect Unit
@@ -91,7 +93,7 @@ perform' ::
       ) =>
     FFI (Record options) ffi =>
   Record options ->
-  (AudioContext -> ScoreM { audio :: Stream flow (Array RoarO), result :: result }) ->
+  (AudioContext -> ScoreM { audio :: Stream flow (Array Roar), result :: result }) ->
   Effect
     { result :: result
     , ctx :: AudioContext
@@ -126,7 +128,10 @@ perform' options creator = do
 
 scoreScope :: ScoreM
   { run :: ScoreM ~> Effect
+  , runAsync :: ScoreAsync ~> Aff
   , scope :: Scope
+  , ctx :: AudioContext
+  , iface :: ScoreLive
   }
 scoreScope = do
   st <- mutStateT pure
@@ -135,7 +140,9 @@ scoreScope = do
   let
     run :: ScoreM ~> Effect
     run act = map _.result $ scopedStart_ scope $ flip runReaderT ctx $ flip unMutStateT st $ act
-  pure { run: run :: ScoreM ~> Effect, scope }
+    runAsync :: ScoreAsync ~> Aff
+    runAsync act = map _.result $ scopedRun scope $ flip runReaderT ctx $ flip unMutStateT st $ act
+  pure { run: run :: ScoreM ~> Effect, runAsync: runAsync :: ScoreAsync ~> Aff, scope, ctx: ctx.ctx, iface: ctx.iface }
 
 scoreStream :: forall flow1 flow2 x. Stream flow1 (ScoreM x) -> ScoreM (Stream flow2 x)
 scoreStream upstream = do
@@ -153,6 +160,99 @@ scoreStream upstream = do
       runHere act
   pure stream
 
+scoreAsync :: forall a. ScoreAsync a -> ScoreM (Aff a)
+scoreAsync act = do
+  { runAsync } <- scoreScope
+  running <- liftEffect $ runningAff $ runAsync act
+  waitr do void running
+  pure running
+
+roarAsync :: ScoreAsync Roar -> ScoreM Roar
+roarAsync act = do
+  creating <- scoreAsync act
+  gain 1 creating
+
+scoreKnobs ::
+  forall ir dr ar name source read write score r m.
+    Knobs ir dr ar =>
+    MonadReader { ctx :: AudioContext | r } score =>
+    MonadResource m =>
+  Record ir -> score
+  { defaults :: Record dr
+  , apply :: AudioNode name source read write ar -> m Unit
+  }
+scoreKnobs knobs = do
+  { ctx } <- ask
+  let { defaults, apply: applyKnobs } = renderKnobs knobs ctx
+  pure { defaults, apply: liftResourceM <<< applyKnobs }
+
+
+-- | Get the 0th output of the node
+port0 :: forall name source read write params.
+  AudioNode name source read write params -> Roar
+port0 = flip outOfNode 0
+
+-- | Helper for creating a source node: starts when the score is ready and stops
+-- | it when the score is destroyed.
+createSourceNode' ::
+  forall name given read write params.
+  given ->
+  (AudioContext -> given -> Effect (AudioNode name True read write params)) ->
+  ScoreM (AudioNode name True read write params)
+createSourceNode' givens creator = do
+  { ctx } <- ask
+  node <- liftEffect do creator ctx givens
+  whenReady do Node.startNow node
+  destr do Node.stopNow node
+  pure node
+
+-- | Helper for creating a source node with knobs: starts when the score is
+-- | ready and stops it when the score is destroyed.
+createSourceNode ::
+  forall name knobs given read write params.
+    Knobs knobs given params =>
+  Record knobs ->
+  (AudioContext -> Record given -> Effect (AudioNode name True read write params)) ->
+  ScoreM (AudioNode name True read write params)
+createSourceNode knobs creator = do
+  { defaults, apply: applyKnobs } <- scoreKnobs knobs
+  node <- createSourceNode' defaults creator
+  applyKnobs node
+  pure node
+
+-- | Helper for creating a sink node, subscribing each port to the roars given
+-- | in the `srcs` array.
+createSinkNode' ::
+  forall roar name given read write params.
+    ToRoars roar =>
+  -- for each input port
+  Array roar ->
+  given ->
+  (AudioContext -> given -> Effect (AudioNode name False read write params)) ->
+  ScoreM (AudioNode name False read write params)
+createSinkNode' srcs givens creator = do
+  { ctx } <- ask
+  node <- liftEffect do creator ctx givens
+  forWithIndex_ srcs \port roar -> do
+    connecting (toRoars roar) (intoNode node port)
+  pure node
+
+-- | Helper for creating a sink node with knobs, subscribing each port to the
+-- | roars given in the `srcs` array.
+createSinkNode ::
+  forall roar name knobs given read write params.
+    ToRoars roar =>
+    Knobs knobs given params =>
+  Array roar ->
+  Record knobs ->
+  (AudioContext -> Record given -> Effect (AudioNode name False read write params)) ->
+  ScoreM (AudioNode name False read write params)
+createSinkNode srcs knobs creator = do
+  { defaults, apply: applyKnobs } <- scoreKnobs knobs
+  node <- createSinkNode' srcs defaults creator
+  applyKnobs node
+  pure node
+
 
 
 roars :: Array Roar -> ScoreM Roar
@@ -167,13 +267,11 @@ roarings = gain 1.0
 
 
 gain :: forall knob roar. ToKnob knob => ToRoars roar => knob -> roar -> ScoreM Roar
-gain knob input = do
-  { ctx } <- ask
-  let { defaults, apply: applyKnobs } = renderKnobs { gain: knob } ctx
-  node <- liftEffect do AudioNode.createGainNode ctx defaults
-  liftResourceM do applyKnobs node
-  connecting (toRoars input) (intoNode node 0)
-  pure (outOfNode node 0)
+gain knob input =
+  port0 <$> createSinkNode
+    [ input ]
+    { gain: knob }
+    AudioNode.createGainNode
 
 osc ::
   forall flowOscillatorType oscType frequencyKnob detuneKnob.
@@ -187,14 +285,10 @@ osc ::
   } -> ScoreM Roar
 osc config@{ frequency, detune } = do
   { ctx } <- ask
-  let { defaults, apply: applyKnobs } = renderKnobs { frequency, detune } ctx
-  node <- liftEffect do AudioNode.createOscillatorNode ctx defaults
-  liftResourceM $ applyKnobs node
+  node <- createSourceNode { frequency, detune } AudioNode.createOscillatorNode
   River.subscribe
     (thingy <$> (toLake config.type :: Lake oscType) <@> ctx)
     (Node.setOscillatorType node)
-  whenReady do Node.startNow node
-  destr do Node.stopNow node
   pure (outOfNode node 0)
 
 offset ::
@@ -202,14 +296,8 @@ offset ::
     ToKnob offsetKnob =>
   { offset :: offsetKnob
   } -> ScoreM Roar
-offset config = do
-  { ctx } <- ask
-  let { defaults, apply: applyKnobs } = renderKnobs config ctx
-  node <- liftEffect do AudioNode.createConstantSourceNode ctx defaults
-  liftResourceM $ applyKnobs node
-  whenReady do Node.startNow node
-  destr do Node.stopNow node
-  pure (outOfNode node 0)
+offset config =
+  port0 <$> createSourceNode config AudioNode.createConstantSourceNode
 
 filter ::
   forall flowBiquadFilterType knobQ knobDetune knobFrequency knobGain roar.
@@ -227,18 +315,15 @@ filter ::
   } ->
   roar -> ScoreM Roar
 filter config input = do
-  { ctx } <- ask
   let
-    { defaults, apply: applyKnobs } = renderKnobs
+    knobs =
       { "Q": config."Q"
       , detune: config.detune
       , frequency: config.frequency
       , gain: config.gain
-      } ctx
-  node <- liftEffect do AudioNode.createBiquadFilterNode ctx defaults
-  liftResourceM do applyKnobs node
+      }
+  node <- createSinkNode [ input ] knobs AudioNode.createBiquadFilterNode
   River.subscribe (toLake config.type) $ Audio.setProp node (Proxy :: Proxy "type")
-  connecting (toRoars input) (intoNode node 0)
   pure (outOfNode node 0)
 
 -- | Convert a MIDI note number to a pitch frequency, based upon the currently
@@ -269,11 +354,11 @@ freqs :: forall flow knob. ToKnob knob => Stream flow (Array knob) -> ScoreM Roa
 freqs = roarings <=< scoreStream <<< map (traverse \frequency -> osc { type: Sine, frequency, detune: 0 })
 
 waveshape :: forall roar. ToRoars roar => Array Float -> roar -> ScoreM Roar
-waveshape curve input = do
-  { ctx } <- ask
-  node <- liftEffect do AudioNode.createWaveShaperNode ctx { curve }
-  connecting (toRoars input) (intoNode node 0)
-  pure (outOfNode node 0)
+waveshape curve input =
+  port0 <$> createSinkNode'
+    [ input ]
+    { curve }
+    AudioNode.createWaveShaperNode
 
 wavesample :: Int -> (Float -> Float) -> Array Float
 wavesample nsamples shaping =

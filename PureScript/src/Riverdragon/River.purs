@@ -102,6 +102,8 @@ module Riverdragon.River
   , noBurst
   , bursting
   , alwaysBurst
+  , coursing
+  , Course(..)
   , instantiate
   , store
   , store'
@@ -610,8 +612,13 @@ coursing chosenCourse strm@(Stream _ stream) = track case chosenCourse of
   StoreDedup equalitor -> do
     lastValue <- storeLast
     { send, commit, stream: streamDependingOn, destroy } <- createProxy' (Array.fromFoldable <$> lastValue.get)
+    let
+      receive a = do
+        lastValue.get >>= case _ of
+          Just prev | equalitor prev a -> lastValue.set a -- step by step, not transitive
+          _ -> (lastValue.set <> send) a
     { burst, sources, unsubscribe } <-
-      stream { receive: lastValue.set <> send, commit, destroyed: destroy }
+      stream { receive, commit, destroyed: destroy }
     case Array.last burst of
       Just v -> lastValue.set v
       _ -> pure unit

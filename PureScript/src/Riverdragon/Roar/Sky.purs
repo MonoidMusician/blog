@@ -210,6 +210,6 @@ synthSetup = mempty
 
 synthParameters = { pitch: 441.0, temperament: [0.0] }
 
-dragonVoice :: ScoreLive -> ResourceM { dragon :: Dragon, voice :: Int -> Stream _ Unit -> ScoreM { value :: Array Roar, leave :: Stream _ Unit } }
+dragonVoice :: ScoreLive -> ResourceM { dragon :: Dragon, voice :: Int -> Stream NotFlowing Unit -> ScoreM { value :: Array Roar, leave :: Stream _ Unit } }
 dragonVoice = const $ pure { dragon: mempty, voice: mempty }
 

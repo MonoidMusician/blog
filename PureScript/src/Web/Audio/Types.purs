@@ -2,7 +2,7 @@ module Web.Audio.Types where
 
 import Prelude
 
-import Data.Enum (class BoundedEnum, class Enum, cardinality)
+import Data.Enum (class BoundedEnum, class Enum)
 import Data.Enum.Generic (genericCardinality, genericFromEnum, genericPred, genericSucc, genericToEnum)
 import Data.Generic.Rep (class Generic)
 import Data.Reflectable (class Reflectable, class Reifiable)

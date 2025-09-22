@@ -12,7 +12,7 @@ import Effect.Class (liftEffect)
 import Idiolect (tripleQuoted)
 import PureScript.CST.Types as CST.T
 import Riverdragon.Dragon (Dragon(..), renderEl)
-import Riverdragon.Dragon.Bones ((.$$), (=:=), (>@))
+import Riverdragon.Dragon.Bones ((=:=), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (sourceCode, tabSwitcher)
 import Riverdragon.River (Lake, dam, makeLake, store)

@@ -50,7 +50,7 @@ import Riverdragon.Dragon.Bones (($$), (.$), (=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Breath (microtask)
 import Riverdragon.Dragon.Wings (sourceCode)
-import Riverdragon.River (Lake, River, Stream, dam, makeLake, store, store', subscribe)
+import Riverdragon.River (Lake, River, Stream, dam, makeLake, store', subscribe)
 import Riverdragon.River as River
 import Riverdragon.River.Bed as Bed
 import Riverdragon.River.Beyond (affToLake, counter)
