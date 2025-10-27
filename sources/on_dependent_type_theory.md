@@ -12,7 +12,7 @@ unlike classical foundations of mathematics (namely set theory), intensional dep
 - computation is beneficial for elucidating meaning: the formal judgments of a type theory are understood to be decidable and self-evident, and so beta reduction in the theory ought to be computable
 - computation is necessary for using dependent type theory for programming and is beautiful in its own right, with deep connections to topology that manifest in types and functions
 
-the nature of equality is important to the character of a type theory, with judgmental equality (definitional equality) being the computable notion necessary for checking the consistency of a program or proof syntax (thus influencing the usability of the type theory), while provable equality (propositional or homotopical equality) reifies semantic equality as a type within the type theory
+the nature of equality is important to the character of a type theory, with judgmental equality (definitional equality) being the computable notion necessary for checking the consistency of a program or proof syntax (thus influencing the usability of the type theory), while typal equality (propositional or homotopical equality) reifies provable semantic equality as a type within the type theory
 
 there are still gaps and unanswered questions between the implementation of front-ends for interactive theorem provers and what has been proven and formally specified: even the core calculus of a theorem prover (meant as a final check on its consistency, after tactics and elaboration) may not be as-specified, or it may include compromises on properties of the type theory (like transitivity of definitional equality)
 
