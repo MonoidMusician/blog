@@ -26,4 +26,5 @@ output-es/
 /sources.txt
 /watch
 cert
+__pycache__/
 
