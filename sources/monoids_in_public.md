@@ -642,6 +642,8 @@ instance Applicative m ⇒ Applicative (Phases m) where
 ```
 
 They could have used something shaped like `Map k`{.haskell} with any orderable key type, but encoding that via the Day convolution sounds like a pain.
+Phil Freeman used row types to make a type safe tensoring of arbitrary functors in [`purescript-smash`](https://pursuit.purescript.org/packages/purescript-smash/3.0.0), though the implementation of the safe API uses unsafe functions.
+(This was intended for [Comonads as Spaces](https://blog.functorial.com/posts/2016-08-07-Comonads-As-Spaces.html), not for applicatives, though the Day convolution is a useful construction for both.)
 
 ### Overlapping Append
 
