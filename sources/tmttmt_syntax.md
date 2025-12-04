@@ -25,6 +25,7 @@ A programming language syntax with good parsability and prosody, hopefully.
     - `{# … #}`{.tmttmt} nested leading/prefix comments
     - `@{annotation}`{.tmttmt} prefix attribute annotation
       - `@name`{.tmttmt} simple prefix annotation
+    - `{{| … }}`{.tmttmt} case statement
     - `{{! … }}`{.tmttmt} function block
     - `{{{ … }}}`{.tmttmt} module block
   - `(…)`{.tmttmt} for parenthetical or grouped structure
@@ -156,7 +157,7 @@ casedecl =
       tm                 ## return value
     ( ';' | ':' stmt+ )  ## body of statements
   ## type annotation of the (whole / remaining) function
-  | '{{' ':' ty ':'? '}}' casedecl
+  | '{' ':' ty ':'? '}' casedecl
   ## comment for the function case
   | '{#' any_balanced_comment '#}' casedecl
   ## annotation for the function case
@@ -178,17 +179,21 @@ arrow =
 ## Statement syntax (the bodies of functions)
 stmt =
   ## normal call (applicative/monad style)
+  ## the prefix question mark means to catch errors from the function call itself
+  ## the question mark on the arrow means to catch the failed pattern match
   | '?'? tm+ arrow tm
   ## case call (selective applicative style)
-  | '?'? tm+ '?'? select_case* '??'? '!'
+  ## the prefix question mark means to catch errors from the function call itself
+  ## the question mark on the arrow means to catch the failed pattern match
+  | '?'? tm+ arrow? '{{' '|'? select_case* '|'? '}}'
   | '{' '@' annotation '}' stmt   ## duplicates the term annotation for the stmt
   | '@' annotation_name ':' stmt  ## duplicates the term annotation for the stmt
   ## top-level declarations (function-local module scope)
   | '{{{' top_level '}}}'
 
 select_case =
-  | '?' tm ';'
-  | '?' tm ':' stmt*
+  | '|' tm ';'
+  | '|' tm ':' stmt*
 
 ## Type syntax
 ty (< any_balanced_syntax) =
@@ -260,7 +265,7 @@ annotation_term (< any_balanced_syntax) =
 ## Annotation or type annotation
 tyannotated(syntax) =
   | syntax '(' ':' ty ('::' ty)? ':'? ')'  ## suffix type annotation
-  | '{{' ':' ty ':'? '}}' syntax           ## prefix type annotation
+  | '{' ':' ty ':'? '}' syntax           ## prefix type annotation
   | annotated(syntax)
 ## Annotation or comment
 annotated(syntax) (< any_balanced_syntax) =
@@ -301,41 +306,45 @@ build-options:: { X=Boolean Y=("built-in" | ["provided" $$]) args=*$ } -> *$
 build-options: { X=X Y=Y args=args } => options##:
   {# start with empty options #}
   [] => options##
-  X ? "true":
+  X => {{
+  | "true":
     append2 options## [ "--use-X" ] => options##
-  ? _; !
+  | _;
+  }}
 
-  Y
-  ? "built-in":
+  Y => {{
+  | "built-in":
     append2 options## [ "--built-in-Y" ] => options##
-  ? ["provided" path]:
+  | ["provided" path]:
     append2 options## [ "--path-to-Y" path ] => options##
-  !
+  }}
 
-  args
-  ? [];
-  ? _:
+  args => {{
+  | [];
+  | _:
     append3 options## [ "--" ] args => options##
-  !
+  }}
 
 build-options-with-monad: { X=X Y=Y args=args } => options:
   run-writer-monad (| [] => []:
-    X ? "true":
+    X => {{
+    | "true":
       appending1 [ "--use-X" ] => []
-    ? _; !
+    | _;
+    }}
 
-    Y
-    ? "built-in":
+    Y => {{
+    | "built-in":
       appending1 [ "--built-in-Y" ] => []
-    ? ["provided" path]:
+    | ["provided" path]:
       appending1 [ "--path-to-Y" path ] => []
-    !
+    }}
 
-    args
-    ? [];
-    ? _:
+    args => {{
+    | [];
+    | _:
       appending2 [ "--" ] args => []
-    !
+    }}
   |) => [options []]
 @comment {{{
   run-writer-monad {{!

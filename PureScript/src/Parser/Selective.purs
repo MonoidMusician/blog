@@ -214,6 +214,13 @@ cmapCaseTree h (OneCase fir) = OneCase (lcmap h <$> fir)
 cmapCaseTree h (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
   twoCases (fg <<< h) x y
 
+mapCaseTree :: forall i j f f' r r'. Functor f' =>
+  (j -> i) -> (forall d. f d -> f' d) -> (r -> r') -> CaseTree i f r -> CaseTree j f' r'
+mapCaseTree f _ _ (ZeroCases toVoid) = ZeroCases (toVoid <<< f)
+mapCaseTree f g h (OneCase fir) = OneCase (dimap f h <$> g fir)
+mapCaseTree f g h (TwoCases xy) = splitCases xy \(CasesSplit split x y) ->
+  twoCases (split <<< f) (mapCaseTree identity g h x) (mapCaseTree identity g h y)
+
 summarizeCaseTree :: forall i f r m. Monoid m => (forall a. f a -> m) -> CaseTree i f r -> m
 summarizeCaseTree f = hoistCaseTree (\fa -> Const (f fa)) >>> mergeCaseTree >>> unwrap
 
