@@ -48,7 +48,7 @@ import Uncurried.RWSE (RWSE, evalRWSE)
 
   expr ::= expr (: type :)
   expr ::= [ (: overall_type :) expr* ]
-  expr ::= {: assoc* :} ## strict/enumerated record, not subject to field subtyping
+  expr ::= { assoc* } ## strict/enumerated record, not subject to field subtyping
 
 -}
 
@@ -59,7 +59,7 @@ import Uncurried.RWSE (RWSE, evalRWSE)
   `subsumed <: subsumes`
   `any term of this type <:(can also be used as) a term of this type`
   `"true" <: ("true" | "false")`
-  `{ x: string, y: string } <: { x: string }`
+  `{. x: string, y: string .} <: {. x: string .}`
 
   Polymorphism increases the slipperiness:
   - Like quantifiers commute
@@ -98,8 +98,8 @@ import Uncurried.RWSE (RWSE, evalRWSE)
   everything lifts: `k -> Type`, like forall and union and others. actually need
   to be careful with that......
 
-  `range :: Int -> @forall (f :: @Type -> @Type | Foldable). f Int`
-  `range :: Int -> @forall (f :: @Type -> @Type, Foldable f). f Int`
+  `range :: Int -> @forall (f :: @Type -> @Type | Unfoldable). f Int`
+  `range :: Int -> @forall (f :: @Type -> @Type, Unfoldable f). f Int`
 -}
 
 data UniSub solution = UniSub
@@ -322,7 +322,7 @@ unionFunctions' neutral cmp = NEA.fromArray >>> map \fns -> do
 
 --------------------------------------------------------------------------------
 
-data UniOrSub = Unify | LSub | RSub
+data UniOrSub = Unify | RSubL | LSubR
 
 -- unisubSifted :: UniOrSub -> Pair QSiftQ -> Pair (UniSub (QSiftQ Quantified))
 -- unisubSifted dir (Pair l r) =

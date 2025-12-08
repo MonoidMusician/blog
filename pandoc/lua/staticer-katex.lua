@@ -15,7 +15,7 @@ function Math(h)
     local input = io.open(fname .. '.tex', 'w')
     input:write(h.text)
     input:close()
-    os.execute('./cache/katex --no-throw-on-error --macro-file assets/katex_macros.tex -F mathml ' .. display_flag .. ' -i ' .. fname .. '.tex' .. ' -o ' .. fname .. '.html')
+    os.execute('./cache/katex --no-throw-on-error --trust --macro-file assets/katex_macros.tex -F mathml ' .. display_flag .. ' -i ' .. fname .. '.tex' .. ' -o ' .. fname .. '.html')
     output = io.open(fname .. '.html')
   end
   -- Trim whitespace, particularly trailing newlines

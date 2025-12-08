@@ -281,6 +281,7 @@ abbreviations = Map.fromFoldable
   , "WASM" /\ Acronym "Web Assembly"
   , "SKI" /\ Jargon "SKI Combinator Calculus" FormatColon "a minimal foundation for computation"
   , "API" /\ Jargon "Application Programming Interface" FormatEquiv "interface of components for programming"
+  , "iff" /\ Jargon "if and only if" FormatNone ""
   ]
 
 matching :: String -> Array String
