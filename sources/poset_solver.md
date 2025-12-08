@@ -20,7 +20,7 @@ Instead of following their approach of defining poset models and morphisms betwe
 A poset solver is going to be an object that accepts constraints of the form: \(v_1 \le v_2\), \(v_1 < v_2\), or \(v_1 = v_2\).
 
 We need this solver to be *online* in a sense: we will constantly be adding constraints, and at most we may add a couple constraints before stopping to ask if it is still consistent, so we may as well check consistency every step.
-This is because we need to know that the universe levels are consistent before evaluation is guaranteed to terminate, and typechecking is interleaved with typechecking in a proof assistant.
+This is because we need to know that the universe levels are consistent before evaluation is guaranteed to terminate, and typechecking is interleaved with typechecking in dependent type theories.
 
 In Haskell terms, weʼre looking for a `Solver`{.haskell} type that supports `relate`{.haskell}:
 
@@ -65,9 +65,12 @@ Least upper bound and greatest lower bound.
 We want our solver to be as fast as possible, so to do this, we want to choose *concrete positions* for each variable.
 These positions do not have to be deterministic, and they do not have to be final: we will be updating the concrete positions of variables as we go, but semantically, we will only be adding constraints.
 
-Concrete positions may change, but the relationships of variables can only maintain their order or collapse due to an equality.
+Concrete positions may change, but the relationships of variables will only maintain their order, or collapse due to an equality.
 
-This means that we can look up and compare the current positions of variables very very quickly.
+This means that we can at least look up and compare the current positions of variables very very quickly.
+
+Other operations are not so quick, and this does not guarantee that insertions are quick, either, but it is a start.
+(Operations that involve traversing the poset, like finding chains within the poset, are not optimized.)
 
 ```haskell
 data PartialComparison
@@ -76,13 +79,13 @@ data PartialComparison
   | PosetLE -- less-than-or-equal (but not known to be equal (yet))
   | PosetGE -- greather-than-or-equal
 
-lattice :: Lattice -> Lattice -> PartialComparison
+latticeCompare :: Lattice -> Lattice -> PartialComparison
 
 compareIn :: (Fresh, Fresh) -> Solver -> Maybe (Lattice, PartialComparison, Lattice)
 compareIn (v1, v2) solver = do
   x <- lookup v1 solver
   y <- lookup v2 solver
-  pure (x, lattice x y, y)
+  pure (x, latticeCompare x y, y)
 
 lookup :: Fresh -> Solver -> Maybe Lattice
 lookup (Fresh v) = IntMap.lookup v . vars
@@ -98,7 +101,7 @@ instance Semigroup PartialComparison where
   _ <> _ = PosetUN
 ```
 
-The key is choosing the correct `Lattice`{.haskell} type, implementing the partial comparison `lattice :: Lattice -> Lattice -> PartialComparison`{.haskell}, and figuring out how to update concrete `Lattice`{.haskell} positions in a solver.
+The key is choosing the correct `Lattice`{.haskell} type, implementing the partial comparison `latticeCompare :: Lattice -> Lattice -> PartialComparison`{.haskell}, and figuring out how to update concrete `Lattice`{.haskell} positions in a solver.
 
 ### Background
 
@@ -125,12 +128,12 @@ Also it is not clear that this encoding would help us with transitivity very muc
 
 But can we come up with our own Fraïssé limit?
 
-#### 2D rationals
+#### 2D Rationals
 
 Before we get there, letʼs look at an *almost* good-enough lattice: \(\Q\x\Q\), the product of rationals as *posets*.
 
 The comparison goes through component-wise.
-That is, \((p_1, p_2) \le (q_1, q_2)\) iff \(p_1 \le q_1\) and \(p_2 \le q_2\).
+That is, \((p_1, p_2) \le (q_1, q_2)\) [iff]{t=} \(p_1 \le q_1\) and \(p_2 \le q_2\).
 
 In fact, not only do we keep the poset structure, but we also keep the lattice structure.
 Essentially, componentwise `min`{.haskell} and `max`{.haskell} work well.
@@ -221,8 +224,8 @@ The partial comparison `l1 <=? l2`{.haskell} requires that for all values in `l2
 Thatʼs the cleanest way to describe it, the partial comparison function is a bit less clear:
 
 ```haskell
-lattice :: Lattice -> Lattice -> PartialComparison
-lattice l1 l2 = fold $ mergeValues l1 l2
+latticeCompare :: Lattice -> Lattice -> PartialComparison
+latticeCompare l1 l2 = fold $ mergeValues l1 l2
   (const PosetLE)
   (const PosetGE)
   \x y -> partialOfTotal (compare x y)
@@ -265,6 +268,173 @@ The semantic state consists of `vars`{.haskell} and `aparts`{.haskell}, while `c
 
 `points`{.haskell} is used for quickly inserting at rationals.
 By seeing which points are used along each dimension, we can quickly insert above or below a point at the end of a dimension.
-In some cases, this saves doing a linear scan of `vars`.
+In some cases, this saves doing a linear scan of `vars`{.haskell}.
 
-- 
+The solver augments the naïve approach (set of upper bounds) with the linear chains given by `Chain`{.haskell}.
+That is, insertions may require shifting “subtrees” downwards with knowledge of their new upper bounds: inserting additional dimensions that they are now constrained by, and lowering their value along the chain in existing dimensions.
+
+Importantly, we get away with only shifting subtrees downwards (and not other kinds of rearrangements) by ensuring that we never get in the situation from [2D Rationals]: we will never actually pick points like \(\{\ 0{:}2, 1{:}0 \ \}, \{\ 0{:}1, 1{:}1\ \}, \{\ 0{:}0, 1{:}2\ \}\).
+Instead we will always use additional dimensions to express uncomparable elements: \(\{\ 0{:}0\ \}, \{\ 1{:}0\ \}, \{\ 2{:}0\ \}\) instead.
+
+
+#### Example
+
+Letʼs look at an example of adding relations to a solver.
+We will choose convenient integer points along each dimension, but otherwise it should be the same algorithm.
+
+- \(\htmlClass{new}{v_2} \le \htmlClass{new}{v_1}\)
+
+  We need to place these on a new dimension, since they are the first variables in the solver, and we assign them different values along that dimension to indicate their relative position in the chain:
+
+  +-----------------+------------------+
+  | [\(v_1\)]{.new} | `{ 0: +0 }`{.py} |
+  +-----------------+------------------+
+  | [\(v_2\)]{.new} | `{ 0: -1 }`{.py} |
+  +-----------------+------------------+
+
+- \(\htmlClass{new}{v_3} \le v_2\)
+
+  We have another variable that we can insert into the same chain.
+  The algorithm knows this because there exists a dimension (`0`) where \(v_2\) holds the minimum value along that dimension (`-1`).
+  So now \(v_3\) will have a new minimum value there: `-2`.
+
+  +-----------------+------------------+
+  | [\(v_1\)]{.old} | `{ 0: +0 }`{.py} |
+  +-----------------+------------------+
+  | [\(v_2\)]{.old} | `{ 0: -1 }`{.py} |
+  +-----------------+------------------+
+  | [\(v_3\)]{.new} | `{ 0: -2 }`{.py} |
+  +-----------------+------------------+
+
+- \(\htmlClass{new}{v_4} \le v_1\)
+
+  Now we add a new dimension again, because \(v_4\) relates to \(v_1\), but not to \(v_2\).
+  Technically speaking, the implementation realizes this because dimension `0` has at least one value below the value of \(v_1\).
+
+  Remember that `{ 0: +0 } >= { 0: +0, 1: +0 }`{.py} since the first is like `{ 0: +0, 1: ⊤ }`{.py}, with the top value `⊤`{.py} for the missing key `1`{.py}.
+
+  +-----------------+-------------------------+
+  | [\(v_1\)]{.old} | `{ 0: +0 }`{.py}        |
+  +-----------------+-------------------------+
+  | [\(v_2\)]{.old} | `{ 0: -1 }`{.py}        |
+  +-----------------+-------------------------+
+  | [\(v_3\)]{.old} | `{ 0: -2 }`{.py}        |
+  +-----------------+-------------------------+
+  | [\(v_4\)]{.new} | `{ 0: +0, 1: +0 }`{.py} |
+  +-----------------+-------------------------+
+
+- \(v_1 \le \htmlClass{new}{v_5}\)
+
+  Conversely, if we add an upper bound to \(v_1\), it sees that it holds the _maximum_ value for that dimension, so it can insert above it without shifting anything else.
+
+  +-----------------+-------------------------+
+  | [\(v_1\)]{.old} | `{ 0: +0 }`{.py}        |
+  +-----------------+-------------------------+
+  | [\(v_2\)]{.old} | `{ 0: -1 }`{.py}        |
+  +-----------------+-------------------------+
+  | [\(v_3\)]{.old} | `{ 0: -2 }`{.py}        |
+  +-----------------+-------------------------+
+  | [\(v_4\)]{.old} | `{ 0: +0, 1: +0 }`{.py} |
+  +-----------------+-------------------------+
+  | [\(v_5\)]{.new} | `{ 0: +1 }`{.py}        |
+  +-----------------+-------------------------+
+
+- \(v_2 \le \htmlClass{new}{v_6}\)
+
+  Finally we see a more involved case: \(v_6\) needs to be an upper bound for \(v_2\), but \(v_2\) is not at the top of any dimension (\(v_1\) is).
+  So we need a new dimension for \(v_6\), and *then* we need to lower every point *below* and including \(v_2\) to also be below \(v_6\) with its new dimension.
+  In this case, it is only \(v_2\) itself and \(v_3 \le v_2\).
+
+  +-----------------+-------------------------+
+  | [\(v_1\)]{.old} | `{ 0: +0 }`{.py}        |
+  +-----------------+-------------------------+
+  | [\(v_2\)]{.upd} | `{ 0: -1, 2: +0 }`{.py} |
+  +-----------------+-------------------------+
+  | [\(v_3\)]{.upd} | `{ 0: -2, 2: +0 }`{.py} |
+  +-----------------+-------------------------+
+  | [\(v_4\)]{.old} | `{ 0: +0, 1: +0 }`{.py} |
+  +-----------------+-------------------------+
+  | [\(v_5\)]{.old} | `{ 0: +1 }`{.py}        |
+  +-----------------+-------------------------+
+  | [\(v_6\)]{.new} | `{ 2: +0 }`{.py}        |
+  +-----------------+-------------------------+
+
+- \(v_6 \le \htmlClass{new}{v_7}\)
+
+  Now we add a point above the new \(v_6\).
+  Since \(v_6\) is at the top of its dimension, we can insert above it.
+  This is a key property of the solver: inserting chains should only impose a linear scan once, and revert to really quick insertions afterwards.
+
+  +-----------------+-------------------------+
+  | [\(v_1\)]{.old} | `{ 0: +0 }`{.py}        |
+  +-----------------+-------------------------+
+  | [\(v_2\)]{.old} | `{ 0: -1, 2: +0 }`{.py} |
+  +-----------------+-------------------------+
+  | [\(v_3\)]{.old} | `{ 0: -2, 2: +0 }`{.py} |
+  +-----------------+-------------------------+
+  | [\(v_4\)]{.old} | `{ 0: +0, 1: +0 }`{.py} |
+  +-----------------+-------------------------+
+  | [\(v_5\)]{.old} | `{ 0: +1 }`{.py}        |
+  +-----------------+-------------------------+
+  | [\(v_6\)]{.old} | `{ 2: +0 }`{.py}        |
+  +-----------------+-------------------------+
+  | [\(v_7\)]{.new} | `{ 2: +1 }`{.py}        |
+  +-----------------+-------------------------+
+
+- \(v_1 \le v_3\), thus \(v_1 = v_3\)
+
+  Looking up \(v_1\) and \(v_3\) in the existing solver state tells the implementation that \(v_1 \ge v_3\) currently, so by antisymmetry, they need to be equal now.
+
+  The simplest way to do this is to use the same shifting operation as used earlier: force \(v_1\) and everything below it to also be below \(v_3\).
+
+  Notice that this automatically picks up \(v_2\) as well!
+
+  If we had introduced strict inequalities, this is where it would check that those variables are still apart from each other.
+
+  +-----------------+--------------------------------+
+  | [\(v_1\)]{.upd} | `{ 0: -2, 2: +0 }`{.py}        |
+  +-----------------+--------------------------------+
+  | [\(v_2\)]{.upd} | `{ 0: -2, 2: +0 }`{.py}        |
+  +-----------------+--------------------------------+
+  | [\(v_3\)]{.old} | `{ 0: -2, 2: +0 }`{.py}        |
+  +-----------------+--------------------------------+
+  | [\(v_4\)]{.upd} | `{ 0: -2, 1: +0, 2: +0 }`{.py} |
+  +-----------------+--------------------------------+
+  | [\(v_5\)]{.old} | `{ 0: +1 }`{.py}               |
+  +-----------------+--------------------------------+
+  | [\(v_6\)]{.old} | `{ 2: +0 }`{.py}               |
+  +-----------------+--------------------------------+
+  | [\(v_7\)]{.old} | `{ 2: +1 }`{.py}               |
+  +-----------------+--------------------------------+
+
+  (You could also *raise* \(v_3\) to equal \(v_1\): that would avoid shifting values below \(v_1\), but it still would require scanning for values like \(v_2\) to raise them as well.)
+
+#### Theory
+
+
+
+#### Questions
+
+- Is there an efficient way to amortize updates, or reduce the amount of scanning?
+
+
+<style>
+table {
+  font-size: 120%;
+}
+table td {
+  width: max-content; /* does not do anything */
+}
+table td code {
+  white-space: nowrap;
+}
+td .old {
+  transition: opacity 0.2s;
+}
+td:not(:hover) .old {
+  opacity: 70%;
+}
+td .new, td .upd, .katex .new {
+  color: #27a820ff;
+}
+</style>
