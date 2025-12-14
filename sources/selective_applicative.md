@@ -1,29 +1,72 @@
 ---
 title: Selective Applicative Functors
+subtitle: The Missing Theoretical Basis for *Exclusive Determined Choice*
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
 I havenʼt seen a good accounting of the essence of selective applicative functors.
+
+Theyʼve been longing for a better description, to help explain what should be allowed and what should be disallowed, beyond “hey, here is a function `select`{.haskell} that seems to do useful things and enable us to write interesting code”.
+
+Selective applicative functors were originally proposed in 2019 in the paper [Selective Applicative Functors](https://dl.acm.org/doi/pdf/10.1145/3341694), by Andrey Mokhov, Georgy Lukyanov, Simon Marlow, and Jeremie Dimino, with this typeclass definition:
+
+```haskell
+class Applicative f => Selective f where
+  select :: f (Either a b) -> f (a -> b) -> f b
+```
+
+The `branch`{.haskell} combinator was unfortunately not integral to the story, 
+
+```haskell
+branch :: Selective f => f (Either a b) -> f (a -> c) -> f (b -> c) -> f c
+branch x l r = fmap (fmap Left) x <*? fmap (fmap Right) l <*? r
+```
+
+But the story has stopped short after `select`{.haskell} because the familiar tools of theoretical analysis failed to apply to `select`{.haskell} specifically: there was no account for `select`{.haskell} in terms of monoidal tensors, and even `branch`{.haskell} did not meaningfully compose with itself, which means that there was no obvious way that the laws related to more familiar algebraic and categorical structures like monoids (and, it turns out, near-semirings).
+
+Howevver, the final answer for what selective applicative functors want to be is really cool.
+We just have to work a bit harder to see it: we have to consider arrows (composable profunctors) instead of plain functors.
+
+Selective applicative functors want to encode *exclusive determined choice*.
+They can choose between a finite number of predetermined case branches based upon previous results during evaluation.^[`select`{.haskell} itself has an implicit `pure`{.haskell} branch with no side-effects.]
+
+Once you see it, it makes so much sense from a programming language perspective: it has the shape of an AST for a programming language.
+We can even go farther and relate it to the other typeclass for control flow, `Alternative`{.haskell}, which provides `<|>`{.haskell} for *nondeterministic* choice.
+
+## Overview
+
 Here it is, here is the essence of selective applicatives!
 
+Letʼs start from the familiar territory of monads.
 Monads encode the essence of dynamic control flow: because `>>=`{.haskell} allows binding any function as a continuation, an action in a monad can construct an arbitrary action to execute next, *dynamically*.
+This also forces a clear direction to evaluation: the left effects have to happen before the right effects, because the result of the left action is used to determine the whole action on the right.
+This also disallows static analysis: the constant functor [`Const`{.haskell}]() is not an interesting monad.^[The reason it does not have a `Monad`{.haskell} instance at all is because it would not be compatible with the much more compelling `Applicative`{.haskell} instance.]
+
+This is in contrast to applicative functors, which have no “arrow of time”: their structure can be dualized to run effects in reverse because it has no control flow required by the interface.^[Of course particular applicative functors can have interesting control flow themselves, via combinators other than `<*>`{.haskell}.]
+And their static analysis, given by `Monoid m => Applicative (Const m)`{.haskell}, uses monoids to accumulate information about each action that was sequenced by `<*>`{.haskell}.
 
 :::Key_Idea
-Selective applicative functors express *finite* control flow: they allow (but do not require) that an implementation choose between a finite number of branches of otherwise static control flow.
+Selective applicative functors sit in the sweet spot of expressing *finite* control flow: they allow (but do not require) that an implementation choose between a finite number of branches of otherwise static control flow.
 
-This means that we need something that restricts `>>=` to *finite-case functions* to encode *finite exclusive branching choice*.
+This means that we need something that restricts `>>=`{.haskell} to *finite-case functions* to encode *exclusive determined choice*.
+
+This will be defined as a `CaseTree`{.haskell} data type below.
+:::
 
 It turns out that the most natural setting is to consider arrows instead of functors.
 The functor can be recovered as an arrow out of the unit type (spelled `()`{.haskell} in Haskell and `Unit`{.purescript} in PureScript).
+
+Any approach that does not consider arrows seems doomed to failure, mainly for the reason that we want to work with coproducts (`either :: (x -> r) -> (y -> r) -> (Either x y -> r)`{.haskell}) which involves the domain in an essential manner, while products (`tuple :: (i -> x) -> (i -> y) -> (i -> Tuple x y)`{.haskell}) stay in the codomain and thus are more amenable to restricting to actions on functors.
+
+The concept that we need, of “finite-case functions”, is a bit tricky to formulate (especially in programming data types: it needs existential types), which I believe is part of why it has been missed.
+
+However, once we focus on the arrows instead of the applicative actions in isolation, it can all pop into place and it pays off in revealing details of the structure we were really after.
+
+:::Key_Idea
+For example, we learn that selective applicative functors allow static analysis via near-semirings by using a constant functor.
+(That is, we define static analysis to be an interpretation into a constant functor, and we learn that near-semirings are the algebraic structure we need to make it work.)
 :::
-
-The concept that we need, of “finite-case functions”, is a bit tricky to formulate (especially in programming data types: it needs existential types), which is I believe why it has been missed.
-
-However, once we focus on the arrows, it can all pop into place and it pays off in revealing details of the structure we were really after.
-
-For example, we learn that selective applicative functors allow static analysis via semirings by using a constant functor.
-(That is, we define static analysis to be an interpretation into a constant functor, and we learn that semirings are the algebraic structure we need to make it work.)
 
 :::Warning
 The common formulation of `select :: f (Either u v) -> f (u -> v) -> f v`{.haskell} **does not capture** this story.
@@ -32,7 +75,7 @@ That is, `select`{.haskell} allows for finite choice / optional effects, but it 
 :::
 
 :::Details
-We can squeeze it all into a single data type for a free arrow (a profunctor) like this.
+We can squeeze it all into a single data type for a free arrow (a strong profunctor and a category) like this, subject to some laws.
 
 ```haskell
 data ControlFlow f i r where
@@ -49,16 +92,16 @@ data ControlFlow f i r where
 We then recover the free selective applicative as `FreeSelective f = ControlFlow f ()`{.haskell}.
 :::
 
-## In search of a tensor product
+## In search of a monoidal tensor
 
-By “tensor” I mean the generalization of tensor products in category theory.
+<!-- By “tensor” I mean the generalization of tensor products in category theory.
 Specifically they are formulated as monoidal products, part of the definition of a [monoidal category](https://en.wikipedia.org/wiki/Monoidal_category).
 
-The word “product” here is legacy: a *product* in a category is a *monoidal product* that comes with projections: `Product x y -> x`{.haskell} and `Product x y -> y`{.haskell} (satisfying laws).
+The word “product” here is legacy: a *product* in a category is a particular kind of *monoidal product* that comes with projections: `Product x y -> x`{.haskell} and `Product x y -> y`{.haskell} (satisfying laws).
 But monoidal products may not have these projections.
-Coproducts are also monoidal products.
+For example, coproducts are also monoidal products. -->
 
-Monoidal products are associative up to isomorphism: \(x \otimes (y \otimes z) \cong (x \otimes y) \otimes z\).
+Monoidal tensors are associative up to isomorphism: \(x \otimes (y \otimes z) \cong (x \otimes y) \otimes z\).
 Making them monoidal is an identity object: \(I \otimes x \cong x \cong x \otimes I\).
 They may also satisfy symmetry^[in two ways, see the difference between braided monoidal categories and symmetric monoidal categories]: \(x \otimes y \cong y \otimes x\).
 
@@ -67,23 +110,25 @@ Monoids are a really nice setting for computation, and their symmetries (associa
 Having the categorical structure also enables us to separate data that the program manipulates from the structure of the program itself.
 Finally, we consider static analysis as the analogous laws on plain monoids (not functors) via the constant functor (decategorification).
 
-So we want an explanation of selective applicative functors in terms of monoidal products.
+So we want an explanation of selective applicative functors in terms of monoidal tensors.
 
 ### Tensorfail
 
 Most explanations are missing the point of what *should* be possible with selective applicatives:
 they search for a tensor that can explain something about `select :: f (Either u v) -> f (u -> v) -> f v`{.haskell}.
 
-[One suggestion](https://www.pls-lab.org/en/Selective_functors) is that it should come from a lax monoidal action on coproducts, of the shape `f (Either u v) -> Either (f u) (f v)`{.haskell}, but that is just wrong: that is the *wrong* kind of static analysis for selective applicatives to support, as it would require evaluating the control flow purely statically, meaning that `f`{.haskell} cannot contain any interesting effects after all.
+[One suggestion](https://www.pls-lab.org/en/Selective_functors)^[Which I have seen a couple times] is that it should come from a lax monoidal action on coproducts, of the shape `f (Either u v) -> Either (f u) (f v)`{.haskell}, but that is just wrong:
+that is the *wrong* kind of static analysis for selective applicatives to support, as it would require evaluating the control flow purely statically, meaning that `f`{.haskell} cannot contain any interesting effects after all.
 
 That is: Lax actions over coproducts (`f (Either u v) -> Either (f u) (f v)`{.haskell}) are incredibly rare in programming (or Set-like categories, more formally).
-We will in fact see that selective applicative functors are much more *plentiful* than monads or applicatives.
+It is clear that motivating examples of selective applicative functors do not satisfy this.
+We will in fact see that selective applicative structures are much more *plentiful* than monads or applicatives.
 
 Another approach I looked at is viewing it through the lens of possibly-constant functions, like `Either (u -> v) v`{.haskell}.
-These are not nicely behaved either: they do not form a category^[at least not with nice properties], and even computationally, since we cannot detect constant functions in generally, it is not clear why specifically distinguished constant functions should be treated specially.
+These are not nicely behaved either: they do not form a category^[at least not with nice properties], and even computationally, since we cannot detect constant functions in general, it is not clear why the computationally distinguished constant functions should be treated specially.
 Which is silly, because the point of these functors is all about computation, and I believe there is a nice story for it in category theory too!
 
-So we need to change our approach and recognize that `select`{.haskell} is not a primitive that composes nicely: it does not have a tensor, so it is not the operation we should be looking at.
+So we need to change our approach and recognize that `select`{.haskell} is not a primitive that composes nicely: it does not have a monoidal tensor, so it is not the operation we should be looking at.
 
 We *need* monoids if we are to determine what “composes nicely” even means.
 The failure of `select`{.haskell} to faithfully reproduce `branch`{.haskell} (or at least the failure of `branch`{.haskell} to faithfully reproduce a ternary `branch`{.haskell}) is exactly the failure of finding a tensorial explanation for what is happening.
@@ -111,25 +156,25 @@ And it does not particularly get us closer to a categorical formulation.
 So … letʼs revisit the type of `branch`{.haskell} again.
 
 We want `branch :: f (Either x y) -> f (x -> r) -> f (y -> r) -> f r`{.haskell} to look more like `(>>=) :: f i -> (i -> f r) -> f r`{.haskell}.
-Is there a type `Branch i f r`{.haskell} that can replace the arrow `(i -> f r)`{.haskell} to make it happen?
+Is there a type `Branch f i r`{.haskell} that can replace the arrow `(i -> f r)`{.haskell} to make it happen?
 
-We can mechanically write a datatype that expresses that: when `i`{.haskell} is of the form `Either x y`{.haskell}, then we should have the data `f (x -> r)`{.haskell} and `f (y -> r)`{.haskell}:
+We can mechanically write a datatype that expresses this: when `i`{.haskell} is of the form `Either x y`{.haskell}, then we should have the data `f (x -> r)`{.haskell} and `f (y -> r)`{.haskell}:
 
 ```haskell
-data Branch i f r where
+data Branch f i r where
   Branch ::
     f (x -> r) ->
     f (y -> r) ->
-    Branch (Either x y) f r
+    Branch f (Either x y) r
 ```
 
 :::Key_Idea
-Matching on `Branch`{.haskell} gives the type equality `i ~ (Either x y)`{.haskell}, but this is not essential, since we can always map an arbitrary `i`{.haskell} into a type that is of the form `Either _ _`{.haskell} using `(<$>)`{.haskell}.
+Matching on `Branch`{.haskell} gives the type equality `i ~ (Either x y)`{.haskell}, but this is not essential, since we can always map an arbitrary `f i`{.haskell} on the left into a type that is of the form `f (Either _ _)`{.haskell} using `(<$>)`{.haskell}.
 So it suffices to just have a *function* `i -> Either x y`{.haskell} instead of an equality.
 
 Similarly, we will use `i -> Void`{.haskell} later, where we could have used a type equality.
 
-It turns out that this generalization is crucial: .
+This generalization is not crucial, per se. But it is convenient to work with ordinary profunctors down the line, instead of type equalities.
 :::
 
 Finally, to generalize this, we want to be able to **recurse**: instead of stopping at *singleton* branches `f (x -> r)`{.haskell} and `f (y -> r)`{.haskell}, what if we continued on to finitely more branches before getting to continuations of the form `f (_ -> r)`?
@@ -175,13 +220,27 @@ You should think of `CaseTree f i r`{.haskell} as a “finite-case” function f
 It is a restricted form of `i -> f r`{.haskell}, as this function demonstrates we can get back to the monadic arrow:
 
 ```haskell
-applyCaseTree :: forall i f r. Functor f => CaseTree f i r -> i -> f r
+-- | One thing you can do is apply a `CaseTree` to a specific value of `i` to see
+-- | what branch it chooses. This lets you apply it via `>>=`.
+applyCaseTree :: forall i f r. Functor f => CaseTree i f r -> i -> f r
 applyCaseTree (ZeroCases toVoid) i = absurd (toVoid i)
 applyCaseTree (OneCase fir) i = fir <&> ($ i)
 applyCaseTree (TwoCases fg x y) ij =
   case fg ij of
     Left i -> applyCaseTree x i
     Right j -> applyCaseTree y j
+```
+
+*Or*, we can execute all effects from the `f (_ -> r)`{.haskell}s and get `f (i -> r)`{.haskell} simply by doing the case analysis at the level of the inner functions.
+
+```haskell
+-- | The other way to apply it is via `<*>`, which means we do not get to skip
+-- | executing any branches.
+mergeCaseTree :: forall i f r. Applicative f => CaseTree i f r -> f (i -> r)
+mergeCaseTree (ZeroCases toVoid) = pure (absurd . toVoid)
+mergeCaseTree (OneCase fir) = fir
+mergeCaseTree (TwoCases fg x y) =
+  liftA2 (\f g ij -> either f g (fg ij)) (mergeCaseTree x) (mergeCaseTree y)
 ```
 
 This data type has a *ton* of structure.
@@ -289,64 +348,6 @@ But `CaseTree`{.haskell} is a nice direct formulation of their composite.
 
 the `i`{.haskell} has *migrated inside* the `f`{.haskell}, so now it has passed from the “static analysis” boundary over to the runtime side of the data
 and we no longer care about its branching structure, it has become a blob of arbitrary data
-
-## Syntax
-
-To build intuition, lets talk about what the syntax for selective applicatives would look like.
-
-Haskell and PureScript already have notation for monads: `do`{.haskell} notation, dubbed the “programmable semicolon”.
-Haskell reuses `do`{.haskell} notation for applicatives, but PureScript uses dedicated `ado ... in`{.purescript} notation.
-So I will use that for clarity.
-
-The difference between the two notations is that each action in `do`{.haskell} notation gets access to the previous result, while `ado`{.purescript} notation restricts access to the variables bound by the actions, until the final result (denoted with `in`{.purescript}).
-This is the difference between `f i -> (i -> f r) -> f r`{.haskell} and `f i -> f (i -> r) -> f r`{.haskell}.
-
-```purescript
-doexample ijk = do
-  x <- action1 ijk
-  y <- action2 ijk x
-  z <- action3 ijk x y
-  pure $ summarize ijk x y z
-
-adoexample ijk = ado
-  x <- action1 ijk
-  y <- action2 ijk
-  z <- action2 ijk
-  in summarize ijk x y z
-```
-
-So how would it look like for selective applicatives?
-It should allow a finite branching structure, while still respecting the boundary between actions and data.
-
-```purescript
-sdoexample ijk = sdo
-  x <- action1 ijk
-  y <- action2 ijk
-  z <- case decision ijk x y of
-    Case1 u ->
-      m <- action3 ijk
-      n <- action4 ijk
-      in accessible ijk x y u m n
-    Case2 v ->
-      _ <- action3 ijk
-      in v
-    Case3 p q ->
-      in p + q
-  r <- action4 ijk
-  in summarize ijk x y z r
-```
-
-The bound variables appear in the `case`{.purescript} scrutinee and in the `in`{.purescript} result, but still not in the actions.
-And each branch of the case picks up in the same `sdo`{.kw} scope, so actions still do not get to see the action-bound variables `x`{.purescript}, `y`{.purescript}, or the case-bound variables `u`{.purescript}, `v`{.purescript}, `p`{.purescript}, or `q`{.purescript}.
-
-The main issues with it are:
-
-- The syntax looks bad. It can probably be refined, but it does not look great as an adaptation of `do`{.purescript} notation, especially since the branches of the `case`{.purescript} are not expressions but further statements in the `sdo`{.kw} block.
-- Actually compiling it requires exposing the encoding of the case tree to the program, as we will see below once we can make that concrete.
-
-
-## Static analysis
-
 
 
 ## Free constructions and arrows
@@ -468,9 +469,9 @@ data ControlFlow f i r where
     ControlFlow f i r
 ```
 
-However, this is not really a good idea: a lot of forms of static analysis really want to deal with case branches at once, so it would need to detect `CaseBranch`{.haskell} and gather all the branches up.
+However, this is not incredibly useful: a lot of forms of static analysis really want to deal with case branches at once, so it would need to detect `CaseBranch`{.haskell} and gather all the branches up.
 
-Note that even if `f`{.haskell} is the type of functor where you could statically analyze the values in it (e.g. `List`{.haskell}), we are instantiating it with an unknown function type.
+Note that even if `f`{.haskell} is the type of functor where you could statically analyze the values in it (e.g. `List`{.haskell} as opposed to `IO`{.haskell}), we are instantiating it with an unknown function type.
 
 :::Details
 I say *unknown* function type here because even if you could technically analyze the first action in `ControlFlow f i r`{.haskell} when `i`{.haskell} is finite, the fact that `Sequencing (Pure id) _`{.haskell} constructs another equivalent (equal?) `ControlFlow f i r`{.haskell} where you can no longer analyze the first action on that basis (since it is now hidden behind an existential) means that you *should not*.
@@ -498,9 +499,10 @@ Notice how this looks like an untyped AST for a program now!
 We removed the existentials and the polymorphic recursion: it is the plainest of plain data types now.
 
 In fact, you might spy what it has turned into: it is a free semiring, or something close to it.
+(Specifically it should be a near semiring.)
 
 ```haskell
-summarize :: Semiring m => (f () -> m) -> FlowInfo f -> m
+summarize :: NearSemiring m => (f () -> m) -> FlowInfo f -> m
 summarize f2m (Info f) = f2m f
 summarize _ Pure = one
 summarize f2m (Sequencing l r) = summarize f2m l * summarize f2m r
@@ -511,10 +513,153 @@ summarize f2m (CaseBranch l r) = summarize f2m l + summarize f2m r
 :::Details
 From the laws for a category, we know that `Sequencing`{.haskell} should be associative.
 We also have that `Sequencing (Pure id) f ~ f ~ Sequencing f (Pure id)`{.haskell} should all be equivalent.
-So once we forget the functions in going from `ControlFlow f i r`{.haskell} to `FlowInfo f`{.haskell}, we need to treat _all_ `Pure :: FlowInfo f`{.haskell} as equivalent.^[From a computational point of view, this is because we allow arbitrary type shuffling, while still treating them as trivial _programs_ from the point of view of the computation that `f`{.haskell} encodes.]
+So once we forget the functions (by going from `ControlFlow f i r`{.haskell} to `FlowInfo f`{.haskell}), we need to treat _all_ `Pure :: FlowInfo f`{.haskell} as equivalent.^[From a computational point of view, this is because we allow arbitrary type shuffling, while still treating them as trivial _programs_ from the point of view of the computation that `f`{.haskell} encodes.]
 So `Pure`{.haskell} is the identity for whatever operation we map `Sequencing`{.haskell} to.
 
 Similarly we have that `CaseBranch`{.haskell} is associative, and its identity is `Absurd`{.haskell}.
 
-We *also* have that `CaseBranch`{.haskell} is commutative.
+We *also* should have that `CaseBranch`{.haskell} is commutative.
+The order of cases should not matter, since only one will be taken – in the monadic interpretation, at least.^[We should be careful about making such strong determinations about what should and should not count, since that is what has led previous lines of reasoning about selective applicative functors astray.]
+
+Finally, we have the matter of distributivity.
+It turns out that we should only have one sided distributivity: `(x + y) * z = x * z + y * z`{.haskell}, which implies `0 * z = 0`{.haskell}.
+(This is what makes it a near semiring instead of a semiring.)
+
+The other side of distributivity is not easy to satisfy for programs, in particular.
+The distributivity laws above work well for programs, but the other direction does not apply so well:
+
+- `0 * z = 0`{.haskell} means that anything *after* absurdity does not matter (it is not going to get run!), while `z * 0 = 0`{.haskell} is suspect only because `z`{.haskell} may have side effects that run before it gets to absurdity, which could be important to keep track of (especially if error recovery is a possibility).^[The functor result does not matter, since it is coming from absurdity!]
+- `(x + y) * z = x * z + y * z`{.haskell} says that control flow proceeds with the shared control flow after case branches, while `z * (x + y) = z * x + z * y`{.haskell} would require unbounded backtracking.
+
+This makes sense, especially because we are encoding *determined* choice, where earlier results determine later control flow.
+We should not be surprised if an arrow of time occurs in our equations!
 :::
+
+#### Arrow transformer
+
+You might note that weʼve barely been using `f`{.haskell} here, just as a placeholder for a convenient arrow type.
+This suggests that we could formulate `ControlFlow`{.haskell} as a arrow transformer, and require the right kind of arrow `p`{.haskell} (a strong profunctor and category, at least) to make `ControlFlowT p`{.haskell} behave as we want.
+
+```haskell
+data ControlFlowT p i r where
+  Action :: p i r -> ControlFlow f i r
+  Pure :: (i -> r) -> ControlFlow f i r
+  Sequencing :: ControlFlow f i x -> ControlFlow f x r -> ControlFlow f i r
+  Absurd :: (i -> Void) -> ControlFlow f i r
+  CaseBranch ::
+    (i -> Either x y) ->
+    ControlFlow f x r ->
+    ControlFlow f y r ->
+    ControlFlow f i r
+```
+
+I have not thought about this much.
+
+### Alternative
+
+Finally it is time to address the elephant in the room: what does this have to do with `<|>`{.haskell} from `Alternative`{.haskell}?
+
+As I mentioned in the overview, `(<|>) :: f x -> f x -> f x`{.haskell} (alternatively: `f x -> f y -> f (Either x y)`{.haskell}) is a combinator for nondeterministic choice, where the combinator itself does not give any information about which branch to take, it is completely up to the implementation.
+
+The main examples of this are `LogicT`{.haskell} (a monad transformer that encodes nondeterminism, layering `List`{.haskell} semantics on top of another monad), and parser combinator transformers, the simplest of which would be a hypothetical `ParserT`{.haskell}.
+You can think of the basic monads `Maybe`{.haskell}, `Either`{.haskell}, `List`{.haskell} as simplifications of these ideas.
+
+```haskell
+newtype ParserT m a =
+  ParserT { unParserT :: String -> m (Either Bool (String, a)) }
+
+instance Functor m => Alt (ParserT m) where
+  ParserT l <|> ParserT r = ParserT \input -> do
+    parsedL <- l input
+    case parsedL of
+      Right parsed ->
+        pure parsed
+      Nothing ->
+        -- This encodes backtracking: restarting on the same input
+        -- But usually parser combinators check that the input was
+        -- not consumed at all, and use a combinator to enable
+        -- backtracking in those cases.
+        r input
+
+--------------------
+
+newtype LogicT m a =
+  LogicT { unLogicT :: forall r. (a -> m r -> m r) -> m r -> m r }
+
+instance Functor m => Alt (LogicT m) where
+  LogicT l <|> LogicT r = LogicT \cons nil ->
+    l cons (r cons nil)
+
+observeAllT :: Applicative m => LogicT m a -> m [a]
+
+observeManyT :: Monad m => Int -> LogicT m a -> m [a]
+```
+
+`ParserT`{.haskell} is the most important example of the usefulness of `<|>`{.haskell}, where even something as simple as taking different actions based on different characters of input is encoded using `<|>`{.haskell}.
+
+`LogicT`{.haskell} is a monad transformer with pervasive backtracking, modeling nondeterminism of the kind “run every possible computation to find every possible result”, essentially.
+It can also be lazily explored with [`observeManyT`{.haskell}](https://hackage-content.haskell.org/package/logict-0.8.2.0/docs/Control-Monad-Logic.html#v:observeManyT), to only obtain the first few results.
+
+Still, the common theme is that to obtain even one successful result, backtracking deeply through the computation may be necessary.
+
+Because they are both monads, they support: `f (Maybe a) -> f a`{.haskell}, via `(_ >>= maybe empty pure)`{.haskell}.
+This operation makes sense in some applicatives, too, but it needs a specialized implementation.
+
+## Syntax
+
+To build intuition, lets talk about what the syntax for selective applicatives would look like.
+
+Haskell and PureScript already have notation for monads: `do`{.haskell} notation, dubbed the “programmable semicolon”.
+Haskell reuses `do`{.haskell} notation for applicatives, but PureScript uses dedicated `ado ... in`{.purescript} notation.
+So I will use that for clarity.
+
+The difference between the two notations is that each action in `do`{.haskell} notation gets access to the previous result, while `ado`{.purescript} notation restricts access to the variables bound by the actions, until the final result (denoted with `in`{.purescript}).
+This is the difference between `f i -> (i -> f r) -> f r`{.haskell} and `f i -> f (i -> r) -> f r`{.haskell}.
+
+```purescript
+doexample ijk = do
+  x <- action1 ijk
+  y <- action2 ijk x
+  z <- action3 ijk x y
+  pure $ summarize ijk x y z
+
+adoexample ijk = ado
+  x <- action1 ijk
+  y <- action2 ijk
+  z <- action2 ijk
+  in summarize ijk x y z
+```
+
+So how would it look like for selective applicatives?
+It should allow a finite branching structure, while still respecting the boundary between actions and data.
+
+```purescript
+sdoexample ijk = sdo
+  x <- action1 ijk
+  y <- action2 ijk
+  z <- case decision ijk x y of
+    Case1 u ->
+      m <- action3 ijk
+      n <- action4 ijk
+      in accessible ijk x y u m n
+    Case2 v ->
+      _ <- action3 ijk
+      in v
+    Case3 p q ->
+      in p + q
+  r <- action4 ijk
+  in summarize ijk x y z r
+```
+
+The bound variables appear in the `case`{.purescript} scrutinee and in the `in`{.purescript} result, but still not in the actions.
+And each branch of the case picks up in the same `sdo`{.kw} scope, so actions still do not get to see the action-bound variables `x`{.purescript}, `y`{.purescript}, or the case-bound variables `u`{.purescript}, `v`{.purescript}, `p`{.purescript}, or `q`{.purescript}.
+
+The main issues with it are:
+
+- The syntax looks bad. It can probably be refined, but it does not look great as an adaptation of `do`{.purescript} notation, especially since the branches of the `case`{.purescript} are not expressions but further statements in the `sdo`{.kw} block.
+- Actually compiling it requires exposing the encoding of the case tree to the program, as we will see below once we can make that concrete.
+
+
+## Conclusion
+
+
