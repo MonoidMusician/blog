@@ -64,7 +64,7 @@ The concept that we need, of “finite-case functions”, is a bit tricky to for
 However, once we focus on the arrows instead of the applicative actions in isolation, it can all pop into place and it pays off in revealing details of the structure we were really after.
 
 :::Key_Idea
-For example, we learn that selective applicative functors allow static analysis via near-semirings by using a constant functor.
+For example, we learn that selective applicative functors allow static analysis via [near-semirings](https://en.wikipedia.org/wiki/Near-semiring) by using a constant functor.
 (That is, we define static analysis to be an interpretation into a constant functor, and we learn that near-semirings are the algebraic structure we need to make it work.)
 :::
 
@@ -266,6 +266,45 @@ Importantly, note that the return `r`{.haskell} *and even the input* `i`{.haskel
 The finite structure is all contained in `CaseTree`{.haskell}.
 :::
 
+<details class="Details">
+<summary>More structure</summary>
+
+We can give `CaseTree`{.haskell} (and `ControlFlow`{.haskell} below) the structure of a strong profunctor, which preserves some piece of state `s`{.haskell} across the input into the output.
+
+```haskell
+instance Functor f => Strong (CaseTree f) where
+  first :: forall s j r. CaseTree f j r -> CaseTree f (j, s) (r, s)
+  second :: forall s j r. CaseTree f j r -> CaseTree f (s, j) (s, r)
+instance Applicative f => Choice (CaseTree f) where
+  left :: forall i j r. CaseTree f j r -> CaseTree f (Either j i) (Either r i)
+  right :: forall i j r. CaseTree f j r -> CaseTree f (Either i j) (Either i r)
+```
+
+The first thing we may think of doing with this is simply preserving the input itself, which is an important manipulation later for making `ControlFlow`{.haskell} behave like an applicative functor (similar how the `Reader`{.haskell} monad has to keep its argument around).
+
+```haskell
+keep :: Strong p => p i r -> p i (i, r)
+keep f = lcmap (join (,)) (second f)
+```
+
+We can use this to curry the `CaseTree`{.haskell}, pulling a function from the codomain into a tuple in the domain.
+
+```haskell
+curry :: Strong p => p i (j -> r) -> p (i, j) r
+curry = uncurry ($) <$> first cases
+```
+
+And a few other functions that mean that a strong profunctor acts like the familiar relation between a function domain and its codomain:
+
+```haskell
+lowerFn :: Strong p => p () (i -> r) -> p i r
+lowerFn c = dimap pure (uncurry ($)) (first c)
+
+lowerArg :: Strong p => p () i -> p (i -> r) r
+lowerArg c = dimap pure (uncurry (&)) (first c)
+```
+</details>
+
 This exposes the monoidal structure between tensors we were looking for, enabling us to talk about laws and algebraic structure.
 
 We can express associativity with `TwoCases`{.haskell}, and the identity between `TwoCases`{.haskell} and `ZeroCases`{.haskell}.
@@ -444,7 +483,16 @@ The “monad arrow” here is also known as the Kleisli category of the monad `f
 
 It turns out that the “applicative arrow” is explained as a [change of enriching category](https://ncatlab.org/nlab/show/change+of+enriching+category) (via `f`{.haskell} being a lax monoidal functor), even though we are only going from Set (which is itself a Set-enriched category) back to a different Set-enriched category (whose arrows are `f (i -> r)`{.haskell}).
 
-So the free selective applicative?
+:::Key_Idea
+We can form an arrow to model the free selective applicative by using `CaseTree`{.haskell} as our arrow type, as it already includes `ApplicativeArrow`{.haskell}s as a special case (`OneCase`{.haskell}).
+
+```haskell
+type SelectiveArrow = CaseTree
+newtype FreeSelective f r = FreeSelective
+  (FreeCategory (SelectiveArrow f) Unit r)
+```
+
+However, it is nice to write out the cases like this, to really grasp how they model control flow for an applicative functor:
 
 ```haskell
 data ControlFlow f i r where
@@ -453,6 +501,49 @@ data ControlFlow f i r where
   CaseFlow :: CaseTree (ControlFlow f Unit) i r -> ControlFlow f i r
   Sequencing :: ControlFlow f i x -> ControlFlow f x r -> ControlFlow f i r
 ```
+:::
+
+:::Details
+One function that is important to convince ourselves that `ControlFlow`{.haskell} really captures control flow, is this sequencing function, which distributes the remaining control flow across each branch of a `CaseTree`{.haskell} (like a category – matching up output and input).
+
+```haskell
+sequenceCaseTree ::
+  forall i j f r.
+    Functor f =>
+  CaseTree (ControlFlow f Unit) i j ->
+  ControlFlow f j r ->
+  CaseTree (ControlFlow f Unit) i r
+```
+
+It is used to implement `uncons (Sequencing _ _)`{.haskell}, which says that we can think of each `ControlFlow`{.haskell} as starting with a `CaseTree`{.haskell} if we want.
+(For `Pure`{.haskell} and `Action`{.haskell}, this is a single-branch case tree.)
+
+```haskell
+uncons ::
+  forall f i r.
+    Functor f =>
+  ControlFlow f i r ->
+  CaseTree (ControlFlow f Unit) i r
+uncons (Pure ir) = OneCase (Pure (const ir))
+uncons (Action fir) = OneCase (Action (const <$> fir))
+uncons (CaseFlow cases) = cases
+uncons (Sequencing ab bc) =
+  sequenceCaseTree (uncons ab) bc
+```
+
+Finally, this tells us that we can split control flow over `ControlFlow f (Either x y)`{.haskell} just like we do for `CaseTree`{.haskell}.
+
+```haskell
+bifurcate ::
+  forall x y i f r.
+    Functor f =>
+  (i -> Either x y) ->
+  ControlFlow f x r ->
+  ControlFlow f y r ->
+  ControlFlow f i r
+bifurcate fg x y = CaseFlow $ TwoCases fg (uncons x) (uncons y)
+```
+:::
 
 Notice that we can essentially inline `CaseTree`{.haskell} into this data type too:
 
@@ -469,7 +560,7 @@ data ControlFlow f i r where
     ControlFlow f i r
 ```
 
-However, this is not incredibly useful: a lot of forms of static analysis really want to deal with case branches at once, so it would need to detect `CaseBranch`{.haskell} and gather all the branches up.
+However, this is not incredibly useful: a lot of forms of static analysis really want to deal with case branches at once, so they would need to detect `CaseBranch`{.haskell} and re-gather all the branches up.
 
 Note that even if `f`{.haskell} is the type of functor where you could statically analyze the values in it (e.g. `List`{.haskell} as opposed to `IO`{.haskell}), we are instantiating it with an unknown function type.
 
@@ -487,6 +578,7 @@ data FlowInfo f where
   Absurd :: FlowInfo f
   CaseBranch :: FlowInfo f -> FlowInfo f -> FlowInfo f
 
+-- In fact, it is an ordinary ADT now
 data FlowInfo f
   = Info (f ())
   | Pure
@@ -499,7 +591,7 @@ Notice how this looks like an untyped AST for a program now!
 We removed the existentials and the polymorphic recursion: it is the plainest of plain data types now.
 
 In fact, you might spy what it has turned into: it is a free semiring, or something close to it.
-(Specifically it should be a near semiring.)
+(Specifically it should be a [near-semiring](https://en.wikipedia.org/wiki/Near-semiring).)
 
 ```haskell
 summarize :: NearSemiring m => (f () -> m) -> FlowInfo f -> m
@@ -518,12 +610,14 @@ So `Pure`{.haskell} is the identity for whatever operation we map `Sequencing`{.
 
 Similarly we have that `CaseBranch`{.haskell} is associative, and its identity is `Absurd`{.haskell}.
 
-We *also* should have that `CaseBranch`{.haskell} is commutative.
-The order of cases should not matter, since only one will be taken – in the monadic interpretation, at least.^[We should be careful about making such strong determinations about what should and should not count, since that is what has led previous lines of reasoning about selective applicative functors astray.]
+We *also* would like to have that `CaseBranch`{.haskell} is commutative.
+The order of cases should not matter, since only one will be taken – in the monadic interpretation, at least.
+But we should be careful about making such strong determinations about what should and should not count, since that is what has led previous lines of reasoning about selective applicative functors astray.
+In particular, imposing this law on all instances would mean that a lot of useful instance derived from applicatives are not allowed.^[Note that for rings, and semirings with additive cancelation, commutativity of addition follows form two-sided distributivity, but this is not an issue for near-semirings as they only have one-sided distributivity.]
 
 Finally, we have the matter of distributivity.
 It turns out that we should only have one sided distributivity: `(x + y) * z = x * z + y * z`{.haskell}, which implies `0 * z = 0`{.haskell}.
-(This is what makes it a near semiring instead of a semiring.)
+(This is what makes it a near-semiring instead of a semiring.)
 
 The other side of distributivity is not easy to satisfy for programs, in particular.
 The distributivity laws above work well for programs, but the other direction does not apply so well:
@@ -602,8 +696,9 @@ It can also be lazily explored with [`observeManyT`{.haskell}](https://hackage-c
 
 Still, the common theme is that to obtain even one successful result, backtracking deeply through the computation may be necessary.
 
-Because they are both monads, they support: `f (Maybe a) -> f a`{.haskell}, via `(_ >>= maybe empty pure)`{.haskell}.
+Because they are both monads, they support: `f (Maybe x) -> f x`{.haskell}, via `(_ >>= maybe empty pure)`{.haskell}.
 This operation makes sense in some applicatives, too, but it needs a specialized implementation.
+So generally we will talk about `filterMap :: (x -> Maybe y) -> f x -> f y`{.haskell}.
 
 ## Syntax
 
