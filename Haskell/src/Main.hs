@@ -1,6 +1,6 @@
 module Main where
 
-import MTLite
+import qualified ParseMachine
 
 main :: IO ()
-main = putStrLn "Hello, Haskell!"
+main = ParseMachine.main
