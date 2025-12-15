@@ -16,20 +16,20 @@ class Applicative f => Selective f where
   select :: f (Either a b) -> f (a -> b) -> f b
 ```
 
-The `branch`{.haskell} combinator was unfortunately not integral to the story, 
+The paper mentions a `branch`{.haskell} combinator derived from `(<*?) = select`{.haskell}:
 
 ```haskell
 branch :: Selective f => f (Either a b) -> f (a -> c) -> f (b -> c) -> f c
 branch x l r = fmap (fmap Left) x <*? fmap (fmap Right) l <*? r
 ```
 
-But the story has stopped short after `select`{.haskell} because the familiar tools of theoretical analysis failed to apply to `select`{.haskell} specifically: there was no account for `select`{.haskell} in terms of monoidal tensors, and even `branch`{.haskell} did not meaningfully compose with itself, which means that there was no obvious way that the laws related to more familiar algebraic and categorical structures like monoids (and, it turns out, near-semirings).
+But the story has stopped short after `select`{.haskell} because the familiar tools of theoretical analysis failed to apply to `select`{.haskell}: there was no account for `select`{.haskell} in terms of monoidal tensors, and even `branch`{.haskell} did not meaningfully compose with itself, which means that there was no obvious way that the laws related to more familiar algebraic and categorical structures like monoids (and, it turns out, near-semirings).
 
-Howevver, the final answer for what selective applicative functors want to be is really cool.
+However, the final answer for what selective applicative functors want to be is really cool.
 We just have to work a bit harder to see it: we have to consider arrows (composable profunctors) instead of plain functors.
 
 Selective applicative functors want to encode *exclusive determined choice*.
-They can choose between a finite number of predetermined case branches based upon previous results during evaluation.^[`select`{.haskell} itself has an implicit `pure`{.haskell} branch with no side-effects.]
+They can choose between a finite number of predetermined case branches based upon previous results during evaluation.^[`select`{.haskell} itself has an implicit `pure`{.haskell} branch with no side-effects, where `branch`{.haskell} has two branches.]
 
 Once you see it, it makes so much sense from a programming language perspective: it has the shape of an AST for a programming language.
 We can even go farther and relate it to the other typeclass for control flow, `Alternative`{.haskell}, which provides `<|>`{.haskell} for *nondeterministic* choice.
@@ -184,6 +184,7 @@ Can we form an actual _case tree_?
 
 Here is the final result, an arrow `CaseTree f i r`{.haskell} to replace the monadic arrow `(i -> f r)`{.haskell}, making use of those observations.
 
+:::Key_Idea
 ```haskell
 class Casing f where
   caseTreeOn :: forall i r. f i -> CaseTree f i r -> f r
@@ -215,6 +216,7 @@ select input continue = caseTreeOn input $
 -- But the general form of `TwoCases` recursing into further `TwoCases`
 -- is necessary to really express the structure of exclusive branching
 ```
+:::
 
 You should think of `CaseTree f i r`{.haskell} as a “finite-case” function from datatype `i`{.haskell} to datatype `r`{.haskell}, with effects in the functor `f`{.haskell}.
 It is a restricted form of `i -> f r`{.haskell}, as this function demonstrates we can get back to the monadic arrow:
@@ -429,7 +431,7 @@ data Day f g r where
 ### Monoid objects in monoidal categories
 
 However, those are specifically the formulation of monads and applicatives as *monoid objects* (in a monoidal category).
-Notably, that is the source of the “a monad is just a monoid in the [monoidal] category of endofunctors [under composition]” meme, where an applicative functor is “just” a monoid in the [monoidal] category of endofunctors *under Day convolution*.
+That is the source of the “a monad is just a monoid in the [monoidal] category of endofunctors [under composition]” meme, while an applicative functor is “just” a monoid in the [monoidal] category of endofunctors *under Day convolution*.
 
 :::{.Note box-name="Aside"}
 I argue that it is important to include “under composition” in the description of the monad, because there are many monoidal products available on functors, and functor composition is a surprising choice, since it is not symmetric at all!
@@ -698,63 +700,58 @@ Still, the common theme is that to obtain even one successful result, backtracki
 
 Because they are both monads, they support: `f (Maybe x) -> f x`{.haskell}, via `(_ >>= maybe empty pure)`{.haskell}.
 This operation makes sense in some applicatives, too, but it needs a specialized implementation.
-So generally we will talk about `filterMap :: (x -> Maybe y) -> f x -> f y`{.haskell}.
+So generally we will talk about [`mapMaybe :: (x -> Maybe y) -> f x -> f y`{.haskell}](https://hackage.haskell.org/package/witherable-0.5/docs/Witherable.html#v:mapMaybe).
 
-## Syntax
+Indeed, we want to talk about structures on applicative functors simply because `ParserT`{.haskell} and `LogicT`{.haskell} have no capability for static analysis, as they are monads.
+So can we combine `mapMaybe`{.haskell} and `<|>`{.haskell} to get an explanation of `select`{.haskell}, `branch`{.haskell}, and so on?
 
-To build intuition, lets talk about what the syntax for selective applicatives would look like.
+The answer is yes: If we have an applicative parser *without* other side effects (i.e. `m = Identity`{.haskell}) and with enough backtracking, we could encode determined choice via nondeterministic choice.
 
-Haskell and PureScript already have notation for monads: `do`{.haskell} notation, dubbed the “programmable semicolon”.
-Haskell reuses `do`{.haskell} notation for applicatives, but PureScript uses dedicated `ado ... in`{.purescript} notation.
-So I will use that for clarity.
+```haskell
+selectLeft :: Filterable f => f (Either x y) -> f x
+selectLeft = mapMaybe \case
+  Left x -> Just x
+  Right _ -> Nothing
+selectRight :: Filterable f => f (Either x y) -> f y
+selectRight = mapMaybe \case
+  Left _ -> Nothing
+  Right y -> Just y
 
-The difference between the two notations is that each action in `do`{.haskell} notation gets access to the previous result, while `ado`{.purescript} notation restricts access to the variables bound by the actions, until the final result (denoted with `in`{.purescript}).
-This is the difference between `f i -> (i -> f r) -> f r`{.haskell} and `f i -> f (i -> r) -> f r`{.haskell}.
-
-```purescript
-doexample ijk = do
-  x <- action1 ijk
-  y <- action2 ijk x
-  z <- action3 ijk x y
-  pure $ summarize ijk x y z
-
-adoexample ijk = ado
-  x <- action1 ijk
-  y <- action2 ijk
-  z <- action2 ijk
-  in summarize ijk x y z
+branch :: Applicative f => Filterable f => f (Either x y) -> f (x -> r) -> f (y -> r) -> f r
+branch determiner leftCase rightCase =
+  liftA2 (&) (selectLeft determiner) leftCase
+    <|>
+  liftA2 (&) (selectRight determiner) rightCase
+-- ^ This easily generalizes to n-ary branches, unlike `branch` itself
 ```
 
-So how would it look like for selective applicatives?
-It should allow a finite branching structure, while still respecting the boundary between actions and data.
+Because this duplicates `determiner`{.haskell}, it would only be safe for things like `ParserT Identity`{.haskell} which does not have observable side effects from failed branches.^[Strictly speaking, you could have idempotent effects: `f *> f = f`{.haskell}.]
+And it requires backtracking all the way back to before `determiner`{.haskell} to even catch a `Right`{.haskell} case out of it, which is something that parser combinators generally avoid for efficiency (for good reason!).
 
-```purescript
-sdoexample ijk = sdo
-  x <- action1 ijk
-  y <- action2 ijk
-  z <- case decision ijk x y of
-    Case1 u ->
-      m <- action3 ijk
-      n <- action4 ijk
-      in accessible ijk x y u m n
-    Case2 v ->
-      _ <- action3 ijk
-      in v
-    Case3 p q ->
-      in p + q
-  r <- action4 ijk
-  in summarize ijk x y z r
-```
+However, this makes sense for LR parser combinators (yes those are a thing! they are necessarily applicative parsers and not monadic).
+All of the backtracking is resolved ahead of time in LR parser combinators, thanks to the powers of static analysis.
+It just requires the capability to prune branches at runtime for `mapMaybe`{.haskell}, which not all LR parsers support.
 
-The bound variables appear in the `case`{.purescript} scrutinee and in the `in`{.purescript} result, but still not in the actions.
-And each branch of the case picks up in the same `sdo`{.kw} scope, so actions still do not get to see the action-bound variables `x`{.purescript}, `y`{.purescript}, or the case-bound variables `u`{.purescript}, `v`{.purescript}, `p`{.purescript}, or `q`{.purescript}.
+And importantly: despite the fact that the branching can be explained via `<|>`{.haskell} and `mapMaybe`{.haskell}, it is also incredibly useful to have information about `CaseTree`{.haskell}, because that can be used to help ensure that the parser is not ambiguous.
 
-The main issues with it are:
+Finally, it is interesting to note that `Alternative`{.haskell} functors have also been explained as categorified near-semirings (and thus support static analysis via near-semirings): [From monoids to near-semirings: the essence of `MonadPlus`{.haskell} and `Alternative`{.haskell}](https://people.cs.kuleuven.be/~tom.schrijvers/Research/papers/ppdp2015.pdf) by Exequiel Rivas, Mauro Jaskelioff, and Tom Schrijvers explains the typeclass laws, free constructions, and Cayley constructions (à la difference lists) from this perspective.
 
-- The syntax looks bad. It can probably be refined, but it does not look great as an adaptation of `do`{.purescript} notation, especially since the branches of the `case`{.purescript} are not expressions but further statements in the `sdo`{.kw} block.
-- Actually compiling it requires exposing the encoding of the case tree to the program, as we will see below once we can make that concrete.
+So the conclusion is that the branching structures of `Alternative`{.haskell} and `Selective`{.haskell} are closely related, but not identical.
+The `Alternative`{.haskell} can be thought of as a functor with nondeterministic branching, while `Selective`{.haskell} needs to be explained via arrows to encode finite deterministic branching.
+They both allow retaining the structure of branches as independent from the sequential structure, and the selective structure can be encoded via `<|>`{.haskell} and `mapMaybe`{.haskell} in some well-behaved cases.
 
 
 ## Conclusion
 
+Selective applicative functors are all about control flow with determined choice: the result of previous actions will determine which branch should be taken.
+In order to keep track of which branches are exclusive from each other, and to explain it via tensors, we have to explain it as a theory of *arrows*, not of functors.
+This is useful for tracking or preventing ambiguity during parsing, as one example.
 
+Despite requiring slightly more involved concepts to explain (arrows and existential types), it solidifies into a structure that looks like ordinary control flow constructs that one might write in an AST for a programming language.
+You can think of the applicative functor `f`{.haskell} as denoting the boundary between the ahead-of-time information available on the outside and the runtime information available to the functions `(i -> r)`{.haskell} on the inside at each step of the computation.
+
+The requirements of selective applicative functors are intentionally flexible, to allow it to be implemented in varied ways: applicatives for simple composable sequencing and staging of effects, monads for efficient execution and flexibility, near-semirings for static analysis, with the selective applicative structure as a common meeting ground for all of it.
+
+Next time we will study the theory of these functors from the other side: basic examples, how they compose, what would be a good syntax for them.
+Eventually we will look at some applications of selective applicative functors in depth, and maybe discuss what the future of functorial and arrow-like structures are: sequencing (monads and categories) and parallelism (applicatives), exclusive determined choice (selectives), nondeterministic choice (alternatives), and [staging](https://www.cs.ox.ac.uk/jeremy.gibbons/publications/phases.pdf) (functor composition).
+Can they all fit into one syntax? I mean, why not??

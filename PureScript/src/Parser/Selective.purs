@@ -2,20 +2,26 @@ module Parser.Selective where
 
 import Prelude hiding (zero, one, ap)
 
-import Control.Apply (lift2)
+import Control.Apply (lift2, lift3)
+import Control.Monad.Except (ExceptT(..))
+import Control.Monad.Maybe.Trans (MaybeT(..))
+import Control.Monad.Writer (WriterT(..))
 import Control.Plus (class Plus, empty)
 import Data.Array (foldr)
 import Data.Array as Array
 import Data.Bifunctor (bimap, lmap)
 import Data.Const (Const(..))
-import Data.Distributive (class Distributive, distribute)
-import Data.Either (Either(..), either)
+import Data.Distributive (distribute)
+import Data.Either (Either(..), either, note)
 import Data.Enum (class BoundedEnum, enumFromTo)
+import Data.Functor.Compose (Compose(..))
+import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
+import Data.Pair (Pair(..))
 import Data.Profunctor (class Profunctor, dimap, lcmap)
 import Data.Profunctor.Choice (class Choice, left, right)
 import Data.Profunctor.Strong (class Strong, first, second)
-import Data.Tuple (Tuple(..), fst, snd, uncurry)
+import Data.Tuple (Tuple(..), fst, snd, swap, uncurry)
 import Safe.Coerce (coerce)
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -198,7 +204,7 @@ hoistCaseTree h (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
 
 hoistCaseTree' :: forall i f g h r. Functor g => Functor h => (forall a. f a -> g (h a)) -> CaseTree i f r -> CaseTree i g (h r)
 hoistCaseTree' _ (ZeroCases toVoid) = ZeroCases toVoid
-hoistCaseTree' h (OneCase fir) = OneCase (distribute <$> (h fir))
+hoistCaseTree' h (OneCase fir) = OneCase (distribute <$> h fir)
 hoistCaseTree' h (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
   twoCases fg (hoistCaseTree' h x) (hoistCaseTree' h y)
 
@@ -310,7 +316,7 @@ instance analyzeCasesSplit :: Analyze (CasesSplit a b i) where
 
 -- Might as well make this a thing. Not sure if it can be usefully split into
 -- separate methods?
-class Casing f where
+class Functor f <= Casing f where
   caseTreeOn :: forall i r. f i -> CaseTree i f r -> f r
 
 
@@ -709,11 +715,11 @@ sequenceCaseTree (TwoCases xy) fjr = splitCases xy \(CasesSplit fg x y) ->
   twoCases fg (sequenceCaseTree x fjr) (sequenceCaseTree y fjr)
 
 bifurcate ::
-  forall a b i f r.
+  forall x y i f r.
     Functor f =>
-  (i -> Either a b) ->
-  ControlFlow f a r ->
-  ControlFlow f b r ->
+  (i -> Either x y) ->
+  ControlFlow f x r ->
+  ControlFlow f y r ->
   ControlFlow f i r
 bifurcate fg x y = CaseFlow $ twoCases fg (uncons x) (uncons y)
 
@@ -735,11 +741,7 @@ caseTreeWith (TwoCases xy) = splitCases xy \(CasesSplit fg x y) ->
 -- Analogue of `caseTreeWith` for `apply`/`select`/`branch`
 yoink :: forall i j f r. Functor f =>
   ControlFlow f i (j -> r) -> ControlFlow f (Tuple i j) r
-yoink (Pure ir) = Pure (uncurry ir)
-yoink (Action fir) = Action (uncurry <$> fir)
-yoink (CaseFlow cases) = CaseFlow $ uncurry ($) <$> firstCaseTree cases
-yoink (Sequencing snuggles) = unsnuggle snuggles \ab bc ->
-  first ab >>> yoink bc
+yoink flow = uncurry ($) <$> first flow
 
 instance applyControlFlow :: Functor f => Apply (ControlFlow f i) where
   apply f g = keep f >>> yoink (map (#) g)
@@ -770,7 +772,7 @@ instance applyFreeControl :: Functor f => Apply (FreeControl f) where
 instance applicativeFreeControl :: Functor f => Applicative (FreeControl f) where
   pure a = FreeControl (Pure (pure a))
 
-instance casingFreeControl :: Casing (FreeControl f) where
+instance casingFreeControl :: Functor f => Casing (FreeControl f) where
   caseTreeOn (FreeControl f) g = FreeControl $
     f >>> CaseFlow (hoistCaseTree coerce g)
 
@@ -783,7 +785,57 @@ instance branchingFreeControl :: Functor f => Branching (FreeControl f) where
     f >>> CaseFlow (twoCases identity (OneCase g) (OneCase h))
 
 
+-- We can compose with an outer applicative (which always runs) and an inner
+-- selective, which can conditionally run
+instance casingCompose :: (Applicative f, Casing g) => Casing (Compose f g) where
+  caseTreeOn (Compose p) cases = Compose $ caseTreeOn <$> p <*> go cases
+    where
+    go :: forall i r. CaseTree i (Compose f g) r -> f (CaseTree i g r)
+    go (ZeroCases toVoid) = pure (ZeroCases toVoid)
+    go (OneCase (Compose fgir)) = OneCase <$> fgir
+    go (TwoCases xy) = splitCases xy \(CasesSplit split fgx fgy) -> ado
+      gx <- go fgx
+      gy <- go fgy
+      in twoCases split gx gy
 
+instance selectCompose :: (Applicative f, Select g) => Select (Compose f g) where
+  select (Compose f) (Compose g) = Compose $ lift2 select f g
+
+instance branchingCompose :: (Applicative f, Branching g) => Branching (Compose f g) where
+  branch (Compose f) (Compose g) (Compose h) = Compose $ lift3 branch f g h
+
+-- We can also compose with some special functors on the inside, like `Maybe` and `Either`
+-- (They need to have a finite number of cases with a finite number of functor positions)
+instance casingMaybeT :: (Applicative f, Casing f) => Casing (MaybeT f) where
+  caseTreeOn (MaybeT p) cases = MaybeT $ caseTreeOn p $ twoCases (note unit)
+    -- Nothing case: pure Nothing
+    (OneCase (pure (const Nothing)))
+    -- unwrap the other cases
+    (hoistCaseTree' unwrap cases)
+
+instance casingExceptT :: (Applicative f, Casing f) => Casing (ExceptT e f) where
+  caseTreeOn (ExceptT p) cases = ExceptT $ caseTreeOn p $ twoCases identity
+    (OneCase (pure Left))
+    -- unwrap the other cases
+    (hoistCaseTree' unwrap cases)
+
+instance casingWriterT :: (Semigroup w, Casing f) => Casing (WriterT w f) where
+  caseTreeOn (WriterT p) cases = WriterT $ caseTreeOn p $
+    (\(Tuple (Tuple w2 r) w1) -> Tuple r (w1 <> w2)) <$> do
+      firstCaseTree $ hoistCaseTree' (map swap <<< unwrap) cases
+
+newtype PairT f a = PairT (f (Pair a))
+derive instance Functor f => Functor (PairT f)
+
+instance casingPairT :: (Casing f) => Casing (PairT f) where
+  caseTreeOn (PairT p) cases = PairT $ uncurry Pair <$>
+    caseTreeOn (caseTreeOn pTuple (firstCaseTree (slot1 cases))) (secondCaseTree (slot2 cases))
+    where
+    pTuple = p <#> \(Pair l r) -> Tuple l r
+    slot1 :: forall i r. CaseTree i (PairT f) r -> CaseTree i f r
+    slot1 = hoistCaseTree \(PairT t) -> t <#> \(Pair f _) -> f
+    slot2 :: forall i r. CaseTree i (PairT f) r -> CaseTree i f r
+    slot2 = hoistCaseTree \(PairT t) -> t <#> \(Pair _ g) -> g
 
 
 --------------------------------------------------------------------------------

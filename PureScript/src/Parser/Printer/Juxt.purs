@@ -445,10 +445,10 @@ iddimap u x v y = case _ of
         (iddimap u identity identity y piyvz)
 
 oneCase ::
-  forall p u x v y.
+  forall p v y.
     Profunctor p =>
-  p v y -> CaseTree p u x (Tuple u v) (Tuple x y)
-oneCase = OneCase fst <<< dimap snd (flip Tuple)
+  p v y -> forall u x. CaseTree p u x (Tuple u v) (Tuple x y)
+oneCase pvy = OneCase fst (dimap snd (flip Tuple) pvy)
 
 caseTreeL ::
   forall p u1 u2 x v y1 y2.
