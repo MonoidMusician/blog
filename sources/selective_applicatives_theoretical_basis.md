@@ -81,7 +81,10 @@ We can squeeze it all into a single data type for a free arrow (a strong profunc
 data ControlFlow f i r where
   Action :: (f (i -> r)) -> ControlFlow f i r
   Pure :: (i -> r) -> ControlFlow f i r
-  Sequencing :: ControlFlow f i x -> ControlFlow f x r -> ControlFlow f i r
+  -- `j` is existential here
+  Sequencing :: ControlFlow f i j -> ControlFlow f j r -> ControlFlow f i r
+  Absurd :: (i -> Void) -> ControlFlow f i r
+  -- `x` and `y` are existential here
   CaseBranch ::
     (i -> Either x y) ->
     ControlFlow f x r ->
@@ -286,7 +289,7 @@ The first thing we may think of doing with this is simply preserving the input i
 
 ```haskell
 keep :: Strong p => p i r -> p i (i, r)
-keep f = lcmap (join (,)) (second f)
+keep f = lmap (join (,)) (second f)
 ```
 
 We can use this to curry the `CaseTree`{.haskell}, pulling a function from the codomain into a tuple in the domain.
@@ -342,11 +345,11 @@ idR = either id absurd
 
 cx :: CaseTree f x r
 
-TwoCases id cx (ZeroCases absurd) ~= imap idL cx
-TwoCases id (ZeroCases absurd) cx ~= imap idR cx
+TwoCases Left cx (ZeroCases absurd) ~= cx
+TwoCases Right (ZeroCases absurd) cx ~= cx
 ```
 
-`Either` is also a symmetric tensor.
+`Either` is also a symmetric tensor, but the selective applicative functor may not always respect this symmetry.
 
 ```haskell
 sym :: Either x y -> Either y x
@@ -363,7 +366,7 @@ collapse :: Either x x -> x
 collapse (Left x) = x
 collapse (Right x) = x
 
-TwoCases id (OneCase cx) (OneCase cx) ~=? OneCase (dimap collapse id <$> cx)
+TwoCases id (OneCase cx) (OneCase cx) ~=? OneCase (lmap collapse <$> cx)
 ```
 
 This idempotence is generally bad from a computational point of view: the fact that `cx`{.haskell} appears in both cases means it is not decidable when/how this law would apply, it would require deciding whether two effects in `f`{.haskell} are equal.
@@ -553,8 +556,10 @@ Notice that we can essentially inline `CaseTree`{.haskell} into this data type t
 data ControlFlow f i r where
   Action :: (f (i -> r)) -> ControlFlow f i r
   Pure :: (i -> r) -> ControlFlow f i r
-  Sequencing :: ControlFlow f i x -> ControlFlow f x r -> ControlFlow f i r
+  -- `j` is existential here
+  Sequencing :: ControlFlow f i j -> ControlFlow f j r -> ControlFlow f i r
   Absurd :: (i -> Void) -> ControlFlow f i r
+  -- `x` and `y` are existential here
   CaseBranch ::
     (i -> Either x y) ->
     ControlFlow f x r ->
@@ -640,7 +645,7 @@ This suggests that we could formulate `ControlFlow`{.haskell} as a arrow transfo
 data ControlFlowT p i r where
   Action :: p i r -> ControlFlow f i r
   Pure :: (i -> r) -> ControlFlow f i r
-  Sequencing :: ControlFlow f i x -> ControlFlow f x r -> ControlFlow f i r
+  Sequencing :: ControlFlow f i j -> ControlFlow f j r -> ControlFlow f i r
   Absurd :: (i -> Void) -> ControlFlow f i r
   CaseBranch ::
     (i -> Either x y) ->
@@ -734,7 +739,7 @@ It just requires the capability to prune branches at runtime for `mapMaybe`{.has
 
 And importantly: despite the fact that the branching can be explained via `<|>`{.haskell} and `mapMaybe`{.haskell}, it is also incredibly useful to have information about `CaseTree`{.haskell}, because that can be used to help ensure that the parser is not ambiguous.
 
-Finally, it is interesting to note that `Alternative`{.haskell} functors have also been explained as categorified near-semirings (and thus support static analysis via near-semirings): [From monoids to near-semirings: the essence of `MonadPlus`{.haskell} and `Alternative`{.haskell}](https://people.cs.kuleuven.be/~tom.schrijvers/Research/papers/ppdp2015.pdf) by Exequiel Rivas, Mauro Jaskelioff, and Tom Schrijvers explains the typeclass laws, free constructions, and Cayley constructions (à la difference lists) from this perspective.
+Finally, it is interesting to note that `Alternative`{.haskell} functors have also been explained as categorified near-semirings (and thus support static analysis via near-semirings): [From monoids to near-semirings: the essence of `MonadPlus`{.haskell} and `Alternative`{.haskell}](https://people.cs.kuleuven.be/~tom.schrijvers/Research/papers/ppdp2015.pdf) by Exequiel Rivas, Mauro Jaskelioff, and Tom Schrijvers explains the typeclass laws, free constructions, and Cayley constructions (à la difference lists) from this perspective.^[Note that we could product a similar datatype for `CaseTree`{.haskell} and `ControlFlow`{.haskell}, that is a right-associated free construction with an efficient Cayley construction, but in the case of determined choice, this would turn binary search of the case tree into linear search, compromising efficiency.]
 
 So the conclusion is that the branching structures of `Alternative`{.haskell} and `Selective`{.haskell} are closely related, but not identical.
 The `Alternative`{.haskell} can be thought of as a functor with nondeterministic branching, while `Selective`{.haskell} needs to be explained via arrows to encode finite deterministic branching.
@@ -747,10 +752,68 @@ Selective applicative functors are all about control flow with determined choice
 In order to keep track of which branches are exclusive from each other, and to explain it via tensors, we have to explain it as a theory of *arrows*, not of functors.
 This is useful for tracking or preventing ambiguity during parsing, as one example.
 
+:::{.Details box-name="Definition"}
+```haskell
+data CaseTree f i r where
+  TwoCases ::
+    -- How to split the input into data for each case
+    -- (Note that `x` and `y` are existential here!)
+    (i -> Either x y) ->
+    -- Control flow for the `Left` case
+    (CaseTree f x r) ->
+    -- Control flow for the `Right` case
+    (CaseTree f y r) ->
+    CaseTree f i r
+  -- One static effect
+  OneCase :: (f (i -> r)) -> CaseTree f i r
+  -- Represent an empty case branching
+  ZeroCases :: (i -> Void) -> CaseTree f i r
+
+-- Typeclass, subject to some laws
+class Casing f where
+  caseTreeOn :: forall i r. f i -> CaseTree f i r -> f r
+
+-- Free structure
+data ControlFlow f i r where
+  Action :: (f (i -> r)) -> ControlFlow f i r
+  Pure :: (i -> r) -> ControlFlow f i r
+  CaseFlow :: CaseTree (ControlFlow f Unit) i r -> ControlFlow f i r
+  -- `j` is existential here
+  Sequencing :: ControlFlow f i j -> ControlFlow f j r -> ControlFlow f i r
+
+-- Alternative formulation of the free structure
+data ControlFlow f i r where
+  Action :: (f (i -> r)) -> ControlFlow f i r
+  Pure :: (i -> r) -> ControlFlow f i r
+  -- `j` is existential here
+  Sequencing :: ControlFlow f i j -> ControlFlow f j r -> ControlFlow f i r
+  Absurd :: (i -> Void) -> ControlFlow f i r
+  -- `x` and `y` are existential here
+  CaseBranch ::
+    (i -> Either x y) ->
+    ControlFlow f x r ->
+    ControlFlow f y r ->
+    ControlFlow f i r
+```
+:::
+
 Despite requiring slightly more involved concepts to explain (arrows and existential types), it solidifies into a structure that looks like ordinary control flow constructs that one might write in an AST for a programming language.
 You can think of the applicative functor `f`{.haskell} as denoting the boundary between the ahead-of-time information available on the outside and the runtime information available to the functions `(i -> r)`{.haskell} on the inside at each step of the computation.
 
 The requirements of selective applicative functors are intentionally flexible, to allow it to be implemented in varied ways: applicatives for simple composable sequencing and staging of effects, monads for efficient execution and flexibility, near-semirings for static analysis, with the selective applicative structure as a common meeting ground for all of it.
+
+:::{.Details box-name="Laws"}
+The laws follow the structure of a near-semiring.
+
+- Multiplicative associativity: `Sequencing (Sequencing f g) h = Sequencing f (Sequencing g h)`{.haskell}
+- Multiplicative identity: `Sequencing (Pure id) f = f = Sequencing f (Pure id)`{.haskell}
+- Additive associativity: `TwoCases id cx (TwoCases id cy cz) = TwoCases assoc (TwoCases id cx cy) cz`{.haskell}
+- Additive identity: `TwoCases Left cx (ZeroCases absurd) = cx = TwoCases Right (ZeroCases absurd) cx`{.haskell}
+- Right distributivity: `Sequencing (CaseBranch split cx cy) g = CaseBranch split (Sequencing cx g) (Sequencing cy g)`{.haskell}
+- Left absorbing element: `Sequencing (Absurd absurd) g = Absurd absurd`{.haskell}
+- Optionally, (additive) commutativity: `TwoCases id cx cy = TwoCases swap cx cy`{.haskell}
+- Optionally, additive idempotence: `CaseBranch id cx cx = lcmap collapse cx`{.haskell}
+:::
 
 Next time we will study the theory of these functors from the other side: basic examples, how they compose, what would be a good syntax for them.
 Eventually we will look at some applications of selective applicative functors in depth, and maybe discuss what the future of functorial and arrow-like structures are: sequencing (monads and categories) and parallelism (applicatives), exclusive determined choice (selectives), nondeterministic choice (alternatives), and [staging](https://www.cs.ox.ac.uk/jeremy.gibbons/publications/phases.pdf) (functor composition).
