@@ -11,14 +11,11 @@ import Control.Plus (empty)
 import Data.Argonaut (Json)
 import Data.Argonaut as Json
 import Data.Array as Array
-import Data.Codec (Codec', decode, encode)
-import Data.Either (Either(..))
+import Data.Either (Either(..), hush)
 import Data.Enum (fromEnum)
 import Data.Filterable (filterMap)
-import Data.Foldable (class Foldable, foldMap, for_, traverse_)
+import Data.Foldable (for_, traverse_)
 import Data.Maybe (Maybe(..))
-import Data.Maybe.Last (Last(..))
-import Data.Newtype (unwrap)
 import Data.Traversable (for)
 import Data.Tuple (snd)
 import Data.Tuple.Nested (type (/\), (/\))
@@ -31,7 +28,8 @@ import Foreign.Object (Object)
 import Foreign.Object as Object
 import Foreign.Object.ST (STObject)
 import Foreign.Object.ST as STO
-import Idiolect (filterFst, (>==))
+import Idiolect (JSON, filterFst, (>==))
+import Parser.Printer.JSON as C
 import Riverdragon.Dragon (Dragon, renderEl, snapshot)
 import Riverdragon.Dragon.Bones as Dragon
 import Riverdragon.River (Allocar, River, createRiverStore, createStore, mailbox, mailboxRiver, stillRiver)
@@ -89,7 +87,7 @@ stillInterface i =
   }
 
 storeInterface :: forall a. Ord a => Allocar (Interface a)
-storeInterface = _.result <$> start do
+storeInterface = _.result <$> start "storeInterface" do
   destroy <- selfDestructor
   stream <- createRiverStore Nothing
   byKey <- mailbox (map { key: _, value: unit } stream.stream)
@@ -105,7 +103,7 @@ storeInterface = _.result <$> start do
     }
 
 valueInterface :: forall a. Ord a => a -> Allocar (Interface a)
-valueInterface v0 = _.result <$> start do
+valueInterface v0 = _.result <$> start "valueInterface" do
   destroy <- selfDestructor
   stream <- createStore v0
   byKey <- mailbox (map { key: _, value: unit } stream.stream)
@@ -131,7 +129,7 @@ makeKeyedInterface = allocLazy do
     case existing of
       Just r -> pure r
       Nothing -> do
-        log $ "Make interface " <> show k
+        -- log $ "Make interface " <> show k
         io <- storeInterface
         io <$ liftST (STO.poke k io interfaces)
 
@@ -139,7 +137,7 @@ makeKeyedInterface = allocLazy do
 sessionStorageInterface :: Allocar (String -> Interface String)
 sessionStorageInterface = allocLazy do
   storage <- window >>= sessionStorage
-  pure \key -> _.result <$> start do
+  pure \key -> _.result <$> start "sessionStorageInterface" do
     destroy <- selfDestructor
     stream <- createRiverStore =<< liftEffect do Storage.getItem key storage
     byKey <- mailbox (map { key: _, value: unit } stream.stream)
@@ -183,18 +181,22 @@ obtainInterface share k = do
       , destroy: mempty
       }
 
-adaptInterface :: forall f a b. Foldable f => Codec' f a b -> Interface a -> Interface b
+adaptInterface :: forall ctx err a b. Monoid ctx => C.OneCodec ctx err Void a a b b -> Interface a -> Interface b
 adaptInterface codec interface =
-  { send: interface.send <<< encode codec
-  , mailbox: interface.mailbox <<< encode codec
-  , receive: filterMap (last <<< decode codec) interface.receive
-  , loopback: filterMap (last <<< decode codec) interface.loopback
+  { send: interface.send <<< C.encode codec
+  , mailbox: interface.mailbox <<< C.encode codec
+  , receive: filterMap (hush <<< C.decode' codec) interface.receive
+  , loopback: filterMap (hush <<< C.decode' codec) interface.loopback
   , current: interface.current <#> bindFlipped
-      (decode codec >>> last)
+      (C.decode' codec >>> hush)
   , destroy: interface.destroy
   }
-  where
-  last = unwrap <<< foldMap (Last <<< Just)
+
+adaptInterfaceR :: forall a. C.JCodec a -> Interface JSON -> Interface a
+adaptInterfaceR = adaptInterface <<< C.registration C.autoJ
+
+autoAdaptInterface :: forall a. C.AutoJSON a JSON => Interface JSON -> Interface a
+autoAdaptInterface = adaptInterfaceR C.autoJ
 
 type KeyedInterfaceWithAttrs =
   { interface :: KeyedInterface
@@ -240,7 +242,7 @@ collectAttrs target = pure \name ->
         Left _ -> Json.fromString astr
 
 instantiateWidget :: Widgets -> DataShare -> Element -> Effect (Effect Unit)
-instantiateWidget widgets share target = _.destroy <$> start_ do
+instantiateWidget widgets share target = _.destroy <$> start_ "instantiateWidget" do
   widget <- liftEffect do lookupWidget widgets target
   interface <- liftEffect do lookupInterface share target
   attrs <- liftEffect do collectAttrs target

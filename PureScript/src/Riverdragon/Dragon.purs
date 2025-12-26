@@ -115,14 +115,14 @@ renderProps el stream = do
         case mcb of
           Nothing -> pure unit
           Just cb -> do
-            r <- _.destroy <$> start_ do
+            r <- _.destroy <$> start_ "renderProps Listener" do
               eventListener
                 { eventPhase: Bubbling
                 , eventTarget: Element.toEventTarget el
                 , eventType: EventType ty
                 } cb
             listeners.set ty r
-  { destroy: unsubscribe } <- start do subscribe stream receive
+  { destroy: unsubscribe } <- start "renderProps" do subscribe stream receive
   pure do
     unsubscribe
     listeners.reset >>= traverse_ identity
@@ -199,18 +199,18 @@ renderEl el dragon = do
 renderElSt :: forall flow. Stream flow Element -> Dragon -> Effect (Effect Unit)
 renderElSt stream dragon = do
   destroyLast <- rolling
-  { destroy: unsub } <- start $ subscribe stream \el -> do
+  { destroy: unsub } <- start "renderElSt" $ subscribe stream \el -> do
     destroyLast =<< renderEl el dragon
   pure $ unsub <> destroyLast mempty
 
 renderDragonIn :: EffectFn3 RndrMgr (Node -> Effect Unit) Dragon Rendered
 renderDragonIn = mkEffectFn3 \mgr insert -> case _ of
-  Egg egg -> start egg >>=
+  Egg egg -> start "renderDragonIn Egg" egg >>=
     \{ result: dragon, destroy } -> runEffectFn3 renderDragonIn mgr insert dragon <#>
       \r -> r { destroy = r.destroy <> destroy }
   Text changingValue -> do
     el <- Text.toNode <$> createTextNode "" mgr.doc
-    { destroy: unsubscribe } <- start $
+    { destroy: unsubscribe } <- start "renderDragonIn Text" $
       subscribe (mgr.renderThread changingValue) \newValue -> do
         setTextContent newValue el
     insert el
@@ -239,7 +239,7 @@ renderDragonIn = mkEffectFn3 \mgr insert -> case _ of
     Tuple bookmarks insert' <- mkBookmarks mgr insert
     unsubPrev <- rolling
     let inactive = for_ bookmarks (Comment.toNode >>> removeSelf)
-    { destroy: unsubscribe } <- start $
+    { destroy: unsubscribe } <- start "renderDragonIn Replacing" $
       subscribeIsh inactive (mgr.renderThread revolving) \newValue -> do
         unsubPrev mempty
         unsubPrev <<< _.destroy =<< runEffectFn3 renderDragonIn mgr insert' newValue
@@ -251,7 +251,7 @@ renderDragonIn = mkEffectFn3 \mgr insert -> case _ of
     Tuple bookmarks insert' <- mkBookmarks mgr insert
     unsubAll <- accumulator
     let inactive = for_ bookmarks (Comment.toNode >>> removeSelf)
-    { destroy: unsubscribe } <- start $
+    { destroy: unsubscribe } <- start "renderDragonIn Appending" $
       subscribeIsh inactive (mgr.renderThread items) \newChild -> do
         unsubAll.put <<< _.destroy =<< runEffectFn3 renderDragonIn mgr insert' newChild
     pure $ fromBookmarks bookmarks do

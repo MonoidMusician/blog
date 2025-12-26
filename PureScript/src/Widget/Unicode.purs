@@ -10,7 +10,6 @@ import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.CodePoint.Unicode (generalCatToUnicodeCat, isAlpha, isAlphaNum, isControl, isMark, isPrint, isPunctuation, isSpace, isSymbol)
 import Data.CodePoint.Unicode as Unicode
-import Data.Codec.Argonaut as CA
 import Data.Either (hush)
 import Data.Enum (fromEnum, toEnum)
 import Data.Foldable (foldMap, intercalate, oneOfMap)
@@ -36,6 +35,7 @@ import Effect.Class (liftEffect)
 import Fetch (fetch)
 import Idiolect (only, (/|\), (>==))
 import Parser.Languages.ShowFast (mkReShow)
+import Parser.Printer.JSON as C
 import Partial.Unsafe (unsafeCrashWith)
 import Prim.Row as Row
 import Prim.RowList (class RowToList)
@@ -50,14 +50,14 @@ import Riverdragon.River.Beyond (affToLake, dedup)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Type.Proxy (Proxy(..))
 import Web.Util.TextCursor as TC
-import Widget (Widget, adaptInterface)
+import Widget (Widget, autoAdaptInterface)
 
 widget :: Widget
 widget { interface, attrs } = liftEffect do
   example <- attrs "unicode"
   let
-    initial = hush $ CA.decode CA.string example
-    stringInterface = adaptInterface CA.string (interface "unicode")
+    initial = hush $ C.decode C.string example
+    stringInterface = autoAdaptInterface (interface "unicode")
     resetting = oneOfMap pure initial <|> stringInterface.receive
   pure do
     component stringInterface.send resetting

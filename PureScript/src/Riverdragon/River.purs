@@ -496,7 +496,7 @@ makeLake' :: forall a. (Allocar Unit -> (a -!> Unit) -> ResourceM Unit) -> Strea
 makeLake' streamTemplate = Stream NotFlowing \cbs -> do
   id <- globalId
   loadingBurst \whenLoaded -> do
-    unsubscribe <- map _.destroy $ start_ $ streamTemplate cbs.destroyed do
+    unsubscribe <- map _.destroy $ start_ "makeLake'" $ streamTemplate cbs.destroyed do
       \a -> whenLoaded a do
         cbs.receive a
         cbs.commit id
@@ -515,14 +515,15 @@ subscribe = subscribeIsh mempty
 subscribeM :: forall flow a m. MonadResource m => Stream flow a -> (a -> ResourceM Unit) -> m Unit
 subscribeM stream cb = do
   scope <- selfScope
-  subscribe stream \a -> void $ scopedStart_ scope $ cb a
+  subscribe stream \a -> void $ scopedStart_ "subscribeM" scope $ cb a
 
+-- | With `oneSubScopeAtATime`.
 subscribeM1 :: forall flow a m. MonadResource m => Stream flow a -> (a -> ResourceM Unit) -> m Unit
 subscribeM1 stream cb = do
-  revolving <- selfScope >>= oneSubScopeAtATime
+  revolving <- selfScope >>= oneSubScopeAtATime "subscribeM1"
   subscribe stream \a -> do
     newScope <- revolving
-    void $ scopedStart_ newScope $ cb a
+    void $ scopedStart_ "subscribeM1" newScope $ cb a
 
 -- | Subscribe with an additional callback for when the stream is destroyed.
 subscribeIsh :: forall flow a m. MonadResource m => Allocar Unit -> Stream flow a -> (a -!> Unit) -> m Unit
@@ -854,7 +855,7 @@ alLake :: forall a.
   ResourceM (Lake a) ->
   Lake a
 alLake mkLake = Stream NotFlowing \cbs -> do
-  { result: Stream _ lake, destroy } <- start mkLake
+  { result: Stream _ lake, destroy } <- start "alLake" mkLake
   r <- lake cbs
   pure r { unsubscribe = r.unsubscribe <> destroy }
 
@@ -944,13 +945,13 @@ latestStreamEf ::
   (a -> ResourceM (Stream flowInner b)) ->
   Lake b
 latestStreamEf source mkStream = makeLake \cb -> do
-  revolving <- selfScope >>= oneSubScopeAtATime
+  revolving <- selfScope >>= oneSubScopeAtATime "latestStreamEf"
   subscribe source \a -> do
     -- Unsubscribe first (by creating a new revolving scope) in case one of the
     -- next actions would have triggered the old stream to emit any more events
     -- before the subscription got properly replaced
     newScope <- revolving
-    void $ scopedStart_ newScope do
+    void $ scopedStart_ "latestStreamEf" newScope do
       stream <- mkStream a
       subscribe stream cb
 
@@ -1047,7 +1048,7 @@ mailbox :: forall flowIn flowOut k v m.
     MonadResource m =>
   Stream flowIn { key :: k, value :: v } ->
   m (k -> Stream flowOut v)
-mailbox upstream = inSubScope do
+mailbox upstream = inSubScope "mailbox" do
   scope <- selfScope
   -- the reason i created allocar tbh
   mailboxes <- liftEffect do ordMap
@@ -1069,7 +1070,7 @@ mailbox upstream = inSubScope do
   -- nicer than raw unsafePerformEffect
   byKey <- liftEffect $ allocLazy $ pure \selected -> do
     -- if it has been destroyed, return an empty stream
-    iteM destroyed.get (pure empty) $ map _.result $ scopedStart scope do
+    iteM destroyed.get (pure empty) $ map _.result $ scopedStart "mailbox" scope do
       downstream <- createRiver
       liftEffect do mailboxes.set selected downstream.send
       pure downstream.stream
@@ -1078,5 +1079,5 @@ mailbox upstream = inSubScope do
 mailboxRiver :: forall flowOut k v. Ord k =>
   River { key :: k, value :: v } ->
   (k -> Stream flowOut v)
-mailboxRiver = _.result <<< unsafeAllocate <<< start <<< mailbox
+mailboxRiver = _.result <<< unsafeAllocate <<< start "mailboxRiver" <<< mailbox
 

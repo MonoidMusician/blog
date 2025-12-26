@@ -38,7 +38,7 @@ notesToNoises ::
     ScoreM { value :: Array roar, leave :: Stream flow3 Unit }
   ) ->
   ScoreM (Lake (Array roar))
-notesToNoises envStreams noteStream oneVoice = inSubScope do
+notesToNoises envStreams noteStream oneVoice = do
   { run: startAudio } <- scoreScope
   let
     -- Passively listen the the environment streams and take their most recent
@@ -48,14 +48,14 @@ notesToNoises envStreams noteStream oneVoice = inSubScope do
         <#> \(env /\ { key, pressed }) -> { key, pressed, env }
     attackOrRelease { pressed, env } = if pressed then Left env else Right unit
 
-    activeSynths = join <$> fallingLeaves attackOrRelease notesWithEnv \{ key } env release -> do
-      -- This manual wiring is a bit ugly ...
-      startAudio do
-        result <- oneVoice env key (stillRiver release)
-        -- Need to `destroy` the node when it leaves
-        River.subscribeM result.leave \_ -> selfDestruct
-        -- Return the result
-        pure result
+    activeSynths = join <$> fallingLeaves attackOrRelease notesWithEnv
+      \{ key } env release -> startAudio do
+        inSubScope "noteToNoise" do
+          result <- oneVoice env key (stillRiver release)
+          -- Need to `destroy` the node when it leaves
+          River.subscribeM result.leave \_ -> selfDestruct
+          -- Return the result
+          pure result
   pure activeSynths
 
 

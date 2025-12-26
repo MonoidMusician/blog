@@ -6,7 +6,6 @@ import Control.Plus ((<|>))
 import Data.Array ((!!))
 import Data.Array as Array
 import Data.BooleanAlgebra.CSS (Vert, combineFold, printVerts)
-import Data.Codec.Argonaut as CA
 import Data.Either (Either, blush, hush)
 import Data.Filterable (filter, filterMap)
 import Data.Foldable (fold, foldMap, oneOfMap)
@@ -21,13 +20,14 @@ import Foreign.Object (Object)
 import Foreign.Object as Object
 import Idiolect ((<#>:))
 import Parser.Languages.CSS (mkCSSParser)
+import Parser.Printer.JSON as C
 import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones (($~~), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (inputValidated)
 import Riverdragon.River (Stream, createRiver, foldStream, store)
 import Riverdragon.River.Beyond (affToLake)
-import Widget (Widget, adaptInterface)
+import Widget (Widget, autoAdaptInterface)
 
 type Parser = String -> Either String (Array Vert)
 
@@ -41,9 +41,9 @@ widgetCSS :: Widget
 widgetCSS { interface, attrs } = liftEffect do
   example <- attrs "example"
   let
-    initial = hush $ CA.decode (CA.array CA.string) example
+    initial = hush $ C.decode (C.array C.string) example
     resetting = oneOfMap pure initial <|> do
-      (adaptInterface (CA.array CA.string) (interface "css-example")).receive
+      (autoAdaptInterface (interface "css-example")).receive
   pure $ component resetting
 
 sendExample :: Widget

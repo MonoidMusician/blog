@@ -46,8 +46,8 @@ destr = addDestructor :: forall m. MonadResource m => Effect Unit -> m Unit
 addWaiters :: forall m. MonadResource m => Waiters -> m Unit
 addWaiters = _addWaiters <=< liftEffect <<< _shareWaiters
 
-subScope :: forall m. MonadResource m => m Scope
-subScope = selfScope >>= mkSubscope >>> liftEffect
+subScope :: forall m. MonadResource m => String -> m Scope
+subScope name = selfScope >>= mkSubscope name >>> liftEffect
 
 addWaiter :: forall m. MonadResource m => Rational -> Dir -> Aff Unit -> m Unit
 addWaiter lvl dir waiter = do
@@ -73,20 +73,20 @@ selfDestructor :: forall m. MonadResource m => m (Effect Unit)
 selfDestructor = selfScope >>= \(Scope { destroy }) -> pure destroy
 
 -- Caution: should not neglect inner destroy
-inSubScope :: forall m. MonadResource m => m ~> m
-inSubScope m = subScope >>= \scope -> _inScope scope m
+inSubScope :: forall m. MonadResource m => String -> m ~> m
+inSubScope name m = subScope name >>= \scope -> _inScope scope m
 
 -- Kind of like `with` in Python: destroys resources on exit
-scoped :: forall e m. MonadResource m => MonadError e m => m ~> m
-scoped act = inSubScope do
+scoped :: forall e m. MonadResource m => MonadError e m => String -> m ~> m
+scoped name act = inSubScope name do
   catchError (act <* selfDestruct) \e -> selfDestruct *> throwError e
 
 -- Actually like `async with` in Python (although it does not wait for destructors)
 with ::
   forall e m resource return.
     MonadResource m => MonadAff m => MonadError e m =>
-  m resource -> (resource -> m return) -> m return
-with mk cont = scoped do
+  String -> m resource -> (resource -> m return) -> m return
+with name mk cont = scoped name do
   mk >>= \r -> wait *> cont r
 
 -- Use around `inSubScope` (or `scoped` or `with`)
@@ -99,10 +99,10 @@ trackM m = m >>= \r -> r <$ destr r.destroy
 track :: forall r m. MonadResource m => Effect { destroy :: Effect Unit | r } -> m { destroy :: Effect Unit | r }
 track = trackM <<< liftEffect
 
-trackA :: forall r m. MonadAff m => MonadResource m => Aff { destroy :: Effect Unit | r } -> m { destroy :: Effect Unit | r }
-trackA m =
+trackA :: forall r m. MonadAff m => MonadResource m => String -> Aff { destroy :: Effect Unit | r } -> m { destroy :: Effect Unit | r }
+trackA name m =
   selfScope >>= \scope ->
-    trackM do liftAff do monitor scope m
+    trackM do liftAff do monitor name scope m
 
 trackM_ :: forall m. MonadResource m => m (Effect Unit) -> m Unit
 trackM_ = void <<< trackM <<< map { destroy: _ }
@@ -110,12 +110,12 @@ trackM_ = void <<< trackM <<< map { destroy: _ }
 track_ :: forall m. MonadResource m => Effect (Effect Unit) -> m Unit
 track_ = trackM_ <<< liftEffect
 
-trackA_ :: forall m. MonadAff m => MonadResource m => Aff (Effect Unit) -> m Unit
-trackA_ = void <<< trackA <<< map { destroy: _ }
+trackA_ :: forall m. MonadAff m => MonadResource m => String -> Aff (Effect Unit) -> m Unit
+trackA_ name = void <<< trackA name <<< map { destroy: _ }
 
 liftResourceM :: forall m. MonadResource m => ResourceM ~> m
 liftResourceM act = selfScope >>= \scope ->
-  _.result <$> liftEffect do scopedStart scope act
+  _.result <$> liftEffect do scopedStart "liftResourceM" scope act
 
 instance MonadResource m => MonadResource (ReaderT r m) where
   selfScope = lift selfScope

@@ -14,15 +14,13 @@ import Control.Apply (lift2)
 import Control.Apply (lift2) as ReExports
 import Control.Comonad (extract)
 import Control.Comonad.Store (Store, StoreT(..), store)
-import Data.Argonaut (Json)
+import Data.Argonaut (Json, JsonDecodeError)
 import Data.Argonaut as Json
 import Data.Array (intercalate, (!!))
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
-import Data.Codec as C
-import Data.Codec.Argonaut as CA
 import Data.Compactable (class Compactable)
 import Data.Compactable (class Compactable, compact) as ReExports
 import Data.Either (Either(..), either)
@@ -45,10 +43,9 @@ import Effect.Aff (Aff)
 import Effect.Class (class MonadEffect)
 import Effect.Class.Console (log)
 import Fetch (fetch)
-import Idiolect (intercalateMap)
+import Idiolect (JSON, intercalateMap)
 import Parser.Comb (Comb(..), execute)
 import Parser.Comb as Comb
-import Parser.Comb.Codec (stateTableCodec)
 import Parser.Comb.Combinators (buildTree, namedRec')
 import Parser.Comb.Run (gatherPrecedences, resultantsOf)
 import Parser.Comb.Run as CombR
@@ -57,6 +54,7 @@ import Parser.Comb.Types (Associativity(..))
 import Parser.Comb.Types as CombT
 import Parser.Lexing (class ToString, type (~), FailReason(..), FailedStack(..), Rawr, Similar(..), toString, bestRegexOrString, errorName, len, userErrors)
 import Parser.Lexing (class ToString, type (~), Rawr) as ReExports
+import Parser.Printer.JSON as C
 import Parser.Selective (class Casing, class Select)
 import Parser.Types (ICST, OrEOF, ShiftReduce(..), unShift)
 import Parser.Types (OrEOF) as ReExports
@@ -310,6 +308,9 @@ convertParseError = case _ of
 
 --------------------------------------------------------------------------------
 
+stateTableCodec :: C.JRCodec Void StateTable
+stateTableCodec = C.registration C.autoJ (C.autoJ @StateTable @JSON)
+
 freeze :: forall a. Comber a -> Json
 freeze = parse' >>> fst >>> C.encode stateTableCodec
 
@@ -325,7 +326,7 @@ fetchAndThaw :: forall a. Comber a -> String -> Aff (String -> Either ParseError
 fetchAndThaw comber url =
   fetch url {} >>= _.text >>> map (Json.parseJson >>> thaw comber)
 
-thaw' :: forall a. Comber a -> Json -> Either CA.JsonDecodeError (StateTable /\ (String -> Either ParseError a))
+thaw' :: forall a. Comber a -> Json -> Either JsonDecodeError (StateTable /\ (String -> Either ParseError a))
 thaw' (Comber comber) = C.decode stateTableCodec >>> map \states ->
   Tuple states $ convertingParseError $ execute { best: bestRegexOrString, defaultSpace: defaultWS }
     { states
@@ -343,7 +344,7 @@ fetchAndThawWith :: forall a. Conf -> Comber a -> String -> Aff (String -> Eithe
 fetchAndThawWith conf comber url =
   fetch url {} >>= _.text >>> map (Json.parseJson >>> thawWith conf comber)
 
-thawWith' :: forall a. Conf -> Comber a -> Json -> Either CA.JsonDecodeError (StateTable /\ (String -> Either ParseError a))
+thawWith' :: forall a. Conf -> Comber a -> Json -> Either JsonDecodeError (StateTable /\ (String -> Either ParseError a))
 thawWith' conf (Comber comber) = C.decode stateTableCodec >>> map \states ->
   Tuple states $ convertingParseError $ execute conf
     { states
@@ -356,18 +357,10 @@ fetchAndThaw' ::
   forall a.
   Comber a ->
   String ->
-  Aff (Either CA.JsonDecodeError (StateTable /\ (String -> Either String a)))
+  Aff (Either JsonDecodeError (StateTable /\ (String -> Either String a)))
 fetchAndThaw' comber url =
   fetch url {} >>= _.text >>> map do
-    (Json.parseJson >>> lmap conv) >=> thaw' comber
-  where
-  conv = case _ of
-    Json.TypeMismatch msg -> CA.TypeMismatch msg
-    Json.UnexpectedValue j -> CA.UnexpectedValue j
-    Json.AtIndex i e -> CA.AtIndex i $ conv e
-    Json.AtKey k e -> CA.AtKey k $ conv e
-    Json.Named s e -> CA.Named s $ conv e
-    Json.MissingValue -> CA.MissingValue
+    Json.parseJson >=> thaw' comber
 
 type FullParseError = CombR.ParseError UserError ParseWS String String (String ~ Rawr) String String
 type Rec = CombR.Rec UserError ParseWS String String (String ~ Rawr) String String

@@ -11,7 +11,7 @@ import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap, lmap)
 import Data.Bitraversable (bifoldMap, ltraverse)
-import Data.Either (Either(..), either, isLeft, isRight, note)
+import Data.Either (Either(..), either, hush, isLeft, isRight, note)
 import Data.Either.Nested (type (\/))
 import Data.Filterable (partitionMap)
 import Data.Foldable (class Foldable, foldMap, foldr, oneOfMap, or, product, sum)
@@ -41,9 +41,10 @@ import Data.Traversable (class Traversable, sequence, traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import Debug (spy)
 import Parser.Algorithms (indexStates)
 import Parser.Comb.Types (Associativity(..), LogicParts(..), Option, Options(..), PartialResult(..), applyLogic)
+import Parser.Printer.JSON (class AutoJSON)
+import Parser.Printer.JSON as C
 import Parser.Proto (Stack(..), topOf)
 import Parser.Types (Fragment, ICST(..), OrEOF(..), Part(..), ShiftReduce(..), State(..), StateInfo, States(..), Zipper(..), decide, decisionUnique, filterSR, filterSR', isInterTerminal, unInterTerminal)
 import Partial.Unsafe (unsafeCrashWith)
@@ -62,6 +63,7 @@ derive newtype instance eqSimilar :: (Eq a, Eq b) => Eq (Similar a b)
 derive newtype instance ordSimilar :: (Ord a, Ord b) => Ord (Similar a b)
 derive newtype instance showSimilar :: (Show a, Show b) => Show (Similar a b)
 derive instance newtypeSimilar :: Newtype (Similar a b) _
+instance (AutoJSON a reg, AutoJSON b reg) => AutoJSON (Similar a b) reg where autoJ = C._N C.autoJ
 
 -- | Typeclass for generic length of things
 -- |
@@ -214,6 +216,12 @@ unRawr (Rawr re _) = fromMaybe (Re.source re) do
   x <- String.stripPrefix (String.Pattern "^(?:") (Re.source re)
   y <- String.stripSuffix (String.Pattern ")") x
   pure y
+
+instance C.TryCached reg => AutoJSON Rawr reg where
+  autoJ = C.tryCached $ C.string # C.prismatic "Rawr" unRawr
+    \source -> hush ado
+      r <- Re.regex ("^(?:" <> source <> ")") $ unicode <> dotAll
+      in Rawr r (show r)
 
 -- TODO: this isn't right:
 -- - doesn't handle lookaround since we dropped the start of the string

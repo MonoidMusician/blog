@@ -113,7 +113,7 @@ perform' options creator = do
       { id: 0
       , worklets: Map.empty
       }
-  r <- start do
+  r <- start "perform" do
     Tuple _state { audio: outputs, result } <- runReaderT (runMutStateT state0 (creator ctx)) { ctx, iface }
     connecting (dam outputs) (destination ctx)
     destr do Context.close ctx
@@ -139,20 +139,20 @@ scoreScope = do
   scope <- selfScope
   let
     run :: ScoreM ~> Effect
-    run act = map _.result $ scopedStart_ scope $ flip runReaderT ctx $ flip unMutStateT st $ act
+    run act = map _.result $ scopedStart_ "scoreScope1" scope $ flip runReaderT ctx $ flip unMutStateT st $ act
     runAsync :: ScoreAsync ~> Aff
-    runAsync act = map _.result $ scopedRun scope $ flip runReaderT ctx $ flip unMutStateT st $ act
+    runAsync act = map _.result $ scopedRun "scoreScope2" scope $ flip runReaderT ctx $ flip unMutStateT st $ act
   pure { run: run :: ScoreM ~> Effect, runAsync: runAsync :: ScoreAsync ~> Aff, scope, ctx: ctx.ctx, iface: ctx.iface }
 
 scoreStream :: forall flow1 flow2 x. Stream flow1 (ScoreM x) -> ScoreM (Stream flow2 x)
 scoreStream upstream = do
   st <- mutStateT pure
   ctx <- ask
-  revolving <- selfScope >>= oneSubScopeAtATime
+  revolving <- selfScope >>= oneSubScopeAtATime "scoreStream"
   let
     runHere act = _.result <$> do
       newScope <- liftEffect revolving
-      scopedRun newScope $ liftResourceM $
+      scopedRun "scoreStream runHere" newScope $ liftResourceM $
         flip runReaderT ctx $
           flip unMutStateT st $ act
   { stream } <- River.instantiate $

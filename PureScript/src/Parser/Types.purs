@@ -14,19 +14,25 @@ import Data.Filterable (partitionMap)
 import Data.Foldable (product)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Generic.Rep (class Generic)
+import Data.Lens.Iso.Newtype (_Newtype)
 import Data.Map (Map, SemigroupMap)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
 import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (class Newtype)
+import Data.Profunctor (dimap)
 import Data.Show.Generic (genericShow)
 import Data.String (CodePoint)
 import Data.String as String
 import Data.String.NonEmpty as NES
 import Data.String.NonEmpty.Internal (NonEmptyString)
 import Data.Traversable (class Foldable, foldMap, mapAccumL, traverse)
-import Data.Tuple (Tuple(..), fst)
+import Data.Tuple (Tuple, fst, uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
+import Parser.Printer.JSON (class AutoJSON)
+import Parser.Printer.JSON as C
+import Parser.Printer.Juxt (_GenericTensor', rec0, (!!!), (/!\), (>$<$>), (\!/))
 import Parser.Proto as Proto
+import Type.Proxy (Proxy(..))
 
 data OrEOF a = Continue a | EOF
 derive instance eqOrEOF :: Eq a => Eq (OrEOF a)
@@ -40,6 +46,9 @@ notEOF :: OrEOF ~> Maybe
 notEOF EOF = Nothing
 notEOF (Continue a) = Just a
 
+instance AutoJSON a reg => AutoJSON (OrEOF a) reg where
+  autoJ = dimap notEOF (maybe EOF Continue) C.autoJ
+
 newtype Grammar space nt r tok = MkGrammar
   (Array (GrammarRule space nt r tok))
 derive newtype instance showGrammar :: (Show space, Show nt, Show r, Show tok) => Show (Grammar space nt r tok)
@@ -52,6 +61,13 @@ type GrammarRule space nt r tok =
   , rName :: r -- each rule has a unique name
   , rule :: Fragment space nt tok -- sequence of nonterminals and terminals that make up the rule
   }
+
+instance (AutoJSON space reg, AutoJSON nt reg, AutoJSON r reg, AutoJSON tok reg, C.TryCached reg) => AutoJSON (Grammar space nt r tok) reg where
+  autoJ = _Newtype $ C.array $ C.tupled
+    !!! Proxy @"pName"      C.:= C.tryCached (C.autoJ @nt)
+    !!! Proxy @"rName"      C.:= C.tryCached (C.autoJ @r)
+    !!! Proxy @"rule"       C.:= C.autoJ
+    !!! rec0
 
 -- | Why `Semiring`? Well, we *could* use `HeytingAlgebra`: we have conjunctive
 -- | and disjunctive operations, and because it is finite and distributive, it
@@ -122,6 +138,12 @@ instance bifunctorPart :: Bifunctor (Part space) where
   bimap _ g (Terminal tok) = Terminal (g tok)
   bimap _ _ (InterTerminal space) = InterTerminal space
 
+instance (AutoJSON space reg, AutoJSON nt reg, AutoJSON tok reg, C.TryCached reg) => AutoJSON (Part space nt tok) reg where
+  autoJ = _GenericTensor' !!! C.tryCached !!! C.tupled
+    !!! C.ctor @"NonTerminal" /!\ C.item C.autoJ
+    \!/ C.ctor @"Terminal" /!\ C.item C.autoJ
+    \!/ C.ctor @"InterTerminal" /!\ C.item C.autoJ
+
 type SPart = Part Unit NonEmptyString CodePoint
 
 isNonTerminal :: forall space nt tok. Part space nt tok -> Boolean
@@ -180,6 +202,12 @@ derive instance genericZipper :: Generic (Zipper space nt tok) _
 instance showZipper :: (Show space, Show nt, Show tok) => Show (Zipper space nt tok) where
   show x = genericShow x
 
+instance (AutoJSON space reg, AutoJSON nt reg, AutoJSON tok reg, C.TryCached reg) => AutoJSON (Zipper space nt tok) reg where
+  autoJ = (\(Zipper x y) -> x /\ y) >$<$> uncurry Zipper
+    !!! C.tupled
+    !!! C.item (C.tryCached C.autoJ)
+    /!\ C.item (C.tryCached C.autoJ)
+
 type SZipper = Zipper Unit NonEmptyString CodePoint
 
 unZipper :: forall space nt tok. Zipper space nt tok -> Fragment space nt tok
@@ -205,6 +233,15 @@ instance showState :: (Show space, Show nt, Show r, Show tok) => Show (State spa
 
 instance semigroupState :: (Semiring space, Eq space, Eq nt, Eq r, Eq tok) => Semigroup (State space nt r tok) where
   append s1 (State s2) = minimizeStateCat s1 s2
+
+instance (AutoJSON space reg, AutoJSON nt reg, AutoJSON r reg, AutoJSON tok reg, C.TryCached reg) => AutoJSON (State space nt r tok) reg where
+  autoJ = _Newtype $ C.array $ C.tupled
+    !!! Proxy @"rName"      C.:= C.tryCached (C.autoJ @r)
+    !!! Proxy @"pName"      C.:= C.tryCached (C.autoJ @nt)
+    !!! Proxy @"rule"       C.:= C.autoJ
+    !!! Proxy @"lookbehind" C.:= C.autoJ
+    !!! Proxy @"lookahead"  C.:= C.tryCached C.autoJ
+    !!! rec0
 
 nubEqCat :: forall a. Eq a => Array a -> Array a -> Array a
 nubEqCat as bs = as <> Array.filter (not Array.elem <@> as) bs
@@ -270,6 +307,12 @@ derive instance ordShiftReduce :: (Ord s, Ord r) => Ord (ShiftReduce s r)
 derive instance genericShiftReduce :: Generic (ShiftReduce s r) _
 instance showShiftReduce :: (Show s, Show r) => Show (ShiftReduce s r) where
   show = genericShow
+
+instance (AutoJSON s reg, AutoJSON r reg, C.TryCached reg) => AutoJSON (ShiftReduce s r) reg where
+  autoJ = _GenericTensor' !!! C.tupled
+    !!! C.ctorAs "S"  @"Shift" /!\ C.item (C.tryCached C.autoJ)
+    \!/ C.ctorAs "R"  @"Reduces" /!\ C.item (C.tryCached C.autoJ)
+    \!/ C.ctorAs "SR" @"ShiftReduces" /!\ C.item (C.tryCached C.autoJ) /!\ C.item (C.tryCached C.autoJ)
 
 unShift :: forall s r. ShiftReduce s r -> Maybe s
 unShift (Shift s) = Just s
@@ -353,6 +396,23 @@ newtype States s space nt r tok = States
   (Array (StateInfo s space nt r tok))
 
 derive instance newtypeStates :: Newtype (States s space nt r tok) _
+derive newtype instance eqStates :: (Eq s, Eq space, Eq nt, Eq r, Eq tok) => Eq (States s space nt r tok)
+instance
+  ( Ord tok
+  , Ord nt
+  , AutoJSON s reg
+  , AutoJSON space reg
+  , AutoJSON nt reg
+  , AutoJSON r reg
+  , AutoJSON tok reg
+  , C.TryCached reg
+  ) => AutoJSON (States s space nt r tok) reg where
+    autoJ = _Newtype $ C.array $ C.object
+      !!! Proxy @"sName" C.:= C.autoJ @s
+      !!! Proxy @"items" C.:= C.autoJ
+      !!! Proxy @"advance" C.:= _Newtype do C.mapA (C.tryCached C.autoJ) (C.tuple C.autoJ C.autoJ)
+      !!! Proxy @"receive" C.:= C.mapA (C.tryCached C.autoJ) (C.autoJ @s)
+      !!! rec0
 
 type SStates = States Int Unit NonEmptyString String CodePoint
 

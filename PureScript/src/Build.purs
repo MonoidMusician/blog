@@ -28,7 +28,7 @@ import Node.FS (SymlinkType(..))
 import Node.FS.Aff as FS
 import Node.FS.Stats (isDirectory)
 import Parser.Comb (Comb(..))
-import Parser.Comb.Comber (Comber(..), compact, freezeTable, parse', printConflicts, toAnsi)
+import Parser.Comb.Comber (Comber(..), compact, freezeTable, parse', printConflicts, stateTableCodec, toAnsi)
 import Parser.Comb.Run (combPrecedence, gatherPrecedences)
 import Parser.Debug (thingy)
 import Parser.Languages as Languages
@@ -37,6 +37,7 @@ import Parser.Languages.HFS as HFS
 import Parser.Languages.Show as Show
 import Parser.Languages.TMTTMT.Parser as TMTTMT
 import Parser.Lexing (applyPrecedence)
+import Parser.Printer.JSON as C
 import Parser.Types (States(..))
 import PureScript.Highlight (highlightPandoc)
 import Safe.Coerce (coerce)
@@ -59,12 +60,23 @@ mainJson = do
       log $ append "Grammar breadth: " $ show $ Array.length rules
       log $ append "Grammar depth: " $ show $ fromMaybe 0 $ maximum $ rules <#> _.rule >>> Array.length
       log $ show $ Array.nub $ info.entrypoints
+
       t0 <- liftEffect now
       let dat@{ states: States states } = fst $ parse' parser
       t1 <- liftEffect now
       log $ show (Array.length states) <> " states"
       log $ show (unwrap (unInstant t1) - unwrap (unInstant t0)) <> " milliseconds"
       log $ printConflicts toAnsi $ un Identity $ applyPrecedence (combPrecedence $ gatherPrecedences (Comb info)) $ States states
+
+      t2 <- liftEffect now
+      let encoded = C.encode stateTableCodec dat
+      log $ "Length: " <> show (String.length (J.stringify encoded))
+      t3 <- liftEffect now
+      log $ "Decodable: " <> show (C.decode stateTableCodec encoded == Right dat)
+      t4 <- liftEffect now
+      log $ show (unwrap (unInstant t3) - unwrap (unInstant t2)) <> " + " <> show (unwrap (unInstant t4) - unwrap (unInstant t3)) <> " milliseconds"
+      log ""
+
       void $ try do FS.rm' ("./assets/json/" <> filename <> ".json.gz") { force: false, maxRetries: 0, recursive: false, retryDelay: 0 }
       FS.writeTextFile UTF8 ("./assets/json/" <> filename <> ".json") $ J.stringify $ freezeTable dat
 

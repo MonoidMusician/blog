@@ -63,7 +63,7 @@ delayWith delaying stream =
             whenM (Map.isEmpty <$> inflight.read) do
               selfDestruct
         inflight.set id cancelIt
-    { destroy: unsub } <- start do subscribeIsh upstreamDestroyed stream receive
+    { destroy: unsub } <- start "delayWith" do subscribeIsh upstreamDestroyed stream receive
     pure { destroy: unsub <> inflight.traverse (const identity) }
 
 delay :: forall flow. Milliseconds -> Stream flow ~> Stream flow

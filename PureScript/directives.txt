@@ -2,13 +2,42 @@ Data.Map.Internal.member never
 Data.Map.Internal.lookup never
 Data.Map.Internal.insert never
 Data.Map.Internal.delete never
+Data.Map.Internal.unionWith never
+Data.Map.Internal.union never
 Data.Traversable.traversableMaybe.traverse arity=2
 Data.Traversable.for arity=2
 Data.Function.flip arity=2
 
+Record.insert arity=4
+
+Data.Argonaut.Core.caseJsonString never
+Data.Argonaut.Core.isString never
+Data.Argonaut.Core.toString never
+Data.Argonaut.Core.caseJsonObject never
+Data.Argonaut.Core.isObject never
+Data.Argonaut.Core.toObject never
+Data.Argonaut.Core.caseJsonNumber never
+Data.Argonaut.Core.isNumber never
+Data.Argonaut.Core.toNumber never
+Data.Argonaut.Core.caseJsonNull never
+Data.Argonaut.Core.isNull never
+Data.Argonaut.Core.toNull never
+Data.Argonaut.Core.caseJsonBoolean never
+Data.Argonaut.Core.isBoolean never
+Data.Argonaut.Core.toBoolean never
+Data.Argonaut.Core.caseJsonArray never
+Data.Argonaut.Core.isArray never
+Data.Argonaut.Core.toArray never
+Data.Argonaut.Core.caseJson never
+
+Data.Void.absurd never
 
 Data.Lens.Lens.lens arity=2
 Data.Lens.Record.prop arity=4
 Data.Lens.Iso.Newtype._Newtype arity=3
 Data.Profunctor.Strong.strongFn.first arity=1
 Data.Profunctor.Strong.strongFn.second arity=1
+Data.Profunctor.Choice.fanout arity=3
+Data.Profunctor.Choice.choiceFn.left arity=1
+Data.Profunctor.Choice.choiceFn.right arity=1
+Data.Profunctor.Choice.fanin arity=3

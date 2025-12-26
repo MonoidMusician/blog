@@ -6,20 +6,24 @@ import Control.Apply (lift2, lift3)
 import Control.Monad.Except (ExceptT(..))
 import Control.Monad.Maybe.Trans (MaybeT(..))
 import Control.Monad.Writer (WriterT(..))
-import Control.Plus (class Plus, empty)
+import Control.Plus (class Plus, empty, (<|>))
 import Data.Array (foldr)
 import Data.Array as Array
 import Data.Bifunctor (bimap, lmap)
 import Data.Const (Const(..))
 import Data.Distributive (distribute)
-import Data.Either (Either(..), either, note)
+import Data.Either (Either(..), blush, either, hush, note)
 import Data.Enum (class BoundedEnum, enumFromTo)
+import Data.Exists (Exists, mkExists, runExists)
+import Data.Filterable (class Filterable, partitionMap)
 import Data.Functor.Compose (Compose(..))
+import Data.Functor.Costar (Costar)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
 import Data.Pair (Pair(..))
 import Data.Profunctor (class Profunctor, dimap, lcmap)
 import Data.Profunctor.Choice (class Choice, left, right)
+import Data.Profunctor.Star (Star(..))
 import Data.Profunctor.Strong (class Strong, first, second)
 import Data.Tuple (Tuple(..), fst, snd, swap, uncurry)
 import Safe.Coerce (coerce)
@@ -824,6 +828,43 @@ instance casingWriterT :: (Semigroup w, Casing f) => Casing (WriterT w f) where
     (\(Tuple (Tuple w2 r) w1) -> Tuple r (w1 <> w2)) <$> do
       firstCaseTree $ hoistCaseTree' (map swap <<< unwrap) cases
 
+-- | Use `partitionMap`, `<*>`, and `<|>` to derive `Casing` for idempotent effects.
+caseTreeOnPlus :: forall f i r. Apply f => Filterable f => Plus f => f i -> CaseTree i f r -> f r
+caseTreeOnPlus _ (ZeroCases _) = empty
+caseTreeOnPlus fi (OneCase fir) = (#) <$> fi <*> fir
+caseTreeOnPlus fi (TwoCases cases) = splitCases cases \(CasesSplit split x y) ->
+  let { left: fx, right: fy } = partitionMap split fi in
+  caseTreeOnPlus fx x <|> caseTreeOnPlus fy y
+
+
+onCaseTreeBranches ::
+  forall f i j r.
+  (i -> Maybe j) ->
+  CaseTree j f r ->
+  forall m.
+    Monoid m =>
+  (forall y. (i -> Maybe y) -> f (y -> r) -> m) -> m
+onCaseTreeBranches _ (ZeroCases _) _ = mempty
+onCaseTreeBranches ij (OneCase fjr) mk = mk ij fjr
+onCaseTreeBranches ij (TwoCases cases) mk = splitCases cases \(CasesSplit split left right) ->
+  onCaseTreeBranches (ij >=> split >>> blush) left mk
+    <>
+  onCaseTreeBranches (ij >=> split >>> hush) right mk
+
+data AcceptingF f x r y = Accepting (x -> Maybe y) (f (y -> r))
+type Accepting f x r = Exists (AcceptingF f x r)
+
+accepting :: forall f x r. Accepting f x r -> forall d. (forall y. (x -> Maybe y) -> f (y -> r) -> d) -> d
+accepting acpt f = acpt # runExists \(Accepting xy fy) -> f xy fy
+
+accepts :: forall f x r y. (x -> Maybe y) -> f (y -> r) -> Accepting f x r
+accepts xy fy = mkExists (Accepting xy fy)
+
+caseTreeBranches :: forall f i r. CaseTree i f r -> Array (Accepting f i r)
+caseTreeBranches cases = onCaseTreeBranches Just cases \xy fy -> [accepts xy fy]
+
+
+
 newtype PairT f a = PairT (f (Pair a))
 derive instance Functor f => Functor (PairT f)
 
@@ -836,6 +877,14 @@ instance casingPairT :: (Casing f) => Casing (PairT f) where
     slot1 = hoistCaseTree \(PairT t) -> t <#> \(Pair f _) -> f
     slot2 :: forall i r. CaseTree i (PairT f) r -> CaseTree i f r
     slot2 = hoistCaseTree \(PairT t) -> t <#> \(Pair _ g) -> g
+
+
+instance casingCostar :: Casing (Costar f ctx) where
+  caseTreeOn fi cases = fi >>= applyCaseTree cases
+instance casingStar :: (Casing f) => Casing (Star f ctx) where
+  caseTreeOn (Star fi) cases = Star \ctx ->
+    caseTreeOn (fi ctx) (cases # hoistCaseTree \(Star f) -> f ctx)
+
 
 
 --------------------------------------------------------------------------------

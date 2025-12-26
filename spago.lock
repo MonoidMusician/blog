@@ -12,7 +12,6 @@
             "avar",
             "bifunctors",
             "codec",
-            "codec-argonaut",
             "console",
             "const",
             "contravariant",
@@ -110,7 +109,6 @@
             "bifunctors",
             "catenable-lists",
             "codec",
-            "codec-argonaut",
             "console",
             "const",
             "contravariant",
@@ -6686,19 +6684,6 @@
       "dependencies": [
         "bifunctors",
         "profunctor"
-      ]
-    },
-    "codec-argonaut": {
-      "type": "git",
-      "url": "https://github.com/garyb/purescript-codec-argonaut.git",
-      "rev": "d6c26da5638f19eded1e269117e7ddd7e0b78fd8",
-      "dependencies": [
-        "argonaut-core",
-        "codec",
-        "foreign-object",
-        "ordered-collections",
-        "type-equality",
-        "variant"
       ]
     },
     "console": {

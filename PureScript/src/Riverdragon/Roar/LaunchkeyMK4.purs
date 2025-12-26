@@ -107,7 +107,7 @@ init :: forall flowing.
     }
   , ui :: Dragon
   }
-init lk = _.result <$> run do
+init lk = _.result <$> run "launchkey" do
   traceM lk
   logger <- River.createRiver
   let

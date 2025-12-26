@@ -181,8 +181,8 @@ widget _ = pure $
       , temperament: temperaments.kirnbergerIII
       }
 
-    \shell iface@{ pitch, temperament } -> do
-      perfectOvertones <- valueInterface false
+    \iface@{ pitch, temperament } -> do
+      perfectOvertones <- liftEffect do valueInterface false
       let
         -- A gentle organ voice to start off with
         voice semitones release = do

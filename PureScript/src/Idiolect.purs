@@ -1,3 +1,5 @@
+-- @inline export multiplexing arity=3
+-- @inline export tupling arity=3
 module Idiolect where
 
 import Prelude
@@ -5,6 +7,7 @@ import Prelude
 import Control.Alternative (class Alt, class Alternative, (<|>))
 import Control.Apply (lift2)
 import Control.Plus (class Plus)
+import Data.Argonaut (Json)
 import Data.Array as Array
 import Data.CodePoint.Unicode as U
 import Data.Either (Either(..))
@@ -15,6 +18,7 @@ import Data.FoldableWithIndex (class FoldableWithIndex, foldMapWithIndex)
 import Data.Function (on)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
 import Data.Maybe (Maybe(..))
+import Data.Maybe as Maybe
 import Data.Newtype (class Newtype)
 import Data.Number as Number
 import Data.String as String
@@ -33,6 +37,14 @@ import Type.Proxy (Proxy(..))
 type EffectArrow a b = a -> Effect b
 -- | it's an arrow! that does! stuff!
 infixr 1 type EffectArrow as -!>
+
+type JSON = Json
+
+type EndoFn a = a -> a
+
+type Id :: forall k. k -> k
+type Id a = a
+infixl 0 type Id as $
 
 infixr 8 Number.pow as **
 
@@ -113,6 +125,12 @@ theseing :: forall f a b. Alternative f => f a -> f b -> f (a /\/ b)
 theseing a b = This <$> a <|> That <$> b <|> Both <$> a <*> b
 infixr 6 theseing as /\\/
 infixr 6 type These as /\/
+
+infixr 10 Maybe.maybe as ?+
+
+maybeFlipped :: forall a b. (a -> b) -> b -> Maybe a -> b
+maybeFlipped = flip Maybe.maybe
+infixl 10 maybeFlipped as +?
 
 tripleQuoted :: String -> String
 tripleQuoted input =

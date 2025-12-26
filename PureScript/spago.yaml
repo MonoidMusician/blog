@@ -8,7 +8,6 @@ package:
     - avar
     - bifunctors
     - codec
-    - codec-argonaut
     - console
     - const
     - contravariant

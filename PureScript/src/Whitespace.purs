@@ -5,6 +5,7 @@ import Prelude
 import Control.Alt (class Alt, (<|>))
 import Control.Apply (lift2)
 import Control.Plus (class Plus)
+import Data.Generic.Rep (class Generic)
 import Data.HeytingAlgebra (ff, tt)
 import Data.Lens as Q
 import Data.Monoid.Conj (Conj(..))
@@ -13,8 +14,12 @@ import Data.Newtype (class Newtype, unwrap)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (type (/\))
 import Dodo as Dodo
+import Parser.Printer.JSON (class AutoJSON)
+import Parser.Printer.JSON as C
+import Parser.Printer.Juxt (_GenericTensor', (!!!), (/!\), (\!/))
 import Parser.Selective (class Select, select)
 import Safe.Coerce (coerce)
+import Type.Proxy (Proxy(..))
 
 -- | whitespace can be:
 -- | 0. failed (if you try to concatenate forbidden with required, for example … it's cleanest to just include it in the semilattice)
@@ -52,6 +57,7 @@ newtype ParseWS = ParseWS
   , allowed_space :: Conj Boolean
   , required :: Disj Boolean
   }
+instance Ord reg => AutoJSON ParseWS reg where autoJ = C._N C.autoJ
 
 mkParseWS ::
   { allowed_newline :: Boolean
@@ -348,6 +354,13 @@ data MaybeWS space
   | SetWS space
   | SetOrDefaultWS space
 
+instance AutoJSON space reg => AutoJSON (MaybeWS space) reg where
+  autoJ = _GenericTensor' !!! C.tupled
+    !!! pure (Proxy @"DefaultWS") /!\ pure unit
+    \!/ C.ctor @"SetWS" /!\ C.item C.autoJ
+    \!/ C.ctor @"SetOrDefaultWS" /!\ C.item C.autoJ
+
+derive instance genericMaybeWS :: Generic (MaybeWS space) _
 derive instance eqMaybeWS :: Eq space => Eq (MaybeWS space)
 derive instance ordMaybeWS :: Ord space => Ord (MaybeWS space)
 

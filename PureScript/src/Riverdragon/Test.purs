@@ -19,14 +19,14 @@ import Web.DOM.ElementId (ElementId(..))
 import Widget (Widget)
 
 logging :: forall flow6 t8. Show t8 => Stream flow6 t8 -> Effect Unit
-logging event = void $ start_ do subscribe event Console.logShow
+logging event = void $ start_ "logging" do subscribe event Console.logShow
 
 rendering :: Dragon -> Effect (Effect Unit)
 rendering = renderId (ElementId "render-target")
 
 main :: Effect Unit
 main = do
-  { result: single } <- start_ do instantiateListenInput true (ElementId "test-input")
+  { result: single } <- start_ "main0" do instantiateListenInput true (ElementId "test-input")
   let doubled = single /|\ single
   logging doubled
   let tupled = listenInput false (ElementId "test-input1") /|\ listenInput false (ElementId "test-input2")

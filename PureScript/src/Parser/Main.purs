@@ -13,8 +13,6 @@ import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Array.NonEmpty.Internal (NonEmptyArray)
 import Data.Bifunctor (bimap, lmap)
-import Data.Codec (decode)
-import Data.Codec.Argonaut as CA
 import Data.Either (Either(..), either, hush, note)
 import Data.Filterable (filterMap)
 import Data.Foldable (class Foldable, any, foldMap, oneOfMap, sequence_, traverse_)
@@ -40,17 +38,16 @@ import Data.Time.Duration (Milliseconds(..))
 import Data.Traversable (mapAccumL, sequence, traverse)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import Debug (spy)
 import Effect (Effect)
 import Effect.Class (liftEffect)
-import Effect.Class.Console (log)
 import Effect.Class.Console as Log
 import Effect.Unsafe (unsafePerformEffect)
 import Foreign.Object (Object)
 import Foreign.Object as Object
 import Idiolect (nonEmpty, only, (\|/))
 import Parser.Algorithms (addEOF', calculateStates, fromSeed', fromString', gatherNonTerminals', gatherNonTerminals_, gatherTokens', gatherTokens_, getResultC, indexStates', longestFirst, numberStatesBy, parseDefinition, parseIntoGrammar, toAdvanceTo, toTable, withProducible)
-import Parser.Codecs (grammarCodec, intStringCodec, listCodec, mappy, maybeCodec, nonEmptyStringCodec, parseStepsCodec, producibleCodec, setCodec, stateInfoCodec, statesCodec)
+import Parser.Codecs (grammarCodec, parseStepsCodec, producibleCodec, stateInfoCodec, statesCodec)
+import Parser.Printer.JSON as C
 import Parser.Proto (ParseSteps(..), Stack(..), parseSteps, topOf)
 import Parser.Random (genNT, sampleS)
 import Parser.Samples (defaultEOF, defaultTopName, defaultTopRName)
@@ -60,13 +57,13 @@ import Random.LCG as LCG
 import Riverdragon.Dragon.Bones (AttrProp, Dragon(..), smarties, ($$), ($<), ($~~), (.$), (.$$), (.$$~), (.$~~), (:!), (:.), (:~), (<!>), (<:>), (=!=), (=!?=), (=:=), (=?=), (>@), (>~~), (@<))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (inputValidated)
-import Riverdragon.River (Lake, River, Stream, createRiver, createRiverStore, foldStream, sampleOnRightOp, selfGating, store, store', subscribe, (<**>))
+import Riverdragon.River (Lake, Stream, createRiver, createRiverStore, foldStream, memoize, sampleOnRightOp, selfGating, store, store', subscribe, (<**>))
 import Riverdragon.River as River
-import Riverdragon.River.Beyond (animationLoop, dedup, dedupOn, delay, delayMicro, interval)
+import Riverdragon.River.Beyond (animationLoop, dedup, dedupOn, interval)
 import Stylish.Types (Classy(..))
 import Test.QuickCheck.Gen as QC
 import Unsafe.Coerce (unsafeCoerce)
-import Widget (Widget, adaptInterface)
+import Widget (Widget, adaptInterface, adaptInterfaceR)
 
 data StepAction = Initial | Toggle | Slider | Play
 derive instance Eq StepAction
@@ -283,7 +280,7 @@ showParseTransition ::
 showParseTransition (s /\ Left tok) = do
   getVisibility <#> map \(_ /\ vi) ->
     D.span [ vi ] $~~
-      [ {- renderTok mempty tok, D.text " ", -} renderCmd mempty "s", renderSt mempty s ]
+      [ renderTok mempty tok, D.text " ", renderCmd mempty "s", renderSt mempty s ]
 showParseTransition (s /\ Right (_ /\ rule)) = do
   getVisibility <#> map \(_ /\ vi) ->
     D.span [ vi ] $~~
@@ -621,7 +618,7 @@ grammarComponent buttonText reallyInitialGrammar forceGrammar sendGrammar =
     { stream: currentTop } <- store $ currentTop
     { stream: currentRules } <- store $ foldStream initialRules ruleChanges changeRule
     let
-      currentNTs = {- dedup $ -} map (spy "currentNTs" <<< longestFirst) $
+      currentNTs = dedup $ memoize $ map longestFirst $
         (<**>)
           (map (_.pName <<< snd) <$> currentRules)
           (append <<< pure <<< fromMaybe defaultTopName <<< NES.fromString <<< _.top <$> currentTop)
@@ -1004,12 +1001,12 @@ widgetGrammar :: Widget
 widgetGrammar { interface, attrs } = liftEffect do
   let
     io =
-      { grammar: adaptInterface grammarCodec (interface "grammar")
-      , producible: adaptInterface producibleCodec (interface "producible")
-      , states: adaptInterface statesCodec (interface "states")
-      , stateIndex: adaptInterface (mappy intStringCodec CA.int) (interface "stateIndex")
-      , allTokens: adaptInterface (CA.array CA.codePoint) (interface "allTokens")
-      , allNTs: adaptInterface (CA.array nonEmptyStringCodec) (interface "allNTs")
+      { grammar: adaptInterfaceR grammarCodec (interface "grammar")
+      , producible: adaptInterfaceR producibleCodec (interface "producible")
+      , states: adaptInterfaceR statesCodec (interface "states")
+      , stateIndex: adaptInterface (C.mapO C.intS C.int) (interface "stateIndex")
+      , allTokens: adaptInterface (C.array C.codePoint) (interface "allTokens")
+      , allNTs: adaptInterface (C.array C.nestring) (interface "allNTs")
       }
     sendOthers grammar = do
       let computed = computeGrammar grammar
@@ -1036,21 +1033,21 @@ widgetInput :: Widget
 widgetInput { interface, attrs } = do
   let
     io =
-      { grammar: adaptInterface grammarCodec (interface "grammar")
-      , producible: adaptInterface producibleCodec (interface "producible")
-      , states: adaptInterface statesCodec (interface "states")
-      , stateIndex: adaptInterface (mappy intStringCodec CA.int) (interface "stateIndex")
-      , allTokens: adaptInterface (CA.array CA.codePoint) (interface "allTokens")
-      , allNTs: adaptInterface (CA.array nonEmptyStringCodec) (interface "allNTs")
+      { grammar: adaptInterfaceR grammarCodec (interface "grammar")
+      , producible: adaptInterfaceR producibleCodec (interface "producible")
+      , states: adaptInterfaceR statesCodec (interface "states")
+      , stateIndex: adaptInterface (C.mapO C.intS C.int) (interface "stateIndex")
+      , allTokens: adaptInterface (C.array C.codePoint) (interface "allTokens")
+      , allNTs: adaptInterface (C.array C.nestring) (interface "allNTs")
 
-      , input: adaptInterface CA.string (interface "input")
-      , tokens: adaptInterface (maybeCodec (listCodec CA.codePoint)) (interface "tokens")
-      , tokens': adaptInterface (maybeCodec (listCodec CA.codePoint)) (interface "tokens'")
-      , parseSteps: adaptInterface (maybeCodec parseStepsCodec) (interface "parseSteps")
-      , stateId: adaptInterface CA.int (interface "stateId")
-      , state: adaptInterface (maybeCodec stateInfoCodec) (interface "state")
-      , validTokens: adaptInterface (setCodec CA.codePoint) (interface "validTokens")
-      , validNTs: adaptInterface (setCodec nonEmptyStringCodec) (interface "validNTs")
+      , input: adaptInterface C.string (interface "input")
+      , tokens: adaptInterface (C.maybeA (C.list C.codePoint)) (interface "tokens")
+      , tokens': adaptInterface (C.maybeA (C.list C.codePoint)) (interface "tokens'")
+      , parseSteps: adaptInterfaceR (C.maybeO parseStepsCodec) (interface "parseSteps")
+      , stateId: adaptInterface C.int (interface "stateId")
+      , state: adaptInterfaceR (C.maybeA stateInfoCodec) (interface "state")
+      , validTokens: adaptInterface (C.set C.codePoint) (interface "validTokens")
+      , validNTs: adaptInterface (C.set C.nestring) (interface "validNTs")
       }
     replace = defer \_ ->
       let
@@ -1074,7 +1071,6 @@ widgetInput { interface, attrs } = do
       io.validTokens.send c.validTokens
       io.validNTs.send c.validNTs
   subscribe io.input.receive \x -> do
-    log $ "LOCAL RECEIVE INPUT " <> show x
     sendOthers x
   initialGrammar <- liftEffect do
     fromMaybe sampleGrammar <$> io.grammar.current
@@ -1123,13 +1119,13 @@ widgets = Object.fromFoldable $ map (lmap (append "Parser."))
 withGrammar :: (SAugmented -> Dragon) -> Widget
 withGrammar component { interface } = do
   let
-    grammarLake = filterMap (hush <<< decode grammarCodec) (interface "grammar").receive
+    grammarLake = filterMap (hush <<< C.decodeR grammarCodec) (interface "grammar").receive
   pure $ component @< pure sampleGrammar <|> grammarLake
 
 withProducibleSendTokens :: (SProducible -> (Array CodePoint -> Effect Unit) -> Dragon) -> Widget
 withProducibleSendTokens component { interface } = do
   let
-    grammarLake = filterMap (hush <<< decode producibleCodec) (interface "producible").receive
+    grammarLake = filterMap (hush <<< C.decodeR producibleCodec) (interface "producible").receive
     sendTokens = (interface "input").send <<< Json.fromString <<< String.fromCodePointArray
   pure $ (flip component sendTokens) @< pure (withProducible sampleGrammar) <|> grammarLake
 
@@ -1140,9 +1136,9 @@ spotlightBeh e = pure \k -> eq k <$> River.dam e
 widgetStateTable :: Widget
 widgetStateTable { interface } = do
   let
-    stateIdI = adaptInterface CA.int (interface "stateId")
+    stateIdI = adaptInterface C.int (interface "stateId")
     currentGetCurrentState = spotlightBeh stateIdI.receive
-    currentStates = filterMap (hush <<< decode statesCodec) (interface "states").receive
+    currentStates = filterMap (hush <<< C.decodeR statesCodec) (interface "states").receive
     currentStatesAndGetState = (sampleOnRightOp currentGetCurrentState (map (/\) currentStates))
   pure $ currentStatesAndGetState >@
     \(x /\ getCurrentState) -> renderStateTable { getCurrentState } x
@@ -1150,12 +1146,12 @@ widgetStateTable { interface } = do
 widgetParseTable :: Widget
 widgetParseTable { interface } = liftEffect do
   let
-    stateIdI = adaptInterface CA.int (interface "stateId")
+    stateIdI = adaptInterface C.int (interface "stateId")
     currentGetCurrentState = spotlightBeh stateIdI.receive
-    currentStates = filterMap (hush <<< decode statesCodec) (interface "states").receive
+    currentStates = filterMap (hush <<< C.decodeR statesCodec) (interface "states").receive
     currentStatesAndGetState = (sampleOnRightOp currentGetCurrentState (map (/\) currentStates))
-    currentGrammar = filterMap (hush <<< decode grammarCodec) (interface "grammar").receive
-  initialGrammar <- fromMaybe sampleGrammar <<< join <<< map (hush <<< decode grammarCodec) <$> (interface "grammar").current
+    currentGrammar = filterMap (hush <<< C.decodeR grammarCodec) (interface "grammar").receive
+  initialGrammar <- fromMaybe sampleGrammar <<< join <<< map (hush <<< C.decodeR grammarCodec) <$> (interface "grammar").current
   pure $ D.Replacing $ River.dam $ map
     (\(grammar /\ x /\ getCurrentState) -> renderParseTable { getCurrentState: getCurrentState } grammar x)
     (flip sampleOnRightOp ((/\) <<< _.augmented <$> (pure initialGrammar <|> currentGrammar)) (currentStatesAndGetState))

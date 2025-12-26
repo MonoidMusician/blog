@@ -43,7 +43,7 @@ envelopeComponent init = do
 
   { send: mouseDown, stream: dragging } <- createRiverStore
     (Nothing :: Maybe (Pt Number -> Effect Unit))
-  River.subscribeM (stream /?*\ dragging) \(Tuple _current selected) -> inSubScope do
+  River.subscribeM (stream /?*\ dragging) \(Tuple _current selected) -> inSubScope "envelopeComponent" do
     documentEvent (EventType "mousemove") MouseEvent.fromEvent \event -> do
       Ref.read svgRef >>= traverse_ \svg -> do
         bb <- bbInterval svg

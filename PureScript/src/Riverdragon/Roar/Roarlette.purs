@@ -15,7 +15,7 @@ import Web.Audio.Worklet (AudioWorkletNode, mkAudioWorkletteNode)
 pinkNoise :: ScoreM Roar
 pinkNoise = roarAsync do
   { ctx } <- ask
-  { node, send } <- trackA $ mkAudioWorkletteNode
+  { node, send } <- trackA "pinkNoise" $ mkAudioWorkletteNode
     { name: "PinkNoiseGenerator"
     , function:
       """
@@ -60,7 +60,7 @@ pow :: forall knob roar. ToKnob knob => ToRoars roar => knob -> roar -> ScoreM R
 pow knob input = roarAsync do
   { ctx } <- ask
   { defaults, apply: applyKnobs } <- scoreKnobs { pow: knob }
-  { node, send } <- trackA $ mkAudioWorkletteNode
+  { node, send } <- trackA "pow" $ mkAudioWorkletteNode
     { name: "RescalePowerNode"
     , function:
       """

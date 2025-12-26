@@ -4,7 +4,6 @@ import Prelude
 
 import Control.Plus ((<|>))
 import Data.Array (fold, intercalate)
-import Data.Codec.Argonaut as CA
 import Data.Either (Either(..), hush)
 import Data.Filterable (filterMap)
 import Data.FoldableWithIndex (foldMapWithIndex)
@@ -26,13 +25,14 @@ import Parser.Languages.TMTTMT.Eval (evalExpr, fromDeclarations, limit, printEva
 import Parser.Languages.TMTTMT.Parser (patternP, printExpr)
 import Parser.Languages.TMTTMT.TypeCheck.Structural (Functional, isSubtype, printFunctional, run, synExpr, testExprs, testPatterns, testPatternsResult)
 import Parser.Languages.TMTTMT.Types (Declaration(..))
+import Parser.Printer.JSON as C
 import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones ((.$), (:.), (<:>), (=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (sourceCode)
 import Riverdragon.River (Stream, createRiver, createRiverStore, foldStream, store)
 import Riverdragon.River.Beyond (affToLake)
-import Widget (Widget, adaptInterface)
+import Widget (Widget, autoAdaptInterface)
 
 type Parser = String -> Either String (Array (Either (Tuple String Functional) Declaration))
 
@@ -127,11 +127,11 @@ widgetTMTTMT :: Widget
 widgetTMTTMT { interface, attrs } = liftEffect do
   example <- attrs "example"
   let
-    initial = case CA.decode CA.string example of
+    initial = case C.decode C.string example of
       Left _ -> ""
       Right k | Just v <- Map.lookup k examples -> v
       Right v -> v
-    stringInterface = adaptInterface CA.string (interface "tmttmt-example")
+    stringInterface = autoAdaptInterface (interface "tmttmt-example")
     resetting = pure initial <|> stringInterface.receive
   pure $ component stringInterface.send resetting
 

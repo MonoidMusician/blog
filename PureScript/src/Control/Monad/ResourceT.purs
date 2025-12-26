@@ -23,6 +23,7 @@ import Data.Monoid.Disj (Disj(..))
 import Data.Monoid.Dual (Dual(..))
 import Data.Newtype (unwrap)
 import Data.Rational (Rational)
+import Data.String as String
 import Data.Traversable (traverse)
 import Effect (Effect)
 import Effect.Aff (Aff, Fiber, ParAff)
@@ -32,6 +33,7 @@ import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Exception (throw)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
+import Riverdragon.Dragon.Breath (microtask)
 import Safe.Coerce (coerce)
 
 newtype ResourceT :: (Type -> Type) -> (Type -> Type)
@@ -39,44 +41,50 @@ newtype ResourceT m a = ResourceT (Scope -> m a)
 type ResourceM = ResourceT Effect
 
 -- TODO: catch error? cancel self if Aff? supervise?
-start :: forall m r. MonadEffect m => ResourceT m r -> m { result :: r, wait :: Fiber Unit, destroy :: Effect Unit, scope :: Scope }
-start computation = do
-  scope <- liftEffect (mkSubscope mempty)
-  scopedStart scope computation <#> \{ result, wait, destroy } -> { result, wait, destroy, scope }
+start :: forall m r. MonadEffect m => String -> ResourceT m r -> m { result :: r, wait :: Fiber Unit, destroy :: Effect Unit, scope :: Scope }
+start name computation = do
+  scope <- liftEffect (mkSubscope name mempty)
+  scopedStart name scope computation <#> \{ result, wait, destroy } -> { result, wait, destroy, scope }
 
-start_ :: forall m r. MonadEffect m => ResourceT m r -> m { result :: r, destroy :: Effect Unit, scope :: Scope }
-start_ computation = do
-  { result, wait, destroy, scope } <- start computation
+start_ :: forall m r. MonadEffect m => String -> ResourceT m r -> m { result :: r, destroy :: Effect Unit, scope :: Scope }
+start_ name computation = do
+  { result, wait, destroy, scope } <- start name computation
   liftEffect do Aff.launchAff_ do Aff.joinFiber wait
   pure { result, destroy, scope }
 
-run :: forall m r. MonadAff m => ResourceT m r -> m { result :: r, destroy :: Effect Unit, scope :: Scope }
-run = start >=> \{ result, wait, destroy, scope } -> { result, destroy, scope } <$ liftAff (Aff.joinFiber wait)
+run :: forall m r. MonadAff m => String -> ResourceT m r -> m { result :: r, destroy :: Effect Unit, scope :: Scope }
+run name = start name >=> \{ result, wait, destroy, scope } -> { result, destroy, scope } <$ liftAff (Aff.joinFiber wait)
 
-scopedStart :: forall m r. MonadEffect m => Scope -> ResourceT m r -> m { result :: r, wait :: Fiber Unit, destroy :: Effect Unit }
-scopedStart here@(Scope { wait: App wait, destroy, destroyed }) (ResourceT computation) = do
+scopedStart :: forall m r. MonadEffect m => String -> Scope -> ResourceT m r -> m { result :: r, wait :: Fiber Unit, destroy :: Effect Unit }
+scopedStart name here@(Scope { wait: App wait, destroy, destroyed }) (ResourceT computation) = do
   liftEffect do
     whenM (coerce destroyed) do
-      throw "ResourceM already destroyed"
+      throw ("ResourceM already destroyed: " <> name)
   result <- computation here
   pure { result, wait, destroy }
 
-scopedStart_ :: forall m r. MonadEffect m => Scope -> ResourceT m r -> m { result :: r, destroy :: Effect Unit }
-scopedStart_ here computation = do
-  { result, wait, destroy } <- scopedStart here computation
+scopedStart_ :: forall m r. MonadEffect m => String -> Scope -> ResourceT m r -> m { result :: r, destroy :: Effect Unit }
+scopedStart_ name here computation = do
+  { result, wait, destroy } <- scopedStart name here computation
   liftEffect do Aff.launchAff_ do Aff.joinFiber wait
   pure { result, destroy }
 
-scopedRun :: forall m r. MonadAff m => Scope -> ResourceT m r -> m { result :: r, destroy :: Effect Unit }
-scopedRun scope = scopedStart scope >=> \{ result, wait, destroy } -> { result, destroy } <$ liftAff (Aff.joinFiber wait)
+scopedRun :: forall m r. MonadAff m => String -> Scope -> ResourceT m r -> m { result :: r, destroy :: Effect Unit }
+scopedRun name scope = scopedStart name scope >=> \{ result, wait, destroy } -> { result, destroy } <$ liftAff (Aff.joinFiber wait)
+
+ignoreDestroyed :: Aff Unit -> Aff Unit
+ignoreDestroyed = Aff.catchError <@> \err ->
+  case String.stripPrefix (String.Pattern "ResourceM destroyed") (Aff.message err) of
+    Nothing -> Aff.throwError err
+    Just _ -> pure unit
 
 -- The `Aff` is killed when the scope is destroyed
-monitor :: Scope -> (Aff ~> Aff)
-monitor (Scope { putDestructor }) act = do
+monitor :: String -> Scope -> (Aff ~> Aff)
+monitor name (Scope { putDestructor }) act = do
   -- wish `Aff` could get its own canceler
   fiber <- liftEffect do Aff.launchSuspendedAff act
-  liftEffect $ putDestructor do
-    Aff.launchAff_ do Aff.killFiber (Aff.error "ResourceM destroyed") fiber
+  liftEffect $ putDestructor $ microtask do
+    Aff.launchAff_ do Aff.killFiber (Aff.error ("ResourceM destroyed: " <> name)) fiber
   Aff.joinFiber fiber
 
 -- Destroy the scope when the `Aff` exits (does not `monitor`)
@@ -108,12 +116,12 @@ newtype Scope = Scope
 derive newtype instance Monoid Scope
 derive newtype instance Semigroup Scope
 
-oneSubScopeAtATime :: forall m. MonadEffect m => Scope -> m (Effect Scope)
-oneSubScopeAtATime parent = liftEffect do
+oneSubScopeAtATime :: forall m. MonadEffect m => String -> Scope -> m (Effect Scope)
+oneSubScopeAtATime name parent = liftEffect do
   lastDestroy <- Ref.new mempty
   pure do
     join do Ref.read lastDestroy
-    scope@(Scope { destroy }) <- mkSubscope parent
+    scope@(Scope { destroy }) <- mkSubscope name parent
     Ref.write destroy lastDestroy
     pure scope
 
@@ -129,10 +137,10 @@ _noop = mempty :: ResourceState
 noWaitScope :: Scope -> Scope
 noWaitScope (Scope s) = Scope s { wait = mempty }
 
-mkSubscope :: forall m. MonadEffect m => Scope -> m Scope
-mkSubscope (Scope parent) = liftEffect do
+mkSubscope :: forall m. MonadEffect m => String -> Scope -> m Scope
+mkSubscope name (Scope parent) = liftEffect do
   whenM (coerce parent.destroyed) do
-    throw "ResourceM already destroyed"
+    throw ("ResourceM already destroyed: " <> name)
   ref <- Ref.new (mempty :: ResourceState)
   whenDestroyed <- Ref.new (mempty :: Effect Unit)
   let
@@ -141,7 +149,7 @@ mkSubscope (Scope parent) = liftEffect do
     destroyed = Ref.read ref <#> _.destroyed >>> unwrap
     notDestroyed act = do
       whenM destroyed do
-        throw "ResourceM already destroyed"
+        throw ("ResourceM already destroyed: " <> name)
       act
   waitDestroyed <- Aff.launchAff $ Aff.makeAff \cb ->
     mempty <$ Ref.write (cb (pure unit)) whenDestroyed
@@ -149,10 +157,10 @@ mkSubscope (Scope parent) = liftEffect do
     Aff.joinFiber $ unwrap parent.wait
     _runWaiters ref
     liftEffect do put _ { waited = Disj true }
-  destroy <- _destructor do
+  destroy <- _destructor $ do
     r@{ destructors: Dual toRun } <- Ref.read ref
     Ref.write r { destructors = mempty, destroyed = Disj true } ref
-    Aff.launchAff_ do Aff.killFiber (Aff.error "ResourceM destroyed") wait
+    microtask do Aff.launchAff_ do Aff.killFiber (Aff.error ("ResourceM destroyed: " <> name)) wait
     -- FIXME: catch errors
     toRun
     join do Ref.read whenDestroyed

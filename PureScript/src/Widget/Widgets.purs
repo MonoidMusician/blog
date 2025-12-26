@@ -3,7 +3,6 @@ module Widget.Widgets where
 import Prelude
 
 import Control.Alt ((<|>))
-import Data.Codec.Argonaut as CA
 import Data.Maybe (fromMaybe)
 import Data.Traversable (for_)
 import Riverdragon.Dragon.Bones ((=:=))
@@ -14,12 +13,12 @@ import Web.HTML (window)
 import Web.HTML.HTMLDocument (body)
 import Web.HTML.HTMLElement (toElement)
 import Web.HTML.Window (document)
-import Widget (Widget, adaptInterface)
+import Widget (Widget, autoAdaptInterface)
 
 controlWidget :: Widget
 controlWidget { interface } = do
   let
-    focus_mode = adaptInterface CA.boolean (interface "focus_mode")
+    focus_mode = autoAdaptInterface (interface "focus_mode")
     setFocusMode fm = do
       mb <- window >>= document >>= body
       for_ mb \b -> do

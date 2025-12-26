@@ -9,7 +9,7 @@ import Control.Comonad (extract)
 import Control.Plus (empty, (<|>))
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Compactable (compact, separateDefault)
-import Data.Either (Either(..), either)
+import Data.Either (Either(..))
 import Data.Filterable (class Compactable, class Filterable, filter, filterMap, partitionDefaultFilter, partitionMapDefault)
 import Data.Foldable (foldMap)
 import Data.Functor.Compose (Compose(..))
@@ -23,10 +23,11 @@ import Data.Profunctor (class Profunctor, lcmap)
 import Data.Rational (Rational)
 import Data.Set (Set)
 import Data.These (These(..), these)
-import Data.Tuple (Tuple(..), fst, snd, uncurry)
+import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested ((/\))
 import Debug (spy)
 import Dodo as O
+import Idiolect (EndoFn)
 import Parser.Comb as Comb
 import Parser.Comb.Comber (Comber, UserError, lift2)
 import Parser.Comb.Comber as Comber
@@ -53,19 +54,13 @@ derive newtype instance semigroupAnn :: Semigroup Ann
 derive newtype instance monoidAnn :: Monoid Ann
 
 newAnn ::
-  ( { classes :: Classy
-    , styles :: Stylish
-    , ansi :: Array GraphicsParam
-    , dragon :: Endo (->) Dragon
-    , tooltip :: Maybe Dragon
-    } ->
+  EndoFn
     { classes :: Classy
     , styles :: Stylish
     , ansi :: Array GraphicsParam
     , dragon :: Endo (->) Dragon
     , tooltip :: Maybe Dragon
-    }
-  ) ->
+    } ->
   Ann
 newAnn f = Ann (f mempty)
 
@@ -250,25 +245,25 @@ _doc f = over PrinterParser \pp -> pp
 -- Interesting instances
 
 instance conjuxtPrinterParser :: Conjuxt PrinterParser where
-  conjuxt0 = mempty
-  conjuxt2 = _binnn
-    { printer: lift2 \p1 p2 -> lcmap fst p1 <> lcmap snd p2
+  _conjuxt0 = pure
+  _conjuxt2 i1 i2 o = _binnn
+    { printer: lift2 \p1 p2 -> lcmap i1 p1 <> lcmap i2 p2
     , prec: (*)
     , cst: append
-    , ast: (/\)
+    , ast: o
     }
 
 instance disjuxtPrinterParser :: Disjuxt PrinterParser where
-  disjuxt0 = PrinterParser
+  _disjuxt0 f = PrinterParser
     { allOpts: mempty
-    , printer: pure absurd
+    , printer: pure f
     , prec: zero
     , parser: empty
     }
-  disjuxt2 = _binn
-    { printer: lift2 either
+  _disjuxt2 i o1 o2 = _binn
+    { printer: \p1 p2 -> lift2 i p1 p2
     , prec: (+)
-    , parser: \p1 p2 -> Left <$> p1 <|> Right <$> p2
+    , parser: \p1 p2 -> o1 <$> p1 <|> o2 <$> p2
     }
 
 instance subjuxtPrinterParser :: Subjuxt PrinterParser where
@@ -294,7 +289,7 @@ instance guideFlowPrinterParser :: GuideFlow PrinterParser where
     where
     caseTreePrec = un Additive $ TwoCases (casesSplit orig)
       # summarizeCaseTree \(PrinterParser p) -> Additive p.prec
-    Tuple wi caseTree = cleaveCases (TwoCases (casesSplit orig))
+    Tuple wi caseTree = cleaveCases (lcmap absurd) (TwoCases (casesSplit orig))
       <#> hoistCaseTree' (\(PrinterParser pp) -> unCompose pp.parser)
       <#> cmapCaseTree (extract :: forall j. Lazy j -> j)
     splitParsed :: forall j. Parsed j -> Tuple (Parsed Unit) (Lazy j)
