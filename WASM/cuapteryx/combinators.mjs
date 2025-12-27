@@ -43,14 +43,17 @@ const q2B = (value, buf) => {
 const B2q = (crumbs, buf) => {
   const littleEndian = true;
   if (!(buf instanceof DataView)) {
-    if (!(buf instanceof ArrayBuffer)) buf = buf.buffer;
-    buf = new DataView(buf);
+    if (!(buf instanceof ArrayBuffer)) {
+      buf = new DataView(buf.buffer, buf.byteOffset);
+    } else {
+      buf = new DataView(buf);
+    }
   }
-  const output = new Array(roundUp(crumbs, 32)/32);
+  const output = new Array(roundUp(Number(crumbs), 32)/32);
   for (let i=0; i<output.length; i++) {
-    output[i] = u64(outputView.getBigUint64(8*i, littleEndian));
+    output[i] = u64(buf.getBigUint64(8*i, littleEndian));
   }
-  return b2q(Array.from(output, bigint => bigint.toString(2).padStart(64, 0)).join("")).substring(0, len);
+  return b2q(Array.from(output, bigint => bigint.toString(2).padStart(64, 0)).join("")).substring(0, Number(crumbs));
 };
 
 
@@ -503,8 +506,10 @@ delete combinators['KI'];
 function isatomic(s) {
   return reachesZero_impl(1, s) === (s.length * 2);
 }
-function toatomic(s) {
-  if (typeof s === 'bigint') return toatomic(I2q(s));
+function toatomic(s, trimRight=false) {
+  if (typeof s === 'bigint' || typeof s === 'number')
+    s = I2q(BigInt(s));
+  if (!s) throw new Error('toatomic blank');
   let zeropoint;
   // Drop leading zeros if needed
   while (!(zeropoint = reachesZero_impl(1, s) / 2)) {
@@ -517,13 +522,15 @@ function toatomic(s) {
   let extraSpaces = 0;
   while (remaining) {
     extraSpaces = 0;
-    while (!(zeropoint = reachesZero_impl(1, remaining) / 2)) {
+    while (remaining && !(zeropoint = reachesZero_impl(1, remaining) / 2)) {
       extraSpaces += 1;
       remaining = remaining.substring(1);
     }
+    if (!remaining && !zeropoint) break;
     // Grab another argument
     let argument = remaining.substring(0, zeropoint);
     remaining = remaining.substring(zeropoint);
+
     // Add it onto the operand
     operand =
       '0' + // prefix application
@@ -531,7 +538,7 @@ function toatomic(s) {
       operand + // head
       argument; // argument (possibly a function waiting for more arguments)
   }
-  return repeat(extraSpaces, '0302') + operand;
+  return (trimRight ? '' : repeat(extraSpaces, '0302')) + operand;
   // [w0] = [0302w]
   // [x0y] = [00302xy]
   // [(x0y)0z] = [(00302xy)0z] = [0030200302xyz]
@@ -710,6 +717,7 @@ export {
   q2I,
   q2B,
   B2q,
+  I2q,
   prettyCrumbs,
   reachesZero_impl,
   deltaExpecting_impl,

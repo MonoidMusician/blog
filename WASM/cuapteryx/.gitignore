@@ -7,3 +7,4 @@ clif/
 *.clif
 *.trace.json*
 *.native*
+*.sqlite
