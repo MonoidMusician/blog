@@ -15,6 +15,11 @@
 <guid>https://blog.veritates.love/selective_applicatives_theoretical_basis.html</guid>
 </item>
 <item>
+<title>Forms of resource acquisition</title>
+<pubDate>Mon, 29 Dec 2025 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/resource_acquisition.html</guid>
+</item>
+<item>
 <title>Simple Local Nginx Config</title>
 <pubDate>Mon, 04 Aug 2025 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/simple_nginx.html</guid>
@@ -114,10 +119,6 @@
 <pubDate>Wed, 20 Jul 2022 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/parser.html</guid>
 </item>
-<item>
-<title>Eudoxus Real Numbers as Slopes of Pixelated Graphs</title>
-<pubDate>Wed, 20 Jul 2022 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/Eudoxus.html</guid>
-</item>
+["cache/render-katex2-5b6437ff69dd1edc2442e7438be2ca79868ca86c.tex","|f(p)|","./cache/katex --no-throw-on-error --trust --macro-file assets/katex_macros.tex -F mathml  -i cache/render-katex2-5b6437ff69dd1edc2442e7438be2ca79868ca86c.tex -o cache/render-katex2-5b6437ff69dd1edc2442e7438be2ca79868ca86c.html"]
 </channel>
 </rss>

@@ -145,6 +145,12 @@ mergeCaseTree (ZeroCases toVoid) = pure (absurd . toVoid)
 mergeCaseTree (OneCase fir) = fir
 mergeCaseTree (TwoCases fg x y) =
   liftA2 (\f g ij -&gt; either f g (fg ij)) (mergeCaseTree x) (mergeCaseTree y)</code></pre>
+<div class="Bonus">
+<p>Another useful way to get at the branches is to split them out as individual effects <code class="haskell">f (y -&gt; r)</code>, where we do not know what type <code class="haskell">y</code> is (as it changes between branches), but we know that it comes equipped with a function <code class="haskell">(i -&gt; Maybe r)</code> from the shared input type. This loses the information that these branches exhaustively cover the input!</p>
+<pre class="haskell"><code>caseTreeBranches :: forall f i r. CaseTree f i r -&gt; [exists y. (i -&gt; Maybe y, f (y -&gt; r))]</code></pre>
+<p>This allows managing some of the effects of <code class="haskell">f</code> up front, between the input <code class="haskell">f i</code> and all of the branches.</p>
+<p>As one example, consider array decoders, indexed by the length of array they accept: this structure needs to be aggregated between the determiner on the left (<code class="haskell">f i</code>) and all of the case branches on the right (<code class="haskell">CaseTree f i r</code>), because the length of the encoded array can be any length from the determiner plus any length from <em>any</em> case branch.</p>
+</div>
 <p>This data type has a <em>ton</em> of structure. As a start, note that it is a profunctor: we can map the output covariantly, with <code class="haskell">map :: (r -&gt; r') -&gt; CaseTree f i r -&gt; CaseTree f i r'</code>, and the input contravariantly, with a function of type <code class="haskell">(i' -&gt; i) -&gt; CaseTree f i r -&gt; CaseTree i' f r</code>.</p>
 <div class="Details">
 <p>This is the full mapping function: to transform from <code class="haskell">CaseTree f i r</code> to <code class="haskell">CaseTree f' j r'</code>, you need a function <code class="haskell">j -&gt; i</code>, a natural transformation <code class="haskell">f ~&gt; f'</code>, and a function <code class="haskell">r -&gt; r'</code>.</p>
@@ -184,7 +190,7 @@ lowerArg c = dimap pure (uncurry (&amp;)) (first c)</code></pre>
 </details>
 <p>This exposes the monoidal structure between tensors we were looking for, enabling us to talk about laws and algebraic structure.</p>
 <p>We can express associativity with <code class="haskell">TwoCases</code>, and the identity between <code class="haskell">TwoCases</code> and <code class="haskell">ZeroCases</code>. These are not equalities in the data type <code class="haskell">CaseTree</code> itself: these are laws that we expect to apply to implementations of <code class="haskell">Casing f</code> (selective applicative functors).</p>
-<div class="Details" data-box-name="Laws">
+<div class="Key_Idea" data-box-name="Laws">
 <p>Using the associativity of the tensor <code class="haskell">Either</code>, we can express associativity of <code class="haskell">CaseTree (Either x (Either y z)) f r</code>. (By the Yoneda lemma, any other choice of <code>xyz</code> that maps into <code>Either x (Either y z)</code> works just as well.)</p>
 <pre class="haskell"><code>assoc :: Either x (Either y z) -&gt; Either (Either x y) z
 assoc (Left x) = Left (Left x)
@@ -438,12 +444,16 @@ selectRight = mapMaybe \case
   Left _ -&gt; Nothing
   Right y -&gt; Just y
 
-branch :: Applicative f =&gt; Filterable f =&gt; f (Either x y) -&gt; f (x -&gt; r) -&gt; f (y -&gt; r) -&gt; f r
+branch :: Applicative f =&gt; Filterable f =&gt; Alternative f =&gt; f (Either x y) -&gt; f (x -&gt; r) -&gt; f (y -&gt; r) -&gt; f r
 branch determiner leftCase rightCase =
   liftA2 (&amp;) (selectLeft determiner) leftCase
     &lt;|&gt;
   liftA2 (&amp;) (selectRight determiner) rightCase
--- ^ This easily generalizes to n-ary branches, unlike `branch` itself</code></pre>
+
+-- ^ This easily generalizes to n-ary branches, unlike `branch` itself:
+
+-- | Use `partitionMap`, `&lt;*&gt;`, and `&lt;|&gt;` to derive `Casing` for idempotent effects.
+caseTreeOnPlus :: forall f i r. Apply f =&gt; Filterable f =&gt; Plus f =&gt; f i -&gt; CaseTree i f r -&gt; f r</code></pre>
 <p>Because this duplicates <code class="haskell">determiner</code>, it would only be safe for things like <code class="haskell">ParserT Identity</code> which does not have observable side effects from failed branches.<a href="#fn10" class="footnote-ref" id="fnref10" role="doc-noteref"><sup>10</sup></a> And it requires backtracking all the way back to before <code class="haskell">determiner</code> to even catch a <code class="haskell">Right</code> case out of it, which is something that parser combinators generally avoid for efficiency (for good reason!).</p>
 <p>However, this makes sense for LR parser combinators (yes those are a thing! they are necessarily applicative parsers and not monadic). All of the backtracking is resolved ahead of time in LR parser combinators, thanks to the powers of static analysis. It just requires the capability to prune branches at runtime for <code class="haskell">mapMaybe</code>, which not all LR parsers support.</p>
 <p>And importantly: despite the fact that the branching can be explained via <code class="haskell">&lt;|&gt;</code> and <code class="haskell">mapMaybe</code>, it is also incredibly useful to have information about <code class="haskell">CaseTree</code>, because that can be used to help ensure that the parser is not ambiguous.</p>
@@ -507,7 +517,7 @@ data ControlFlow f i r where
 <li>Additive identity: <code class="haskell">TwoCases Left cx (ZeroCases absurd) = cx = TwoCases Right (ZeroCases absurd) cx</code></li>
 </ul>
 <hr>
-<p>Better behaved instances (including those derived from monads, or constant functors of near-semirings) follow the structure of a near-semiring, to model control flow more precisely.</p>
+<p>Better behaved instances follow the structure of a near-semiring, to model control flow more precisely. This includes constant functors of near-semirings, instances derived from monads, and composition with semilattice-like effects like <code class="haskell">Maybe</code> on the outside.</p>
 <ul>
 <li>Right distributivity: <code class="haskell">Sequencing (CaseBranch split cx cy) g = CaseBranch split (Sequencing cx g) (Sequencing cy g)</code></li>
 <li>Left absorbing element: <code class="haskell">Sequencing (Absurd absurd) g = Absurd absurd</code></li>
@@ -530,6 +540,255 @@ data ControlFlow f i r where
 <li id="fn9"><p>The functor result does not matter, since it is coming from absurdity!<a href="#fnref9" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn10"><p>Strictly speaking, you could have idempotent effects: <code class="haskell">f *&gt; f = f</code>.<a href="#fnref10" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn11"><p>Note that we could product a similar datatype for <code class="haskell">CaseTree</code> and <code class="haskell">ControlFlow</code>, that is a right-associated free construction with an efficient Cayley construction, but in the case of determined choice, this would turn binary search of the case tree into linear search, compromising efficiency.<a href="#fnref11" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>]]></description>
+</item>
+<item>
+<title>Forms of resource acquisition</title>
+<pubDate>Mon, 29 Dec 2025 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/resource_acquisition.html</guid>
+<description><![CDATA[<p>The main takeaway from this has been that instead of thinking about individual resources and their creation conditions and destructors, itʼs been more fruitful to think about it as consisting of <em>scopes</em> of resources, which can be destroyed when they are no longer needed. Resources only exist as destructors and wait-functions to call in the scope. This works much better since we are operating at the level of a monad abstraction.</p>
+<p>Thinking of gestalt scopes also allows waiting for the entire scope to be ready, in asynchronous ways: forwards and backwards and in parallel as necessary.</p>
+<h2 id="case-studies">Case Studies</h2>
+<h3 id="webaudio">WebAudio</h3>
+<p>Web Audio is a little funny:</p>
+<p>You create audio nodes, hook up subscriptions… and then start and stop sources.</p>
+<p>This is all synchronous. However, <em>loading</em> audio <em>worklets</em> (which are required for lots of advanced audio processing techniques) is asynchronous. You ask the audio context to load some modules (at any time you choose), and they can each register some audio processors by name (at any time they choose: most often synchronous with the module loading), which you then reference in the synchronous <code class="js">AudioWorkletNode</code> constructor.<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a></p>
+<p>So when creating a worklet node, you have to wait for the module to load first.</p>
+<p>(You could preload, but thatʼs no fun.)</p>
+<p>There is a slight workaround, however: you can synchronously create an output node (say, a gain node used as a passthrough), and when the worklet has loaded, then you connect the new worklet to the output. (In my system, you donʼt need a virtual input node, because downstream nodes are responsible for their subscriptions, but in other systems you might need input available like output.)</p>
+<p>So the creation of an output node is synchronous, so everything downstream has something to subscribe to. Then you wait for audio worklets (and whatever else) to finish loading, hooking them up internally to everything. <em>Finally</em> you start the sources in the graph, once you know at this time that everything has been initialized.</p>
+<p>So thereʼs kind of three phases:</p>
+<ul>
+<li>Create output nodes, sync</li>
+<li>Wait for everything to come online, async (and in parallel!)</li>
+<li>Start everything, sync</li>
+</ul>
+<p>(I think my current implementation conflates the last two … whoops.)</p>
+<p>Finally, you can destroy everything. Thereʼs no way to cancel module loading but thatʼs usually fine… But you can stop nodes, remove all subscriptions, and so on, so they become inert and forgettable.</p>
+<p>(You donʼt actually destroy nodes, just ensure that they are forgotten so the <span data-t="" data-widget="">GC</span> cleans them up.)</p>
+<p>More common than doing a hard cut, is doing some sort of fadeout and then running the destructor logic after the fade is done. The audio graph needs to be set up for this (you need a gain that you can control), but otherwise it is fairly straightforward.</p>
+<p>So yeah, it is a bit peculiar, but it works well. This is something that I would like a general resource acquisition framework to support.</p>
+<h3 id="streaming-media-nodes-creation-and-subscription">Streaming media nodes: creation and subscription</h3>
+<p>There is a bit less to say about this, but think about creating nodes, and then subscribing them.</p>
+<p>If file sources start automatically, there is a bit of a problem: if nothing subscribes to them, their first (few) frames are likely dropped. The biggest issue here is that dropping the first IDR frame (keyframe) of a video means that nothing can be decoded until the next IDR frame (or possibly I frame, though that does not guarantee absence of decoding errors going forward).</p>
+<p>So workflow creation needs to create downstream nodes first, then create the file source and synchronously subscribe to it once it is available.</p>
+<p>So itʼs a case where the creation of workflow nodes needs to flow back to front (in the simplest form), opposite of the flow of media.</p>
+<h3 id="enter-transition-and-exit-animations">Enter, transition, and exit animations</h3>
+<p>These are tricky and I havenʼt really worked with them in depth.</p>
+<p>Put bluntly: CSS and HTML arenʼt a great way to do enter and exit animations, stuff that requires or would require reflows or overlapping content and such. I guess some frameworks have tried to address this, but idk. VDOM approaches are weird: “please update the DOM to remove this … but leave a zombie copy of it lingering while it animates”.</p>
+<p>Particularly weird is when you need to transition from one thing to another thing, and they need to occupy the same space. Yeah thatʼs awkward.</p>
+<p>Well I think that being up front about what elements can enter, transition, and exit, and how they are allowed to do that, would help a little bit. If you need to create a containing element ahead of time to allow them to overlap…</p>
+<p>Anyways I just think it is important to note the difference between “this [element/resource] is exiting soon” versus “please delete, now!”.</p>
+<h3 id="rpc">RPC</h3>
+<p>Web APIs are nice because they are synchronous, destruction is synchronous, and worst case it happens on garbage collection.</p>
+<p>Remote Process Communication is trickier because everything is async: destruction is async<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a>, creation is async, and you might have operations pending whose results may still come in when you try to destroy something.</p>
+<p>What makes it <em>even</em> trickier is that the remote process canʼt communicate with your <span data-t="" data-widget="">GC</span>. You canʼt use a <code class="js">WeakMap</code> across RPC!</p>
+<p>Now, apparently there are ways to hook into the <span data-t="" data-widget="">GC</span>, even in Javascript. But normally you have to be pretty careful about tracking resource usage. Basically everything that the remote might care about now has to become a tracked resource, instead of the nontracked “let the <span data-t="" data-widget="">GC</span> take care of it” resources that we are used to in JavaScript.</p>
+<h3 id="event-streams">Event streams</h3>
+<p>Riverdragon has pretty simple resource behaviors and such.</p>
+<p>One thing worth noting here is that a stream can destroy itself: declare that it will not output anything more and stuff downstream to clean up if they want.</p>
+<p>(This was my compromise instead of adding errors to streams like RxJS has.)</p>
+<p>Keeping things from leaking with functional-style JavaScript is tricky…</p>
+<p>The other interesting part of a streamʼs lifecycle is the startup burst: synchronous events emitted while a subscription is first being set up. This needs to be handled explicitly in many places in the implementation, but because it is synchronous, it doesnʼt necessitate any overarching coordination between streams or other resources and doesnʼt leak out of the API.</p>
+<h2 id="implementation">Implementation</h2>
+<h3 id="inspirations">Inspirations</h3>
+<p><code class="purescript">Aff</code> (hey at least it has cancelers! supervisors, bracket, try-finally, synchronous and asynchronous scheduling … lots of good stuff actually)</p>
+<p><code class="purescript">ScoreM</code> (for WebAudio)</p>
+<p>… something new soon? <code class="purescript">ResourceM</code>?</p>
+<p>basically it should track a context for acquiring resources: running the monad creates the context and returns whatever was acquired.</p>
+<p>two features: create async dependent contexts, and create independent contexts. I guess one could maybe couple and decouple contexts at will…</p>
+<p>async dependent contexts is what <code class="haskell">MonadUnlift</code> is about. maybe we can hook into <code class="purescript">Aff</code> lifecycle too</p>
+<pre><code>acquire enough :: base monad (sync or async)
+wait initialized :: parallel async
+all good to go :: some phases that convert to base monad
+readyState :: Rational
+
+destroy :: op sync
+wasDestroyed :: Boolean
+destroyed :: async</code></pre>
+<p>constructor errors are fatal, but still call destructors to unwind. destructors are not fatal, but store the first error at least.</p>
+<p><code>goodToGo</code> is called once <code>wait</code> is done: or rather, <code>wait</code> is a phase zero of <code>goodToGo</code>:</p>
+<ul>
+<li>e.g.&nbsp;could sweep front-to-back then back-to-front</li>
+<li>sync, or could be async, or parallel async</li>
+<li>and so on</li>
+<li>should be consistent</li>
+<li>but could be lifted to a universal form:</li>
+<li><code>Map Rational { seq :: Aff Unit, qes :: Dual (Aff Unit), par :: Par (Aff Unit) }</code></li>
+<li>(runs each layer, one by one, <code>seq</code> before <code>qes</code> before <code>par</code>)</li>
+<li>((but really you should use the rational index to sequence different types))</li>
+</ul>
+<p>API:</p>
+<pre class="purescript"><code>MonadEffect m =&gt;
+MonadError e m =&gt;
+
+-- Track some resource creation which produces a destructor
+-- (This unlocks `Riverdragon.River.Bed` and `Riverdragon.River`)
+track :: m { r | destroy :: Effect Unit } -&gt; ResourceT m { r | destroy :: Effect Unit }
+
+putDestroy :: Effect Unit -&gt; ResourceT m Unit
+data Dir = Seq | Qes | Par
+putGoodToGo :: Rational -&gt; Dir -&gt; Aff Unit -&gt; ResourceT m Unit
+putWait :: Aff Unit -&gt; ResourceT m Unit
+putWait = putGoodToGo zero Par
+
+-- Basic form of run, where `wait` is returned separately
+-- (including waiting on `goodToGo`, which is automatically run after the base `wait`)
+start :: ResourceT m r -&gt; m { result :: r, wait :: Aff Unit, destroy :: Effect Unit }
+-- Run but ensure `wait` is finished too
+run :: (Aff Unit -&gt; m Unit) -&gt; ResourceT m r -&gt; m { result :: r, destroy :: Effect Unit }
+-- Get a localized `start`/`run`
+getStart :: ResourceT m (typeof start)
+getRun :: ResourceT m (typeof run)
+
+-- Localized destroy: still called upon global destroy too
+scope :: (Effect Unit -&gt; ResourceT m { r }) -&gt; ResourceT m { r | destroy :: Effect Unit }
+-- Destroy when scope exits (like `with` in Python)
+scopedDestroy :: (Effect Unit -&gt; ResourceT m r) -&gt; ResourceT m r
+
+mk ::
+  m { result :: result
+    , wait :: Aff Unit
+    , destroy :: Effect Unit
+    } -&gt; ResourceT m result
+
+-- some kind of rotating?
+-- some kind of ref counting?</code></pre>
+<p>questions:</p>
+<ul>
+<li>what happens if new resources pop up during <code>wait</code>/<code>goodToGo</code>?
+<ul>
+<li>maybe you restart from their layers, wait for everything to stabilize…</li>
+</ul></li>
+<li>i guess if you want to queue destruction in order and make a <code>waitForDestroyed</code> you can?</li>
+</ul>
+<h3 id="resourcetresourcemmonadresource-implementation"><code class="purescript">ResourceT</code>/<code class="purescript">ResourceM</code>/<code class="purescript">MonadResource</code> Implementation</h3>
+<p>I have implemented this as a monad transformer and a typeclass. The main workhorses are actually plain data structures – the monad is just a wrapping around <code class="purescript">ReaderT Scope</code>, basically, and the typeclass an interface to it.</p>
+<pre class="purescript"><code>-- | The public interface to a scope, consisting of destructors and waiters.
+newtype Scope = Scope
+  { putDestructor :: Effect Unit -&gt; Effect Unit
+  , destroy :: Effect Unit
+  , destroyed :: Effect (Disj Boolean)
+  , waitDestroyed :: App Fiber Unit
+  , putWaiters :: Waiters -&gt; Effect Unit
+  , wait :: App Fiber Unit
+  }
+
+mkSubscope :: forall m. MonadEffect m =&gt; String -&gt; Scope -&gt; m Scope
+
+-- | Running the effect creates a new subscope and destroys the previous one.
+oneSubScopeAtATime :: forall m. MonadEffect m =&gt; String -&gt; Scope -&gt; m (Effect Scope)
+
+-- | A monoid keeping track of the state of resources in a (sub)scope
+type ResourceState =
+  { destructors :: Dual (Effect Unit)
+  , destroyed :: Disj Boolean
+  , waiters :: Waiters
+  , waiting :: App Fiber Unit
+  , waited :: Disj Boolean
+  }
+
+-- | A priority map of asynchronous functions to run and wait on when the
+-- | resource is coming online: first-to-last, last-to-first, and parallel.
+type Waiters =
+  SemigroupMap Rational
+    { seq :: Aff Unit, qes :: Dual (Aff Unit), par :: ParAff Unit }
+data Dir = Seq | Qes | Par</code></pre>
+<p>Adopting it for <code class="purescript">ScoreM</code> and Riverdragon more generally has gone well, though there are still a few bugs to shake out. (The <code class="purescript">String</code> arguments are names for debugging which scopes are prematurely destroyed.)</p>
+<p>Not having to manually keep track of destructors is such a relief.</p>
+<p>The typeclass interface exposes functions for working with destructors and waiters as you would expect. It also exposes these combinators for scopes:</p>
+<pre class="purescript"><code>-- | Caution: should not neglect inner destroy
+inSubScope :: forall m. MonadResource m =&gt; String -&gt; m ~&gt; m
+
+-- | Kind of like `with` in Python: destroys resources on exit
+scoped :: forall e m. MonadResource m =&gt; MonadError e m =&gt; String -&gt; m ~&gt; m
+
+-- | Actually like `async with` in Python (although it does not wait for destructors)
+with ::
+  forall e m resource return.
+    MonadResource m =&gt; MonadAff m =&gt; MonadError e m =&gt;
+  String -&gt; m resource -&gt; (resource -&gt; m return) -&gt; m return
+
+-- | Use around `inSubScope` (or `scoped` or `with`)
+noWait :: forall m. MonadResource m =&gt; m ~&gt; m</code></pre>
+<p>Finally, the monad transformer provides some more specific functions, for running and dealing with monads:</p>
+<pre class="purescript"><code>newtype ResourceT m a = ResourceT (Scope -&gt; m a)
+type ResourceM = ResourceT Effect
+
+-- | Create a new base scope and run the `ResourceT` in it.
+-- TODO: catch error? cancel self if Aff? supervise?
+start :: forall m r. MonadEffect m =&gt; String -&gt;
+  ResourceT m r -&gt;
+  m { result :: r, wait :: Fiber Unit, destroy :: Effect Unit, scope :: Scope }
+
+-- | Starts and waits for the resources to be ready.
+run :: forall m r. MonadAff m =&gt; String -&gt;
+  ResourceT m r -&gt;
+  m { result :: r, destroy :: Effect Unit, scope :: Scope }
+
+
+-- | Run in an existing scope.
+scopedStart :: forall m r. MonadEffect m =&gt; String -&gt;
+  Scope -&gt;
+  ResourceT m r -&gt;
+  m { result :: r, wait :: Fiber Unit, destroy :: Effect Unit }
+
+-- | Run in an existing scope and start the waiters (but do not wait for them).
+scopedStart_ :: forall m r. MonadEffect m =&gt; String -&gt;
+  Scope -&gt;
+  ResourceT m r -&gt;
+  m { result :: r, destroy :: Effect Unit }
+
+-- | Run in an existing scope and wait for the waiters.
+scopedRun :: forall m r. MonadAff m =&gt; String -&gt;
+  Scope -&gt;
+  ResourceT m r -&gt;
+  m { result :: r, destroy :: Effect Unit }
+
+-- | The `Aff` is killed when the scope is destroyed
+monitor :: String -&gt; Scope -&gt; (Aff ~&gt; Aff)
+-- | Destroy the scope when the `Aff` exits (does not `monitor`)
+link :: Scope -&gt; (Aff ~&gt; Aff)
+-- | Destroy the scope when no more `Aff`s from this are running
+linkN :: Scope -&gt; Effect (Aff ~&gt; Aff)</code></pre>
+<h3 id="usage">Usage</h3>
+<p><code class="purescript">ScoreM</code> is now just a stack on top of <code class="purescript">ResourceT</code>:</p>
+<pre class="purescript"><code>type ScoreM = MutStateT ScoreSt (ReaderT ScoreRd (ResourceT Effect))
+type ScoreAsync = MutStateT ScoreSt (ReaderT ScoreRd (ResourceT Aff))
+type ScoreSt = Record (ScoreS + ())
+type ScoreRd = Record (ScoreR + ())
+
+-- Reader state
+type ScoreR r =
+  ( ctx :: AudioContext
+  , iface :: ScoreLive
+  | r
+  )
+-- Mutable state
+-- TODO: caching of knobs?
+type ScoreS r =
+  ( id :: Int
+  , worklets :: Map String (Aff Unit) -- unused at the moment
+  | r
+  )
+-- Live variables that notify when they change
+type ScoreLive =
+  { temperament :: Interface (Array Number)
+  , pitch :: Interface Frequency
+  }</code></pre>
+<p><code class="purescript">Stream</code> (<code class="purescript">River</code>/<code class="purescript">Lake</code>) is still a plain effect over records (… for now?), but it integrates with <code class="purescript">MonadResource</code> and <code class="purescript">ResourceM</code> for some <span data-t="" data-widget="">API</span>s. The nicest of these is <code class="purescript">subscribeM1</code> which only keeps one resource active at a time, so you donʼt have to track cleanup state manually across time.</p>
+<pre class="purescript"><code>-- | Helper to run callbacks in the same scope as the subscribe is done in.
+subscribeM :: forall flow a m. MonadResource m =&gt; Stream flow a -&gt; (a -&gt; ResourceM Unit) -&gt; m Unit
+
+-- | With `oneSubScopeAtATime`, so the previous resource is destroyed upon each new event.
+subscribeM1 :: forall flow a m. MonadResource m =&gt; Stream flow a -&gt; (a -&gt; ResourceM Unit) -&gt; m Unit</code></pre>
+<p>The <code class="purescript">Dragon</code>ʼs <code class="purescript">Egg :: ResourceM Dragon -&gt; Dragon</code> now uses <code class="purescript">ResourceM</code> to create live resources while rendering, which simplifies things so much: the egg scope does not need to be passed around manually, and it does not need to contain impredicative fields for each operation to track. Instead, every API (ideally) runs in <code class="purescript">ResourceM</code> already and is tracked automatically. And, in the worst case, the new explicit <code class="purescript">Scope</code> type can be exposed and passed to wherever needs it.</p>
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn1"><p>I donʼt think there is a way to list which processors have been registered? Ugh I donʼt like the API…<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn2"><p>You can always fire-and-forget if you want/need to.<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
 </section>]]></description>
 </item>
@@ -2881,7 +3140,10 @@ function MoreQR(data, ...params) {
 <description><![CDATA[<p>Details on the connection protocol for <a href="https://webrtc-over-qr.veritates.love/">WebRTC over QR</a>. How is it even possible, and how could you use it too?</p>
 <div class="Warning">
 <p>See there for caveats and compatibility and so on.</p>
-<p>Most notably: automatic connection only works on Chromium-based browsers and only for <span data-t="" data-widget="">LAN</span> connections.</p>
+<del>
+Most notably: automatic connection only works on Chromium-based browsers and only for <span data-t="" data-widget="">LAN</span> connections.
+</del>
+<p><a href="https://webrtc-review.googlesource.com/c/src/+/366562">Chromium has changed and no longer allows the side channel</a>.</p>
 </div>
 <h2 id="baseline-connection-initiation-happy-path">Baseline connection initiation (happy path ^^)</h2>
 <p>This relies on a particular mechanic that only seems to be available in Chromium: the peer reflexive candidate<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a> is available via <code class="js">RTCPeerConnection.prototype.getStats</code>, which exposes the <span data-t="" data-widget="">ICE</span> username fragment before the host JavaScript sets any answer <span data-t="" data-widget="">SDP</span>.</p>
@@ -2950,8 +3212,9 @@ rtc.ondatachannel = ev =&gt; {
   dc.onmessage = e =&gt; eval(e.data);
 };</code></pre></li>
 <li><p>Host listens for the guest to try to connect, which allows us to finish the connection</p>
-<div class="Warning">
-This only works on Chromium-based browsers! And only over <span data-t="" data-widget="">LAN</span>! (not behind <span data-t="" data-widget="">NAT</span>)
+<div class="Error">
+<p><del>This only works on Chromium-based browsers! And only over <span data-t="" data-widget="">LAN</span>! (not behind <span data-t="" data-widget="">NAT</span>)</del></p>
+<a href="https://webrtc-review.googlesource.com/c/src/+/366562">Chromium has changed and no longer allows the side channel</a>.
 </div>
 <ul>
 <li>The fingerprint comes from the <code class="sdp">a=ice-ufrag:</code> line</li>
@@ -6695,7 +6958,6 @@ instance Semigroup (ShiftReduce s r) where
 </ol>
 </section>]]></description>
 </item>
-<item>
 <title>Eudoxus Real Numbers as Slopes of Pixelated Graphs</title>
 <pubDate>Wed, 20 Jul 2022 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/Eudoxus.html</guid>
