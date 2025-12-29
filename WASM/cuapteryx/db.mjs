@@ -14,32 +14,7 @@ const {
 } = await import('./base.mjs');
 
 
-const isSearchable = crumbs => {
-  const reason = why => {
-    // console.log(why, crumbs);
-    return false;
-  };
-  crumbs = String(crumbs);
-  if (!crumbs) return reason('empty');
-  if (crumbs[crumbs.length - 1] === '0') return reason('trailing');
-  if (crumbs.length % 2 == 0) return reason('odd');
-  if (!isatomic(crumbs)) {
-    return reason('not atomic');
-  }
-  // No trivial reductions
-  if (crumbs.includes('01') || crumbs.includes('002')) {
-    return reason('trivial reduction');
-  }
-  // But it needs to be reducible!
-  if (!crumbs.includes('0003')) return reason('not reducible ' + crumbs);
-  // Optimizable strings
-  if (crumbs.includes('032') || crumbs.includes('0003111') || crumbs.includes('00003112') || crumbs.includes('00003121')) {
-    return reason('optimisable');
-  }
-  return true;
-};
-
-const toDB = (q) => q2I(toatomic(q, true).padStart(32, 0));
+const toDB = (q) => BigInt("0b" + q2b(toatomic(q, true)));
 
 const toSearchable = crumbs => {
   if (typeof crumbs !== 'string') crumbs = crumbs.toString(4);
@@ -62,15 +37,15 @@ const seed = replacing => {
 const bump = (/** @type string */ candidate) => {
   const original = candidate;
   const len = candidate.length;
-  // Make sure it is an odd length starting with 3
+  // Make sure it starts with 3
   candidate = candidate.replace(re0, (_match, tail) => {
-    return toSearchable('3' + seed(tail + repeat(1 - tail.length%1, '0')));
+    return toSearchable('3' + seed(tail));
   });
   if (candidate !== original) return candidate;
   // Bump up uninteresting substrings, to just keep with numeric order
   // Seed the rest of the string with the minimal viable substring
   candidate = candidate.replace(re1, (_match, /** @type string */ bumping, remaining) => {
-    const bumped = { '1': '3', '2': '3', '01': '02', '002': '003', '032': '033', '0003111': '0003112', '00003112': '00003113', '00003121': '00003122' }[bumping];
+    const bumped = { '01': '02', '002': '003', '032': '033', '0003111': '0003112', '00003112': '00003113', '00003121': '00003122' }[bumping];
     return bumped + seed(remaining);
   });
   // Replace trailing zeros with something more interesting
@@ -145,7 +120,7 @@ const STATUSES = {
   'RuntimeError: memory access out of bounds': -5,
 };
 
-let db = new DatabaseSync([':memory:', 'db.test.sqlite', 'db.sqlite'][1]);
+let db = new DatabaseSync([':memory:', 'db.test.sqlite', 'db.sqlite'][2]);
 
 db.exec(`
   CREATE TABLE
@@ -160,6 +135,8 @@ db.exec(`
   )
   STRICT
   ;
+  PRAGMA journal_mode = WAL;
+  PRAGMA synchronous = OFF;
 `);
 
 let _insert = db.prepare(`
@@ -287,13 +264,15 @@ const getOutput = (len) => {
   return { output_crumbs, output };
 };
 const setInput = (wordcrumbs) => {
+  while (wordcrumbs[0] === '0') {
+    wordcrumbs = wordcrumbs.substring(1);
+  }
   inputBuffer[0] = q2I(wordcrumbs);
   return wordcrumbs.length;
 };
 let maxFuelUsed = [0], maxTimeTaken = [0];
-const evalWord = async (word, fuel=1_000_000, onlySearchable=true) => {
+const evalWord = async (word, fuel=1_000_000) => {
   let wordcrumbs = toSearchable(word);
-  if (onlySearchable && !isSearchable(wordcrumbs)) return;
   // console.log(word, wordcrumbs, q2I(wordcrumbs), I2q(q2I(wordcrumbs)));
   const inputLen = setInput(wordcrumbs);
   if (!inputLen) return;
@@ -319,7 +298,10 @@ const evalWord = async (word, fuel=1_000_000, onlySearchable=true) => {
     await reload(); // ??
     return { output_length: STATUSES['out of fuel'], fuel_used: Number(fuel), time };
   }
-  if (!outputLen) return;
+  if (!outputLen) {
+    console.log({ outputLen, word, ordinal: q2I(wordcrumbs.padEnd(32, '0')), wordcrumbs, inputLen, fuelLeft, time, I: q2I(wordcrumbs), buf: inputBuffer[0], eval: ex.eval(BigInt(inputLen)) });
+    return "no output??";
+  }
   const output = getOutput(outputLen);
   const fuelUsed = Number(fuel) - Number(fuelLeft);
   if (fuelUsed > maxFuelUsed[0]) maxFuelUsed = [fuelUsed, wordcrumbs, output, time];
@@ -328,11 +310,15 @@ const evalWord = async (word, fuel=1_000_000, onlySearchable=true) => {
 };
 
 {
+const transactEnd = db.prepare(`COMMIT;`);
+const transactStart = db.prepare(`BEGIN TRANSACTION;`);
+transactStart.run();
 let nth = 0, last;
-const start = (getLast() ?? 0n) + 1n;
+let start = (getLast() ?? 0n) + 1n;
 let bound = 150000n;
 if (start > 150000n) bound = start * 18n;
 if (bound > 2n**32n) bound = 2n**32n;
+bound = 2n**34n;
 
 let searchable, ordinal = start, crumbs = undefined;
 while (ordinal === undefined || ordinal < bound) {
@@ -348,26 +334,29 @@ while (ordinal === undefined || ordinal < bound) {
       try {
         insert({ ...out, input: ordinal });
       } catch(e) {
-        console.log(out, e);
-        continue;
+        console.log(ordinal, crumbs, out, e);
+        break;
       }
       if (!out?.output) continue;
     } catch (e) {
-      console.log(crumbs, e);
+      console.log(ordinal, crumbs, e);
       out = e;
     }
 
     const chosen = !(nth++ % 500) || crumbs === '0000030333333';
-    last = () => console.log((100 * Number(ordinal) / Number(bound)).toFixed(2), ordinal, crumbs, q2I(toatomic(ordinal)), out);
+    last = () => console.log((100 * Number(ordinal - start) / Number(bound - start)).toFixed(2), ordinal, crumbs, q2I(toatomic(ordinal)), out);
     if (chosen) {
       last();
       last = ()=>{};
+      if (db.isTransaction) transactEnd.run();
+      transactStart.run();
     }
   }
 }
+if (db.isTransaction) transactEnd.run();
 last?.();
-const result = { all: getAll(), successes: getSuccesses() };
-console.log(result.all.length, result.successes.length);
-console.log(result.all.slice(-2), result.successes.slice(-5));
-console.log({ maxFuelUsed, maxTimeTaken });
+//const result = { all: getAll(), successes: getSuccesses() };
+//console.log(result.all.length, result.successes.length);
+//console.log(result.all.slice(-2), result.successes.slice(-5));
+//console.log({ maxFuelUsed, maxTimeTaken });
 }
