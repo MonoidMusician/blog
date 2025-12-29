@@ -10,13 +10,18 @@
 <docs>https://www.rssboard.org/rss-specification</docs>
 <generator>pandoc-rss</generator>
 <item>
+<title>Selective Applicative Functors</title>
+<pubDate>Mon, 29 Dec 2025 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/selective_applicatives_theoretical_basis.html</guid>
+</item>
+<item>
 <title>Simple Local Nginx Config</title>
 <pubDate>Mon, 04 Aug 2025 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/simple_nginx.html</guid>
 </item>
 <item>
 <title>Quapteryx Takes Flight!</title>
-<pubDate>Tue, 19 Aug 2025 00:00:00 +0000</pubDate>
+<pubDate>Mon, 29 Dec 2025 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/quapteryx5.html</guid>
 </item>
 <item>
@@ -71,7 +76,7 @@
 </item>
 <item>
 <title>Monoids in Public</title>
-<pubDate>Wed, 18 Sep 2024 00:00:00 +0000</pubDate>
+<pubDate>Wed, 03 Dec 2025 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/monoids_in_public.html</guid>
 </item>
 <item>

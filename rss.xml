@@ -10,6 +10,530 @@
 <docs>https://www.rssboard.org/rss-specification</docs>
 <generator>pandoc-rss</generator>
 <item>
+<title>Selective Applicative Functors</title>
+<pubDate>Mon, 29 Dec 2025 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/selective_applicatives_theoretical_basis.html</guid>
+<description><![CDATA[<p>I havenʼt seen a good accounting of the essence of selective applicative functors.</p>
+<p>Theyʼve been longing for a better description, to help explain what should be allowed and what should be disallowed, beyond “hey, here is a function <code class="haskell">select</code> that seems to do useful things and enable us to write interesting code”.</p>
+<p>Selective applicative functors were originally proposed in 2019 in the paper <a href="https://dl.acm.org/doi/pdf/10.1145/3341694">Selective Applicative Functors</a>, by Andrey Mokhov, Georgy Lukyanov, Simon Marlow, and Jeremie Dimino, with this typeclass definition:</p>
+<pre class="haskell"><code>class Applicative f =&gt; Selective f where
+  select :: f (Either a b) -&gt; f (a -&gt; b) -&gt; f b</code></pre>
+<p>The paper mentions a <code class="haskell">branch</code> combinator derived from <code class="haskell">(&lt;*?) = select</code>:</p>
+<pre class="haskell"><code>branch :: Selective f =&gt; f (Either a b) -&gt; f (a -&gt; c) -&gt; f (b -&gt; c) -&gt; f c
+branch x l r = fmap (fmap Left) x &lt;*? fmap (fmap Right) l &lt;*? r</code></pre>
+<p>But the story has stopped short after <code class="haskell">select</code> because the familiar tools of theoretical analysis failed to apply to <code class="haskell">select</code>: there was no account for <code class="haskell">select</code> in terms of monoidal tensors, and even <code class="haskell">branch</code> did not meaningfully compose with itself, which means that there was no obvious way that the laws related to more familiar algebraic and categorical structures like monoids (and, it turns out, near-semirings).</p>
+<p>However, the final answer for what selective applicative functors want to be is really cool. We just have to work a bit harder to see it: we have to consider arrows (composable profunctors) instead of plain functors.</p>
+<p>Selective applicative functors want to encode <em>exclusive determined choice</em>. They can choose between a finite number of predetermined case branches based upon previous results during evaluation.<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a></p>
+<p>Once you see it, it makes so much sense from a programming language perspective: it has the shape of an AST for a programming language. We can even go farther and relate it to the other typeclass for control flow, <code class="haskell">Alternative</code>, which provides <code class="haskell">&lt;|&gt;</code> for <em>nondeterministic</em> choice.</p>
+<h2 id="overview">Overview</h2>
+<p>Here it is, here is the essence of selective applicatives!</p>
+<p>Letʼs start from the familiar territory of monads. Monads encode the essence of dynamic control flow: because <code class="haskell">&gt;&gt;=</code> allows binding any function as a continuation, an action in a monad can construct an arbitrary action to execute next, <em>dynamically</em>. This also forces a clear direction to evaluation: the left effects have to happen before the right effects, because the result of the left action is used to determine the whole action on the right. This also disallows static analysis: the constant functor <a href="https://blog.veritates.love/"><code class="haskell">Const</code></a> is not an interesting monad.<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a></p>
+<p>This is in contrast to applicative functors, which have no “arrow of time”: their structure can be dualized to run effects in reverse because it has no control flow required by the interface.<a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a> And their static analysis, given by <code class="haskell">Monoid m =&gt; Applicative (Const m)</code>, uses monoids to accumulate information about each action that was sequenced by <code class="haskell">&lt;*&gt;</code>.</p>
+<div class="Key_Idea">
+<p>Selective applicative functors sit in the sweet spot of expressing <em>finite</em> control flow: they allow (but do not require) that an implementation choose between a finite number of branches of otherwise static control flow.</p>
+<p>This means that we need something that restricts <code class="haskell">&gt;&gt;=</code> to <em>finite-case functions</em> to encode <em>exclusive determined choice</em>.</p>
+<p>This will be defined as a <code class="haskell">CaseTree</code> data type below.</p>
+</div>
+<p>It turns out that the most natural setting is to consider arrows instead of functors. The functor can be recovered as an arrow out of the unit type (spelled <code class="haskell">()</code> in Haskell and <code class="purescript">Unit</code> in PureScript).</p>
+<p>Any approach that does not consider arrows seems doomed to failure, mainly for the reason that we want to work with coproducts (<code class="haskell">either :: (x -&gt; r) -&gt; (y -&gt; r) -&gt; (Either x y -&gt; r)</code>) which involves the domain in an essential manner, while products (<code class="haskell">tuple :: (i -&gt; x) -&gt; (i -&gt; y) -&gt; (i -&gt; Tuple x y)</code>) stay in the codomain and thus are more amenable to restricting to actions on functors.</p>
+<p>The concept that we need, of “finite-case functions”, is a bit tricky to formulate (especially in programming data types: it needs existential types), which I believe is part of why it has been missed.</p>
+<p>However, once we focus on the arrows instead of the applicative actions in isolation, it can all pop into place and it pays off in revealing details of the structure we were really after.</p>
+<div class="Key_Idea">
+<p>For example, we learn that selective applicative functors allow static analysis via <a href="https://en.wikipedia.org/wiki/Near-semiring">near-semirings</a> by using a constant functor. (That is, we define static analysis to be an interpretation into a constant functor, and we learn that near-semirings are the algebraic structure we need to make it work.)</p>
+</div>
+<div class="Warning">
+<p>The common formulation of <code class="haskell">select :: f (Either u v) -&gt; f (u -&gt; v) -&gt; f v</code> <strong>does not capture</strong> this story. This <code class="haskell">select</code> is a specialization to where one branch is a constant identity branch, and the general formulation cannot be recovered perfectly. That is, <code class="haskell">select</code> allows for finite choice / optional effects, but it cannot encode which branches of control flow are exclusive.</p>
+</div>
+<div class="Details">
+<p>We can squeeze it all into a single data type for a free arrow (a strong profunctor and a category) like this, subject to some laws.</p>
+<pre class="haskell"><code>data ControlFlow f i r where
+  Action :: (f (i -&gt; r)) -&gt; ControlFlow f i r
+  Pure :: (i -&gt; r) -&gt; ControlFlow f i r
+  -- `j` is existential here
+  Sequencing :: ControlFlow f i j -&gt; ControlFlow f j r -&gt; ControlFlow f i r
+  Absurd :: (i -&gt; Void) -&gt; ControlFlow f i r
+  -- `x` and `y` are existential here
+  CaseBranch ::
+    (i -&gt; Either x y) -&gt;
+    ControlFlow f x r -&gt;
+    ControlFlow f y r -&gt;
+    ControlFlow f i r</code></pre>
+<p>We then recover the free selective applicative as <code class="haskell">FreeSelective f = ControlFlow f ()</code>.</p>
+</div>
+<h2 id="in-search-of-a-monoidal-tensor">In search of a monoidal tensor</h2>
+<p>Monoidal tensors are associative up to isomorphism: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>⊗</mo><mo stretchy="false">(</mo><mi>y</mi><mo>⊗</mo><mi>z</mi><mo stretchy="false">)</mo><mo>≅</mo><mo stretchy="false">(</mo><mi>x</mi><mo>⊗</mo><mi>y</mi><mo stretchy="false">)</mo><mo>⊗</mo><mi>z</mi></mrow><annotation encoding="application/x-tex">x \otimes (y \otimes z) \cong (x \otimes y) \otimes z</annotation></semantics></math></span>. Making them monoidal is an identity object: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>I</mi><mo>⊗</mo><mi>x</mi><mo>≅</mo><mi>x</mi><mo>≅</mo><mi>x</mi><mo>⊗</mo><mi>I</mi></mrow><annotation encoding="application/x-tex">I \otimes x \cong x \cong x \otimes I</annotation></semantics></math></span>. They may also satisfy symmetry<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a>: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>⊗</mo><mi>y</mi><mo>≅</mo><mi>y</mi><mo>⊗</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">x \otimes y \cong y \otimes x</annotation></semantics></math></span>.</p>
+<p>Monoids are a really nice setting for computation, and their symmetries (associativity, and left and right identities) ensure that we can focus on structure that matters while systematically ignoring the structure that does not matter.</p>
+<p>Having the categorical structure also enables us to separate data that the program manipulates from the structure of the program itself. Finally, we consider static analysis as the analogous laws on plain monoids (not functors) via the constant functor (decategorification).</p>
+<p>So we want an explanation of selective applicative functors in terms of monoidal tensors.</p>
+<h3 id="tensorfail">Tensorfail</h3>
+<p>Most explanations are missing the point of what <em>should</em> be possible with selective applicatives: they search for a tensor that can explain something about <code class="haskell">select :: f (Either u v) -&gt; f (u -&gt; v) -&gt; f v</code>.</p>
+<p><a href="https://www.pls-lab.org/en/Selective_functors">One suggestion</a><a href="#fn5" class="footnote-ref" id="fnref5" role="doc-noteref"><sup>5</sup></a> is that it should come from a lax monoidal action on coproducts, of the shape <code class="haskell">f (Either u v) -&gt; Either (f u) (f v)</code>, but that is just wrong: that is the <em>wrong</em> kind of static analysis for selective applicatives to support, as it would require evaluating the control flow purely statically, meaning that <code class="haskell">f</code> cannot contain any interesting effects after all.</p>
+<p>That is: Lax actions over coproducts (<code class="haskell">f (Either u v) -&gt; Either (f u) (f v)</code>) are incredibly rare in programming (or Set-like categories, more formally). It is clear that motivating examples of selective applicative functors do not satisfy this. We will in fact see that selective applicative structures are much more <em>plentiful</em> than monads or applicatives.</p>
+<p>Another approach I looked at is viewing it through the lens of possibly-constant functions, like <code class="haskell">Either (u -&gt; v) v</code>. These are not nicely behaved either: they do not form a category<a href="#fn6" class="footnote-ref" id="fnref6" role="doc-noteref"><sup>6</sup></a>, and even computationally, since we cannot detect constant functions in general, it is not clear why the computationally distinguished constant functions should be treated specially. Which is silly, because the point of these functors is all about computation, and I believe there is a nice story for it in category theory too!</p>
+<p>So we need to change our approach and recognize that <code class="haskell">select</code> is not a primitive that composes nicely: it does not have a monoidal tensor, so it is not the operation we should be looking at.</p>
+<p>We <em>need</em> monoids if we are to determine what “composes nicely” even means. The failure of <code class="haskell">select</code> to faithfully reproduce <code class="haskell">branch</code> (or at least the failure of <code class="haskell">branch</code> to faithfully reproduce a ternary <code class="haskell">branch</code>) is exactly the failure of finding a tensorial explanation for what is happening.</p>
+<p>We need to work harder to find the tensor in selective applicative functors, if we want to see a compositional story.</p>
+<h3 id="finite-continuations">Finite continuations</h3>
+<p>Letʼs revisit the idea of adapting <code class="haskell">(&gt;&gt;=) :: f i -&gt; (i -&gt; f r) -&gt; f r</code> into a function with a finite number of cases. Can we find a data type that encodes this idea?</p>
+<h4 id="not-quite-good-enough">Not quite good enough</h4>
+<p>An idea that is a non-starter is just requiring that <code class="haskell">i</code> is a finite type here: that would allow enumerating the cases <code class="haskell">f r</code>, but there is no way to pass non-finite data from <code class="haskell">i</code> to <code class="haskell">r</code> (like <code class="haskell">branch :: f (Either x y) -&gt; f (x -&gt; r) -&gt; f (y -&gt; r) -&gt; f r</code> clearly does).</p>
+<p>Slightly better would be something like <code class="haskell">f (idx, dat) -&gt; (idx -&gt; f (dat -&gt; r)) -&gt; f r</code>, where <code class="haskell">idx</code> is finite, and <code class="haskell">dat</code> is non-finite data that can be processed to obtain <code class="haskell">r</code>. But again this is unsatisfactory, since <code class="haskell">dat</code> cannot depend on the chosen index, which again is something that <code class="haskell">branch</code> can do (and this really matters if one case results in <code class="haskell">Void</code>, for example, and you need to use <code class="haskell">absurd</code>).</p>
+<p>If we had dependent types, we could do <code class="haskell">IsFinite idx -&gt; f (Σ (i : idx), dat i) -&gt; (Π (i : idx), f (dat i -&gt; r)) -&gt; f r</code>, which <em>would</em> adequately describe what we want. But we do not have dependent types in Haskell, and it does not feel like dependent types should be <em>necessary</em>, even if they are convenient. And it does not particularly get us closer to a categorical formulation.</p>
+<h4 id="branching">Branching</h4>
+<p>So … letʼs revisit the type of <code class="haskell">branch</code> again.</p>
+<p>We want <code class="haskell">branch :: f (Either x y) -&gt; f (x -&gt; r) -&gt; f (y -&gt; r) -&gt; f r</code> to look more like <code class="haskell">(&gt;&gt;=) :: f i -&gt; (i -&gt; f r) -&gt; f r</code>. Is there a type <code class="haskell">Branch f i r</code> that can replace the arrow <code class="haskell">(i -&gt; f r)</code> to make it happen?</p>
+<p>We can mechanically write a datatype that expresses this: when <code class="haskell">i</code> is of the form <code class="haskell">Either x y</code>, then we should have the data <code class="haskell">f (x -&gt; r)</code> and <code class="haskell">f (y -&gt; r)</code>:</p>
+<pre class="haskell"><code>data Branch f i r where
+  Branch ::
+    f (x -&gt; r) -&gt;
+    f (y -&gt; r) -&gt;
+    Branch f (Either x y) r</code></pre>
+<div class="Key_Idea">
+<p>Matching on <code class="haskell">Branch</code> gives the type equality <code class="haskell">i ~ (Either x y)</code>, but this is not essential, since we can always map an arbitrary <code class="haskell">f i</code> on the left into a type that is of the form <code class="haskell">f (Either _ _)</code> using <code class="haskell">(&lt;$&gt;)</code>. So it suffices to just have a <em>function</em> <code class="haskell">i -&gt; Either x y</code> instead of an equality.</p>
+<p>Similarly, we will use <code class="haskell">i -&gt; Void</code> later, where we could have used a type equality.</p>
+<p>This generalization is not crucial, per se. But it is convenient to work with ordinary profunctors down the line, instead of type equalities.</p>
+</div>
+<p>Finally, to generalize this, we want to be able to <strong>recurse</strong>: instead of stopping at <em>singleton</em> branches <code class="haskell">f (x -&gt; r)</code> and <code class="haskell">f (y -&gt; r)</code>, what if we continued on to finitely more branches before getting to continuations of the form <code>f (_ -&gt; r)</code>? Can we form an actual <em>case tree</em>?</p>
+<h3 id="tensorful">Tensorful</h3>
+<p>Here is the final result, an arrow <code class="haskell">CaseTree f i r</code> to replace the monadic arrow <code class="haskell">(i -&gt; f r)</code>, making use of those observations.</p>
+<div class="Key_Idea">
+<pre class="haskell"><code>class Casing f where
+  caseTreeOn :: forall i r. f i -&gt; CaseTree f i r -&gt; f r
+
+data CaseTree f i r where
+  TwoCases ::
+    -- How to split the input into data for each case
+    -- (Note that `x` and `y` are existential here!)
+    (i -&gt; Either x y) -&gt;
+    -- Control flow for the `Left` case
+    (CaseTree f x r) -&gt;
+    -- Control flow for the `Right` case
+    (CaseTree f y r) -&gt;
+    CaseTree f i r
+  -- One static effect
+  OneCase :: (f (i -&gt; r)) -&gt; CaseTree f i r
+  -- Represent an empty case branching
+  ZeroCases :: (i -&gt; Void) -&gt; CaseTree f i r
+
+-- We can recover `select` and `branch`
+branch :: Casing f =&gt; f (Either x y) -&gt; f (x -&gt; z) -&gt; f (y -&gt; z) -&gt; f z
+branch input left right = caseTreeOn input $
+  TwoCases id (OneCase left) (OneCase right)
+
+select :: Applicative f =&gt; Casing f =&gt; f (Either u v) -&gt; f (u -&gt; v) -&gt; f v
+select input continue = caseTreeOn input $
+  TwoCases id (OneCase $ pure id) (OneCase continue)
+
+-- But the general form of `TwoCases` recursing into further `TwoCases`
+-- is necessary to really express the structure of exclusive branching</code></pre>
+</div>
+<p>You should think of <code class="haskell">CaseTree f i r</code> as a “finite-case” function from datatype <code class="haskell">i</code> to datatype <code class="haskell">r</code>, with effects in the functor <code class="haskell">f</code>. It is a restricted form of <code class="haskell">i -&gt; f r</code>, as this function demonstrates we can get back to the monadic arrow:</p>
+<pre class="haskell"><code>-- | One thing you can do is apply a `CaseTree` to a specific value of `i` to see
+-- | what branch it chooses. This lets you apply it via `&gt;&gt;=`.
+applyCaseTree :: forall i f r. Functor f =&gt; CaseTree i f r -&gt; i -&gt; f r
+applyCaseTree (ZeroCases toVoid) i = absurd (toVoid i)
+applyCaseTree (OneCase fir) i = fir &lt;&amp;&gt; ($ i)
+applyCaseTree (TwoCases fg x y) ij =
+  case fg ij of
+    Left i -&gt; applyCaseTree x i
+    Right j -&gt; applyCaseTree y j</code></pre>
+<p><em>Or</em>, we can execute all effects from the <code class="haskell">f (_ -&gt; r)</code>s and get <code class="haskell">f (i -&gt; r)</code> simply by doing the case analysis at the level of the inner functions.</p>
+<pre class="haskell"><code>-- | The other way to apply it is via `&lt;*&gt;`, which means we do not get to skip
+-- | executing any branches.
+mergeCaseTree :: forall i f r. Applicative f =&gt; CaseTree i f r -&gt; f (i -&gt; r)
+mergeCaseTree (ZeroCases toVoid) = pure (absurd . toVoid)
+mergeCaseTree (OneCase fir) = fir
+mergeCaseTree (TwoCases fg x y) =
+  liftA2 (\f g ij -&gt; either f g (fg ij)) (mergeCaseTree x) (mergeCaseTree y)</code></pre>
+<p>This data type has a <em>ton</em> of structure. As a start, note that it is a profunctor: we can map the output covariantly, with <code class="haskell">map :: (r -&gt; r') -&gt; CaseTree f i r -&gt; CaseTree f i r'</code>, and the input contravariantly, with a function of type <code class="haskell">(i' -&gt; i) -&gt; CaseTree f i r -&gt; CaseTree i' f r</code>.</p>
+<div class="Details">
+<p>This is the full mapping function: to transform from <code class="haskell">CaseTree f i r</code> to <code class="haskell">CaseTree f' j r'</code>, you need a function <code class="haskell">j -&gt; i</code>, a natural transformation <code class="haskell">f ~&gt; f'</code>, and a function <code class="haskell">r -&gt; r'</code>.</p>
+<pre class="haskell"><code>mapCaseTree :: forall f f' i j r r'. Functor f' =&gt;
+  (forall d. f d -&gt; f' d) -&gt; (j -&gt; i) -&gt; (r -&gt; r') -&gt; CaseTree f i r -&gt; CaseTree f' j r'
+mapCaseTree _ g _ (ZeroCases toVoid) = ZeroCases (toVoid . g)
+mapCaseTree f g h (OneCase fir) = OneCase (dimap g h &lt;$&gt; f fir)
+mapCaseTree f g h (TwoCases split cx cy) =
+  TwoCases (split . g) (mapCaseTree id g h cx) (mapCaseTree id g h cy)</code></pre>
+<p>Note that the recursion in <code class="haskell">TwoCases</code> handles <code class="haskell">f</code> up front and recurses with <code class="haskell">f = id</code> on the existential types <code class="haskell">x</code> and <code class="haskell">y</code>.</p>
+<p>Having the Yoneda lemma for this functor is important for the laws below, to ensure that no generality is lost by using <code class="haskell">id :: Either x y -&gt; Either x y</code> to fill in <code class="haskell">split :: i -&gt; Either x y</code>.</p>
+<p>Importantly, note that the return <code class="haskell">r</code> <em>and even the input</em> <code class="haskell">i</code> are ordinary data: we can just map over them with arbitrary functions, they donʼt need to be special finite functions at all. The finite structure is all contained in <code class="haskell">CaseTree</code>.</p>
+</div>
+<details class="Details">
+<summary>
+More structure
+</summary>
+<p>We can give <code class="haskell">CaseTree</code> (and <code class="haskell">ControlFlow</code> below) the structure of a strong profunctor, which preserves some piece of state <code class="haskell">s</code> across the input into the output.</p>
+<pre class="haskell"><code>instance Functor f =&gt; Strong (CaseTree f) where
+  first :: forall s j r. CaseTree f j r -&gt; CaseTree f (j, s) (r, s)
+  second :: forall s j r. CaseTree f j r -&gt; CaseTree f (s, j) (s, r)
+instance Applicative f =&gt; Choice (CaseTree f) where
+  left :: forall i j r. CaseTree f j r -&gt; CaseTree f (Either j i) (Either r i)
+  right :: forall i j r. CaseTree f j r -&gt; CaseTree f (Either i j) (Either i r)</code></pre>
+<p>The first thing we may think of doing with this is simply preserving the input itself, which is an important manipulation later for making <code class="haskell">ControlFlow</code> behave like an applicative functor (similar how the <code class="haskell">Reader</code> monad has to keep its argument around).</p>
+<pre class="haskell"><code>keep :: Strong p =&gt; p i r -&gt; p i (i, r)
+keep f = lmap (join (,)) (second f)</code></pre>
+<p>We can use this to curry the <code class="haskell">CaseTree</code>, pulling a function from the codomain into a tuple in the domain.</p>
+<pre class="haskell"><code>curry :: Strong p =&gt; p i (j -&gt; r) -&gt; p (i, j) r
+curry = uncurry ($) &lt;$&gt; first cases</code></pre>
+<p>And a few other functions that mean that a strong profunctor acts like the familiar relation between a function domain and its codomain:</p>
+<pre class="haskell"><code>lowerFn :: Strong p =&gt; p () (i -&gt; r) -&gt; p i r
+lowerFn c = dimap pure (uncurry ($)) (first c)
+
+lowerArg :: Strong p =&gt; p () i -&gt; p (i -&gt; r) r
+lowerArg c = dimap pure (uncurry (&amp;)) (first c)</code></pre>
+</details>
+<p>This exposes the monoidal structure between tensors we were looking for, enabling us to talk about laws and algebraic structure.</p>
+<p>We can express associativity with <code class="haskell">TwoCases</code>, and the identity between <code class="haskell">TwoCases</code> and <code class="haskell">ZeroCases</code>. These are not equalities in the data type <code class="haskell">CaseTree</code> itself: these are laws that we expect to apply to implementations of <code class="haskell">Casing f</code> (selective applicative functors).</p>
+<div class="Details" data-box-name="Laws">
+<p>Using the associativity of the tensor <code class="haskell">Either</code>, we can express associativity of <code class="haskell">CaseTree (Either x (Either y z)) f r</code>. (By the Yoneda lemma, any other choice of <code>xyz</code> that maps into <code>Either x (Either y z)</code> works just as well.)</p>
+<pre class="haskell"><code>assoc :: Either x (Either y z) -&gt; Either (Either x y) z
+assoc (Left x) = Left (Left x)
+assoc (Right (Left y)) = Left (Right y)
+assoc (Right (Right z)) = Right z
+
+cx :: CaseTree f x r
+cy :: CaseTree f y r
+cz :: CaseTree f z r
+
+TwoCases id cx (TwoCases id cy cz) ~=
+  TwoCases assoc (TwoCases id cx cy) cz</code></pre>
+<p>We know that <code class="haskell">Either</code> has the identity <code class="haskell">Void</code>.</p>
+<pre class="haskell"><code>absurd :: Void -&gt; x
+
+idL :: Either Void x -&gt; x
+idL = either absurd id
+idR :: Either x Void -&gt; x
+idR = either id absurd
+
+cx :: CaseTree f x r
+
+TwoCases Left cx (ZeroCases absurd) ~= cx
+TwoCases Right (ZeroCases absurd) cx ~= cx</code></pre>
+<p><code>Either</code> is also a symmetric tensor, but the selective applicative functor may not always respect this symmetry.</p>
+<pre class="haskell"><code>sym :: Either x y -&gt; Either y x
+sym (Left x) = Right x
+sym (Right y) = Left y
+
+TwoCases id cx cy ~= TwoCases sym cy cx</code></pre>
+<p>Optionally, we can consider a kind of idempotence:</p>
+<pre class="haskell"><code>collapse :: Either x x -&gt; x
+collapse (Left x) = x
+collapse (Right x) = x
+
+TwoCases id (OneCase cx) (OneCase cx) ~=? OneCase (lmap collapse &lt;$&gt; cx)</code></pre>
+<p>This idempotence is generally bad from a computational point of view: the fact that <code class="haskell">cx</code> appears in both cases means it is not decidable when/how this law would apply, it would require deciding whether two effects in <code class="haskell">f</code> are equal. But for running the program, and for some forms of static analysis (with semilattices), it should hold.</p>
+</div>
+<hr>
+<p>Note that this is just a data structure. It is a data structure with existential types (<code class="haskell">x</code> and <code class="haskell">y</code>) and non-uniform recursion over those existential types (<code class="haskell">CaseTree f i r</code> recurses into <code class="haskell">CaseTree f x r</code> and <code class="haskell">CaseTree f y r</code>). But it is still a finite data structure that you can recurse over.</p>
+<hr>
+<p>You can think of <code class="haskell">CaseTree</code> as performing two functions: it first splits the input <code class="haskell">i</code> into a n-ary tensor product <code class="haskell">Either x (Either y (...))</code> (where the details of associativity and empty cases should not matter in the end), and then it provides an action specifically for each case it split into: <code class="haskell">(f (x -&gt; r), f (y -&gt; r), ...)</code>.</p>
+<p>You could split these functions into their own data types, with a common index to make sure that they agree. That indexing type would have to be a binary tree of types, which is unpleasant without dependent types. Then you would existentially quantify over it to recover <code class="haskell">CaseTree</code>. But <code class="haskell">CaseTree</code> is a nice direct formulation of their composite.</p>
+<hr>
+<p>the <code class="haskell">i</code> has <em>migrated inside</em> the <code class="haskell">f</code>, so now it has passed from the “static analysis” boundary over to the runtime side of the data and we no longer care about its branching structure, it has become a blob of arbitrary data</p>
+<h2 id="free-constructions-and-arrows">Free constructions and arrows</h2>
+<p>To return to the theoretical considerations.</p>
+<p>The free monad gets a lot of attention.</p>
+<pre class="haskell"><code>data FreeMonad f r = Return r | Join (f (FreeMonad f r))
+
+-- More suggestively
+data FreeMonad f r
+  = Return r
+  | Join (Compose f (FreeMonad f r))</code></pre>
+<p>But the free applicative is much less common. Why is this?</p>
+<p>Well, one reason is that it requires the <code class="haskell">Day</code> convolution, which requires existential types. And we have already established that programmers avoid thinking about existential types.</p>
+<pre class="haskell"><code>data FreeApplicative f r
+  = Pure r
+  | Apply (Day f (FreeApplicative f) r)
+
+-- This is the style that directly relates to `(&lt;*&gt;)`
+data Day f g r where
+  -- Existential `i`
+  Day :: f (i -&gt; r) -&gt; g i -&gt; Day f g r
+
+-- This is the obviously-symmetric formulation
+data Day f g r where
+  -- Existential `x` and `y`
+  Day :: f x -&gt; g y -&gt; (x -&gt; y -&gt; r) -&gt; Day f g r</code></pre>
+<h3 id="monoid-objects-in-monoidal-categories">Monoid objects in monoidal categories</h3>
+<p>However, those are specifically the formulation of monads and applicatives as <em>monoid objects</em> (in a monoidal category). That is the source of the “a monad is just a monoid in the [monoidal] category of endofunctors [under composition]” meme, while an applicative functor is “just” a monoid in the [monoidal] category of endofunctors <em>under Day convolution</em>.</p>
+<div class="Note" data-box-name="Aside">
+<p>I argue that it is important to include “under composition” in the description of the monad, because there are many monoidal products available on functors, and functor composition is a surprising choice, since it is not symmetric at all!</p>
+<p>In fact, you can think of the Day convolution as a symmetrization of the composition tensor: there is a natural map <code class="haskell">Day f g ~&gt; Compose f g</code>, and since <code class="haskell">Day</code> is symmetric, it also has a map <code class="haskell">Day f g ~&gt; Compose g f</code> via <code class="haskell">Day g f ~&gt; Day f g</code>.</p>
+</div>
+<p>The monoid operation is an arrow <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">merge</mi><mo>⁡</mo><mo>:</mo><mi>M</mi><mo>⊗</mo><mi>M</mi><mo>→</mo><mi>M</mi></mrow><annotation encoding="application/x-tex">\operatorname{merge} : M \otimes M \to M</annotation></semantics></math></span> in the functor category: that is, a natural transformation.</p>
+<p>So for monads it is <code class="haskell">join :: Compose f f ~&gt; f</code>, which is just <code class="haskell">forall r. f (f r) -&gt; f r</code>, and for applicatives it is <code class="haskell">liftA2 :: Day f f ~&gt; f</code>, which expands to <code class="haskell">forall r x y. (x -&gt; y -&gt; r) -&gt; f x -&gt; f y -&gt; f r</code>, at which point we can either take <code class="haskell">x = (y -&gt; r)</code> and apply <code class="haskell">id</code> to get back <code class="haskell">(&lt;*&gt;)</code>, or we can take <code class="haskell">r = (x, y)</code> and apply <code class="haskell">(,)</code> to get a <code class="haskell">tupling</code> function below.</p>
+<div class="Note">
+<p>Applicative functors can also be thought of as <em>lax monoidal functors</em> (between two monoidal categories), which come with an operation <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">tupling</mi><mo>⁡</mo><mo>:</mo><mi>f</mi><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>⊗</mo><mi>f</mi><mo stretchy="false">(</mo><mi>y</mi><mo stretchy="false">)</mo><mo>→</mo><mi>f</mi><mo stretchy="false">(</mo><mi>x</mi><mo>⊗</mo><mi>y</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\operatorname{tupling} : f(x) \otimes f(y) \to f (x \otimes y)</annotation></semantics></math></span>. (In the case of applicative functors, both <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo lspace="0em" rspace="0em">⊗</mo></mrow><annotation encoding="application/x-tex">{\otimes}</annotation></semantics></math></span> are the product <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo lspace="0em" rspace="0em">×</mo></mrow><annotation encoding="application/x-tex">{\times}</annotation></semantics></math></span>.)</p>
+<p>As we just said, it comes from the fact that a universal choice for the <code class="haskell">(x -&gt; y -&gt; r)</code> function is the tuple constructor: because that preserves information, any other choice factors through it.</p>
+</div>
+<h3 id="arrows">Arrows</h3>
+<p>We can formulate them differently. Instead of thinking of monads and applicatives as lax monoidal functors, we can think of them as <em>arrows</em>.</p>
+<p>As a warmup, a free category can be expressed as</p>
+<pre class="haskell"><code>data FreeCategory p i o where
+  Id :: FreeCategory p y y
+  -- Existential `y`
+  Compose :: p x y -&gt; FreeCategory p y z -&gt; FreeCategory p x z</code></pre>
+<p>(This is an analogous structure to the humble cons list, since it has the non-recursive structure <code class="haskell">p _ _</code> on the left and the recursion <code class="haskell">FreeCategory p _ _</code> on the right.)</p>
+<p>(Note that there’s some trickery around categories that are also profunctors here [indeed, profunctors with strength], that we will sidestep by only working in categories based on functions.)</p>
+<pre class="haskell"><code>newtype MonadArrow f i r = MonadArrow (i -&gt; f r)
+newtype FreeMonad f r = FreeMonad
+  (FreeCategory (MonadArrow f) Unit r)
+
+newtype ApplicativeArrow f i r = ApplicativeArrow (f (i -&gt; r))
+newtype FreeApplicative f r = FreeApplicative
+  (FreeCategory (ApplicativeArrow f) Unit r)</code></pre>
+<p>The “monad arrow” here is also known as the Kleisli category of the monad <code class="haskell">f</code>.</p>
+<p>It turns out that the “applicative arrow” is explained as a <a href="https://ncatlab.org/nlab/show/change+of+enriching+category">change of enriching category</a> (via <code class="haskell">f</code> being a lax monoidal functor), even though we are only going from Set (which is itself a Set-enriched category) back to a different Set-enriched category (whose arrows are <code class="haskell">f (i -&gt; r)</code>).</p>
+<div class="Key_Idea">
+<p>We can form an arrow to model the free selective applicative by using <code class="haskell">CaseTree</code> as our arrow type, as it already includes <code class="haskell">ApplicativeArrow</code>s as a special case (<code class="haskell">OneCase</code>).</p>
+<pre class="haskell"><code>type SelectiveArrow = CaseTree
+newtype FreeSelective f r = FreeSelective
+  (FreeCategory (SelectiveArrow f) Unit r)</code></pre>
+<p>However, it is nice to write out the cases like this, to really grasp how they model control flow for an applicative functor:</p>
+<pre class="haskell"><code>data ControlFlow f i r where
+  Action :: (f (i -&gt; r)) -&gt; ControlFlow f i r
+  Pure :: (i -&gt; r) -&gt; ControlFlow f i r
+  CaseFlow :: CaseTree (ControlFlow f Unit) i r -&gt; ControlFlow f i r
+  Sequencing :: ControlFlow f i x -&gt; ControlFlow f x r -&gt; ControlFlow f i r</code></pre>
+</div>
+<div class="Details">
+<p>One function that is important to convince ourselves that <code class="haskell">ControlFlow</code> really captures control flow, is this sequencing function, which distributes the remaining control flow across each branch of a <code class="haskell">CaseTree</code> (like a category – matching up output and input).</p>
+<pre class="haskell"><code>sequenceCaseTree ::
+  forall i j f r.
+    Functor f =&gt;
+  CaseTree (ControlFlow f Unit) i j -&gt;
+  ControlFlow f j r -&gt;
+  CaseTree (ControlFlow f Unit) i r</code></pre>
+<p>It is used to implement <code class="haskell">uncons (Sequencing _ _)</code>, which says that we can think of each <code class="haskell">ControlFlow</code> as starting with a <code class="haskell">CaseTree</code> if we want. (For <code class="haskell">Pure</code> and <code class="haskell">Action</code>, this is a single-branch case tree.)</p>
+<pre class="haskell"><code>uncons ::
+  forall f i r.
+    Functor f =&gt;
+  ControlFlow f i r -&gt;
+  CaseTree (ControlFlow f Unit) i r
+uncons (Pure ir) = OneCase (Pure (const ir))
+uncons (Action fir) = OneCase (Action (const &lt;$&gt; fir))
+uncons (CaseFlow cases) = cases
+uncons (Sequencing ab bc) =
+  sequenceCaseTree (uncons ab) bc</code></pre>
+<p>Finally, this tells us that we can split control flow over <code class="haskell">ControlFlow f (Either x y)</code> just like we do for <code class="haskell">CaseTree</code>.</p>
+<pre class="haskell"><code>bifurcate ::
+  forall x y i f r.
+    Functor f =&gt;
+  (i -&gt; Either x y) -&gt;
+  ControlFlow f x r -&gt;
+  ControlFlow f y r -&gt;
+  ControlFlow f i r
+bifurcate fg x y = CaseFlow $ TwoCases fg (uncons x) (uncons y)</code></pre>
+</div>
+<p>Notice that we can essentially inline <code class="haskell">CaseTree</code> into this data type too:</p>
+<pre class="haskell"><code>data ControlFlow f i r where
+  Action :: (f (i -&gt; r)) -&gt; ControlFlow f i r
+  Pure :: (i -&gt; r) -&gt; ControlFlow f i r
+  -- `j` is existential here
+  Sequencing :: ControlFlow f i j -&gt; ControlFlow f j r -&gt; ControlFlow f i r
+  Absurd :: (i -&gt; Void) -&gt; ControlFlow f i r
+  -- `x` and `y` are existential here
+  CaseBranch ::
+    (i -&gt; Either x y) -&gt;
+    ControlFlow f x r -&gt;
+    ControlFlow f y r -&gt;
+    ControlFlow f i r</code></pre>
+<p>However, this is not incredibly useful: a lot of forms of static analysis really want to deal with case branches at once, so they would need to detect <code class="haskell">CaseBranch</code> and re-gather all the branches up.</p>
+<p>Note that even if <code class="haskell">f</code> is the type of functor where you could statically analyze the values in it (e.g.&nbsp;<code class="haskell">List</code> as opposed to <code class="haskell">IO</code>), we are instantiating it with an unknown function type.</p>
+<div class="Details">
+<p>I say <em>unknown</em> function type here because even if you could technically analyze the first action in <code class="haskell">ControlFlow f i r</code> when <code class="haskell">i</code> is finite, the fact that <code class="haskell">Sequencing (Pure id) _</code> constructs another equivalent (equal?) <code class="haskell">ControlFlow f i r</code> where you can no longer analyze the first action on that basis (since it is now hidden behind an existential) means that you <em>should not</em>.</p>
+</div>
+<p>This hints to us that we can construct another type that consists of all the static information of <code class="haskell">ControlFlow</code>, forgetting all of the functions (as they are unanalyzable) and thus all of the types:</p>
+<pre class="haskell"><code>data FlowInfo f where
+  Info :: f () -&gt; FlowInfo f
+  Pure :: FlowInfo f
+  Sequencing :: FlowInfo f -&gt; FlowInfo f -&gt; FlowInfo f
+  Absurd :: FlowInfo f
+  CaseBranch :: FlowInfo f -&gt; FlowInfo f -&gt; FlowInfo f
+
+-- In fact, it is an ordinary ADT now
+data FlowInfo f
+  = Info (f ())
+  | Pure
+  | Sequencing (FlowInfo f) (FlowInfo f)
+  | Absurd
+  | CaseBranch (FlowInfo f) (FlowInfo f)</code></pre>
+<p>Notice how this looks like an untyped AST for a program now! We removed the existentials and the polymorphic recursion: it is the plainest of plain data types now.</p>
+<p>In fact, you might spy what it has turned into: it is a free semiring, or something close to it. (Specifically it should be a <a href="https://en.wikipedia.org/wiki/Near-semiring">near-semiring</a>.)</p>
+<pre class="haskell"><code>summarize :: NearSemiring m =&gt; (f () -&gt; m) -&gt; FlowInfo f -&gt; m
+summarize f2m (Info f) = f2m f
+summarize _ Pure = one
+summarize f2m (Sequencing l r) = summarize f2m l * summarize f2m r
+summarize _ Absurd = zero
+summarize f2m (CaseBranch l r) = summarize f2m l + summarize f2m r</code></pre>
+<div class="Details">
+<p>From the laws for a category, we know that <code class="haskell">Sequencing</code> should be associative. We also have that <code class="haskell">Sequencing (Pure id) f ~ f ~ Sequencing f (Pure id)</code> should all be equivalent. So once we forget the functions (by going from <code class="haskell">ControlFlow f i r</code> to <code class="haskell">FlowInfo f</code>), we need to treat <em>all</em> <code class="haskell">Pure :: FlowInfo f</code> as equivalent.<a href="#fn7" class="footnote-ref" id="fnref7" role="doc-noteref"><sup>7</sup></a> So <code class="haskell">Pure</code> is the identity for whatever operation we map <code class="haskell">Sequencing</code> to.</p>
+<p>Similarly we have that <code class="haskell">CaseBranch</code> is associative, and its identity is <code class="haskell">Absurd</code>.</p>
+<p>We <em>also</em> would like to have that <code class="haskell">CaseBranch</code> is commutative. The order of cases should not matter, since only one will be taken – in the monadic interpretation, at least. But we should be careful about making such strong determinations about what should and should not count, since that is what has led previous lines of reasoning about selective applicative functors astray. In particular, imposing this law on all instances would mean that a lot of useful instance derived from applicatives are not allowed.<a href="#fn8" class="footnote-ref" id="fnref8" role="doc-noteref"><sup>8</sup></a></p>
+<p>Finally, we have the matter of distributivity. It turns out that we should only have one sided distributivity: <code class="haskell">(x + y) * z = x * z + y * z</code>, which implies <code class="haskell">0 * z = 0</code>. (This is what makes it a near-semiring instead of a semiring.)</p>
+<p>The other side of distributivity is not easy to satisfy for programs, in particular. The distributivity laws above work well for programs, but the other direction does not apply so well:</p>
+<ul>
+<li><code class="haskell">0 * z = 0</code> means that anything <em>after</em> absurdity does not matter (it is not going to get run!), while <code class="haskell">z * 0 = 0</code> is suspect only because <code class="haskell">z</code> may have side effects that run before it gets to absurdity, which could be important to keep track of (especially if error recovery is a possibility).<a href="#fn9" class="footnote-ref" id="fnref9" role="doc-noteref"><sup>9</sup></a></li>
+<li><code class="haskell">(x + y) * z = x * z + y * z</code> says that control flow proceeds with the shared control flow after case branches, while <code class="haskell">z * (x + y) = z * x + z * y</code> would require unbounded backtracking.</li>
+</ul>
+<p>This makes sense, especially because we are encoding <em>determined</em> choice, where earlier results determine later control flow. We should not be surprised if an arrow of time occurs in our equations!</p>
+</div>
+<h4 id="arrow-transformer">Arrow transformer</h4>
+<p>You might note that weʼve barely been using <code class="haskell">f</code> here, just as a placeholder for a convenient arrow type. This suggests that we could formulate <code class="haskell">ControlFlow</code> as a arrow transformer, and require the right kind of arrow <code class="haskell">p</code> (a strong profunctor and category, at least) to make <code class="haskell">ControlFlowT p</code> behave as we want.</p>
+<pre class="haskell"><code>data ControlFlowT p i r where
+  Action :: p i r -&gt; ControlFlow f i r
+  Pure :: (i -&gt; r) -&gt; ControlFlow f i r
+  Sequencing :: ControlFlow f i j -&gt; ControlFlow f j r -&gt; ControlFlow f i r
+  Absurd :: (i -&gt; Void) -&gt; ControlFlow f i r
+  CaseBranch ::
+    (i -&gt; Either x y) -&gt;
+    ControlFlow f x r -&gt;
+    ControlFlow f y r -&gt;
+    ControlFlow f i r</code></pre>
+<p>I have not thought about this much.</p>
+<h3 id="alternative">Alternative</h3>
+<p>Finally it is time to address the elephant in the room: what does this have to do with <code class="haskell">&lt;|&gt;</code> from <code class="haskell">Alternative</code>?</p>
+<p>As I mentioned in the overview, <code class="haskell">(&lt;|&gt;) :: f x -&gt; f x -&gt; f x</code> (alternatively: <code class="haskell">f x -&gt; f y -&gt; f (Either x y)</code>) is a combinator for nondeterministic choice, where the combinator itself does not give any information about which branch to take, it is completely up to the implementation.</p>
+<p>The main examples of this are <code class="haskell">LogicT</code> (a monad transformer that encodes nondeterminism, layering <code class="haskell">List</code> semantics on top of another monad), and parser combinator transformers, the simplest of which would be a hypothetical <code class="haskell">ParserT</code>. You can think of the basic monads <code class="haskell">Maybe</code>, <code class="haskell">Either</code>, <code class="haskell">List</code> as simplifications of these ideas.</p>
+<pre class="haskell"><code>newtype ParserT m a =
+  ParserT { unParserT :: String -&gt; m (Either Bool (String, a)) }
+
+instance Functor m =&gt; Alt (ParserT m) where
+  ParserT l &lt;|&gt; ParserT r = ParserT \input -&gt; do
+    parsedL &lt;- l input
+    case parsedL of
+      Right parsed -&gt;
+        pure parsed
+      Nothing -&gt;
+        -- This encodes backtracking: restarting on the same input
+        -- But usually parser combinators check that the input was
+        -- not consumed at all, and use a combinator to enable
+        -- backtracking in those cases.
+        r input
+
+--------------------
+
+newtype LogicT m a =
+  LogicT { unLogicT :: forall r. (a -&gt; m r -&gt; m r) -&gt; m r -&gt; m r }
+
+instance Functor m =&gt; Alt (LogicT m) where
+  LogicT l &lt;|&gt; LogicT r = LogicT \cons nil -&gt;
+    l cons (r cons nil)
+
+observeAllT :: Applicative m =&gt; LogicT m a -&gt; m [a]
+
+observeManyT :: Monad m =&gt; Int -&gt; LogicT m a -&gt; m [a]</code></pre>
+<p><code class="haskell">ParserT</code> is the most important example of the usefulness of <code class="haskell">&lt;|&gt;</code>, where even something as simple as taking different actions based on different characters of input is encoded using <code class="haskell">&lt;|&gt;</code>.</p>
+<p><code class="haskell">LogicT</code> is a monad transformer with pervasive backtracking, modeling nondeterminism of the kind “run every possible computation to find every possible result”, essentially. It can also be lazily explored with <a href="https://hackage-content.haskell.org/package/logict-0.8.2.0/docs/Control-Monad-Logic.html#v:observeManyT"><code class="haskell">observeManyT</code></a>, to only obtain the first few results.</p>
+<p>Still, the common theme is that to obtain even one successful result, backtracking deeply through the computation may be necessary.</p>
+<p>Because they are both monads, they support: <code class="haskell">f (Maybe x) -&gt; f x</code>, via <code class="haskell">(_ &gt;&gt;= maybe empty pure)</code>. This operation makes sense in some applicatives, too, but it needs a specialized implementation. So generally we will talk about <a href="https://hackage.haskell.org/package/witherable-0.5/docs/Witherable.html#v:mapMaybe"><code class="haskell">mapMaybe :: (x -&gt; Maybe y) -&gt; f x -&gt; f y</code></a>.</p>
+<p>Indeed, we want to talk about structures on applicative functors simply because <code class="haskell">ParserT</code> and <code class="haskell">LogicT</code> have no capability for static analysis, as they are monads. So can we combine <code class="haskell">mapMaybe</code> and <code class="haskell">&lt;|&gt;</code> to get an explanation of <code class="haskell">select</code>, <code class="haskell">branch</code>, and so on?</p>
+<p>The answer is yes: If we have an applicative parser <em>without</em> other side effects (i.e.&nbsp;<code class="haskell">m = Identity</code>) and with enough backtracking, we could encode determined choice via nondeterministic choice.</p>
+<pre class="haskell"><code>selectLeft :: Filterable f =&gt; f (Either x y) -&gt; f x
+selectLeft = mapMaybe \case
+  Left x -&gt; Just x
+  Right _ -&gt; Nothing
+selectRight :: Filterable f =&gt; f (Either x y) -&gt; f y
+selectRight = mapMaybe \case
+  Left _ -&gt; Nothing
+  Right y -&gt; Just y
+
+branch :: Applicative f =&gt; Filterable f =&gt; f (Either x y) -&gt; f (x -&gt; r) -&gt; f (y -&gt; r) -&gt; f r
+branch determiner leftCase rightCase =
+  liftA2 (&amp;) (selectLeft determiner) leftCase
+    &lt;|&gt;
+  liftA2 (&amp;) (selectRight determiner) rightCase
+-- ^ This easily generalizes to n-ary branches, unlike `branch` itself</code></pre>
+<p>Because this duplicates <code class="haskell">determiner</code>, it would only be safe for things like <code class="haskell">ParserT Identity</code> which does not have observable side effects from failed branches.<a href="#fn10" class="footnote-ref" id="fnref10" role="doc-noteref"><sup>10</sup></a> And it requires backtracking all the way back to before <code class="haskell">determiner</code> to even catch a <code class="haskell">Right</code> case out of it, which is something that parser combinators generally avoid for efficiency (for good reason!).</p>
+<p>However, this makes sense for LR parser combinators (yes those are a thing! they are necessarily applicative parsers and not monadic). All of the backtracking is resolved ahead of time in LR parser combinators, thanks to the powers of static analysis. It just requires the capability to prune branches at runtime for <code class="haskell">mapMaybe</code>, which not all LR parsers support.</p>
+<p>And importantly: despite the fact that the branching can be explained via <code class="haskell">&lt;|&gt;</code> and <code class="haskell">mapMaybe</code>, it is also incredibly useful to have information about <code class="haskell">CaseTree</code>, because that can be used to help ensure that the parser is not ambiguous.</p>
+<p>Finally, it is interesting to note that <code class="haskell">Alternative</code> functors have also been explained as categorified near-semirings (and thus support static analysis via near-semirings): <a href="https://people.cs.kuleuven.be/~tom.schrijvers/Research/papers/ppdp2015.pdf">From monoids to near-semirings: the essence of <code class="haskell">MonadPlus</code> and <code class="haskell">Alternative</code></a> by Exequiel Rivas, Mauro Jaskelioff, and Tom Schrijvers explains the typeclass laws, free constructions, and Cayley constructions (à la difference lists) from this perspective.<a href="#fn11" class="footnote-ref" id="fnref11" role="doc-noteref"><sup>11</sup></a></p>
+<p>So the conclusion is that the branching structures of <code class="haskell">Alternative</code> and <code class="haskell">Selective</code> are closely related, but not identical. The <code class="haskell">Alternative</code> can be thought of as a functor with nondeterministic branching, while <code class="haskell">Selective</code> needs to be explained via arrows to encode finite deterministic branching. They both allow retaining the structure of branches as independent from the sequential structure, and the selective structure can be encoded via <code class="haskell">&lt;|&gt;</code> and <code class="haskell">mapMaybe</code> in some well-behaved cases.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>Selective applicative functors are all about control flow with determined choice: the result of previous actions will determine which branch should be taken. In order to keep track of which branches are exclusive from each other, and to explain it via tensors, we have to explain it as a theory of <em>arrows</em>, not of functors. This is useful for tracking or preventing ambiguity during parsing, as one example.</p>
+<details class="Details">
+<summary>
+Definition
+</summary>
+<pre class="haskell"><code>data CaseTree f i r where
+  TwoCases ::
+    -- How to split the input into data for each case
+    -- (Note that `x` and `y` are existential here!)
+    (i -&gt; Either x y) -&gt;
+    -- Control flow for the `Left` case
+    (CaseTree f x r) -&gt;
+    -- Control flow for the `Right` case
+    (CaseTree f y r) -&gt;
+    CaseTree f i r
+  -- One static effect
+  OneCase :: (f (i -&gt; r)) -&gt; CaseTree f i r
+  -- Represent an empty case branching
+  ZeroCases :: (i -&gt; Void) -&gt; CaseTree f i r
+
+-- Typeclass, subject to some laws
+class Casing f where
+  caseTreeOn :: forall i r. f i -&gt; CaseTree f i r -&gt; f r
+
+-- Free structure
+data ControlFlow f i r where
+  Action :: (f (i -&gt; r)) -&gt; ControlFlow f i r
+  Pure :: (i -&gt; r) -&gt; ControlFlow f i r
+  CaseFlow :: CaseTree (ControlFlow f Unit) i r -&gt; ControlFlow f i r
+  -- `j` is existential here
+  Sequencing :: ControlFlow f i j -&gt; ControlFlow f j r -&gt; ControlFlow f i r
+
+-- Alternative formulation of the free structure
+data ControlFlow f i r where
+  Action :: (f (i -&gt; r)) -&gt; ControlFlow f i r
+  Pure :: (i -&gt; r) -&gt; ControlFlow f i r
+  -- `j` is existential here
+  Sequencing :: ControlFlow f i j -&gt; ControlFlow f j r -&gt; ControlFlow f i r
+  Absurd :: (i -&gt; Void) -&gt; ControlFlow f i r
+  -- `x` and `y` are existential here
+  CaseBranch ::
+    (i -&gt; Either x y) -&gt;
+    ControlFlow f x r -&gt;
+    ControlFlow f y r -&gt;
+    ControlFlow f i r</code></pre>
+</details>
+<p>Despite requiring slightly more involved concepts to explain (arrows and existential types), it solidifies into a structure that looks like ordinary control flow constructs that one might write in an AST for a programming language. You can think of the applicative functor <code class="haskell">f</code> as denoting the boundary between the ahead-of-time information available on the outside and the runtime information available to the functions <code class="haskell">(i -&gt; r)</code> on the inside at each step of the computation.</p>
+<p>The requirements of selective applicative functors are intentionally flexible, to allow it to be implemented in varied ways: applicatives for simple composable sequencing and staging of effects, monads for efficient execution and flexibility, near-semirings for static analysis, with the selective applicative structure as a common meeting ground for all of it.</p>
+<div class="Details" data-box-name="Laws">
+<p>Selective applicative structures derived from applicative instances only satisfy. We might call this “raw control flow”, as it exposes the particular branching structure it was constructed with (order of cases, exact interleaving of sequencing vs branching, and so on).</p>
+<ul>
+<li>Multiplicative associativity: <code class="haskell">Sequencing (Sequencing f g) h = Sequencing f (Sequencing g h)</code></li>
+<li>Multiplicative identity: <code class="haskell">Sequencing (Pure id) f = f = Sequencing f (Pure id)</code></li>
+<li>Additive associativity: <code class="haskell">TwoCases id cx (TwoCases id cy cz) = TwoCases assoc (TwoCases id cx cy) cz</code></li>
+<li>Additive identity: <code class="haskell">TwoCases Left cx (ZeroCases absurd) = cx = TwoCases Right (ZeroCases absurd) cx</code></li>
+</ul>
+<hr>
+<p>Better behaved instances (including those derived from monads, or constant functors of near-semirings) follow the structure of a near-semiring, to model control flow more precisely.</p>
+<ul>
+<li>Right distributivity: <code class="haskell">Sequencing (CaseBranch split cx cy) g = CaseBranch split (Sequencing cx g) (Sequencing cy g)</code></li>
+<li>Left absorbing element: <code class="haskell">Sequencing (Absurd absurd) g = Absurd absurd</code></li>
+<li>Optionally, (additive) commutativity: <code class="haskell">TwoCases id cx cy = TwoCases swap cx cy</code></li>
+<li>Optionally, additive idempotence: <code class="haskell">CaseBranch id cx cx = lcmap collapse cx</code></li>
+</ul>
+</div>
+<p>Next time we will study the theory of these functors from the other side: basic examples, how they compose, what would be a good syntax for them. Eventually we will look at some applications of selective applicative functors in depth, and maybe discuss what the future of functorial and arrow-like structures are: sequencing (monads and categories) and parallelism (applicatives), exclusive determined choice (selectives), nondeterministic choice (alternatives), and <a href="https://www.cs.ox.ac.uk/jeremy.gibbons/publications/phases.pdf">staging</a> (functor composition). Can they all fit into one syntax? I mean, why not??</p>
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn1"><p><code class="haskell">select</code> itself has an implicit <code class="haskell">pure</code> branch with no side-effects, where <code class="haskell">branch</code> has two branches.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn2"><p>The reason it does not have a <code class="haskell">Monad</code> instance at all is because it would not be compatible with the much more compelling <code class="haskell">Applicative</code> instance.<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn3"><p>Of course particular applicative functors can have interesting control flow themselves, via combinators other than <code class="haskell">&lt;*&gt;</code>.<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn4"><p>in two ways, see the difference between braided monoidal categories and symmetric monoidal categories<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn5"><p>Which I have seen a couple times<a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn6"><p>at least not with nice properties<a href="#fnref6" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn7"><p>From a computational point of view, this is because we allow arbitrary type shuffling, while still treating them as trivial <em>programs</em> from the point of view of the computation that <code class="haskell">f</code> encodes.<a href="#fnref7" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn8"><p>Note that for rings, and semirings with additive cancelation, commutativity of addition follows form two-sided distributivity, but this is not an issue for near-semirings as they only have one-sided distributivity.<a href="#fnref8" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn9"><p>The functor result does not matter, since it is coming from absurdity!<a href="#fnref9" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn10"><p>Strictly speaking, you could have idempotent effects: <code class="haskell">f *&gt; f = f</code>.<a href="#fnref10" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn11"><p>Note that we could product a similar datatype for <code class="haskell">CaseTree</code> and <code class="haskell">ControlFlow</code>, that is a right-associated free construction with an efficient Cayley construction, but in the case of determined choice, this would turn binary search of the case tree into linear search, compromising efficiency.<a href="#fnref11" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>]]></description>
+</item>
+<item>
 <title>Simple Local Nginx Config</title>
 <pubDate>Mon, 04 Aug 2025 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/simple_nginx.html</guid>
@@ -117,7 +641,7 @@ http {
 </item>
 <item>
 <title>Quapteryx Takes Flight!</title>
-<pubDate>Tue, 19 Aug 2025 00:00:00 +0000</pubDate>
+<pubDate>Mon, 29 Dec 2025 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/quapteryx5.html</guid>
 <description><![CDATA[<style>#TOC {display: none;}</style>
 <details open="" style="margin-bottom: 1em" class="Example">
@@ -2883,9 +3407,12 @@ document.body.innerHTML=o</code></pre>
 </item>
 <item>
 <title>Monoids in Public</title>
-<pubDate>Wed, 18 Sep 2024 00:00:00 +0000</pubDate>
+<pubDate>Wed, 03 Dec 2025 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/monoids_in_public.html</guid>
-<description><![CDATA[<h2 id="vdom-trees-as-monoids">VDOM trees as monoids</h2>
+<description><![CDATA[<div class="Note">
+<p>It is a weird historical quirk that Haskell/PureScript call the symmetric operation <code class="purescript">(&lt;&gt;) :: m -&gt; m -&gt; m</code> by the name of “append”. Most of the world reserves append and prepend for the asymmetric operations shaped like <code class="purescript">List t -&gt; t -&gt; List t</code> and <code class="purescript">t -&gt; List t -&gt; t</code>, respectively, and call <code class="purescript">(&lt;&gt;)</code> by the name of “concatenation” (literally meaning “<a href="https://en.wiktionary.org/wiki/concatenate">chaining together</a>”). That is pretty clearly a better convention, but I will still use the Haskell convention in this article.</p>
+</div>
+<h2 id="vdom-trees-as-monoids">VDOM trees as monoids</h2>
 <p class="dated">
 2023/11/15
 </p>
@@ -3211,8 +3738,238 @@ estimatedComplexity = unComplexity &lt;&lt;&lt; visit' case _ of
 <li><a href="https://github.com/id3as/purescript-backend-erl/blob/703361c61b5848de1b8e4cb894cc8f2307618d4e/src/PureScript/Backend/Erl/Syntax.purs#L253-L261" class="uri">https://github.com/id3as/purescript-backend-erl/blob/703361c61b5848de1b8e4cb894cc8f2307618d4e/src/PureScript/Backend/Erl/Syntax.purs#L253-L261</a></li>
 <li><a href="https://github.com/id3as/purescript-backend-erl/blob/703361c61b5848de1b8e4cb894cc8f2307618d4e/src/PureScript/Backend/Erl/Syntax.purs#L310-L352" class="uri">https://github.com/id3as/purescript-backend-erl/blob/703361c61b5848de1b8e4cb894cc8f2307618d4e/src/PureScript/Backend/Erl/Syntax.purs#L310-L352</a></li>
 </ul>
+<h2 id="monoids-and-applicatives-on-lists">Monoids (and Applicatives) on Lists</h2>
+<p class="dated">
+2025/12/03
+</p>
+<p>I think it is good to recognize the diversity of useful instances we can have for even the familiar <a href="https://pursuit.purescript.org/packages/purescript-lists/7.0.0/docs/Data.List.Types#t:List"><code class="purescript">List</code></a> functor (and its isomorphic types: arrays, vectors, whatever you want to call things). Here I have five instances that I have come across – weʼll be talking about <a href="https://pursuit.purescript.org/packages/purescript-prelude/6.0.2/docs/Data.Semigroup#t:Semigroup"><code class="purescript">Semigroup</code></a>s and <a href="https://pursuit.purescript.org/packages/purescript-prelude/6.0.2/docs/Data.Monoid#t:Monoid"><code class="purescript">Monoid</code></a>s, but also the analogous <a href="https://pursuit.purescript.org/packages/purescript-prelude/6.0.2/docs/Control.Apply#t:Apply"><code class="purescript">Apply</code></a> and <a href="https://pursuit.purescript.org/packages/purescript-prelude/6.0.2/docs/Control.Applicative#t:Applicative"><code class="purescript">Applicative</code></a> structures for functors, and <a href="https://pursuit.purescript.org/packages/purescript-these/6.0.0/docs/Data.Align#t:Align"><code class="purescript">Align</code></a> too.</p>
+<h3 id="free-monoid">Free Monoid</h3>
+<p>The free monoid instance is <em>good</em>, it is the default instance for lists and arrays for good reason, you want to be able to concatenate them easily…</p>
+<pre class="purescript"><code>data List t
+  = Nil
+  | Cons t (List t)
+instance Monoid (List t) where
+  mempty = Nil
+instance Semigroup (List t) where
+  append Nil rs = rs
+  append (Cons l ls) rs = Cons l (append ls rs)
+
+derive instance Functor List
+derive instance Foldable List
+
+type FreeMonoid = List</code></pre>
+<div class="Bonus">
+<p>The <code class="purescript">Foldable</code> instance is interesting: <a href="https://pursuit.purescript.org/packages/purescript-foldable-traversable/6.0.0/docs/Data.Foldable#v:foldMap"><code class="purescript">foldMap</code></a> gives the universal action of <code class="purescript">List</code> as a free monoid: you can coherently interpret it as any other monoid, in a way that is compatible with <code class="purescript">Monoid (List t)</code>. The other structures weʼll talk about can also have <code class="purescript">Foldable</code> instances, but they wonʼt be compatible with the <code class="purescript">Monoid</code> instance.</p>
+</div>
+<p>… but I think it makes us overlook lots of other monoid instances!</p>
+<h3 id="short-zip-list">(Short) Zip List</h3>
+<p>So, okay, the next instance that comes up is the <em>zip list</em> instance. The structure we should be talking about here is <code class="purescript">Applicative</code>/<code class="purescript">Apply</code> (which is <code class="purescript">Applicative</code> without the identity <code class="purescript">pure :: forall t. t -&gt; f t</code>, only having <code class="purescript">(&lt;*&gt;)</code>). We can lift semigroups through apply, and monoids through applicatives, via <code class="purescript">append = lift2 append</code> and <code class="purescript">mempty = pure mempty</code>.</p>
+<p>The zip list is <em>not</em> a monoid when presented as a strict datatype (least fixed point): only when presented as a lazy datatype does it become a greatest fixed point, allowing you to implement the identity, which needs to be an infinite ziplist of <code class="purescript">mempty</code>.</p>
+<pre class="purescript"><code>-- A finite / strict zip list ...
+data FiniteZipList t
+  = FiniteZipNil
+  | FiniteZipCons t (FiniteZipList t)
+derive instance Functor FiniteZipList
+
+-- ... is only a semigroup
+instance Semigroup t =&gt; Semigroup (FiniteZipList t) where
+  append = lift2 (append :: t -&gt; t -&gt; t)
+instance Apply FiniteZipList where
+  -- Nil is now an annihilator, not the identity
+  apply FiniteZipNil _ = FiniteZipNil
+  apply _ FiniteZipNil = FiniteZipNil
+  apply (FiniteZipCons l ls) (FiniteZipCons r rs) =
+    FiniteZipCons (l $ r) (apply ls rs)
+
+-- *Potentially* infinite zip list, thanks to laziness
+data LazyZipList t
+  = LazyZipNil
+  | LazyZipCons t (Lazy (LazyZipCons t))
+derive instance Functor LazyZipList
+
+instance Semigroup t =&gt; Semigroup (LazyZipList t) where
+  append LazyZipNil _ = LazyZipNil
+  append _ LazyZipNil = LazyZipNil
+  append (LazyZipCons l ls) (LazyZipCons r rs) =
+    LazyZipCons (l &lt;&gt; r) (append ls rs)
+      -- this uses `Monoid m =&gt; Monoid (Lazy m)`,
+      -- which forces both sides when forced
+      -- (since `Monoid` is strict, we cannot do any
+      -- better in PureScript)
+instance Apply (LazyZipList t) where
+  apply LazyZipNil _ = LazyZipNil
+  apply _ LazyZipNil = LazyZipNil
+  apply (LazyZipCons l ls) (LazyZipCons r rs) =
+    LazyZipCons (l $ r) (lift2 apply ls rs)
+      -- here we have to lift it through `Lazy` manually
+
+-- Produce an infinite list of the same value
+instance Applicative (LazyZipList t) where
+  pure t = FiniteZipCons t
+    -- We can recurse only under `defer`, due to strictness
+    $ defer $ \_ -&gt; pure t
+-- Giving us our monoid identity too
+instance Monoid t =&gt; Monoid (LazyZipList t) where
+  mempty = pure (mempty :: t)</code></pre>
+<p>This is intimately related to the fact that <code class="purescript">Map k</code> only comes with an <code class="purescript">Apply</code> instance, no <code class="purescript">Applicative</code>: <code class="purescript">Apply (Map Natural)</code> could be reimplemented via <code class="purescript">Apply (Compose FiniteZipList Maybe)</code> and also suffers from the need for an infinite identity. The <code class="purescript">Monoid (Map Natural)</code> instance uses a different combination pattern which <em>does</em> have an identity in the empty <code class="purescript">Map</code>, which we will talk about shortly.</p>
+<h3 id="cartesian-product">Cartesian Product</h3>
+<p>While we are talking about <code class="purescript">Applicative</code>s, <code class="purescript">List</code> already comes with an <code class="purescript">Applicative</code> instance: the cartesian product! (This <code class="purescript">Applicative</code> instance extends to a <code class="purescript">Monad</code>, unlike the <code class="purescript">ZipList</code> one.)</p>
+<p>We already have an instance for this: it is <a href="https://pursuit.purescript.org/packages/purescript-functors/5.0.0/docs/Data.Functor.App"><code class="purescript">App List m</code></a>, which has the semigroup and monoid instances given by lifting:</p>
+<pre class="purescript"><code>type CartesianListMonoid = App List
+
+instance semigroupApp :: (Apply f, Semigroup a) =&gt; Semigroup (App f a) where
+  append (App fa1) (App fa2) = App (lift2 append fa1 fa2)
+
+instance monoidApp :: (Applicative f, Monoid a) =&gt; Monoid (App f a) where
+  mempty = App (pure mempty)</code></pre>
+<p>To be honest though, this specific monoid instance <code class="purescript">Monoid m =&gt; CartesianListMonoid m</code> <strong>rarely</strong> comes up in practice. It is vaguely related to nondeterminism / probability monads, you could use it to tabulate tables I guess, but most of the time you either want to work with actual data using <code class="purescript">&lt;*&gt;</code>, or you want to preserve the structure of the indices (separate rows/columns) that is lost when taking the Cartesian product.</p>
+<h3 id="long-zip-list"><em>Long</em> Zip List</h3>
+<p>Alright, we had the (short) zip list, but what about a looong zip list??</p>
+<p>The previous zip list operated by truncating to the shorter list, but if we are just doing a monoid combine, why not take the other available side like <code class="purescript">Maybe</code> does? And in a twist of duality, the <em>long</em> zip list has an identity of the empty list again, unlike the infinite list we needed for the identity of the short zip list.</p>
+<p>This is related to the analogy between <code class="purescript">Apply (Map Natural)</code> and <code class="purescript">Apply (Compose FiniteZipList Maybe)</code> that we talked about above: itʼs kind of the other side of it, seeing <code class="purescript">Monoid (Map Natural m)</code> as operating on contiguous elements in <code class="purescript">Monoid (LongZip m)</code> (i.e.&nbsp;some of the <code class="purescript">Maybe</code>ness has been removed).</p>
+<pre class="purescript"><code>data LongZip t
+  = ShortLong
+  | LongGoing t (LongZip t)
+
+instance Semigroup t =&gt; Semigroup (LongZip t) where
+  append ShortLong rs = rs
+  append ls ShortLong = ls
+  -- Notice that this case is the same as `ZipList`!
+  append (LongGoing l ls) (LongGoing r rs) =
+    LongGoing (l &lt;&gt; r) (ls &lt;&gt; rs)
+instance Semigroup t =&gt; Monoid (LongZip t) where
+  mempty = ShortLong</code></pre>
+<p>The tragedy here is that there is not an <code class="purescript">Apply</code> instance to induce this <code class="purescript">Semigroup</code>: since the operands are of different types, you cannot produce <code class="purescript">LongGoing</code> once you see <code class="purescript">ShortLong</code> on either side of <code class="purescript">&lt;*&gt;</code>.</p>
+<div class="Bonus">
+<p>The resolution here is to consider it not as a lax monoidal functor from monoidal categories of <code class="purescript">Tuple</code> to <code class="purescript">Tuple</code>, but from <a href="https://pursuit.purescript.org/packages/purescript-these/6.0.0/docs/Data.These#t:These"><code class="purescript">These</code></a> to <code class="purescript">Tuple</code>.</p>
+<p>This is given by the <a href="https://pursuit.purescript.org/packages/purescript-these/6.0.0/docs/Data.Align#t:Align"><code class="purescript">Align</code></a> class, which gives you <code class="purescript">curry aligned :: Tuple (f x) (f y) -&gt; f (These x y)</code> instead of <code class="purescript">curry (lift2 Tuple) :: Tuple (f x) (f y) -&gt; f (Tuple x y)</code>.</p>
+<p>(Yes, the source tensor <code class="purescript">These</code> appears in the function <em>output</em>, cuz it is inside the <code class="purescript">f</code> there.)</p>
+<p>Once you get to <code class="purescript">These m m</code> for a <code class="purescript">Monoid m</code>, the natural way to collapse it into <code class="purescript">m</code> is given by</p>
+<pre class="purescript"><code>collapse :: These m m -&gt; m
+collapse (This l) = l
+collapse (That r) = r
+collapse (Both l r) = l &lt;&gt; r</code></pre>
+<p>So we have re-explained how <code class="purescript">Semigroup (LongZip t)</code> arises out of a lax monoidal functor, just for a different shape of lax monoidal functor.</p>
+</div>
+<p><em>Ironically</em>, I came across this instance in a paper about applicative functors!</p>
+<p>Jeremy Gibbons <span data-t="" data-widget="">et al.</span> used this shape of appending operation in <a href="https://www.cs.ox.ac.uk/jeremy.gibbons/publications/phases.pdf">Phases in Software Architecture</a> to allow for arbitrarily many phases of applicatives, where phases are added as needed. Their <code class="haskell">Phases</code> is a lifted version of <code class="purescript">LongZip</code>, operating via the Day convolution, but using the same shape of appending.</p>
+<pre class="haskell"><code>data Phases m a where
+  Pure :: a → Phases m a
+  Link :: (a → b → c) → m a → Phases m b → Phases m c
+
+instance Applicative m ⇒ Applicative (Phases m) where
+  pure x = Pure x
+  Pure f &lt;*&gt; xs = fmap f xs
+  fs &lt;*&gt; Pure x = fmap (λf → f x) fs
+  Link f xs ys &lt;*&gt; Link g zs ws = Link h (xs ⊗ zs) (ys ⊗ ws)
+  where h (x, z) (y, w) = (f x y) (g z w)</code></pre>
+<p>They could have used something shaped like <code class="haskell">Map k</code> with any orderable key type, but encoding that via the Day convolution sounds like a pain. Phil Freeman used row types to make a type safe tensoring of arbitrary functors in <a href="https://pursuit.purescript.org/packages/purescript-smash/3.0.0"><code>purescript-smash</code></a>, though the implementation of the safe API uses unsafe functions. (This was intended for <a href="https://blog.functorial.com/posts/2016-08-07-Comonads-As-Spaces.html">Comonads as Spaces</a>, not for applicatives, though the Day convolution is a useful construction for both.)</p>
+<h3 id="overlapping-append">Overlapping Append</h3>
+<p>Finally, we have a monoid that popped up in something I was coding. I will present the monoid first (it is actually self-contained), and then explain how it came about later.</p>
+<p>This monoid acts like our standard free-monoid concatenation, except for the fact that the tail of the first list gets merged with the head of the second list. That is, they are concatenated with one element of overlap, while the remaining elements still spill out to the left and right as normal.</p>
+<pre class="purescript"><code>-- A monoid (with suggestive names) that overlaps elements by one when appending
+data MatchTrack m
+  = NoMatch
+  | MatchTrack m (MatchTrack m)
+
+-- First we implement `Monoid (MatchTrack m)`
+instance Monoid m =&gt; Monoid (MatchTrack m) where
+  mempty = NoMatch
+-- This appends the lists together with *one* element of overlap
+instance Semigroup m =&gt; Semigroup (MatchTrack m) where
+  append NoMatch r = r
+  append l NoMatch = l
+  append (MatchTrack trySome NoMatch) (MatchTrack more remaining) =
+    MatchTrack (trySome &lt;&gt; more :: m) remaining
+  append (MatchTrack priority trailing) r =
+    MatchTrack priority (trailing &lt;&gt; r :: MatchTrack m)</code></pre>
+<p>We can actually factor the identity <code class="purescript">NoMatch</code> out of this, recovering <code class="purescript">MatchTrack m</code> as <code class="purescript">Maybe (Overlapping m)</code>.</p>
+<pre class="purescript"><code>data Overlapping m
+  = Overtail m
+  | Overlap m (Overlapping m)
+
+instance Semigroup m =&gt; Semigroup (Overlapping m) where
+  -- Two singletons append to a singleton
+  append (Overtail l) (Overtail r) = Overtail (l &lt;&gt; r)
+  -- Overlap the tail of one with the head of the next
+  append (Overtail l) (Overlap r rs) = Overlap (l &lt;&gt; r) rs
+  -- Plop the head of the first in front of appending the rest
+  append (Overlap l ls) rs = Overlap l (ls &lt;&gt; rs)
+
+-- This _inherits_ an identity
+instance Monoid m =&gt; Monoid (Overlapping m) where
+  mempty = Overtail mempty</code></pre>
+<p>Iʼm sure that many more patterns of overlapping are possible: choosing any fixed amount of overlap can work as well (“overlap up to two elements of lists”), but maybe the lists themselves can specify how much overlap they want?</p>
+<details class="Details">
+<summary>
+More overlap
+</summary>
+<p>This seems to work out alright? Passes QuickCheck</p>
+<p>I think it only generalizes the overlap of one element, not the overlap of always two elements, though.</p>
+<pre class="purescript"><code>type Overlap = List
+data CustomOverlap t
+  = CustomOverlap
+    { overlapFront :: Overlap t
+    , inner :: List t
+    , overlapRear :: Overlap t
+    }
+  | JustOverlap (List t)
+
+forget :: forall t. CustomOverlap t -&gt; List t
+forget (JustOverlap items) = items
+forget (CustomOverlap sections) =
+  sections.overlapFront &lt;&gt; sections.inner &lt;&gt; sections.overlapRear
+
+instance Semigroup t =&gt; Semigroup (CustomOverlap t) where
+  -- We need to handle empty lists explicitly,
+  -- otherwise they do not form the identity
+  append (JustOverlap Nil) rs = rs
+  append ls (JustOverlap Nil) = ls
+  append (JustOverlap ls) (JustOverlap rs) =
+    case compare (length ls) (length rs) of
+      -- If they line up exactly, we can merge them exactly
+      EQ -&gt; JustOverlap (zipWith (&lt;&gt;) ls rs)
+      -- Otherwise we merge their overlap and the longer one hangs out
+      LT -&gt; CustomOverlap
+        { overlapFront: zipWith (&lt;&gt;) ls (take (length ls) rs)
+        , inner: Nil
+        , overlapRear: drop (length ls) rs
+        }
+      GT -&gt; CustomOverlap
+        { overlapFront: dropEnd (length rs) ls
+        , inner: Nil
+        , overlapRear: zipWith (&lt;&gt;) (takeEnd (length rs) ls) rs
+        }
+  append (JustOverlap overlapRear) rs =
+    append (CustomOverlap { overlapFront: Nil, inner: Nil, overlapRear }) rs
+  append ls (JustOverlap overlapFront) =
+    append ls (CustomOverlap { overlapFront, inner: Nil, overlapRear: Nil })
+  append (CustomOverlap ls) (CustomOverlap rs) =
+    CustomOverlap
+      { overlapFront: ls.overlapFront
+      , inner: ls.inner &lt;&gt; forget (
+          JustOverlap ls.overlapRear &lt;&gt; JustOverlap rs.overlapFront
+        ) &lt;&gt; rs.inner
+      , overlapRear: rs.overlapRear
+      }
+instance Semigroup t =&gt; Monoid (CustomOverlap t) where
+  mempty = JustOverlap mempty</code></pre>
+</details>
+<h4 id="how-it-came-about">How it came about</h4>
+<p>I had an idea to capture Parsec-style parser combinators (“monadic” or “recursive descent” style) in a data structure reminiscent of the <a href="https://blog.functorial.com/posts/2016-08-07-Comonads-As-Spaces.html">Comonads as Spaces</a> method. Where the (almost-)comonad will encode the parser as an infinite lazy data structure, and the method of “walking around the space” is given by feeding in tokens to process and looking them up in the structure, one layer at a time.</p>
+<p>You can view the full code here, with the monoid of interest highlighted: <a href="https://gist.github.com/MonoidMusician/b8ce75f012a4008f7904cde941a7fcba#file-parsemachine-hs-L235-L241" class="uri">https://gist.github.com/MonoidMusician/b8ce75f012a4008f7904cde941a7fcba#file-parsemachine-hs-L235-L241</a></p>
+<p>One of the essential ingredients is also a kind of phasing, like the previous section on phases of programs via applicative functors. We want to capture all of the parsing of a token in a single layer, but the parser is allowed to backtrack, and the parser is allowed to have fallback behavior other than failure, too.</p>
+<p>So we have a <code class="haskell">Map tok _path</code> of the tokens we know we can handle, along with possibly a plain fallback <code class="haskell">_path</code>, and then we have a <em>list</em> of all of this: a data type like <code class="haskell">[(Map tok _path, Maybe _path)]</code> but with a funky funky monoid instance (used when you call <code class="haskell">&lt;|&gt;</code> to combine two parsers).</p>
+<p><em>Technically</em> we could get by without <code class="haskell">MatchTrack</code>, but that would mean that we are always backtracking, which changes the semantics of the parser, hurts efficiency, and means that the <code class="haskell">Map tok</code> is less accurate account of the tokens available <em>right then and there</em>. (Indeed, there are combinators like <code class="haskell">tryAlt</code> and <code class="haskell">tryBind</code> that avoid an <code class="haskell">Ord</code> constraint for the <code class="haskell">Map</code> index: they simply do not merge maps at all.)</p>
+<p>Like, the cool thing about having <code class="haskell">Map tok</code> living in our parser is that that statically resolves conflicts <em>while the parser is being built</em> (lazily), in the cases where no backtracking is allowed. So we want to keep that as much as possible.</p>
+<p>So the overlap comes from the fact that in <code class="haskell">(ls &lt;&gt; rs) :: MatchTrack m</code>, the <em>tail element</em> of <code class="haskell">ls</code> (namely, <code class="haskell">l</code> in <code class="haskell">MatchTrack l NoMatch</code>) is the element that does not have any backtracking (yet), so it gets merged with the head of <code class="haskell">rs</code>, where <code class="haskell">MatchTrack l ls@(MatchTrack _ _)</code> marks an instance of backtracking between <code class="haskell">l</code> and <code class="haskell">ls</code>.</p>
+<div class="Details" data-box-name="Digression">
+<p>This is a sign that <code class="haskell">Maybe (Overlapping m)</code> is a better datatype for explaining this behavior after all, but <code class="haskell">NoMatch</code> has some semantic significance (it marks an “expected EOF”), and the datatypes were already wildly complicated, so I kept it as-is.</p>
+<p>In terms of <code class="haskell">Overlapping m</code>, the explanation is that <code class="haskell">Overtail l</code> marks the tail that has no backtracking applied, and <code class="haskell">Overlap l ls</code> is the constructor that introduces backtracking from <code class="haskell">l</code> onwards to <code class="haskell">ls</code>.</p>
+</div>
+<p>Interestingly, a similar idea of staging as the applicative paper shows up in the parser too: the parser <em>monad</em> is staged using <code class="haskell">Compose</code> (that is, with a fixed order, instead of the commutative order of <code class="haskell">Day</code>), since the result of parsing a token is of type <code class="haskell">ParseMachine ix tok (ParseMachine ix tok r)</code>, to allow for committing to a parse locally. Controlling backtracking like this helps constrain memory usage during parsing.</p>
 <h2 id="your-requests-here">Your Requests Here</h2>
-<p>know any other cute liʼl monoids I should include?</p>
+<p>thatʼs all I have for now! know any other cute liʼl monoids I should include?</p>
 <section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
 <hr>
 <ol>

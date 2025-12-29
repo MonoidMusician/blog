@@ -13,6 +13,9 @@ function Math(h)
     local display_flag = ''
     if display then display_flag = '--display-mode' end
     local input = io.open(fname .. '.tex', 'w')
+    if input == nil then
+      print(pandoc.json.encode({ fname .. '.tex', h.text, './cache/katex --no-throw-on-error --trust --macro-file assets/katex_macros.tex -F mathml ' .. display_flag .. ' -i ' .. fname .. '.tex' .. ' -o ' .. fname .. '.html' }))
+    end
     input:write(h.text)
     input:close()
     os.execute('./cache/katex --no-throw-on-error --trust --macro-file assets/katex_macros.tex -F mathml ' .. display_flag .. ' -i ' .. fname .. '.tex' .. ' -o ' .. fname .. '.html')

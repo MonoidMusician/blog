@@ -10,6 +10,15 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 
 ## Posts <a class="icon iconoir" href="rss.xml"><svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a><a class="icon iconoir" href="rss-lite.xml"><svg style="scale:0.6;transform-origin:left" width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
 
+- Selective Applicative Functors
+  - [The Missing Theoretical Basis for Exclusive Determined Choice](selective_applicatives_theoretical_basis.html) [2025/12/25]{.dated}
+
+    I lay out the theoretical basis for selective applicative functors and how I claim they should model control flow with *exclusive determined choice* (which is something that existing formulations failed to capture).
+
+    The key insight necessary to make it work for N-ary branching is to consider [arrows](https://hackage-content.haskell.org/package/base-4.22.0.0/docs/Control-Arrow.html) (composable profunctors) instead of functors in isolation, because casing on an [`Either`{.haskell}](https://hackage-content.haskell.org/package/base-4.22.0.0/docs/Data-Either.html#t:Either) is about the domain not the codomain.
+
+    The resulting structure is related to near-semirings, but in a different way than [`Alternative`{.haskell}](https://hackage-content.haskell.org/package/base-4.22.0.0/docs/Control-Applicative.html#t:Alternative) is (as that encodes nondeterministic choice).
+
 - [Simple Local Nginx Config](simple_nginx.html) [2025/08/04]{.dated}
 
   > I made this as a drop-in replacement for `python3 -m http.server 8998`{.sh}, because I needed a file server that supported range requests and [CORS]{t=}. Run it with `nginx -c "$(realpath nginx.conf)" -p "$PWD" -e stderr`{.sh} and customize it to your needs.
@@ -39,9 +48,13 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   > :::Warning
   > See there for caveats and compatibility and so on.
   >
-  > Most notably: automatic connection only works on Chromium-based browsers and only for [LAN]{t=} connections.
+  > <del>Most notably: automatic connection only works on Chromium-based browsers and only for [LAN]{t=} connections.</del>
+  >
+  > [Chromium has changed and no longer allows the side channel](https://webrtc-review.googlesource.com/c/src/+/366562).
   > :::
   >
+  > <details class="Warning">
+  > <summary>Previously Working Method</summary>
   > ```javascript
   > rtc.oniceconnectionstatechange = async (e) => {
   >   if (rtc.iceConnectionState === "checking") {
@@ -59,6 +72,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   >   }
   > };
   > ```
+  > </details>
 
 - [Code golf for computing a 32-byte [QR]{t=} code!](qrinqr.html) [2024/12/20]{.dated}
 
@@ -184,7 +198,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   #. [CSS]{t=} → [Sass]{t=}
 
 ### Miniseries
-- [Monoids in Public](monoids_in_public.html) – cool little monoids and uses for monoids [2023/01/02 – 2024/09/18]{.dated}
+- [Monoids in Public](monoids_in_public.html) – cool little monoids and uses for monoids [2023/01/02 – 2025/12/03]{.dated}
 - [Knowlish](knowlish.html) – A list of little things I have learned and need reminders about.
 - [For the Users](for_the_users.html) – My user scripts and user styles (& othersʼ!)
 <!--

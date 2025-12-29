@@ -1,3 +1,4 @@
+sources/selective_applicatives_theoretical_basis.md
 sources/simple_nginx.md
 sources/quapteryx5.md
 sources/quapteryx4.md

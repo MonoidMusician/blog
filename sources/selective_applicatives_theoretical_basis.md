@@ -752,7 +752,9 @@ Selective applicative functors are all about control flow with determined choice
 In order to keep track of which branches are exclusive from each other, and to explain it via tensors, we have to explain it as a theory of *arrows*, not of functors.
 This is useful for tracking or preventing ambiguity during parsing, as one example.
 
-:::{.Details box-name="Definition"}
+<details class="Details">
+<summary>Definition</summary>
+
 ```haskell
 data CaseTree f i r where
   TwoCases ::
@@ -795,7 +797,7 @@ data ControlFlow f i r where
     ControlFlow f y r ->
     ControlFlow f i r
 ```
-:::
+</details>
 
 Despite requiring slightly more involved concepts to explain (arrows and existential types), it solidifies into a structure that looks like ordinary control flow constructs that one might write in an AST for a programming language.
 You can think of the applicative functor `f`{.haskell} as denoting the boundary between the ahead-of-time information available on the outside and the runtime information available to the functions `(i -> r)`{.haskell} on the inside at each step of the computation.
@@ -803,12 +805,18 @@ You can think of the applicative functor `f`{.haskell} as denoting the boundary 
 The requirements of selective applicative functors are intentionally flexible, to allow it to be implemented in varied ways: applicatives for simple composable sequencing and staging of effects, monads for efficient execution and flexibility, near-semirings for static analysis, with the selective applicative structure as a common meeting ground for all of it.
 
 :::{.Details box-name="Laws"}
-The laws follow the structure of a near-semiring.
+Selective applicative structures derived from applicative instances only satisfy.
+We might call this “raw control flow”, as it exposes the particular branching structure it was constructed with (order of cases, exact interleaving of sequencing vs branching, and so on).
 
 - Multiplicative associativity: `Sequencing (Sequencing f g) h = Sequencing f (Sequencing g h)`{.haskell}
 - Multiplicative identity: `Sequencing (Pure id) f = f = Sequencing f (Pure id)`{.haskell}
 - Additive associativity: `TwoCases id cx (TwoCases id cy cz) = TwoCases assoc (TwoCases id cx cy) cz`{.haskell}
 - Additive identity: `TwoCases Left cx (ZeroCases absurd) = cx = TwoCases Right (ZeroCases absurd) cx`{.haskell}
+
+------
+
+Better behaved instances (including those derived from monads, or constant functors of near-semirings) follow the structure of a near-semiring, to model control flow more precisely.
+
 - Right distributivity: `Sequencing (CaseBranch split cx cy) g = CaseBranch split (Sequencing cx g) (Sequencing cy g)`{.haskell}
 - Left absorbing element: `Sequencing (Absurd absurd) g = Absurd absurd`{.haskell}
 - Optionally, (additive) commutativity: `TwoCases id cx cy = TwoCases swap cx cy`{.haskell}
