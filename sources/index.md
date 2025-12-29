@@ -11,13 +11,38 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 ## Posts <a class="icon iconoir" href="rss.xml"><svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a><a class="icon iconoir" href="rss-lite.xml"><svg style="scale:0.6;transform-origin:left" width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
 
 - Selective Applicative Functors
-  - [The Missing Theoretical Basis for Exclusive Determined Choice](selective_applicatives_theoretical_basis.html) [2025/12/25]{.dated}
+  1. [The Missing Theoretical Basis for Exclusive Determined Choice](selective_applicatives_theoretical_basis.html) [2025/12/25]{.dated}
 
-    I lay out the theoretical basis for selective applicative functors and how I claim they should model control flow with *exclusive determined choice* (which is something that existing formulations failed to capture).
+      I lay out the theoretical basis for selective applicative functors and how I claim they should model control flow with *exclusive determined choice* (which is something that existing formulations failed to capture).
 
-    The key insight necessary to make it work for N-ary branching is to consider [arrows](https://hackage-content.haskell.org/package/base-4.22.0.0/docs/Control-Arrow.html) (composable profunctors) instead of functors in isolation, because casing on an [`Either`{.haskell}](https://hackage-content.haskell.org/package/base-4.22.0.0/docs/Data-Either.html#t:Either) is about the domain not the codomain.
+      The key insight necessary to make it work for N-ary branching is to consider [arrows](https://hackage-content.haskell.org/package/base-4.22.0.0/docs/Control-Arrow.html) (composable profunctors) instead of functors in isolation, because casing on an [`Either`{.haskell}](https://hackage-content.haskell.org/package/base-4.22.0.0/docs/Data-Either.html#t:Either) is about the domain not the codomain.
 
-    The resulting structure is related to near-semirings, but in a different way than [`Alternative`{.haskell}](https://hackage-content.haskell.org/package/base-4.22.0.0/docs/Control-Applicative.html#t:Alternative) is (as that encodes nondeterministic choice).
+      The resulting structure is related to near-semirings, but in a different way than [`Alternative`{.haskell}](https://hackage-content.haskell.org/package/base-4.22.0.0/docs/Control-Applicative.html#t:Alternative) is (as that encodes nondeterministic choice^[where the combinator itself does not give any information about which branch to take, it is completely up to the implementation]).
+
+      ```haskell
+      data CaseTree f i r where
+        TwoCases ::
+          -- How to split the input into data for each case
+          -- (Note that `x` and `y` are existential here!)
+          (i -> Either x y) ->
+          -- Control flow for the `Left` case
+          (CaseTree f x r) ->
+          -- Control flow for the `Right` case
+          (CaseTree f y r) ->
+          CaseTree f i r
+        -- One static effect
+        OneCase :: (f (i -> r)) -> CaseTree f i r
+        -- Represent an empty case branching
+        ZeroCases :: (i -> Void) -> CaseTree f i r
+      ```
+
+- [Forms of resource acquisition: a monad and case study](resource_acquisition.html) [2025/09/13, 2025/12/29]{.dated}
+
+  > The main takeaway from this has been that instead of thinking about individual resources and their creation conditions and destructors, itʼs been more fruitful to think about it as consisting of _scopes_ of resources, which can be destroyed when they are no longer needed.
+  > Resources only exist as destructors and wait-functions to call in the scope.
+  > This works much better since we are operating at the level of a monad abstraction.
+
+  > Thinking of gestalt scopes also allows waiting for the entire scope to be ready, in asynchronous ways: forwards and backwards and in parallel as necessary.
 
 - [Simple Local Nginx Config](simple_nginx.html) [2025/08/04]{.dated}
 

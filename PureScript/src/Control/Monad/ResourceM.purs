@@ -60,28 +60,28 @@ waitr = addWaiter zero Par
 whenReady :: forall m. MonadResource m => Effect Unit -> m Unit
 whenReady = addWaiter (fromInt 100) Seq <<< liftEffect
 
--- Wait for everything to be ready
+-- | Wait for everything to be ready
 wait :: forall m. MonadResource m => MonadAff m => m Unit
 wait = selfScope >>= \(Scope { wait: App waiting }) -> liftAff (joinFiber waiting)
 
--- Destroy self
+-- | Destroy self
 selfDestruct :: forall m. MonadResource m => m Unit
 selfDestruct = selfScope >>= \(Scope { destroy }) -> liftEffect destroy
 
--- Get the destructor for this scope
+-- | Get the destructor for this scope
 selfDestructor :: forall m. MonadResource m => m (Effect Unit)
 selfDestructor = selfScope >>= \(Scope { destroy }) -> pure destroy
 
--- Caution: should not neglect inner destroy
+-- | Caution: should not neglect inner destroy
 inSubScope :: forall m. MonadResource m => String -> m ~> m
 inSubScope name m = subScope name >>= \scope -> _inScope scope m
 
--- Kind of like `with` in Python: destroys resources on exit
+-- | Kind of like `with` in Python: destroys resources on exit
 scoped :: forall e m. MonadResource m => MonadError e m => String -> m ~> m
 scoped name act = inSubScope name do
   catchError (act <* selfDestruct) \e -> selfDestruct *> throwError e
 
--- Actually like `async with` in Python (although it does not wait for destructors)
+-- | Actually like `async with` in Python (although it does not wait for destructors)
 with ::
   forall e m resource return.
     MonadResource m => MonadAff m => MonadError e m =>
@@ -89,7 +89,7 @@ with ::
 with name mk cont = scoped name do
   mk >>= \r -> wait *> cont r
 
--- Use around `inSubScope` (or `scoped` or `with`)
+-- | Use around `inSubScope` (or `scoped` or `with`)
 noWait :: forall m. MonadResource m => m ~> m
 noWait act = selfScope >>= noWaitScope >>> \scope -> _inScope scope act
 

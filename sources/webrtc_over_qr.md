@@ -11,7 +11,9 @@ How is it even possible, and how could you use it too?
 :::Warning
 See there for caveats and compatibility and so on.
 
-Most notably: automatic connection only works on Chromium-based browsers and only for [LAN]{t=} connections.
+<del>Most notably: automatic connection only works on Chromium-based browsers and only for [LAN]{t=} connections.</del>
+
+[Chromium has changed and no longer allows the side channel](https://webrtc-review.googlesource.com/c/src/+/366562).
 :::
 
 ## Baseline connection initiation (happy path \^\^)
@@ -124,8 +126,10 @@ Here are the steps for basic connection establishment:
 
 #. Host listens for the guest to try to connect, which allows us to finish the connection
 
-    <div class="Warning">
-    This only works on Chromium-based browsers! And only over [LAN]{t=}! (not behind [NAT]{t=})
+    <div class="Error">
+    <del>This only works on Chromium-based browsers! And only over [LAN]{t=}! (not behind [NAT]{t=})</del>
+
+    [Chromium has changed and no longer allows the side channel](https://webrtc-review.googlesource.com/c/src/+/366562).
     </div>
 
     - The fingerprint comes from the `a=ice-ufrag:`{.sdp} line

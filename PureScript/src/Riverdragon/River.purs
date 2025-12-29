@@ -517,7 +517,7 @@ subscribeM stream cb = do
   scope <- selfScope
   subscribe stream \a -> void $ scopedStart_ "subscribeM" scope $ cb a
 
--- | With `oneSubScopeAtATime`.
+-- | With `oneSubScopeAtATime`, so the previous resource is destroyed upon each new event.
 subscribeM1 :: forall flow a m. MonadResource m => Stream flow a -> (a -> ResourceM Unit) -> m Unit
 subscribeM1 stream cb = do
   revolving <- selfScope >>= oneSubScopeAtATime "subscribeM1"

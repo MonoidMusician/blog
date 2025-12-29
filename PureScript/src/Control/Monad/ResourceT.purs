@@ -40,6 +40,7 @@ newtype ResourceT :: (Type -> Type) -> (Type -> Type)
 newtype ResourceT m a = ResourceT (Scope -> m a)
 type ResourceM = ResourceT Effect
 
+-- | Create a new base scope and run the `ResourceT` in it.
 -- TODO: catch error? cancel self if Aff? supervise?
 start :: forall m r. MonadEffect m => String -> ResourceT m r -> m { result :: r, wait :: Fiber Unit, destroy :: Effect Unit, scope :: Scope }
 start name computation = do
@@ -52,9 +53,11 @@ start_ name computation = do
   liftEffect do Aff.launchAff_ do Aff.joinFiber wait
   pure { result, destroy, scope }
 
+-- | Starts and waits for the resources to be ready.
 run :: forall m r. MonadAff m => String -> ResourceT m r -> m { result :: r, destroy :: Effect Unit, scope :: Scope }
 run name = start name >=> \{ result, wait, destroy, scope } -> { result, destroy, scope } <$ liftAff (Aff.joinFiber wait)
 
+-- | Run in an existing scope.
 scopedStart :: forall m r. MonadEffect m => String -> Scope -> ResourceT m r -> m { result :: r, wait :: Fiber Unit, destroy :: Effect Unit }
 scopedStart name here@(Scope { wait: App wait, destroy, destroyed }) (ResourceT computation) = do
   liftEffect do
@@ -63,12 +66,14 @@ scopedStart name here@(Scope { wait: App wait, destroy, destroyed }) (ResourceT 
   result <- computation here
   pure { result, wait, destroy }
 
+-- | Run in an existing scope and start the waiters (but do not wait for them).
 scopedStart_ :: forall m r. MonadEffect m => String -> Scope -> ResourceT m r -> m { result :: r, destroy :: Effect Unit }
 scopedStart_ name here computation = do
   { result, wait, destroy } <- scopedStart name here computation
   liftEffect do Aff.launchAff_ do Aff.joinFiber wait
   pure { result, destroy }
 
+-- | Run in an existing scope and wait for the waiters.
 scopedRun :: forall m r. MonadAff m => String -> Scope -> ResourceT m r -> m { result :: r, destroy :: Effect Unit }
 scopedRun name scope = scopedStart name scope >=> \{ result, wait, destroy } -> { result, destroy } <$ liftAff (Aff.joinFiber wait)
 
@@ -78,7 +83,7 @@ ignoreDestroyed = Aff.catchError <@> \err ->
     Nothing -> Aff.throwError err
     Just _ -> pure unit
 
--- The `Aff` is killed when the scope is destroyed
+-- | The `Aff` is killed when the scope is destroyed
 monitor :: String -> Scope -> (Aff ~> Aff)
 monitor name (Scope { putDestructor }) act = do
   -- wish `Aff` could get its own canceler
@@ -87,11 +92,11 @@ monitor name (Scope { putDestructor }) act = do
     Aff.launchAff_ do Aff.killFiber (Aff.error ("ResourceM destroyed: " <> name)) fiber
   Aff.joinFiber fiber
 
--- Destroy the scope when the `Aff` exits (does not `monitor`)
+-- | Destroy the scope when the `Aff` exits (does not `monitor`)
 link :: Scope -> (Aff ~> Aff)
 link (Scope { destroy }) = Aff.finally (liftEffect destroy)
 
--- Destroy the scope when no more `Aff`s from this are running
+-- | Destroy the scope when no more `Aff`s from this are running
 -- FIXME: if first is synchronous?
 linkN :: Scope -> Effect (Aff ~> Aff)
 linkN (Scope { destroy }) = do
@@ -105,6 +110,7 @@ linkN (Scope { destroy }) = do
             destroy
       do const act
 
+-- | The public interface to a scope, consisting of destructors and waiters.
 newtype Scope = Scope
   { putDestructor :: Effect Unit -> Effect Unit
   , destroy :: Effect Unit
@@ -116,6 +122,7 @@ newtype Scope = Scope
 derive newtype instance Monoid Scope
 derive newtype instance Semigroup Scope
 
+-- | Running the effect creates a new subscope and destroys the previous one.
 oneSubScopeAtATime :: forall m. MonadEffect m => String -> Scope -> m (Effect Scope)
 oneSubScopeAtATime name parent = liftEffect do
   lastDestroy <- Ref.new mempty
@@ -125,6 +132,7 @@ oneSubScopeAtATime name parent = liftEffect do
     Ref.write destroy lastDestroy
     pure scope
 
+-- | A monoid keeping track of the state of resources in a (sub)scope
 type ResourceState =
   { destructors :: Dual (Effect Unit)
   , destroyed :: Disj Boolean
@@ -181,6 +189,8 @@ mkSubscope name (Scope parent) = liftEffect do
   parent.putDestructor destroy
   pure scope
 
+-- | A priority map of asynchronous functions to run and wait on when the
+-- | resource is coming online: first-to-last, last-to-first, and parallel.
 type Waiters =
   SemigroupMap Rational
     { seq :: Aff Unit, qes :: Dual (Aff Unit), par :: ParAff Unit }

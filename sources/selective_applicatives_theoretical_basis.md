@@ -248,6 +248,21 @@ mergeCaseTree (TwoCases fg x y) =
   liftA2 (\f g ij -> either f g (fg ij)) (mergeCaseTree x) (mergeCaseTree y)
 ```
 
+:::{.Bonus}
+Another useful way to get at the branches is to split them out as individual effects `f (y -> r)`{.haskell}, where we do not know what type `y`{.haskell} is (as it changes between branches), but we know that it comes equipped with a function `(i -> Maybe r)`{.haskell} from the shared input type.
+This loses the information that these branches exhaustively cover the input!
+
+```haskell
+caseTreeBranches :: forall f i r. CaseTree f i r -> [exists y. (i -> Maybe y, f (y -> r))]
+```
+
+This allows managing some of the effects of `f`{.haskell} up front, between the input `f i`{.haskell} and all of the branches.
+
+As one example, consider array decoders, indexed by the length of array they accept:
+this structure needs to be aggregated between the determiner on the left (`f i`{.haskell}) and all of the case branches on the right (`CaseTree f i r`{.haskell}),
+because the length of the encoded array can be any length from the determiner plus any length from _any_ case branch.
+:::
+
 This data type has a *ton* of structure.
 As a start, note that it is a profunctor: we can map the output covariantly, with `map :: (r -> r') -> CaseTree f i r -> CaseTree f i r'`{.haskell}, and the input contravariantly, with a function of type `(i' -> i) -> CaseTree f i r -> CaseTree i' f r`{.haskell}.
 
@@ -315,7 +330,7 @@ This exposes the monoidal structure between tensors we were looking for, enablin
 We can express associativity with `TwoCases`{.haskell}, and the identity between `TwoCases`{.haskell} and `ZeroCases`{.haskell}.
 These are not equalities in the data type `CaseTree`{.haskell} itself: these are laws that we expect to apply to implementations of `Casing f`{.haskell} (selective applicative functors).
 
-:::{.Details box-name="Laws"}
+:::{.Key_Idea box-name="Laws"}
 Using the associativity of the tensor `Either`{.haskell}, we can express associativity of `CaseTree (Either x (Either y z)) f r`{.haskell}.
 (By the Yoneda lemma, any other choice of `xyz` that maps into `Either x (Either y z)` works just as well.)
 
@@ -722,12 +737,16 @@ selectRight = mapMaybe \case
   Left _ -> Nothing
   Right y -> Just y
 
-branch :: Applicative f => Filterable f => f (Either x y) -> f (x -> r) -> f (y -> r) -> f r
+branch :: Applicative f => Filterable f => Alternative f => f (Either x y) -> f (x -> r) -> f (y -> r) -> f r
 branch determiner leftCase rightCase =
   liftA2 (&) (selectLeft determiner) leftCase
     <|>
   liftA2 (&) (selectRight determiner) rightCase
--- ^ This easily generalizes to n-ary branches, unlike `branch` itself
+
+-- ^ This easily generalizes to n-ary branches, unlike `branch` itself:
+
+-- | Use `partitionMap`, `<*>`, and `<|>` to derive `Casing` for idempotent effects.
+caseTreeOnPlus :: forall f i r. Apply f => Filterable f => Plus f => f i -> CaseTree i f r -> f r
 ```
 
 Because this duplicates `determiner`{.haskell}, it would only be safe for things like `ParserT Identity`{.haskell} which does not have observable side effects from failed branches.^[Strictly speaking, you could have idempotent effects: `f *> f = f`{.haskell}.]
@@ -815,7 +834,8 @@ We might call this “raw control flow”, as it exposes the particular branchin
 
 ------
 
-Better behaved instances (including those derived from monads, or constant functors of near-semirings) follow the structure of a near-semiring, to model control flow more precisely.
+Better behaved instances follow the structure of a near-semiring, to model control flow more precisely.
+This includes constant functors of near-semirings, instances derived from monads, and composition with semilattice-like effects like `Maybe`{.haskell} on the outside.
 
 - Right distributivity: `Sequencing (CaseBranch split cx cy) g = CaseBranch split (Sequencing cx g) (Sequencing cy g)`{.haskell}
 - Left absorbing element: `Sequencing (Absurd absurd) g = Absurd absurd`{.haskell}
