@@ -6958,6 +6958,7 @@ instance Semigroup (ShiftReduce s r) where
 </ol>
 </section>]]></description>
 </item>
+<item>
 <title>Eudoxus Real Numbers as Slopes of Pixelated Graphs</title>
 <pubDate>Wed, 20 Jul 2022 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/Eudoxus.html</guid>
