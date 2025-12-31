@@ -43,7 +43,7 @@ import Effect.Aff (Aff)
 import Effect.Class (class MonadEffect)
 import Effect.Class.Console (log)
 import Fetch (fetch)
-import Idiolect (JSON, intercalateMap)
+import Idiolect (JSON, intercalateMap, (==<), (>==))
 import Parser.Comb (Comb(..), execute)
 import Parser.Comb as Comb
 import Parser.Comb.Combinators (buildTree, namedRec')
@@ -56,7 +56,7 @@ import Parser.Lexing (class ToString, type (~), FailReason(..), FailedStack(..),
 import Parser.Lexing (class ToString, type (~), Rawr) as ReExports
 import Parser.Printer.JSON as C
 import Parser.Selective (class Casing, class Select)
-import Parser.Types (ICST, OrEOF, ShiftReduce(..), unShift)
+import Parser.Types (ICST, OrEOF, ParserJSONCache, ShiftReduce(..), unShift, withParserCache)
 import Parser.Types (OrEOF) as ReExports
 import Parser.Types as P
 import Partial.Unsafe (unsafeCrashWith)
@@ -309,7 +309,8 @@ convertParseError = case _ of
 --------------------------------------------------------------------------------
 
 stateTableCodec :: C.JRCodec Void StateTable
-stateTableCodec = C.registration C.autoJ (C.autoJ @StateTable @JSON)
+stateTableCodec = C.registration withParserCache $
+  C.autoJ @StateTable @(ParserJSONCache (MaybeWS ParseWS) (Either String String) (Maybe Int) (OrEOF (String ~ Rawr)) Rawr)
 
 freeze :: forall a. Comber a -> Json
 freeze = parse' >>> fst >>> C.encode stateTableCodec
@@ -343,6 +344,37 @@ thawWith conf comber json = case thawWith' conf comber <$> json of
 fetchAndThawWith :: forall a. Conf -> Comber a -> String -> Aff (String -> Either ParseError a)
 fetchAndThawWith conf comber url =
   fetch url {} >>= _.text >>> map (Json.parseJson >>> thawWith conf comber)
+
+fetchAndThawWith' :: forall a. Conf -> Comber a -> String -> Aff
+  { error :: Maybe JsonDecodeError
+  , states :: StateTable
+  , parse :: String -> Either ParseError a
+  , parse' :: String -> Either FullParseError a
+  }
+fetchAndThawWith' conf (Comber comber) url =
+  fetch url {} >>= _.text >== Json.parseJson >>> \mjson ->
+    case mjson >>= C.decode stateTableCodec of
+      Left err -> do
+        let
+          states /\ parser = map (map _.result) <$> Comb.parseWith' conf topName comber
+        { error: Just err
+        , states
+        , parse: lmap convertParseError <<< parser
+        , parse': parser
+        }
+      Right states -> do
+        let
+          parser = map _.result <<< execute conf
+            { states
+            , resultants: topName /\ resultantsOf comber
+            , options: buildTree topName comber
+            , precedences: gatherPrecedences comber
+            }
+        { error: Nothing
+        , states
+        , parse: lmap convertParseError <<< parser
+        , parse': parser
+        }
 
 thawWith' :: forall a. Conf -> Comber a -> Json -> Either JsonDecodeError (StateTable /\ (String -> Either ParseError a))
 thawWith' conf (Comber comber) = C.decode stateTableCodec >>> map \states ->

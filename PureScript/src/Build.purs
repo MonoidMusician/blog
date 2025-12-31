@@ -2,7 +2,7 @@ module Build where
 
 import Prelude
 
-import Data.Argonaut (decodeJson, parseJson)
+import Data.Argonaut (decodeJson, parseJson, printJsonDecodeError)
 import Data.Argonaut as J
 import Data.Array as Array
 import Data.DateTime.Instant (unInstant)
@@ -72,7 +72,11 @@ mainJson = do
       let encoded = C.encode stateTableCodec dat
       log $ "Length: " <> show (String.length (J.stringify encoded))
       t3 <- liftEffect now
-      log $ "Decodable: " <> show (C.decode stateTableCodec encoded == Right dat)
+      let decoded = C.decode stateTableCodec encoded
+      log $ "Decodable: " <> show (decoded == Right dat)
+      case decoded of
+        Left err -> log $ printJsonDecodeError err
+        _ -> pure unit
       t4 <- liftEffect now
       log $ show (unwrap (unInstant t3) - unwrap (unInstant t2)) <> " + " <> show (unwrap (unInstant t4) - unwrap (unInstant t3)) <> " milliseconds"
       log ""

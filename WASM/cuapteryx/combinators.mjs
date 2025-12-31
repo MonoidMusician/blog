@@ -213,7 +213,7 @@ const combinatorTable = {
     bird: "Warbler",
     2: 'abb',
     def: 'C(BMR)',
-    value: '((SS)(SK))',
+    value: '((SS)(KI))',
   },
 
   '_3': "Church encoding of numbers",

@@ -3,6 +3,7 @@ module Parser.Languages.HFS where
 import Parser.Parserlude
 
 import Control.Alternative (guard)
+import Control.Monad.ResourceM (class MonadResource)
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap)
@@ -27,8 +28,11 @@ import Data.String.Regex.Flags (global)
 import Data.String.Regex.Unsafe (unsafeRegex)
 import Effect.Exception (message, try)
 import Effect.Unsafe (unsafePerformEffect)
+import Fetch (fetch)
 import Parser.Comb as Comb
 import Parser.Lexing (longestRegexOrString)
+import Riverdragon.River as River
+import Riverdragon.River.Beyond (affToLake)
 import Whitespace (defaultWS)
 
 -- | `HFList`: an `Array`-based representation for FFI
@@ -742,16 +746,17 @@ def TMstep
 end
 """
 
-stdenv :: Lazy Env
-stdenv = defer \_ ->
-  case String.trim stdlib # force theParser of
-    Left _ -> emptyEnv
-    Right instrs -> run (emptyEnv { instrs = instrs })
-
-withStdenv :: Array Instr -> Env
-withStdenv instrs =
-  let env = force stdenv in
-  env { instrs = env.instrs <> instrs }
+withStdenv :: forall err. (String -> Either err (Array Instr)) -> Array Instr -> Env
+withStdenv parserMade =
+  let
+    stdenv :: Lazy Env
+    stdenv = defer \_ ->
+      case parserMade (String.trim stdlib) of
+        Left _ -> emptyEnv
+        Right instrs -> run (emptyEnv { instrs = instrs })
+  in \instrs ->
+    let env = force stdenv in
+    env { instrs = env.instrs <> instrs }
 
 -- | Parse a literal.
 lit :: Comber HFS
@@ -1195,7 +1200,7 @@ parser = pure [] <|> do
       , rawr "\\$" *> (PeekThis <$> int <@> false)
       , matchBuiltin <$> opID
       , Set <$> do token "set" *> wscomment *> opID
-      , Alias <$> (token "alias" *> wscomment *> (instrFromId <$> opID) <* wscomment) <*> opID
+      , Alias <$> (token "alias" *> wscomment *> (matchBuiltin <$> opID) <* wscomment) <*> opID
       , Enum <$> (token "enum" *> opt (wscomment *> rawr rID)) <*> (
           map NEA.toArray $ opt wscomment *>
 
@@ -1211,9 +1216,9 @@ parser = pure [] <|> do
   trackNewline = sourceOf ws <#> \s ->
     if String.contains (String.Pattern "\n") s || String.contains (String.Pattern "\r") s
       then Newline else Fn NoOp
-  instrFromId x = case force theParser x of
-    Right [y] -> y
-    _ -> matchBuiltin x
+  -- instrFromId x = case force theParser x of
+  --   Right [y] -> y
+  --   _ -> matchBuiltin x
 
 -- ⟨⟩ ()
 
@@ -1229,21 +1234,33 @@ showHFS (SetLike _ members) = (\m -> "{" <> m <> "}") $
 
 type Stack = List HFS
 
-theParser :: Lazy (String -> Either FullParseError (Array Instr))
-theParser = defer \_ ->
-  map _.result <<< Comb.parseWith { best: longestRegexOrString, defaultSpace: defaultWS } topName (unwrap parser)
+-- theParser :: Lazy (String -> Either FullParseError (Array Instr))
+-- theParser = defer \_ ->
+--   map _.result <<< Comb.parseWith { best: longestRegexOrString, defaultSpace: defaultWS } topName (unwrap parser)
 
-parseAndRun :: String -> Either String String
-parseAndRun = parseAndRun' >>> bimap
-  (either convertParseError (\(RuntimeError _ msg) -> msg))
-  (_.stacks >>> intercalateMap "\n---\n" (intercalateMap "\n" showHFS))
+mkParser :: forall m. MonadResource m => m (River.River (String -> Either (Either FullParseError RuntimeError) Env))
+mkParser = map ((wrapParser <<< _.parse') ==< _.stream) $ River.store $ compact $ affToLake $ fetchAndThawWith'
+  { best: longestRegexOrString, defaultSpace: defaultWS } parser "assets/json/hatstack-parser-states.json"
 
-parseAndRun' :: String -> Either (Either FullParseError RuntimeError) Env
-parseAndRun' s = case String.trim s # force theParser of
-  Left err -> Left (Left err)
-  Right instrs -> case run (withStdenv instrs) of
-    { error: Just err } -> Left (Right err)
-    env -> Right env
+-- parseAndRun :: String -> Either String String
+-- parseAndRun = parseAndRun' >>> bimap
+--   (either convertParseError (\(RuntimeError _ msg) -> msg))
+--   (_.stacks >>> intercalateMap "\n---\n" (intercalateMap "\n" showHFS))
+
+-- parseAndRun' :: String -> Either (Either FullParseError RuntimeError) Env
+-- parseAndRun' s = wrapParser (force theParser) s
+
+wrapParser :: forall err.
+  (String -> Either err (Array Instr)) ->
+  String ->
+  Either (Either err RuntimeError) Env
+wrapParser parserMade =
+  let stdenv = withStdenv parserMade in
+  \input -> case parserMade input of
+    Left err -> Left (Left err)
+    Right instrs -> case run (stdenv instrs) of
+      { error: Just err } -> Left (Right err)
+      env -> Right env
 
 -- | This used to be a `foldMap`, but then I added functions and looping.
 run :: Env -> Env

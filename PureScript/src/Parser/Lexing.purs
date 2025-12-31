@@ -32,6 +32,7 @@ import Data.Set as Set
 import Data.String (CodePoint)
 import Data.String as String
 import Data.String.CodeUnits as CU
+import Data.String.CodeUnits as SCU
 import Data.String.Regex (Regex)
 import Data.String.Regex as Re
 import Data.String.Regex as Regex
@@ -72,7 +73,7 @@ class Len i where
   len :: i -> Int
 
 instance lenString :: Len String where
-  len = String.length
+  len = SCU.length -- This should be safe? since we will not be comparing heteregeneous strings?
 
 instance lenArray :: Len (Array i) where
   len = Array.length
@@ -138,19 +139,29 @@ wsRawr = unParseWS >>> case _ of
   { allowed_newline: false, allowed_space: false, required: true } ->
     Nothing
   { allowed_newline: true, allowed_space: true, required: true } ->
-    Just $ rawr "[\\s]+"
+    Just $ rawrs.rA
   { allowed_newline: true, allowed_space: false, required: true } ->
-    Just $ rawr "[\\n]+"
+    Just $ rawrs.rN
   { allowed_newline: false, allowed_space: true, required: true } ->
-    Just $ rawr "[ ]+"
+    Just $ rawrs.rS
   { allowed_newline: true, allowed_space: true, required: false } ->
-    Just $ rawr "[\\s]*"
+    Just $ rawrs.ra
   { allowed_newline: true, allowed_space: false, required: false } ->
-    Just $ rawr "[\\n]*"
+    Just $ rawrs.rn
   { allowed_newline: false, allowed_space: true, required: false } ->
-    Just $ rawr "[ ]*"
+    Just $ rawrs.rs
   { allowed_newline: false, allowed_space: false, required: false } ->
-    Just $ rawr ""
+    Just $ rawrs.none
+  where
+  rawrs =
+    { rA: rawr "[\\s]+"
+    , rN: rawr "[\\n]+"
+    , rS: rawr "[ ]+"
+    , ra: rawr "[\\s]*"
+    , rn: rawr "[\\n]*"
+    , rs: rawr "[ ]*"
+    , none: rawr ""
+    }
 
 instance tokenizeWS :: Tokenize ParseWS String String where
   recognize ws rest = do
@@ -217,7 +228,7 @@ unRawr (Rawr re _) = fromMaybe (Re.source re) do
   y <- String.stripSuffix (String.Pattern ")") x
   pure y
 
-instance C.TryCached reg => AutoJSON Rawr reg where
+instance C.TryCached Rawr reg => AutoJSON Rawr reg where
   autoJ = C.tryCached $ C.string # C.prismatic "Rawr" unRawr
     \source -> hush ado
       r <- Re.regex ("^(?:" <> source <> ")") $ unicode <> dotAll
@@ -654,6 +665,7 @@ data FailReason err s space air nt r cat i o
 
 justErrorName :: forall err s rec space air nt r cat i o. Len i => FailedStack err s rec space air nt r cat i o -> String
 justErrorName (FailedStack { failReason, initialInput, currentInput }) =
+  -- FIXME: String length in CodePoints
   errorName failReason <> " at " <> show (1 + len initialInput - len currentInput)
 justErrorName (CrashedStack crash) = crash
 
@@ -777,24 +789,24 @@ contextLexingParse { best } (initialState /\ States states) acceptings rec initi
     ((_rule /\ r) /\ space /\ air /\ cat /\ o) <$ drain reduced (space /\ air /\ cat /\ o)
 
   drain :: ContextStack s rec err space air nt r cat o -> space /\ air /\ cat /\ o -> Either _ (ContextStack s rec err space air nt r cat o)
-  -- drain stack _ = pure stack
-  drain stack (space /\ air /\ cat /\ o) = do
-    state@{ advance: SemigroupMap m } <-
-      lookupState (snd (topOf stack))??
-        UnknownState { state: snd (topOf stack) }
-    Additive space /\ sr <- Map.lookup cat m?? Uhhhh { token: cat }
-    case sr of
-      Shift s -> do
-        Snoc stack (ILeaf o) <$> (advanceMeta (topOf stack) (Terminal (space /\ air /\ cat /\ o)) <#> (_ /\ s))
-      Reduces rs | [r] <- snd <$> NEA.toArray rs -> do
-        reduction <- lookupReduction r (space /\ air) state?? UnknownReduction { reduction: r }
-        stacked <- takeStack r (space /\ air) stack reduction
-        -- traceM "drain"
-        drain stacked (space /\ air /\ cat /\ o)
-      _ -> do
-        -- traceM "drain stopped"
-        -- Left StackInvariantFailed
-        pure stack
+  drain stack _ = pure stack
+  -- drain stack (space /\ air /\ cat /\ o) = do
+  --   state@{ advance: SemigroupMap m } <-
+  --     lookupState (snd (topOf stack))??
+  --       UnknownState { state: snd (topOf stack) }
+  --   Additive space /\ sr <- Map.lookup cat m?? Uhhhh { token: cat }
+  --   case sr of
+  --     Shift s -> do
+  --       Snoc stack (ILeaf o) <$> (advanceMeta (topOf stack) (Terminal (space /\ air /\ cat /\ o)) <#> (_ /\ s))
+  --     Reduces rs | [r] <- snd <$> NEA.toArray rs -> do
+  --       reduction <- lookupReduction r (space /\ air) state?? UnknownReduction { reduction: r }
+  --       stacked <- takeStack r (space /\ air) stack reduction
+  --       -- traceM "drain"
+  --       drain stacked (space /\ air /\ cat /\ o)
+  --     _ -> do
+  --       -- traceM "drain stopped"
+  --       -- Left StackInvariantFailed
+  --       pure stack
   chosenAction = case _ of
     Left s /\ space /\ air /\ cat /\ o /\ _i -> Shift (s /\ space /\ air /\ cat /\ o)
     Right r /\ space /\ air /\ cat /\ o /\ _i -> Reduces $ pure $ r /\ space /\ air /\ cat /\ o

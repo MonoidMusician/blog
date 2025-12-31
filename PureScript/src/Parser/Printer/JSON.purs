@@ -418,6 +418,7 @@ instance (Ord r, Monoid m) => Monoid (RegisterM r m) where mempty = pure mempty
 
 data Registered r a = Registered (Array r) a
 derive instance Functor (Registered r)
+derive instance Bifunctor Registered
 instance Extend (Registered r) where
   extend f r@(Registered rs _) = Registered rs (f r)
 instance Comonad (Registered r) where
@@ -750,6 +751,13 @@ decode codec json =
 decodeR :: forall i o. JCodec' i o -> JSON -> Either JsonDecodeError o
 decodeR = decode <<< registration autoJ
 
+splitCodec ::
+  forall ctx err reg s t i o ctx' err' s' o' t' i'.
+  OneCodec ctx' err' reg s' t i o' ->
+  OneCodec ctx err reg s t' i' o ->
+  OneCodec ctx err reg s t i o
+splitCodec (OneCodec enc _) (OneCodec _ dec) = OneCodec enc dec
+
 type JV = VI JCursor JsonDecodeError
 jsonError :: forall a. JsonDecodeError -> JV a
 jsonError e0 = mkError \i -> go i e0
@@ -790,11 +798,48 @@ registration regCodec =
   let Tuple enc dec = unRegistered regCodec in
   registration' (\reg json -> enc (Registered reg json)) dec
 
+-- iterateRegistered ::
+--   forall reg dat.
+--     Ord reg =>
+--   JRCodec reg reg ->
+--   JRCodec reg dat ->
+--   JRCodec Void (Registered reg dat)
+-- iterateRegistered reg@(OneCodec encReg _) dat@(OneCodec encDat _) = oneCodec
+--   do restart >=> unStar enc
+--   do lmap absurd >>> unStar dec
+--   where
+--   restart :: Registered reg dat -> RegisterM Void (Registered JSON JSON)
+--   restart (Registered rs a) =
+--     let
+--       st0 =
+--         { len: Array.length rs
+--         , rec: List.Nil
+--         , pos: Map.fromFoldable $ Array.mapWithIndex (flip Tuple) rs
+--         }
+--       RegisterM fDat = unStar encDat a
+--       Tuple st1 b = fDat st0
+--     in map (Registered <@> b) $ go [] st1 rs
+--   go :: Array JSON -> Registering reg -> Array reg -> RegisterM Void (Array JSON)
+--   go acc st rs | RegisterM f <- traverse (unStar encReg) rs =
+--     case f st of
+--       Tuple { rec: List.Nil } some -> pure (acc <> some)
+--       Tuple { len, rec, pos } some ->
+--         let rs' = Array.reverse $ List.toUnfoldable rec in
+--         go (acc <> some) { len, rec: List.Nil, pos } rs'
+--   OneCodec _ dec = (\(Registered rs a) -> Tuple rs a) >$<$> uncurry Registered
+--     !!! object
+--     !!! "cached" := array reg
+--     /!\ "data" := dat
+--   OneCodec enc _ = (\(Registered rs a) -> Tuple rs a) >$<$> uncurry Registered
+--     !!! object
+--     !!! "cached" := array noneCodec
+--     /!\ "data" := noneCodec
+
 jsonPrimCodec :: forall reg i o. String -> (JSON -> Maybe o) -> (i -> JSON) -> JRCodec' reg i o
 jsonPrimCodec ty dec enc = noRegister enc (dec >>> pure +? jsonError (TypeMismatch ty))
 
 exactly :: forall reg. JSON -> JRCodec reg Unit
-exactly value = jsonPrimCodec "exact" (\v -> if v == value then Just unit else Nothing) (const value)
+exactly value = jsonPrimCodec ("exactly " <> J.stringify value) (\v -> if v == value then Just unit else Nothing) (const value)
 
 tag :: forall @t reg. AutoJSON t Void => t -> JRCodec reg Unit
 tag = exactly <<< encode autoJ
@@ -817,11 +862,23 @@ cached (OneCodec enc dec) = oneCodec
       jsonError (UnexpectedValue json) ?+ (unStar dec <<< Registered items) $
         J.toNumber json >>= Int.fromNumber >>= Array.(!!) items
 
-class Ord reg <= TryCached reg where
-  tryCached :: forall t. JRCodec reg t -> JRCodec reg t
-instance doesCache :: TryCached JSON where
+cacheBy :: forall reg t. Ord reg =>
+  (t -> reg) ->
+  (reg -> Maybe t) ->
+  JRCodec reg t
+cacheBy into outof = oneCodec
+  do \t -> do
+      register (into t) <#> \pos -> J.fromNumber $ Int.toNumber pos
+  do \(Registered items json) ->
+      jsonError (UnexpectedValue json) ?+ pure $
+        J.toNumber json >>= Int.fromNumber >>= Array.(!!) items >>= outof
+
+
+class Ord reg <= TryCached t reg where
+  tryCached :: JRCodec reg t -> JRCodec reg t
+instance doesCache :: TryCached t JSON where
   tryCached = cached
-instance doesn'tCache :: TryCached Void where
+instance doesn'tCache :: TryCached t Void where
   tryCached = identity
 
 prismatic :: forall reg i o j u. String -> (i -> j) -> (u -> Maybe o) -> JRCodec' reg j u -> JRCodec' reg i o
@@ -1152,3 +1209,6 @@ instance AutoJSON t reg => AutoJSON (S.L.Last t) reg where autoJ = _N autoJ
 instance AutoJSON t reg => AutoJSON (M.F.First t) reg where autoJ = _N autoJ
 instance AutoJSON t reg => AutoJSON (S.F.First t) reg where autoJ = _N autoJ
 instance AutoJSON t reg => AutoJSON (Dual t) reg where autoJ = _N autoJ
+
+
+

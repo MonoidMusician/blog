@@ -17,6 +17,7 @@ import Data.Time.Duration (Milliseconds(..))
 import Data.Tuple (Tuple(..), snd)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
+import Effect.Class.Console (log)
 import Effect.Uncurried (EffectFn2, runEffectFn2)
 import Foreign.Object as FO
 import Idiolect (intercalateMap)
@@ -27,7 +28,7 @@ import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones (text, ($$), ($~~), (.$), (.$$), (.$~~), (<:>), (=:=), (>$), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (sourceCode)
-import Riverdragon.River (createRiver, store)
+import Riverdragon.River (createRiver, stillRiver, store)
 import Riverdragon.River.Beyond (debounce, dedup)
 import Web.DOM (Element)
 import Widget (Widget)
@@ -124,8 +125,10 @@ renderHFS (SetLike _ members) = (\m -> span "cf" "{ " <> m <> span "cf" " }") $
 widget :: Widget
 widget _ = pure $ Egg do
   { stream: valueSet, send: setValue } <- createRiver
+  log "mkParser"
+  parser <- HFS.mkParser
   { stream: done } <- store $ pure (false /\ Right emptyEnv) <|>
-    map HFS.parseAndRun' <$> debounce (100.0 # Milliseconds) (dedup valueSet)
+    (map <$> stillRiver parser <*> debounce (100.0 # Milliseconds) (dedup valueSet))
   let
     clear = [ D.style =:= "border: 0; padding: 0" ]
     hr =
@@ -184,7 +187,6 @@ widget _ = pure $ Egg do
           ]
       ]
   where
-  -- parseAndRun =
   topOfStack = snd >>> hush >=> stacksInfo >>> NEA.head >>> _.values >>> Array.head >>> map _.value
   gateSuccess f = filterMap \(Tuple force a) -> case f a, force of
     Left _, false -> Nothing
