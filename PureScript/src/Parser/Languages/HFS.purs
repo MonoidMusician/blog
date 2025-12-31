@@ -6,7 +6,6 @@ import Control.Alternative (guard)
 import Control.Monad.ResourceM (class MonadResource)
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
-import Data.Bifunctor (bimap)
 import Data.Bitraversable (bitraverse)
 import Data.Bounded.Generic (genericBottom, genericTop)
 import Data.Enum (class BoundedEnum, enumFromTo)
@@ -28,8 +27,6 @@ import Data.String.Regex.Flags (global)
 import Data.String.Regex.Unsafe (unsafeRegex)
 import Effect.Exception (message, try)
 import Effect.Unsafe (unsafePerformEffect)
-import Fetch (fetch)
-import Parser.Comb as Comb
 import Parser.Lexing (longestRegexOrString)
 import Riverdragon.River as River
 import Riverdragon.River.Beyond (affToLake)

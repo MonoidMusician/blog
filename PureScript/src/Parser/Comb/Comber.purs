@@ -43,7 +43,7 @@ import Effect.Aff (Aff)
 import Effect.Class (class MonadEffect)
 import Effect.Class.Console (log)
 import Fetch (fetch)
-import Idiolect (JSON, intercalateMap, (==<), (>==))
+import Idiolect (intercalateMap, (>==))
 import Parser.Comb (Comb(..), execute)
 import Parser.Comb as Comb
 import Parser.Comb.Combinators (buildTree, namedRec')
@@ -310,7 +310,7 @@ convertParseError = case _ of
 
 stateTableCodec :: C.JRCodec Void StateTable
 stateTableCodec = C.registration withParserCache $
-  C.autoJ @StateTable @(ParserJSONCache (MaybeWS ParseWS) (Either String String) (Maybe Int) (OrEOF (String ~ Rawr)) Rawr)
+  C.autoJ @StateTable @(ParserJSONCache (MaybeWS ParseWS) (Either String String) (Maybe Int) (OrEOF (Similar String Rawr)) Rawr)
 
 freeze :: forall a. Comber a -> Json
 freeze = parse' >>> fst >>> C.encode stateTableCodec

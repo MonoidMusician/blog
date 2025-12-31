@@ -17,7 +17,6 @@ import Data.Time.Duration (Milliseconds(..))
 import Data.Tuple (Tuple(..), snd)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
-import Effect.Class.Console (log)
 import Effect.Uncurried (EffectFn2, runEffectFn2)
 import Foreign.Object as FO
 import Idiolect (intercalateMap)
@@ -125,7 +124,6 @@ renderHFS (SetLike _ members) = (\m -> span "cf" "{ " <> m <> span "cf" " }") $
 widget :: Widget
 widget _ = pure $ Egg do
   { stream: valueSet, send: setValue } <- createRiver
-  log "mkParser"
   parser <- HFS.mkParser
   { stream: done } <- store $ pure (false /\ Right emptyEnv) <|>
     (map <$> stillRiver parser <*> debounce (100.0 # Milliseconds) (dedup valueSet))
