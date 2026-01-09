@@ -1,4 +1,4 @@
-import { isatomic, toatomic, deltaExpecting_impl, eval_impl, q2B, q2I, I2q, b2q, q2b, reachesZero_impl, B2q } from "./combinators.mjs";
+import { isatomic, toatomic, deltaExpecting_impl, eval_impl, q2B, q2I, I2q, b2q, q2b, reachesZero_impl, B2q, q2W } from "./combinators.mjs";
 import fs from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 const {
@@ -247,7 +247,7 @@ const reload = async () => {
 
   // force it to initialize
   const test = "0000003333111";
-  inputBuffer[0] = q2I(test);
+  inputBuffer[0] = q2W(test);
   ex.eval(BigInt(test.length));
 };
 await reload();
@@ -267,13 +267,13 @@ const setInput = (wordcrumbs) => {
   while (wordcrumbs[0] === '0') {
     wordcrumbs = wordcrumbs.substring(1);
   }
-  inputBuffer[0] = q2I(wordcrumbs);
+  inputBuffer[0] = q2W(wordcrumbs);
   return wordcrumbs.length;
 };
 let maxFuelUsed = [0], maxTimeTaken = [0];
 const evalWord = async (word, fuel=1_000_000) => {
   let wordcrumbs = toSearchable(word);
-  // console.log(word, wordcrumbs, q2I(wordcrumbs), I2q(q2I(wordcrumbs)));
+  // console.log(word, wordcrumbs, q2W(wordcrumbs), I2q(q2W(wordcrumbs)));
   const inputLen = setInput(wordcrumbs);
   if (!inputLen) return;
   fuelCell[0] = BigInt(fuel);
@@ -299,7 +299,7 @@ const evalWord = async (word, fuel=1_000_000) => {
     return { output_length: STATUSES['out of fuel'], fuel_used: Number(fuel), time };
   }
   if (!outputLen) {
-    console.log({ outputLen, word, ordinal: q2I(wordcrumbs.padEnd(32, '0')), wordcrumbs, inputLen, fuelLeft, time, I: q2I(wordcrumbs), buf: inputBuffer[0], eval: ex.eval(BigInt(inputLen)) });
+    console.log({ outputLen, word, ordinal: q2I(wordcrumbs), wordcrumbs, inputLen, fuelLeft, time, W: q2W(wordcrumbs), buf: inputBuffer[0], eval: ex.eval(BigInt(inputLen)) });
     return "no output??";
   }
   const output = getOutput(outputLen);
@@ -344,7 +344,7 @@ while (ordinal === undefined || ordinal < bound) {
     }
 
     const chosen = !(nth++ % 500) || crumbs === '0000030333333';
-    last = () => console.log((100 * Number(ordinal - start) / Number(bound - start)).toFixed(2), ordinal, crumbs, q2I(toatomic(ordinal)), out);
+    last = () => console.log((100 * Number(ordinal - start) / Number(bound - start)).toFixed(2), ordinal, crumbs, q2W(toatomic(ordinal)), out);
     if (chosen) {
       last();
       last = ()=>{};

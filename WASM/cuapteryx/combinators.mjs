@@ -15,10 +15,14 @@ const b2q = i => {
   return i.padStart(roundUp(i.length, 2), 0).replace(/[01][01]/g, q => parseInt(q, 2).toString(4));
 };
 
-// quaternary to bigint
-const q2I = i => {
+// quaternary to bigint word
+const q2W = i => {
   let bits = q2b(i);
   bits = bits.padEnd(64, 0);
+  return BigInt("0b" + bits.substring(0, 64));
+};
+const q2I = i => {
+  let bits = q2b(i);
   return BigInt("0b" + bits.substring(0, 64));
 };
 // bigint to quaternary?
@@ -537,6 +541,7 @@ function toatomic(s, trimRight=false) {
       repeat(extraSpaces, '0302') + // `B` spacers, to wait for pending arguments
       operand + // head
       argument; // argument (possibly a function waiting for more arguments)
+    extraSpaces = 0;
   }
   return (trimRight ? '' : repeat(extraSpaces, '0302')) + operand;
   // [w0] = [0302w]
@@ -714,6 +719,7 @@ function eval_impl(crumbs, fuel=1000, strategy=undefined) {
 export {
   q2b,
   b2q,
+  q2W,
   q2I,
   q2B,
   B2q,

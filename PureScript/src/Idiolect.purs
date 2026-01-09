@@ -17,7 +17,7 @@ import Data.Foldable (class Foldable, fold, foldMap, intercalate, oneOfMap)
 import Data.FoldableWithIndex (class FoldableWithIndex, foldMapWithIndex)
 import Data.Function (on)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe, optional)
 import Data.Maybe as Maybe
 import Data.Newtype (class Newtype)
 import Data.Number as Number
@@ -122,7 +122,7 @@ tupling = lift2 Tuple
 infixr 6 tupling as /|\
 
 theseing :: forall f a b. Alternative f => f a -> f b -> f (a /\/ b)
-theseing a b = This <$> a <|> That <$> b <|> Both <$> a <*> b
+theseing a b = lift2 maybe This Both <$> a <*> optional b <|> That <$> b
 infixr 6 theseing as /\\/
 infixr 6 type These as /\/
 

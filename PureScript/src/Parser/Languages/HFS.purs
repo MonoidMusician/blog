@@ -391,6 +391,10 @@ def rot
   3#[.1 .0 .2]
 end
 
+def bury
+  3#[.0 .2 .1]
+end
+
 def drop
   1#[]
 end
@@ -414,29 +418,33 @@ def unsingle
   end
 end
 
-## Kuratowski encoding of ordered pairs
+
+## A simple encoding of ordered pairs
 alias pair >-
 def pair
-  2#[ {{.0}, {.0, .1}} ]
+  2#[ { { .0, 0 }, { {.1}, 1 } } ]
 end
 
 ## Unpack an ordered pair
 alias unpair -<
 def unpair
-  #
-  2 match
-    drop
-    2#[
-      .0 .1 .\ unsingle
-      .0 unsingle
-    ]
-  ret
-  1 match
-    drop
-    unsingle
-    dup
-  ret
-  throw
+  # 2 != if throw end
+  ## Make sure $1 is the one that contains 0
+  $0 0 .@ if swap end
+
+  # 2 match drop
+    1 != if throw end
+  else
+    1 != if throw end
+  end
+  unsingle
+
+  swap
+  # 2 match drop
+    0 != if throw end
+  else
+    1 != if throw end
+  end
 end
 
 ## Project out the first element of the pair
@@ -551,6 +559,29 @@ def sqrt
   Dec
 end
 
+## Kuratowski encoding of ordered pairs
+## (not a pairing function)
+def pairKuratowski
+  2#[ {{.0}, {.0, .1}} ]
+end
+
+def unpairKuratowski
+  #
+  2 match
+    drop
+    2#[
+      .0 .1 .\ unsingle
+      .0 unsingle
+    ]
+  ret
+  1 match
+    drop
+    unsingle
+    dup
+  ret
+  throw
+end
+
 ## The Cantor pairing function
 def pairCantor 2#[
   .0 .1 + $0++ * 2 /. .1 +
@@ -611,6 +642,36 @@ def un 2#[
   .1 # .0 != if throw end
 ] end
 
+## Encode the integers as
+##   0 <- -0, 1 <- +1, 2 <- -1
+##   3 <- +2, 4 <- -2, ...
+def posZ
+  dup if 1-. 1<<. 1+ end
+end
+def negZ
+  1<<.
+end
+## Action of Z on N
+def plusminusNZ 2#[
+  .1
+    .0 1>>.
+    .0 1& if
+      1+ +
+    else
+      -.
+    end
+] end
+def plusminusZN swap plusminusNZ end
+
+alias plusminusNZ +-.
+alias plusminusNZ ±.
+alias plusminusZN .+-
+alias plusminusZN .±
+
+## A custom encoding for pairs, optimized for
+## a small index paired with larger data, which
+## is embedded in singleton sets at a depth
+## larger than the depth of the index.
 def entry
   2#[
     .1 .0 depth++ loop {.} end
@@ -682,64 +743,125 @@ end
 
 alias unlist ..#
 def unlist
-  1#[ dup count loop uncons swap end drop .0 count ]
+  1#[ .0 untuple .0 count ]
 end
 
 
-## Turing machines
+## ############### ##
+## Turing machines ##
+## ############### ##
 
-## TMtable: Map (Pair TMstate TMsymbol) (Pair (Pair TMstate TMsymbol) TMaction)
+## Uses global variables for convenience:
+
+## A table of all of the state transitions and actions
+## TMtable: Map (Entry TMstate TMsymbol) (Pair (Entry TMstate TMsymbol) TMaction)
 {} set TMtable
+## The current state of the machine
 1  set TMstate
+## The symbols written to the tape
 {} set TMtape
+## The current index of the read/write head on the tape
 0  set TMindex
+## (Temporary) The last symbol read off the tape
+0  set TMsymbol
 
 ## Actions
 enum TMa(
-  L ## Left
-  N ## Neutral
-  R ## Right
-  H ## Halt
+  N  ## Neutral: -0
+  R  ## Right:   +1
+  L  ## Left:    -1
+  RR ## Right 2: +2
+  LL ## Left 2:  -2
+  ## Use posZ / negZ for more
 )
 ## States
 enum TMs(
   0 Halt
   1 Start
+  ## Your states here!
 )
 
+## Construct an entry for TMtable
 def TMentry 5#[
-  .4 .3 pair
-  .2 .1 pair .0 pair
-  pair
+  ## Recognize state .4, with symbol .3 on the tape
+  .3 .4 entry
+  ## Transition to state .2, after writing symbol .1,
+  ## then move head by posZ/negZ .0
+  .1 .2 entry .0 pair
+  swap pair
+] end
+## Alternate constructor, a catchall for symbols
+def TMconst 4#[
+  ## Recognize state .3 with any symbol on the tape
+  .3 {.}
+  ## Transition to state .2, after writing symbol .1,
+  ## then move head by posZ/negZ .0
+  .1 .2 entry .0 pair
+  swap pair
 ] end
 
+def TMreset
+  1  set TMstate
+  {} set TMtape
+  0  set TMindex
+  0  set TMsymbol
+end
+
+## Take one step, if it is not in the halt state
+## and it has an action for the current state
+## and symbol on the tape.
 def TMstep
+  ## Explicit halt state (0)
   TMstate TMsHalt == if 0 ret
+
+  ## Retrieve the symbol on the tape
+  ## at the current index
   TMtape TMindex !?
     set TMsymbol
-  TMtable  TMstate TMsymbol >-  @?
-    dup 0 == if ret
-  -< 2#[ .1 -< .0 ]
+
+  ## Look it up in the machine table
+  ## First try looking up the state and symbol pair
+  TMtable  TMsymbol TMstate entry  @?
+    0 match drop
+      ## Fall back to the state as a singleton
+      TMtable  {TMstate}  @?
+        0 match ret  ## Return 0 if not found
+    end
+  -< 2#[ .1 unentry .0 ]
+
   3#[
-    .2 set TMstate
+    ## Enter the new state
+    .1 set TMstate
+    ## Replace the index in the tape
     TMtape
       { TMsymbol TMindex entry } \.
-      { .1       TMindex entry } |
+      { .2       TMindex entry } |
       set TMtape
-    .0
-      TMaL match drop
-        TMindex-- set TMindex
-      1 ret
-      TMaR match drop
-        TMindex++ set TMindex
-      1 ret
-      TMaN match drop
-        TMindex set TMindex
-      1 ret
-      begin ## fallthrough
-        TMsHalt set TMstate
-      0 ret
+    ## Move the index by the specified integer
+    TMindex .0 ±. set TMindex
   ]
+  ## Continue
+  1
+end
+
+## Loops until a halt state / unknown symbol
+## and returns how many steps it took
+def TMloop
+  0
+    begin TMstep while ++ end
+  Dec
+end
+
+## Loops with fuel, returns how many steps were taken
+def TMsteps
+  dup 0 == if ret
+  0
+    begin TMstep while
+      2#[ .1-- .0++ ]
+      $1 0 == if break end
+    end
+  2#[ .0 ]
+  Dec
 end
 """
 
@@ -1253,7 +1375,7 @@ wrapParser :: forall err.
   Either (Either err RuntimeError) Env
 wrapParser parserMade =
   let stdenv = withStdenv parserMade in
-  \input -> case parserMade input of
+  \input -> case parserMade (String.trim input) of
     Left err -> Left (Left err)
     Right instrs -> case run (stdenv instrs) of
       { error: Just err } -> Left (Right err)
@@ -1317,8 +1439,8 @@ data Flow
   | InBetween { instr :: Pointer, silent :: Boolean, current :: Int, noContinue :: Int }
   -- (No data, just a marker)
   | InFunDef
-  -- Pointer to return to
-  | InFunCall { instr :: Pointer, newlinePending :: List Instr }
+  -- Pointer to return to, other state to restore
+  | InFunCall { instr :: Pointer, newlinePending :: List Instr, pointed :: Int }
   | BuildingSet Int HFS
   | BuildingStack Int Int
 
@@ -1575,11 +1697,12 @@ interpret instr original = case resolve env instr, env of
                 _ -> env.stacks
             }
         -- return to the caller
-        { prev: true, here: InFunCall { instr: jmp, newlinePending } } : flows -> env
+        { prev: true, here: InFunCall { instr: jmp, newlinePending, pointed } } : flows -> env
           { flow = flows
           , instruction = jmp
           , running = true
           , newlinePending = newlinePending
+          , pointed = pointed
           }
         flow : flows -> env
           { flow = flows
@@ -1599,9 +1722,11 @@ interpret instr original = case resolve env instr, env of
       Just val, Nothing | stack :| stacks <- env.stacks ->
         env { stacks = val : stack :| stacks }
       Nothing, Just jmp -> env
-        { flow = { prev: true, here: InFunCall { instr: env.instruction, newlinePending: env.newlinePending } } : env.flow
+        { flow = { prev: true, here: InFunCall { instr: env.instruction, newlinePending: env.newlinePending, pointed: env.pointed } } : env.flow
         , instruction = jmp
         , newlinePending = Nil
+        -- Prevent brackets of the callsite from leaking through
+        , pointed = 0
         }
   Set name, { stacks: (val : stack) :| stacks } -> env
     { vars = Map.insert name val env.vars

@@ -28,7 +28,7 @@ But the story has stopped short after `select`{.haskell} because the familiar to
 However, the final answer for what selective applicative functors want to be is really cool.
 We just have to work a bit harder to see it: we have to consider arrows (composable profunctors) instead of plain functors.
 
-Selective applicative functors want to encode *exclusive determined choice*.
+Selective applicative functors want to encode *exclusive and exhaustive determined choice*.
 They can choose between a finite number of predetermined case branches based upon previous results during evaluation.^[`select`{.haskell} itself has an implicit `pure`{.haskell} branch with no side-effects, where `branch`{.haskell} has two branches.]
 
 Once you see it, it makes so much sense from a programming language perspective: it has the shape of an AST for a programming language.
@@ -227,7 +227,7 @@ It is a restricted form of `i -> f r`{.haskell}, as this function demonstrates w
 ```haskell
 -- | One thing you can do is apply a `CaseTree` to a specific value of `i` to see
 -- | what branch it chooses. This lets you apply it via `>>=`.
-applyCaseTree :: forall i f r. Functor f => CaseTree i f r -> i -> f r
+applyCaseTree :: forall f i r. Functor f => CaseTree f i r -> i -> f r
 applyCaseTree (ZeroCases toVoid) i = absurd (toVoid i)
 applyCaseTree (OneCase fir) i = fir <&> ($ i)
 applyCaseTree (TwoCases fg x y) ij =
@@ -241,7 +241,7 @@ applyCaseTree (TwoCases fg x y) ij =
 ```haskell
 -- | The other way to apply it is via `<*>`, which means we do not get to skip
 -- | executing any branches.
-mergeCaseTree :: forall i f r. Applicative f => CaseTree i f r -> f (i -> r)
+mergeCaseTree :: forall f i r. Applicative f => CaseTree f i r -> f (i -> r)
 mergeCaseTree (ZeroCases toVoid) = pure (absurd . toVoid)
 mergeCaseTree (OneCase fir) = fir
 mergeCaseTree (TwoCases fg x y) =
@@ -264,7 +264,7 @@ because the length of the encoded array can be any length from the determiner pl
 :::
 
 This data type has a *ton* of structure.
-As a start, note that it is a profunctor: we can map the output covariantly, with `map :: (r -> r') -> CaseTree f i r -> CaseTree f i r'`{.haskell}, and the input contravariantly, with a function of type `(i' -> i) -> CaseTree f i r -> CaseTree i' f r`{.haskell}.
+As a start, note that it is a profunctor: we can map the output covariantly, with `map :: (r -> r') -> CaseTree f i r -> CaseTree f i r'`{.haskell}, and the input contravariantly, with a function of type `(i' -> i) -> CaseTree f i r -> CaseTree f i' r`{.haskell}.
 
 :::Details
 This is the full mapping function: to transform from `CaseTree f i r`{.haskell} to `CaseTree f' j r'`{.haskell}, you need a function `j -> i`{.haskell}, a natural transformation `f ~> f'`{.haskell}, and a function `r -> r'`{.haskell}.
@@ -555,7 +555,7 @@ Finally, this tells us that we can split control flow over `ControlFlow f (Eithe
 
 ```haskell
 bifurcate ::
-  forall x y i f r.
+  forall x y f i r.
     Functor f =>
   (i -> Either x y) ->
   ControlFlow f x r ->
@@ -746,7 +746,7 @@ branch determiner leftCase rightCase =
 -- ^ This easily generalizes to n-ary branches, unlike `branch` itself:
 
 -- | Use `partitionMap`, `<*>`, and `<|>` to derive `Casing` for idempotent effects.
-caseTreeOnPlus :: forall f i r. Apply f => Filterable f => Plus f => f i -> CaseTree i f r -> f r
+caseTreeOnPlus :: forall f i r. Apply f => Filterable f => Plus f => f i -> CaseTree f i r -> f r
 ```
 
 Because this duplicates `determiner`{.haskell}, it would only be safe for things like `ParserT Identity`{.haskell} which does not have observable side effects from failed branches.^[Strictly speaking, you could have idempotent effects: `f *> f = f`{.haskell}.]
@@ -769,7 +769,7 @@ They both allow retaining the structure of branches as independent from the sequ
 
 Selective applicative functors are all about control flow with determined choice: the result of previous actions will determine which branch should be taken.
 In order to keep track of which branches are exclusive from each other, and to explain it via tensors, we have to explain it as a theory of *arrows*, not of functors.
-This is useful for tracking or preventing ambiguity during parsing, as one example.
+Having this information about exclusivity is useful for tracking or preventing ambiguity during parsing, as one example.
 
 <details class="Details">
 <summary>Definition</summary>
@@ -824,23 +824,36 @@ You can think of the applicative functor `f`{.haskell} as denoting the boundary 
 The requirements of selective applicative functors are intentionally flexible, to allow it to be implemented in varied ways: applicatives for simple composable sequencing and staging of effects, monads for efficient execution and flexibility, near-semirings for static analysis, with the selective applicative structure as a common meeting ground for all of it.
 
 :::{.Details box-name="Laws"}
-Selective applicative structures derived from applicative instances only satisfy.
+Selective applicative structures derived from applicative instances (directly, or via postcomposition) only satisfy the associativity and identity laws.
 We might call this “raw control flow”, as it exposes the particular branching structure it was constructed with (order of cases, exact interleaving of sequencing vs branching, and so on).
 
-- Multiplicative associativity: `Sequencing (Sequencing f g) h = Sequencing f (Sequencing g h)`{.haskell}
-- Multiplicative identity: `Sequencing (Pure id) f = f = Sequencing f (Pure id)`{.haskell}
-- Additive associativity: `TwoCases id cx (TwoCases id cy cz) = TwoCases assoc (TwoCases id cx cy) cz`{.haskell}
-- Additive identity: `TwoCases Left cx (ZeroCases absurd) = cx = TwoCases Right (ZeroCases absurd) cx`{.haskell}
+- Multiplicative associativity: `Sequencing (Sequencing f g) h = Sequencing f (Sequencing g h)`{.haskell} like \((x * y) * z = x * (y * z)\)
+- Multiplicative identity: `Sequencing (Pure id) f = f = Sequencing f (Pure id)`{.haskell} like \(1 * x = x = x * 1\)
+- Additive associativity: `CaseBranch id cx (CaseBranch id cy cz) = CaseBranch assoc (CaseBranch id cx cy) cz`{.haskell} like \((x + y) + z = x + (y + z)\)
+- Additive identity: `CaseBranch Left cx (ZeroCases absurd) = cx = CaseBranch Right (ZeroCases absurd) cx`{.haskell} like \(x + 0 = x = 0 + x\).
 
 ------
 
 Better behaved instances follow the structure of a near-semiring, to model control flow more precisely.
 This includes constant functors of near-semirings, instances derived from monads, and composition with semilattice-like effects like `Maybe`{.haskell} on the outside.
 
-- Right distributivity: `Sequencing (CaseBranch split cx cy) g = CaseBranch split (Sequencing cx g) (Sequencing cy g)`{.haskell}
-- Left absorbing element: `Sequencing (Absurd absurd) g = Absurd absurd`{.haskell}
-- Optionally, (additive) commutativity: `TwoCases id cx cy = TwoCases swap cx cy`{.haskell}
-- Optionally, additive idempotence: `CaseBranch id cx cx = lcmap collapse cx`{.haskell}
+- Right^[multiplication on the right distributes over addition (on the left)] distributivity: `Sequencing (CaseBranch split cx cy) g = CaseBranch split (Sequencing cx g) (Sequencing cy g)`{.haskell} like \((x + y) * z = (x * z) + (y * z)\)
+- Left absorbing identity: `Sequencing (Absurd absurd) g = Absurd absurd`{.haskell} like \(0 * z = 0\)
+
+------
+
+There are a few other laws that we might like to apply:
+
+- Optionally, (additive) commutativity for units: `CaseBranch id (Pure f) g = CaseBranch swap g (Pure f)`{.haskell} like \(1 + x = x + 1\).
+- Optionally, (additive) full commutativity: `CaseBranch id cx cy = CaseBranch swap cy cx`{.haskell} like \(x + y = y + x\)
+- Optionally, idempotence for units: `CaseBranch f (Pure g) (Pure h) = Pure (f >>> either g h)`{.haskell} like \(1 + 1 = 1\)
+- Optionally, full additive idempotence: `CaseBranch id cx cx = lcmap collapse cx`{.haskell} like \(x + x = x\)
+- Rarely, multiplicative commutativity: `Sequencing (Action f) (Action g) = Sequencing (Action g) (Action f)`{.haskell} like \(x * y = y * x\)
+
+------
+
+In the interests of flexibility and composability, I think it is important to allow instances that do not model ideal control flow.
+This is especially the case in a ecosystem that doesnʼt have typeclasses for the algebraic explosion of structures like monoids, idempotent monoids, near-semirings, idempotent near-semirings, lattices, semilattices, bands, and so on.
 :::
 
 Next time we will study the theory of these functors from the other side: basic examples, how they compose, what would be a good syntax for them.

@@ -59,9 +59,11 @@ There are eight grouping operators, of various usefulness:
 Each opening operator creates a new stack on top of the existing stacks, though their semantics differ.
 Each closing operator will close off the stack, and they must correspond to the same shape of operator (you cannot mix and match braces and brackets).
 
-They are used in combination with variables `.0`{.hatstack}, `.1`{.hatstack}, [et al.]{t=} to bring in data from the outside stacks.
+They are used in combination with variables `.0`{.hatstack}, `.1`{.hatstack}, [et al.]{t=} to bring in data from a distinguished “saved” stack.
 You may also use the variables `$0`{.hatstack} and so on to refer to the *current* stack, whatever that is, just like you can at the top level.
 (So `$0`{.hatstack} always means `dup`{.fu}, for example.)
+
+The saved stack is either the top stack, if there have been no brackets, or the stack outside the last unclosed bracket (`#[`{.hatstack} or `[`{.hatstack}).
 
 #### Stack manipulation
 
@@ -71,11 +73,11 @@ We can describe its execution on the stack `{} {{}}`{.hatstack} like so:
 
 - Queue the deletion of `2`{.hatstack} items from the stack, namely `{}`{.hatstack} and `{{}}`{.hatstack}
 - Create a new stack
-- Push `.0`{.hatstack} from the previous stack, this refers to `{{}}`{.hatstack}
-- Push `.1`{.hatstack} from the previous stack, this refers to `{}`{.hatstack}
+- Push `.0`{.hatstack} from the saved stack, this refers to `{{}}`{.hatstack} from the previous stack
+- Push `.1`{.hatstack} from the saved stack, this refers to `{}`{.hatstack} from the previous stack
 
   :::Note
-  Notice that the indexing has not changed, since we pushed to a different stack than we are referencing!
+  Notice that we pushed an item but the indexing has not changed, since we pushed to a different stack than we are referencing!
   This is why it is so cool.
   You can just say what you want, without having to think about how each operation will affect the indices you are referring to!
   :::
@@ -84,7 +86,19 @@ We can describe its execution on the stack `{} {{}}`{.hatstack} like so:
 
 #### Set creation
 
+We want the set braces to be transparent to the stack, so `.0 {.}`{.hatstack} and `{ .0 }`{.hatstack} always are the same, and more importantly, so `.0 {.} {.}`{.hatstack} and `{ { .0 } }`{.hatstack} are the same – otherwise keeping track of the nesting of braces would be a confusing nightmare.
 
+So braces still add a new stack, but they do not change which stack `.0`{.hatstack} and so on refer to.
+So the saved stack is still the stack preceding the last bracket `[`{.hatstack} not closed by a `]`{.hatstack}, or the top stack by default.
+
+So `#{`{.hatstack} pops a number and pops that many items, which transparently become part of the set created by `}`{.hatstack}: `1 #{}`{.hatstack} is exactly `{.}`{.hatstack}, and `2 #{}`{.hatstack} puts two items into a set just like `2#[ { .0 .1 } ]`{.hatstack} would do, and so on.
+However, `23 1 #{ $0 }`{.hatstack} is an error: the items (just `23`{.hatstack} in this case) are not part of the inner stack, they are saved out of band.
+Opening braces and brackets always create an empty stack.
+
+Finally, `}#`{.hatstack} is probably not very useful: it is the same as `}`{.hatstack} but it also pushes the length of the *stack* it merged into the set.
+
+As a contrived example, `5 5 5 5 4#{ 2 2 8 }#`{.hatstack} produces `{ 8, 5, 2 } 3`{.hatstack}: the four `5`{.hatstack}s get merged into a single item in the set, but the `3`{.hatstack} at the end just counts the `2 2 8`{.hatstack} that was on the stack before `}#`{.hatstack}, even though they only count for two items in the set.
+Alternatively, `5 5 5 5 4#{ 5 5 }#`{.hatstack} produces `{ 5 } 2`{.hatstack}, referring to the two `5`{.hatstack}s on the inner stack.
 
 #### Quickref
 
@@ -105,7 +119,7 @@ We can describe its execution on the stack `{} {{}}`{.hatstack} like so:
     That is, this operator is meant for creating [length-headed lists](#length-headed-lists).
 
 `#{`{.hatstack}
-:   Immediately pop a number and immediately float that many items, who will appear as members of the final result.
+:   Immediately pop a number and immediately float that many items, who will appear as members of the final result.^[They disappear from the stack in the meantime, so that they are out of your way, but this is only observable for the default context, not inside brackets.]
     Then push a new stack, but do **not** reference the previous stack with `.0`{.hatstack} [et al.]{t=} (unless it was the only stack!).
 
 ` {`{.hatstack}
@@ -115,10 +129,24 @@ We can describe its execution on the stack `{} {{}}`{.hatstack} like so:
 :   Pop the new stack and push a single item, being the set of items from the popped stack along with any elements floated by `#{`{.hatstack}.
 
 `}#`{.hatstack}
-:   Additionally push the length of the popped stack.
-    Equivalent to `} dup count`{.hatstack}.
+:   Additionally push the length of the popped stack (including duplicates and not including items floated by `#{`{.hatstack}).
 
 #### Implementation
+
+The stack is literally a stack of stacks: `NonEmptyList (List HFS)`{.purescript}, with an additional `Int`{.purescript} to indicate which stack is the saved stack referenced by `.0`{.hatstack} and so on.
+
+:::{.Details box-name="Aside"}
+More properly, you could eliminate the `Int`{.purescript} by modeling it as an ADT `OneStack (List HFS) | Inner (NonEmptyList (List HFS)) (NonEmptyList (List HFS))`{.purescript}, but since most operations do not care about this structure, pattern matching on it would be more annoying.
+In addition, it is easier to save and restore the `Int`{.purescript} by itself for nested control flow, instead of saving and restoring partial stacks.
+:::
+
+Opening brackets and braces each push a new empty stack, but the brackets set the pointed stack to `1`{.purescript} always, while braces _increment_ it by `1`{.purescript} (thus referring to the same saved stack).
+A function call, on the other hand, resets the pointed stack to `0`{.purescript}, so that the bracket nesting of the call site does not leak through.
+
+Braces immediately delete the requested items from the stack (this is only observable when the pointed stack was `0`{.purescript}), while brackets keep them there to be referenced.
+
+There is an entirely separate stack of frames of control flow, which have their own structure to maintain data out-of-band.
+Brackets and braces both maintain the pointer to the previous saved stack, and brackets store the number of items to pop, while the braces store their popped items already merged into a set.
 
 ### Operators
 
@@ -171,7 +199,7 @@ As mentioned above, there is no compile-time checking for these constructs, they
 - `if…end`{.hatstack} and `if…else…end`{.hatstack}
   - `if: -c`{.hatstack} pops the condition
 - `match…end`{.hatstack} and `match…else…end`{.hatstack}
-  - `match: =x -y`{.hatstack} acts like `$1 == if`{.hatstack}: it pops the top of the stack and takes the branch if it matches the item, which it leaves on the stack for another match (and also the branch body)
+  - `match: =x -y`{.hatstack} acts like `$1 == if`{.hatstack}: it pops the top of the stack and takes the branch if it matches the item, which it leaves on the stack for another match (and also the branch body, in case the particular spelling of the value is interesting)
 - `def FUN…end`{.hatstack} with `return`{.hatstack}
   - `return: -r`{.hatstack} and `ret: -r`{.hatstack}
   - `ret`{.hatstack} stands for `return end`{.hatstack}
@@ -253,17 +281,27 @@ Finite maps are encoded as [graphs of functions](https://en.wikipedia.org/wiki/G
 
 #### Tuples/lists
 
+Tuples and lists use the same encoding of entries, which are optimized for a small index paired with larger data.
+In particular it is a set consisting of the index with the data embedded in singleton sets at a depth larger than the depth of the index.
+This ensures that a tuple or list with \(n\) entries is a set with \(n\) members.
+
 `!>`{.hatstack}
 :   Cons
 
 `!!`{.hatstack}
 :   Index
 
-`..#`{.hatstack}
-:   Unpack
+`!?`{.hatstack}
+:   Index, or return 0 if missing
 
-`#..`{.hatstack}
-:   Pack
+`tuple`{.fu}, `list`{.fu}, `#..`{.hatstack}
+:   Pack \(n\) stack-items into a list or tuple
+
+`unlist`{.fu}, `..#`{.hatstack}
+:   Unpack an encoded list into a [length-headed list](#length-headed-lists)
+
+`untuple`{.fu}, `..`{.hatstack}
+:   Unpack an encoded tuple (drops the length from `unlist`{.fu})
 
 `entry`{.hatstack}
 :    Make an entry
@@ -282,7 +320,8 @@ Finite maps are encoded as [graphs of functions](https://en.wikipedia.org/wiki/G
 `rot`{.fu} (`3#[.1 .0 .2]`{.hatstack})
 :   Pull the third item to the top.
 
-<!-- bury -->
+`bury`{.fu} (`3#[.0 .2 .1]`{.hatstack})
+:   Bury the first item below the next two.
 
 #### Stdlib source
 

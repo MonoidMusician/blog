@@ -17,7 +17,7 @@ const s32 = (value) => u32(BigInt(value) + (1n<<31n)) - (1<<31);
 const roundUp = (l, amt=64) => l + (amt - l%amt)%amt;
 
 // Helper to repeat characters
-const repeat = (n, fill="0") => n > 0 ? [...Array(n)].map((_,i) => typeof fill === 'function' ? fill(i) : fill).join("") : "";
+const repeat = (n, fill="0") => n > 0 ? [...Array(Number(n))].map((_,i) => typeof fill === 'function' ? fill(i) : fill).join("") : "";
 
 // Test the performance of a function
 const perform = (label, f, ...args) => {
