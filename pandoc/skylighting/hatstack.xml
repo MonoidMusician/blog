@@ -35,7 +35,7 @@
     <contexts>
       <context name="Root" attribute="Normal" lineEndContext="#stay">
         <IncludeRules context="FindComments"/>
-        <RegExpr attribute="Control Flow" String="(def|set):?" context="DefName"/>
+        <RegExpr attribute="Control Flow" String="((def|set)(?![a-zA-Z0-9])):?" context="DefName"/>
         <RegExpr attribute="Control Flow" String="(alias)(::)?" context="Def2Name"/>
         <keyword attribute="Control Flow" String="commands"/>
         <RegExpr attribute="Control Flow" String="[&#x239B;-&#x23AD;&#x23B0;-&#x23B1;]"/> <!-- [\x239B-\x23AD\x23B0-\x23B1] -->

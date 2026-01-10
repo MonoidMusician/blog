@@ -3,7 +3,7 @@ title: HatStack
 subtitle: "A stack based, concatenative language for [Hereditarily Finite Sets](hereditarily_finite_sets.html)"
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
-preroll: '<span data-widget="Parser.Main.HFS"></span>'
+preroll: '<span data-widget="Parser.Main.HFS" data-widget-datakey="default"></span>'
 ---
 
 <script src="assets/js/hfs.js"></script>
@@ -24,6 +24,113 @@ This is both good for preserving user intent (helping you remember if you intend
 For example, `{{{{{{{}}}}}}} 2 65536 ^. ==`{.hatstack} evaluates to true (in infix notation: `({{{{{{{}}}}}}} == 2 ^ 65536)`), meaning that
 even relatively small sets like these would require huge `BigInt`{.js}s to display, due to the [power tower](https://en.wikipedia.org/wiki/Tetration) nature of the numeric representation.
 And in fact, `2 65536 ^.`{.hatstack} and `1 65536 <<.`{.hatstack} are both special-cased to compute as the singleton set `{65536}`{.hatstack} instead of a natural number with 65537 bits.
+
+## Examples
+
+<style>
+.examples > [data-widget] > .hatstack {
+  width: fit-content;
+}
+.examples {
+  display: flex;
+  flex-direction: row;
+  gap: 1em;
+  align-items: start;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.examples pre > code {
+  border-radius: 6px;
+  box-shadow: inset 0px 0px 3px 0px rgba(255, 255, 255, 0.1176470588), -1px -1px 3px 0px rgba(67, 98, 177, 0.0784313725);
+}
+</style>
+
+:::: {.examples .full-width}
+:::{widget="Parser.Main.HFS.example" widget-datakey="default"}
+```hatstack
+def fibonacci
+  ## Insert 0 and 1 onto the
+  ## stack below the loop count
+  1#[ 0 1 .0 ]
+  ## Loop that many times,
+  ## over two items
+  loop 2#[
+    ## Shift .0 -> .1
+    .0
+    ## Add .0 + .1 -> .0
+    .0 .1 +
+  ] end
+  ## Take the lower number
+  ## (so it maps 0 -> 0)
+  2#[ .1 ]
+end
+
+25 fibonacci
+```
+:::
+
+:::{widget="Parser.Main.HFS.example" widget-datakey="default"}
+```hatstack
+def factorial
+  ## Loop between n and 1
+  ## (inclusive), starting
+  ## with 1 on the stack
+  1#[ 1  .0++ 1 ]
+  between
+    ## Multiply the accumulator
+    ## by the index
+    *
+  end
+end
+
+5 factorial
+```
+:::
+
+:::{widget="Parser.Main.HFS.example" widget-datakey="default"}
+```hatstack
+## Map every entry of .0 to .1
+def setToConstMap
+  2#[
+    ## Unpack onto the stack
+    .0 #
+      drop  ## the length
+    {}        ## Starting map
+    .1        ## Constant element
+    .0 count  ## Loop iterations
+  ]
+  loop 3#[
+    ## Add the pair into the map
+    { .0 .2 >- } .1 ∪
+    .0
+  ] end
+  drop  ## the constant element
+end
+
+42 { 12, 23, 34 } setToConstMap
+1#[ .0 range .0 domain .0 ]
+```
+:::
+
+:::{widget="Parser.Main.HFS.example" widget-datakey="default"}
+```hatstack
+def isPermutation 1#[
+  .0 domain
+  .0 range
+  ==
+] end
+
+{ 1 0 >-
+  0 1 >-
+} isPermutation
+
+{ 0 0 >-
+  0 1 >-
+} isPermutation
+```
+:::
+
+::::
 
 ## Documentation
 
@@ -200,6 +307,7 @@ As mentioned above, there is no compile-time checking for these constructs, they
   - `if: -c`{.hatstack} pops the condition
 - `match…end`{.hatstack} and `match…else…end`{.hatstack}
   - `match: =x -y`{.hatstack} acts like `$1 == if`{.hatstack}: it pops the top of the stack and takes the branch if it matches the item, which it leaves on the stack for another match (and also the branch body, in case the particular spelling of the value is interesting)
+  - `matched: =x -0 | -x -y`{.hatstack} is short for `match drop`{.hatstack}
 - `def FUN…end`{.hatstack} with `return`{.hatstack}
   - `return: -r`{.hatstack} and `ret: -r`{.hatstack}
   - `ret`{.hatstack} stands for `return end`{.hatstack}

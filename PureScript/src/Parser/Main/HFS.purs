@@ -17,6 +17,8 @@ import Data.Time.Duration (Milliseconds(..))
 import Data.Tuple (Tuple(..), snd)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
+import Effect.Class (liftEffect)
+import Effect.Class.Console as Console
 import Effect.Uncurried (EffectFn2, runEffectFn2)
 import Foreign.Object as FO
 import Idiolect (intercalateMap)
@@ -27,14 +29,17 @@ import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones (text, ($$), ($~~), (.$), (.$$), (.$~~), (<:>), (=:=), (>$), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (sourceCode)
-import Riverdragon.River (createRiver, stillRiver, store)
+import Riverdragon.River (River, createRiver, stillRiver, store, subscribe, subscribeM)
 import Riverdragon.River.Beyond (debounce, dedup)
 import Web.DOM (Element)
-import Widget (Widget)
+import Web.HTML (window)
+import Web.HTML.Window (scroll)
+import Widget (Widget, autoAdaptInterface)
 
 widgets :: FO.Object Widget
 widgets = FO.fromFoldable
   [ "Parser.Main.HFS.demo" /\ widget
+  , "Parser.Main.HFS.example" /\ widget_example
   , "Parser.Main.HFS.ops" /\ widget_ops All
   , "Parser.Main.HFS.ops_binary" /\ widget_ops Binaries
   , "Parser.Main.HFS.ops_n_ary" /\ widget_ops NAries
@@ -122,8 +127,10 @@ renderHFS (SetLike _ members) = (\m -> span "cf" "{ " <> m <> span "cf" " }") $
 
 
 widget :: Widget
-widget _ = pure $ Egg do
+widget { interface } = do
   { stream: valueSet, send: setValue } <- createRiver
+  let receiveValue = (autoAdaptInterface @String (interface "hatstack-example")).receive
+  subscribe receiveValue $ setValue <<< Tuple true
   parser <- HFS.mkParser
   { stream: done } <- store $ pure (false /\ Right emptyEnv) <|>
     (map <$> stillRiver parser <*> debounce (100.0 # Milliseconds) (dedup valueSet))
@@ -174,6 +181,7 @@ widget _ = pure $ Egg do
           ] $ D.textarea
               [ D.onInputValue =:= setValue <<< Tuple false
               , D.onChangeValue =:= setValue <<< Tuple true
+              , D.value <:> receiveValue
               , D.style =:= "height: 20svh"
               , D.asCodeInput
               ]
@@ -189,3 +197,11 @@ widget _ = pure $ Egg do
   gateSuccess f = filterMap \(Tuple force a) -> case f a, force of
     Left _, false -> Nothing
     r, _ -> Just r
+
+widget_example :: Widget
+widget_example { interface, text } = liftEffect do
+  let push = (autoAdaptInterface (interface "hatstack-example")).send
+  example <- (String.trim <$> text) <> pure "\n"
+  pure $ D.buttonW "" "Try this example" do
+    push example
+    scroll 0 0 =<< window

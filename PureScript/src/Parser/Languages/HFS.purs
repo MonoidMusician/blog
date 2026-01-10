@@ -432,7 +432,7 @@ def unpair
   ## Make sure $1 is the one that contains 0
   $0 0 .@ if swap end
 
-  # 2 match drop
+  # 2 matched
     1 != if throw end
   else
     1 != if throw end
@@ -440,7 +440,7 @@ def unpair
   unsingle
 
   swap
-  # 2 match drop
+  # 2 matched
     0 != if throw end
   else
     1 != if throw end
@@ -567,15 +567,13 @@ end
 
 def unpairKuratowski
   #
-  2 match
-    drop
+  2 matched
     2#[
       .0 .1 .\ unsingle
       .0 unsingle
     ]
   ret
-  1 match
-    drop
+  1 matched
     unsingle
     dup
   ret
@@ -822,7 +820,7 @@ def TMstep
   ## Look it up in the machine table
   ## First try looking up the state and symbol pair
   TMtable  TMsymbol TMstate entry  @?
-    0 match drop
+    0 matched
       ## Fall back to the state as a singleton
       TMtable  {TMstate}  @?
         0 match ret  ## Return 0 if not found
@@ -1227,6 +1225,7 @@ data Ctrl
   | Break
   | If
   | Match
+  | Matched
   | Else
   | Def
   | Return
@@ -1616,6 +1615,24 @@ interpret instr original = case resolve env instr, env of
         { stacks: (operand1 : operand2 : stack) :| stacks } ->
           let branchChosen = operand1 == operand2 in env
           { stacks = (operand2 : stack) :| stacks
+          , flow = { prev: env.running, here: InIf branchChosen } : env.flow
+          , running = branchChosen
+          }
+        _ -> env
+          { flow = { prev: env.running, here: InIf false } : env.flow
+          , error = env.error <|> Just do underflow 1
+          }
+    -- Matched pops one, compares to the next, and drops if matches
+    Matched ->
+      case env of
+        -- Track scope without affecting the stack
+        _ | not env.running || isJust env.error -> env
+          { flow = { prev: false, here: InIf false } : env.flow
+          }
+        -- Pop and use that to take this branch (or wait for Else to resume it)
+        { stacks: (operand1 : operand2 : stack) :| stacks } ->
+          let branchChosen = operand1 == operand2 in env
+          { stacks = (if branchChosen then stack else operand2 : stack) :| stacks
           , flow = { prev: env.running, here: InIf branchChosen } : env.flow
           , running = branchChosen
           }

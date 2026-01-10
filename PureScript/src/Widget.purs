@@ -181,7 +181,7 @@ obtainInterface share k = do
       , destroy: mempty
       }
 
-adaptInterface :: forall ctx err a b. Monoid ctx => C.OneCodec ctx err Void a a b b -> Interface a -> Interface b
+adaptInterface :: forall ctx err @b @a. Monoid ctx => C.OneCodec ctx err Void a a b b -> Interface a -> Interface b
 adaptInterface codec interface =
   { send: interface.send <<< C.encode codec
   , mailbox: interface.mailbox <<< C.encode codec
@@ -192,10 +192,10 @@ adaptInterface codec interface =
   , destroy: interface.destroy
   }
 
-adaptInterfaceR :: forall a. C.JCodec a -> Interface JSON -> Interface a
+adaptInterfaceR :: forall @a. C.JCodec a -> Interface JSON -> Interface a
 adaptInterfaceR = adaptInterface <<< C.registration C.autoJ
 
-autoAdaptInterface :: forall a. C.AutoJSON a JSON => Interface JSON -> Interface a
+autoAdaptInterface :: forall @a. C.AutoJSON a JSON => Interface JSON -> Interface a
 autoAdaptInterface = adaptInterfaceR C.autoJ
 
 type KeyedInterfaceWithAttrs =
