@@ -307,7 +307,7 @@ As mentioned above, there is no compile-time checking for these constructs, they
   - `if: -c`{.hatstack} pops the condition
 - `match…end`{.hatstack} and `match…else…end`{.hatstack}
   - `match: =x -y`{.hatstack} acts like `$1 == if`{.hatstack}: it pops the top of the stack and takes the branch if it matches the item, which it leaves on the stack for another match (and also the branch body, in case the particular spelling of the value is interesting)
-  - `matched: =x -0 | -x -y`{.hatstack} is short for `match drop`{.hatstack}
+  - `matched: -x -x | =x -y`{.hatstack} is short for `match drop`{.hatstack}
 - `def FUN…end`{.hatstack} with `return`{.hatstack}
   - `return: -r`{.hatstack} and `ret: -r`{.hatstack}
   - `ret`{.hatstack} stands for `return end`{.hatstack}
