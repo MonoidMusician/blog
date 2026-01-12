@@ -160,9 +160,11 @@ const B = function([[x0,y0],[x1,y1],[x2,y2],[x3,y3]]) {
     [-x0+3*x1-3*x2+x3, -y0+3*y1-3*y2+y3],
   ];
 }
+// Uses second and third derivatives to compute the signed curvature in two dimensions.
 const curvature = (XX,YY,XXX,YYY) => {
   return (XX*YYY - YY*XXX)/Math.pow(XX*XX + YY*YY, 1.5);
 };
+// Compute signed curvature of a cubic Bézier at t=0.
 const Bcurvature0 = ([b0,b1,b2,_]) => {
   const b21 = [b2[0]-b1[0],b2[1]-b1[1]];
   const d0 = [b1[0]-b0[0],b1[1]-b0[1]];
@@ -170,6 +172,7 @@ const Bcurvature0 = ([b0,b1,b2,_]) => {
   const delta = Math.sqrt(d0[0]*d0[0] + d0[1]*d0[1]);
   return (2/3)*d0xb21/Math.pow(delta, 3);
 };
+// Compute signed curvature of a cubic Bézier at t=1.
 const Bcurvature1 = ([b0,b1,b2,b3]) => -Bcurvature0([b3,b2,b1,b0]);
 const Bcurvature = C => t => {
   const [numer, denom] = Bcurvature_polys(C).map(p => value(p)(t));
@@ -428,8 +431,8 @@ const PQ_CURVATURE = (P,Q) => {
     const R = TT(p);
     const XX = PPp[0] + QQq[0]*R;
     const YY = PPp[1] + QQq[1]*R;
-    const XXXYY = PPPp[0]*PPp[1] + PPPp[0]*QQq[1]*R + QQQq[0]*R*R*PPp[1] + QQQq[0]*QQq[1]*R*R*R;
-    const YYYXX = PPPp[1]*PPp[0] + PPPp[1]*QQq[0]*R + QQQq[1]*R*R*PPp[0] + QQQq[1]*QQq[0]*R*R*R;
+    const XXXYY = (PPPp[0] + QQQq[0]*R*R)*YY;
+    const YYYXX = (PPPp[1] + QQQq[1]*R*R)*XX;
     const speed = Math.pow(XX*XX + YY*YY, 3/2);
     const k = (XXXYY - YYYXX)/speed;
     if (!Number.isFinite(k)) {

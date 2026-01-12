@@ -46,6 +46,7 @@ And in fact, `2 65536 ^.`{.hatstack} and `1 65536 <<.`{.hatstack} are both speci
 </style>
 
 :::: {.examples .full-width}
+
 :::{widget="Parser.Main.HFS.example" widget-datakey="default"}
 ```hatstack
 def fibonacci
@@ -127,6 +128,64 @@ def isPermutation 1#[
 { 0 0 >-
   0 1 >-
 } isPermutation
+```
+:::
+
+::::
+
+### Turing Machines
+
+:::: {.examples .full-width}
+
+:::{widget="Parser.Main.HFS.example" widget-datakey="default"}
+```hatstack
+## 3-state busy beaver
+{
+  1 ⊥  2 ⊤ TMaR TMentry  ## 1⊥ -> ⊤2R
+  1 ⊤  3 ⊤ TMaL TMentry  ## 1⊤ -> ⊤3L
+  2 ⊥  1 ⊤ TMaL TMentry  ## 2⊥ -> ⊤1L
+  2 ⊤  2 ⊤ TMaR TMentry  ## 2⊤ -> ⊤2R
+  3 ⊥  2 ⊤ TMaL TMentry  ## 3⊥ -> ⊤2L
+  3 ⊤  0 ⊤ TMaR TMentry  ## 3⊤ -> ⊤0
+} set TMtable
+
+## (Offset for nonnegative tape)
+3 set TMindex
+
+## In 13 (< 20) steps,
+20 TMsteps
+
+## it writes 6 ⊤'s
+TMtape count
+
+TMtape
+```
+:::
+
+:::{widget="Parser.Main.HFS.example" widget-datakey="default"}
+```hatstack
+## 4-state busy beaver
+{
+  1 ⊥  2 ⊤ TMaR TMentry  ## 1⊥ -> ⊤2R
+  1 ⊤  2 ⊤ TMaL TMentry  ## 1⊤ -> ⊤2L
+  2 ⊥  1 ⊤ TMaL TMentry  ## 2⊥ -> ⊤1L
+  2 ⊤  3 ⊥ TMaL TMentry  ## 2⊤ -> ⊥3L
+  3 ⊥  0 ⊤ TMaR TMentry  ## 3⊥ -> ⊤0
+  3 ⊤  4 ⊤ TMaL TMentry  ## 3⊤ -> ⊤4L
+  4 ⊥  4 ⊤ TMaR TMentry  ## 4⊥ -> ⊤4R
+  4 ⊤  1 ⊥ TMaR TMentry  ## 4⊤ -> ⊥1R
+} set TMtable
+
+## (Offset for nonnegative tape)
+9 set TMindex
+
+## In 107 (< 200) steps,
+200 TMsteps
+
+## it writes 13 ⊤'s
+TMtape count
+
+TMtape
 ```
 :::
 
