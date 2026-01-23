@@ -405,15 +405,15 @@ As mentioned above, there is no compile-time checking for these constructs, they
 #### Booleans
 
 <!-- 22A5 -->
-`false`{.fu}, `⊥`{.hatstack} (`0`{.hatstack}, `{}`{.hatstack})
+`false`{.fu}, `⊥`{.hatstack} (`0x0`{.hatstack}, `{}`{.hatstack})
 :   An empty set.
 
 <!-- 22A4 -->
-`true`{.fu}, `⊤`{.hatstack} (`1`{.hatstack}, `{{}}`{.hatstack})
+`true`{.fu}, `⊤`{.hatstack} (`0x1`{.hatstack}, `{{}}`{.hatstack})
 :   A nice non-empty set.
 
 `not`{.fu}, `¬`{.hatstack}
-:   Returns `1`{.hatstack} if `0`{.hatstack}, else `0`{.hatstack}.
+:   Returns `0x1`{.hatstack} if `0`{.hatstack}, else `0x0`{.hatstack}.
 
 #### Ordered pairs and maps
 
@@ -510,4 +510,8 @@ pair–elements
 
 ### Algebra
 
+Monoids and semigroups all around.
 
+Semiring of the natural numbers, with monus.
+
+Distributive lattice (with bottom, not top) of hereditarily finite sets.

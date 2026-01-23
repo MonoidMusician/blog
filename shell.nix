@@ -24,6 +24,11 @@ pkgs.mkShell rec {
     libGL
 
     watchexec
+
+    (
+      let fenix = import (fetchTarball "https://github.com/nix-community/fenix/archive/6998514dce2c365142a0a119a95ef95d89b84086.tar.gz") { };
+      in fenix.complete.toolchain
+    )
   ];
 
   APPEND_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath nativeBuildInputs}";

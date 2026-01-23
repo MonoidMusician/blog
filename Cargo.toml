@@ -1,0 +1,16 @@
+[package]
+name = "blog"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name="quapteryx"
+path = "rust/Qua.rs"
+
+[[bin]]
+name="hatstack"
+path = "rust/HFS.rs"
+
+[dependencies]
+num-bigint = "0.4.6"
+num-traits = "0.2.19"

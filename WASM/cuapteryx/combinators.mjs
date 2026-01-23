@@ -168,7 +168,7 @@ const combinatorTable = {
     bird: "Lark",
     2: 'a(bb)',
     def: 'CBM',
-    value: '(S(K((SS)(K((SI)I)))))',
+    value: '((S((S(KS))K))(K((SI)I)))',
   },
   'M': {
     bird: "Mockingbird",
@@ -467,10 +467,27 @@ const combinatorTable = {
   'Θ': {
     name: "Theta (Turing fixed-point combinator)",
     1: 'a(Θa)',
-    def: 'U(B(SI)U)',
-    value: '((((SS)K)((S(K((SS)(S((SS)K)))))K)(SI)))',
+    def: 'Y(SI)',
+    // value: '((((SS)K)((S(K((SS)(S((SS)K)))))K)(SI)))',
   },
+  // 'Θ': {
+  //   name: "Theta (Turing fixed-point combinator)",
+  //   2: 'a(Θa)b',
+  //   def: 'Y(S(B(BI)))',
+  //   value: '((((SS)K)((S(K((SS)(S((SS)K)))))K)(S(S(K(S(KI)))))))',
+  // },
 };
+// L = ((S((S(KS))K))(K((SI)I))) = S(S(KS)K)(K(SII))
+// Lfg = f(gg)
+// Y = SSIL = SLL
+// SLLf = Lf(Lf) = f(Lf(Lf))
+
+// Z = ((S(K((SS)(S((SS)K)))))K) = S(K(SS(S(SSK))))K
+// Zfg = f(gfg)
+// Y = SSKZ = SZ(KZ)
+// SZ(KZ)f = ZfZ = f(ZfZ)
+
+// Θ = Y(SI) = Z(SI)Z = SI(Z(SI)Z) = \f -> f (Z(SI)Z)
 
 
 const combinators = {

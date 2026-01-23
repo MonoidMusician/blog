@@ -273,8 +273,8 @@ In some cases, this saves doing a linear scan of `vars`{.haskell}.
 The solver augments the naïve approach (set of upper bounds) with the linear chains given by `Chain`{.haskell}.
 That is, insertions may require shifting “subtrees” downwards with knowledge of their new upper bounds: inserting additional dimensions that they are now constrained by, and lowering their value along the chain in existing dimensions.
 
-Importantly, we get away with only shifting subtrees downwards (and not other kinds of rearrangements) by ensuring that we never get in the situation from [2D Rationals]: we will never actually pick points like \(\{\ 0{:}2, 1{:}0 \ \}, \{\ 0{:}1, 1{:}1\ \}, \{\ 0{:}0, 1{:}2\ \}\).
-Instead we will always use additional dimensions to express uncomparable elements: \(\{\ 0{:}0\ \}, \{\ 1{:}0\ \}, \{\ 2{:}0\ \}\) instead.
+Importantly, we get away with only shifting subtrees downwards (and not other kinds of rearrangements) by ensuring that we never get in the situation from [2D Rationals]: we will never actually pick points like \(\{\ 0{:}2, 1{:}0 \ \}\), \(\{\ 0{:}1, 1{:}1\ \}\), \(\{\ 0{:}0, 1{:}2\ \}\).
+Instead we will always use additional dimensions to express uncomparable elements: \(\{\ 0{:}0\ \}\), \(\{\ 1{:}0\ \}\), \(\{\ 2{:}0\ \}\) instead.
 
 
 #### Example

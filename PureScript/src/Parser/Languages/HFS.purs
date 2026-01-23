@@ -185,9 +185,9 @@ hfsCount :: HFS -> HFS
 hfsCount (SetLike _ members) = NumLike Dec (fromInt (Set.size members))
 hfsCount (NumLike _ n) = NumLike Dec (bnCount n)
 
--- | The bit width, number of bits to represent it. I think?
+-- | The bit width, number of bits to represent it.
 hfsWidth :: HFS -> HFS
-hfsWidth (SetLike _ members) = sum (Set.findMax members)
+hfsWidth (SetLike _ members) = hfsAsDec $ maybe zero (one + _) (Set.findMax members)
 hfsWidth (NumLike _ n) = NumLike Dec (bnWidth n)
 
 -- | Recursive depth of the `HFS`.
@@ -399,8 +399,8 @@ def drop
   1#[]
 end
 
-0 set false
-1 set true
+0x0 set false
+0x1 set true
 
 alias false ⊥
 alias true  ⊤
@@ -418,6 +418,74 @@ def unsingle
   end
 end
 
+alias gcd ⊓
+def gcd
+  ⎛ $0 while
+  ⎝ 2#[ .0, .1 .0 %. ]
+  drop
+end
+
+alias lcm ⊔
+def lcm
+  2#[ .0 .1 gcd .0 ./ .1 * ]
+end
+
+def #⊓  loop ⊓ end  end
+def #⊔  loop ⊔ end  end
+
+def ⊑ 2#[
+  .1 .0 == if
+    ⊤
+  else
+    .1 .0 ⊏
+  end
+] end
+def ⊒  swap ⊑  end
+
+def ⊏ 2#[
+  .1 .0 ≥ if
+    ⊥
+  else
+    .0
+      .1 /.
+      .1 *
+    .0 ==
+  end
+] end
+def ⊐  swap ⊏  end
+
+def #⊑
+  ⊤ swap
+  0 matched ret
+  -- loop
+    if   2#[ .1, .1 .0 ⊑ ]
+    else 2#[ .1, ⊥ ] end
+  end swap drop
+end
+def #⊒
+  ⊤ swap
+  0 matched ret
+  -- loop
+    if   2#[ .1, .1 .0 ⊒ ]
+    else 2#[ .1, ⊥ ] end
+  end swap drop
+end
+def #⊏
+  ⊤ swap
+  0 matched ret
+  -- loop
+    if   2#[ .1, .1 .0 ⊏ ]
+    else 2#[ .1, ⊥ ] end
+  end swap drop
+end
+def #⊐
+  ⊤ swap
+  0 matched ret
+  -- loop
+    if   2#[ .1, .1 .0 ⊐ ]
+    else 2#[ .1, ⊥ ] end
+  end swap drop
+end
 
 ## A simple encoding of ordered pairs
 alias pair >-
@@ -512,22 +580,14 @@ end
 ## The Zermelo encoding of natural numbers
 ## as nested singleton sets
 def Zermelo
-  {} swap
-  begin
-    dup while
-    2#[ {.1} , .0-- ]
-  end
-  drop
+  {} swap loop {.} end
 end
 
 ## The von Neumann ordinals
 def vonNeumann
-  {} swap
-  begin
-    dup while
-    2#[ .1 {.1} | , .0-- ]
+  {} swap loop
+    1#[ .0 {.0} | ]
   end
-  drop
 end
 
 ## Truncating integer square root, adapted from
