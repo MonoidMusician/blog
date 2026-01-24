@@ -198,9 +198,9 @@ u8 reachesZero1(word crumbs) {
 }
 
 word toAtomic(word crumbs) {
-  crumbs >>= ctz(crumbs);
+  crumbs >>= ctz(crumbs) & mask_even;
   s8 exp = deltaExpecting(crumbs);
-  return crumbs << (exp - (-1));
+  return crumbs << 2*(1 - exp);
 }
 
 

@@ -4,8 +4,8 @@
 #![feature(const_trait_impl)]
 #![feature(const_convert)]
 #![feature(import_trait_associated_functions)]
-use std::{ops::{Deref, DerefMut}, sync::{Arc, MappedRwLockReadGuard, RwLock, RwLockReadGuard, Weak}};
-use Default::default;
+#![feature(derive_const)]
+use std::{fmt::Debug, ops::{Deref, DerefMut}, sync::{Arc, MappedRwLockReadGuard, RwLock, RwLockReadGuard, Weak}};
 
 macro_rules! const_assert {
     ($x:expr $(,)?) => {
@@ -51,10 +51,10 @@ type word = u64;
 const word_size: u8 = 8*size_of::<word>() as u8;
 const word_crumbs: u8 = word_size/2;
 const word_max: word = !0;
-const mask_even: word = word_max - 1;
+// const mask_even: word = word_max - 1;
 const lower: word = word_max / 0b11;
-const upper: word = 0b10 * lower;
-const word_bytes: word = word_max / 0b11111111;
+// const upper: word = 0b10 * lower;
+// const word_bytes: word = word_max / 0b11111111;
 
 const fn mask_hi(hi_bits: u8) -> word {
   return !(word_max >> hi_bits);
@@ -180,18 +180,19 @@ const fn reachesZero1(crumbs: word) -> u8 {
   return word_size - bit;
 }
 
-const fn toAtomic(mut crumbs: word) -> word {
-  crumbs >>= crumbs.trailing_zeros();
+fn toAtomic(mut crumbs: word) -> word {
+  crumbs >>= crumbs.trailing_zeros() & !1;
   let exp = deltaExpecting(crumbs);
-  return crumbs << (exp - (-1));
+  return crumbs << 2*(1 - exp);
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug)]
+#[derive_const(PartialEq, Eq, PartialOrd, Ord)]
 struct idxbit(usize, u8);
 
 const fn idxbitlength(crumbstring: &[word], _known_words: word) -> idxbit {
   let mut i: usize = 0;
-  let mut exp: word = 1;
+  let mut exp: i64 = 1;
   let mut offset: u8 = 0;
   // Quickly scan through `known_words - 1`, using just
   // `deltaExpecting` and not `reachesZero`
@@ -203,11 +204,11 @@ const fn idxbitlength(crumbstring: &[word], _known_words: word) -> idxbit {
   // (This is used in `ap_heap_cat`.)
   while offset == 0 {
     // See if it reaches zero during the current word
-    offset = reachesZero(exp, crumbstring[i]);
+    offset = reachesZero(exp as u64, crumbstring[i]);
     if offset == 0 {
       // If not, we need to continue with the next word
       // and adjust the expected number of operands
-      exp -= deltaExpecting(crumbstring[i]) as u64;
+      exp -= deltaExpecting(crumbstring[i]) as i64;
       i += 1;
       assert!(exp != 0);
       continue;
@@ -246,10 +247,27 @@ impl std::ops::AddAssign<idxbit> for idxbit {
     *self = *self + other
   }
 }
+impl std::ops::Sub<usize> for idxbit {
+  type Output = idxbit;
+  fn sub(self, rhs: usize) -> Self::Output {
+    let idx = self.0 - rhs / word_size as usize;
+    let rhs = (rhs % word_size as usize) as u8;
+    if rhs > self.1 {
+      return idxbit(idx - 1, self.1 + word_size - rhs);
+    } else {
+      return idxbit(idx, self.1 - rhs);
+    }
+  }
+}
 impl std::ops::Sub<idxbit> for idxbit {
   type Output = usize;
   fn sub(self, rhs: idxbit) -> Self::Output {
-    return (rhs.0 - self.0)*size_of::<word>() + (rhs.1 - self.1) as usize;
+    return (self.0 - rhs.0)*(word_size as usize) + self.1 as usize - rhs.1 as usize;
+  }
+}
+impl std::ops::SubAssign<usize> for idxbit {
+  fn sub_assign(&mut self, incr_bits: usize) {
+    *self = *self - incr_bits
   }
 }
 impl Default for idxbit {
@@ -260,9 +278,9 @@ impl Default for idxbit {
 
 fn copy_to_unaligned(dst: &mut [word], src: &[word], offset: u8, clobber: bool) {
   if src.is_empty() { return }
-  assert!(dst.len() + 1 >= src.len());
+  assert!(dst.len() >= src.len());
   debug_assert!(offset < word_size);
-  if offset == 0 { return dst.copy_from_slice(src); }
+  if offset == 0 { return dst[..src.len()].copy_from_slice(src); }
   let mut hanging = if clobber { 0 } else { dst[0] };
   for (i, &word) in src.iter().enumerate() {
     dst[i] = word_cat(offset, hanging, word_size - offset, word);
@@ -272,7 +290,7 @@ fn copy_to_unaligned(dst: &mut [word], src: &[word], offset: u8, clobber: bool) 
 }
 fn copy_from_unaligned(dst: &mut [word], src: &[word], offset: u8) {
   if src.is_empty() { return }
-  assert!(dst.len() >= src.len());
+  assert!(dst.len() >= src.len(), "{} >= {} at {offset}", dst.len(), src.len());
   debug_assert!(offset < word_size);
   if offset == 0 { return dst.copy_from_slice(src); }
   let mut iter = src.iter().enumerate();
@@ -283,39 +301,71 @@ fn copy_from_unaligned(dst: &mut [word], src: &[word], offset: u8) {
     last = word;
     dst[i - 1] = this | (last >> (word_size - offset));
   }
-  dst[src.len() - 1] = last;
+  dst[src.len() - 1] = last << offset;
 }
 
 #[derive(Clone, Default)]
 struct BitString {
   words: Vec<word>,
-  len: idxbit,
+  at: idxbit,
 }
 
 impl BitString {
   fn new(words: Vec<word>, ib: idxbit) -> BitString {
-    BitString { words, len: ib }
+    BitString { words, at: ib }
   }
   fn _full_words(&self) -> &[word] {
-    return &self.words[..self.len.0];
+    return &self.words[..self.at.0];
   }
   fn _last_word(&self) -> word {
-    debug_assert!(self.words.len() >= self.len.0);
-    if self.words.len() == self.len.0 { return 0 }
-    return self.words[self.len.0] & mask_hi(self.len.1);
+    debug_assert!(self.words.len() > self.at.0 || self.at == idxbit(self.words.len(), 0));
+    if self.words.len() == self.at.0 { return 0 }
+    return self.words[self.at.0] & mask_hi(self.at.1);
   }
 }
 
 impl PartialEq for BitString {
   fn eq(&self, other: &Self) -> bool {
     return
-      self.len == other.len &&
+      self.at == other.at &&
       self._last_word() == other._last_word() &&
       self._full_words() == other._full_words();
   }
 }
+impl Eq for BitString {}
 
-#[derive(Clone, Default)]
+impl std::ops::Index<usize> for BitString {
+  type Output = word;
+  fn index(&self, index: usize) -> &Self::Output {
+    &self.words[index]
+  }
+}
+impl std::ops::IndexMut<usize> for BitString {
+  fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+    &mut self.words[index]
+  }
+}
+
+impl BitString {
+  fn len(&self) -> usize {
+    self.at.0 + (self.at.1 != 0) as usize
+  }
+  fn extend(&mut self, other: &BitString) {
+    let was_at = self.at;
+    self.at += other.at;
+    let pad = if other.at.1 > 0 { 2 } else { 1 };
+    let needed = self.at.0 + pad;
+    if self.words.len() < needed {
+      self.words.extend(&vec![0; needed - self.words.len()]);
+    }
+    copy_to_unaligned(&mut self.words[was_at.0..], &other.words[..], was_at.1, false);
+  }
+  fn crumb(val: u8) -> BitString {
+    BitString { words: vec![(val as word) << (word_size as word - 2)], at: idxbit(0,2) }
+  }
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
 #[repr(transparent)]
 struct CrumbString<const is_operand: bool>(BitString);
 impl From<Vec<word>> for CrumbString<true> {
@@ -332,9 +382,119 @@ impl From<word> for CrumbString<true> {
     CrumbString(BitString::new(vec![crumbs], idxbit(0,len)))
   }
 }
+impl From<SKI> for CrumbString<true> {
+  fn from(combinator: SKI) -> Self {
+    CrumbString(BitString::new(vec![(combinator as word) << (word_size - 2)], idxbit(0,2)))
+  }
+}
+
+impl<const is_operand: bool> std::ops::Index<usize> for CrumbString<is_operand> {
+  type Output = word;
+  fn index(&self, index: usize) -> &Self::Output {
+    &self.0[index]
+  }
+}
+impl<const is_operand: bool> std::ops::IndexMut<usize> for CrumbString<is_operand> {
+  fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+    &mut self.0[index]
+  }
+}
 
 impl<const is_operand: bool> CrumbString<is_operand> {
+  fn len(&self) -> usize {
+    self.0.len()
+  }
+  fn _last_word(&self) -> word {
+    self.0._last_word()
+  }
+  fn _full_words(&self) -> &[u64] {
+    self.0._full_words()
+  }
+  fn extend(&mut self, other: &CrumbString<is_operand>) {
+    self.0.extend(&other.0);
+  }
+  fn write0crumb(&mut self) {
+    self.0.extend(&BitString { words: vec![0], at: idxbit(0,2) });
+  }
+  fn write0crumbs(&mut self, amt: usize) {
+    let at = idxbit(0,0) + 2*amt;
+    let words = vec![0; (amt / word_crumbs as usize)+1];
+    self.0.extend(&BitString { words, at });
+  }
+  fn ski(val: SKI) -> CrumbString<is_operand> {
+    CrumbString(BitString::crumb(val as u8))
+  }
+  fn crumb_at(&self, i: idxbit) -> u8 {
+    let v = (mask_lo(2) & (self[i.0] >> (word_size - 2 - (i.1 & !1)))) as u8;
+    return v;
+  }
+  fn parse(val: &str) -> CrumbString<false> {
+    let mut out = CrumbString(BitString{ words: vec![], at: idxbit(0,0) });
+    for c in val.chars() {
+      match c {
+        '0' => out.0.extend(&BitString::crumb(0)),
+        '1' => out.0.extend(&BitString::crumb(1)),
+        '2' => out.0.extend(&BitString::crumb(2)),
+        '3' => out.0.extend(&BitString::crumb(3)),
+        _ => panic!("Bad char in crumbstring")
+      }
+    }
+    return out;
+  }
+  fn unparse(&self) -> String {
+    let mut out = String::with_capacity((self.0.at - idxbit(0,0))/2);
+    for i in 0..out.capacity() {
+      out.push(match self.crumb_at(idxbit(0,0) + 2*i) {
+        0 => '0',
+        1 => '1',
+        2 => '2',
+        3 => '3',
+        c => panic!("Bad crumb {}", c)
+      })
+    }
+    return out;
+  }
+  fn sugar(val: &str) -> CrumbString<false> {
+    let mut out = CrumbString(BitString{ words: vec![], at: idxbit(0,0) });
+    let mut chars = val.chars();
+    while let Some(c) = chars.by_ref().next() {
+      match c {
+        '0' | 'P' | '`' => out.0.extend(&BitString::crumb(0)),
+        '1' | 'I' => out.0.extend(&BitString::crumb(1)),
+        '2' | 'K' => out.0.extend(&BitString::crumb(2)),
+        '3' | 'S' => out.0.extend(&BitString::crumb(3)),
+        'B' => out.extend(&CrumbString::from(toAtomic(0b00001100101110))),
+        'C' => out.extend(&CrumbString::from(toAtomic(0b00001100001100100000110010111011001010))),
+        'Y' => out.extend(&CrumbString::from(toAtomic(0b0000001111100000110010000011110011000011111010))),
+        '*' => out.extend(&CrumbString::from(toAtomic(0b00001100101110))),
+        '+' => out.extend(&CrumbString::from(toAtomic(0b0000110010110011001000001100101110))),
+        '(' | ' ' | ')' => {},
+        '#' => {
+          let num: String = chars.by_ref().take_while(|c| '0' <= *c && *c <= '9').collect();
+          let value = num.parse::<u64>().unwrap();
+          for _ in 0..value {
+            // 0
+            out.0.extend(&BitString::crumb(0));
+            // 0SB
+            out.extend(&CrumbString::from(toAtomic(0b001100001100101110)));
+          }
+          // 0KI
+          out.extend(&CrumbString::from(toAtomic(0b001001)));
+        },
+        _ => panic!("Bad char in crumbstring {}", c)
+      }
+    }
+    return CrumbString(out.0);
+  }
 }
+
+impl<const is_operand: bool> Debug for CrumbString<is_operand> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str("0q")?;
+    f.write_str(self.unparse().as_str())
+  }
+}
+
 
 #[derive(Clone)]
 enum Operand {
@@ -353,34 +513,34 @@ impl Default for Operand {
     Immediate(0)
   }
 }
+impl Debug for Operand {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      &Immediate(0) => f.write_str("0."),
+      &Immediate(w) =>
+        f.write_str(CrumbString::<true>::from(w).unparse().as_str()),
+      Shared(ptr) =>
+        ptr.read().unwrap().deref().fmt(f)
+    }
+  }
+}
 
 #[derive(Clone)]
 enum SharedOperand {
-  Synth { fun: Operand, arg: Operand, work: u64 },
-  Heap  { crumbstring: Vec<word>,     work: u64 },
+  Synth { fun: Operand, arg: Operand,     work: u64 },
+  Heap  { crumbstring: CrumbString<true>, work: u64 },
 }
 use SharedOperand::*;
 
-const nullop: Operand = Immediate(0);
-const fn isnullop(op: &Operand) -> bool {
-  match op {
-    &Immediate(word) => word == 0,
-    Shared(_) => false,
+impl Debug for SharedOperand {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Synth { fun, arg, work } =>
+        write!(f, "({:?} {:?})+{}", fun, arg, work),
+      Heap { crumbstring, work } =>
+        write!(f, "[{:?}]+{}", crumbstring, work),
+    }
   }
-}
-const fn isimmediate(op: &Operand) -> bool {
-  match op {
-    Immediate(word) => false,
-    Shared(_) => true,
-  }
-}
-const fn direct(crumbs: word) -> Operand {
-  debug_assert!(crumbs != 0);
-  debug_assert!(reachesZero1(crumbs) != 0);
-  debug_assert!(reachesZero1(crumbs) < word_size);
-  // Clear out the irrelevant crumbs (optional, slower)
-  // (Seems to impact WASM more than x86_64, for whatever reason)
-  return Immediate(crumbs & mask_hi(reachesZero1(crumbs)));
 }
 
 fn match_crumbs(match_low: word, crumblen: u8, op: &Operand) -> bool {
@@ -400,7 +560,7 @@ fn isI(op: &Operand) -> bool {match_crumbs(0x1, 1, op)}
 fn isK(op: &Operand) -> bool {match_crumbs(0x2, 1, op)}
 fn isS(op: &Operand) -> bool {match_crumbs(0x3, 1, op)}
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct StackFrame {
   to_eval: Operand,
   was_evaling: Weak<RwLock<SharedOperand>>, // weak ref! must be zeroed out when freed
@@ -416,12 +576,11 @@ impl const From<SKI> for StackFrame {
   }
 }
 
+#[derive(Debug)]
 struct System {
   input_at: idxbit,
-  stop_at: idxbit,
-  output_at: idxbit,
-  input_words: Vec<word>,
-  output_words: Vec<word>,
+  input_words: CrumbString<false>,
+  output_words: CrumbString<true>,
   work: u64,
   fuel: u64,
   stack_endstop: usize,
@@ -429,19 +588,30 @@ struct System {
   stack: Vec<StackFrame>,
 }
 
+#[cfg(debug_assertions)]
 fn goodop(op: &Operand) {
-  debug_assert!(!isnullop(op));
   match op {
     &Immediate(crumbs) => debug_assert_ne!(reachesZero1(crumbs), 0),
     Shared(ptr) => match ptr.read().unwrap().deref() {
-      Heap { crumbstring, .. } => debug_assert_ne!(crumbstring.len(), 0),
-      Synth { .. } => {},
+      Heap { crumbstring, .. } => {
+        debug_assert_ne!(crumbstring.len(), 0);
+        let calculated = idxbitlength(&crumbstring.0.words[..], 0);
+        debug_assert_ne!(calculated, idxbit(0,0));
+        debug_assert_eq!(calculated, crumbstring.0.at);
+      },
+      Synth { fun, arg, .. } => {
+        //goodop(fun); goodop(arg)
+      },
     },
   }
 }
+#[cfg(not(debug_assertions))]
+fn goodop(op: &Operand) {}
 
-impl const From<Vec<word>> for SharedOperand {
-  fn from(crumbstring: Vec<u64>) -> SharedOperand {
+
+impl From<CrumbString<true>> for SharedOperand {
+  fn from(crumbstring: CrumbString<true>) -> SharedOperand {
+    debug_assert_ne!(idxbitlength(&crumbstring.0.words[..], 0), idxbit(0,0));
     Heap { crumbstring, work: 0 }
   }
 }
@@ -460,7 +630,7 @@ impl SharedOperand {
     goodop(&Operand::new(self.clone()));
     match evaled {
       &Immediate(crumbs) => {
-        *self = Heap { crumbstring: vec![crumbs], work: self.get_work() };
+        *self = Heap { crumbstring: crumbs.into(), work: self.get_work() };
       },
       Shared(ptr) => *self = ptr.read().unwrap().clone(),
     }
@@ -473,52 +643,87 @@ impl Operand {
       Shared(ptr) => (Shared(ptr.clone()), Shared(ptr)),
       Immediate(crumbs) => {
         if nontrivial_redexes(crumbs) == 0 { return (Immediate(crumbs), Immediate(crumbs)) }
-        self = Operand::new(Heap { crumbstring: vec![crumbs], work: 0 });
+        self = Operand::new(Heap { crumbstring: crumbs.into(), work: 0 });
         (self.clone(), self)
       }
     }
   }
   fn fast_unconstant(&self) -> Option<Operand> {
-    match self {
+    let try_heap = match self {
       Immediate(crumbs) => {
         if match_crumbs(0x2, 2, self) {
-          return Some(Immediate((crumbs & !0b11) << 4));
-        }
+          return Some(Immediate(crumbs << 4));
+        } else { None }
       },
       Shared(ptr) => match ptr.read().unwrap().deref() {
         Synth { fun, arg, .. } =>
-          if isK(fun) { return Some(arg.clone()) },
+          if isK(fun) { return Some(arg.clone()) } else { None },
         Heap { crumbstring, .. } =>
           if match_crumbs(0x2, 2, self) {
             if crumbstring.len() == 1 {
-              return Some(Immediate((crumbstring[0] & !0b11) << 4));
+              return Some(Immediate(crumbstring._last_word() << 4));
             }
             if Arc::strong_count(ptr) == 1 {
-              let mut guard = ptr.write().unwrap();
-              let Heap { crumbstring, .. } = guard.deref_mut() else { return None };
-              let mut last_bits = 0;
-              for i in (0..crumbstring.len()).rev() {
-                let bits_were = crumbstring[i] >> (word_size - 4);
-                crumbstring[i] = (crumbstring[i] << 4) | last_bits;
-                last_bits = bits_were;
-              }
-              assert!(last_bits == 0x2);
-              return Some(self.clone());
+              Some(ptr)
+            } else {
+              None
             }
-            // TODO: refcount 1?
-          }
+          } else { None }
       }
-    } None
+    }?;
+    // There is no way to upgrade a read guard into a write guard
+    // (At least not with this design of RwLock)
+    let mut guard = try_heap.try_write().ok()?;
+    let Heap { crumbstring, .. } = guard.deref_mut() else { return None };
+    let mut last_bits = 0;
+    for i in (0..crumbstring.len()).rev() {
+      let bits_were = crumbstring[i] >> (word_size - 4);
+      assert!(bits_were < 0x10);
+      crumbstring[i] = (crumbstring[i] << 4) | last_bits;
+      last_bits = bits_were;
+    }
+    crumbstring.0.at -= 4;
+    assert!(last_bits == 0x2);
+    drop(guard);
+    goodop(&self);
+    return Some(self.clone());
+  }
+  fn could_be_reducible(&self) -> bool {
+    match self {
+      Immediate(crumbs) =>
+        return redexes(0, *crumbs) != 0,
+      Shared(ptr) => match ptr.read().unwrap().deref() {
+        Heap { crumbstring, .. } => {
+          let mut exp: i64 = 1;
+          let mut trailing = 0;
+          for &crumbs in &crumbstring.0.words {
+            if redexes(trailing, crumbs) != 0
+            { return true }
+            if reachesZero(exp as u64, crumbs) != 0
+            { return false }
+            exp -= deltaExpecting(crumbs) as i64;
+            if exp == 0 { return false; }
+            trailing = crumbs.trailing_zeros() as u8;
+          }
+        },
+        _ => { return true },
+      }
+    }
+    return false;
+  }
+  fn wrap0302(self) -> Operand {
+    Operand::new(Synth {
+      fun: S.into(),
+      arg: Operand::new(Synth {
+        fun: K.into(),
+        arg: self,
+        work: 0,
+      }),
+      work: 0,
+    })
   }
 }
 
-fn ap_heap_cat(fun: &[word], arg: &[word]) -> Operand {
-  let mut dst = Vec::with_capacity(fun.len() + arg.len());
-  copy_to_unaligned(&mut dst[..], fun, 2, true);
-  let idxbit(idx, bit) = idxbitlength(fun, 0) + 2;
-  copy_to_unaligned(&mut dst[idx..], arg, bit, false);
-  return Operand::new(Heap { crumbstring: dst, work: 0 });
-}
 fn synthetic_apply(fun: Operand, arg: Operand) -> Operand {
   return Operand::new(Synth { fun, arg, work: 0 });
 }
@@ -543,7 +748,7 @@ fn apply(fun: Operand, arg: Operand) -> Operand {
   }
 
   fn small_op_buf<'a>(op: &'a Operand) -> Option<Result<
-    MappedRwLockReadGuard<'a, Vec<word>>,
+    MappedRwLockReadGuard<'a, CrumbString<true>>,
     u64
   >> {
     match op {
@@ -565,43 +770,29 @@ fn apply(fun: Operand, arg: Operand) -> Operand {
   if let Some(fbuf) = small_op_buf(&fun)
   && let Some(abuf) = small_op_buf(&arg)
   {
-    let mut tmp1 = vec![0];
-    let mut tmp2 = vec![0];
+    let mut tmp1 = CrumbString::from(I);
+    let mut tmp2 = CrumbString::from(I);
     let fref = match &fbuf {
-      Err(w) => { tmp1[0] = *w; &tmp1 },
+      Err(w) => { tmp1[0] = *w; tmp1.0.at.1 = reachesZero1(*w); &tmp1 },
       Ok(g) => g.deref()
     };
     let aref = match &abuf {
-      Err(w) => { tmp2[0] = *w; &tmp2 },
+      Err(w) => { tmp2[0] = *w; tmp2.0.at.1 = reachesZero1(*w); &tmp2 },
       Ok(g) => g.deref()
     };
-    return ap_heap_cat(fref, aref);
+    let mut ret = CrumbString::default();
+    ret.0.at.1 = 2;
+    ret.extend(fref);
+    ret.extend(aref);
+    debug_assert!(
+      ret.0.at == fref.0.at + aref.0.at + 2,
+      "{:?} == {:?} + {:?} + 2",
+      ret.0.at, fref.0.at, aref.0.at,
+    );
+    // println!("apped: {ret:?} {fref:?}={:0x} {aref:?}={:0x}", fref[0], aref[0]);
+    return Operand::new(SharedOperand::from(ret));
   }
   return synthetic_apply(fun, arg);
-}
-
-fn could_be_reducible(op: Operand) -> bool {
-  match &op {
-    Immediate(crumbs) =>
-      return redexes(0, *crumbs) != 0,
-    Shared(ptr) => match ptr.read().unwrap().deref() {
-      Heap { crumbstring, .. } => {
-        let mut exp: i64 = 1;
-        let mut trailing = 0;
-        for &crumbs in crumbstring {
-          if redexes(trailing, crumbs) != 0
-          { return true }
-          if reachesZero(exp as u64, crumbs) != 0
-          { return false }
-          exp -= deltaExpecting(crumbs) as i64;
-          if exp == 0 { return false; }
-          trailing = crumbs.trailing_zeros() as u8;
-        }
-      },
-      _ => {},
-    }
-  }
-  return false;
 }
 
 fn _scan1(crumbstring: &[word], mut input_at: idxbit, stop_at: idxbit) -> idxbit {
@@ -609,16 +800,18 @@ fn _scan1(crumbstring: &[word], mut input_at: idxbit, stop_at: idxbit) -> idxbit
   // adjust the expected number of nodes by the leading nonzeros *crumbs*
   // we will add (could use leading zeros, but this seems more robust to
   // optimizations in `reachesZero()`)
-  let exp = 1 + (input_at.1 >> 1) as i64;
-  while input_at <= stop_at {
+  let mut exp = 1 + (input_at.1 >> 1) as i64;
+  while input_at < stop_at {
     let crumbs = crumbstring[input_at.0] | mask_hi(input_at.1);
     input_at.1 = reachesZero(exp as u64, crumbs);
     if input_at.1 != 0 {
       input_at += 0;
-      return if input_at < stop_at { input_at } else { failed }
+      return if input_at <= stop_at { input_at } else { failed }
     }
     input_at.0 += 1;
     input_at.1 = 0;
+    exp -= deltaExpecting(crumbs) as i64;
+    debug_assert!(exp > 0);
   }
   return failed;
 }
@@ -626,7 +819,10 @@ fn _scan1(crumbstring: &[word], mut input_at: idxbit, stop_at: idxbit) -> idxbit
 fn scan1op(crumbstring: &[word], input_at: idxbit, stop_at: idxbit) -> Option<(idxbit, Operand)> {
   let next = _scan1(crumbstring, input_at, stop_at);
   let crumblen = (next - input_at)/2;
-  if crumblen == 0 { return None }
+  if crumblen == 0 { 
+    // println!("Underflow from {input_at:?}, {}", &CrumbString::<false>(BitString { words: Vec::from(crumbstring), at: stop_at }).unparse()[(input_at - idxbit(0,0))/2..]);
+    return None
+  }
   Some((next, if crumblen < word_crumbs as usize {
     if next.0 == input_at.0 || next.1 == 0 {
       assert!(next.0 <= input_at.0 + 1);
@@ -644,16 +840,30 @@ fn scan1op(crumbstring: &[word], input_at: idxbit, stop_at: idxbit) -> Option<(i
       Immediate(crumbs & mask_hi(2*crumblen as u8))
     }
   } else {
-    let mut dst = Vec::with_capacity(2 + crumblen/word_crumbs as usize);
-    copy_from_unaligned(&mut dst[..], &crumbstring[input_at.0..], input_at.1);
-    Operand::new(Heap { crumbstring: dst, work: 0 })
+    let pad = if input_at.1 > 0 { 2 } else { 1 };
+    let mut dst = vec![0; pad + crumblen/word_crumbs as usize];
+    copy_from_unaligned(&mut dst[..], &crumbstring[input_at.0..=next.0], input_at.1);
+    Operand::new(Heap { crumbstring: dst.into(), work: 0 })
   }))
 }
 
 impl System {
+  fn new() -> System {
+    System {
+      input_at: idxbit(0,0),
+      input_words: CrumbString::default(),
+      output_words: CrumbString::default(),
+      work: 0,
+      fuel: 0x1000000,
+      stack_endstop: 0,
+      // stack_top: usize,
+      stack: vec![],
+    }
+  }
   fn at(&self) -> usize { return self.stack.len() }
   fn scan1input(&mut self) -> Option<Operand> {
-    let (input_at, op) = scan1op(&self.input_words[..], self.input_at, self.stop_at)?;
+    let (input_at, op) = scan1op(&self.input_words.0.words[..], self.input_at, self.input_words.0.at)?;
+    // println!("{op:?} from {input_at:?}: {}", &self.input_words.unparse()[(input_at - idxbit(0,0))/2..]);
     self.input_at = input_at;
     return Some(op);
   }
@@ -662,13 +872,17 @@ impl System {
       return self.stack.pop();
     }
     debug_assert!(self.at() == self.stack_endstop);
-    if self.input_at == self.stop_at { return None }
+    // EOF
+    if self.input_at == self.input_words.0.at { return None }
     debug_assert!(self.stack_endstop == 0);
     match self.scan1input() {
       None => {
-        // self.input_at += 2;
-        panic!("Not well formed operand");
-        return None;
+        self.input_at += 2;
+        let frame = self.refill()?;
+        return Some(StackFrame {
+          to_eval: frame.to_eval.wrap0302(),
+          was_evaling: frame.was_evaling
+        });
       },
       Some(op) => {
         goodop(&op);
@@ -679,7 +893,7 @@ impl System {
   fn skip_leading_zeros(&mut self) {
     self.input_at = idxbit(0,0);
     // Whole words
-    while self.input_at.0 < self.stop_at.0 && self.input_words[self.input_at.0] == 0 {
+    while self.input_at.0 < self.input_words.0.at.0 && self.input_words[self.input_at.0] == 0 {
       self.input_at.0 += 1;
     }
     // Remaining crumbs
@@ -707,10 +921,10 @@ impl System {
     return op;
   }
   fn unpack_crumbstring_onto_stack(&mut self, op: Operand) -> SKI {
-    let mut tmp = vec![0];
+    goodop(&op);
     let obtain = match &op {
       &Immediate(crumbs) => {
-        if crumbs >> (word_size - 2) != 0 { panic!("Not a combinator") }
+        if crumbs >> (word_size - 2) != 0 { return SKI::from(crumbs >> (word_size - 2)) }
         Err(crumbs)
       },
       Shared(ptr) =>
@@ -719,8 +933,9 @@ impl System {
           Synth { .. } => panic!("Should not by synth"),
         })),
     };
+    let mut tmp = CrumbString::from(I);
     let crumbstring = match &obtain {
-      Err(w) => { tmp[0] = *w; &tmp },
+      Err(w) => { tmp[0] = *w; tmp.0.at.1 = reachesZero1(*w); &tmp },
       Ok(g) => g.deref()
     };
     let len = crumbstring.len();
@@ -735,9 +950,10 @@ impl System {
     // assert!(self.stack_top < self.stack.len() - arity - 1);
     assert!(arity != 0);
     // self.stack_top += arity + 1;
-    self.stack.extend((0..=arity+1).map(|_| default()));
+    // println!("arity: {arity}/{at:?}, stack size: {}, {:?}", self.stack.len(), crumbstring);
+    self.stack.extend((1..=arity+1).map(|_| StackFrame::default()));
     for stacked in 1..=arity+1 {
-      let scanned = scan1op(crumbstring, at, idxbit(crumbstring.len(),0)).unwrap();
+      let scanned = scan1op(&crumbstring.0.words[..], at, idxbit(crumbstring.len(),0)).unwrap();
       at = scanned.0;
       goodop(&scanned.1);
       let at = self.at();
@@ -820,13 +1036,55 @@ impl System {
           self.stack.push(crumb.into());
           return false;
         };
-        // Promote a reducible immediate to a shared operand
-        let (z, z2) = z.dup();
-        let yz = apply(y, z2);
-        self.stack.push(yz.into());
-        self.stack.push(z.into());
-        self.stack.push(x.into());
-        self.work += 1;
+        if isK(&x) {
+          drop(x); drop(y);
+          self.stack.push(z.into());
+          self.work += 2;
+          return true;
+        }
+        let case: Result<(Operand, Operand), (Operand, Operand)> = match y.fast_unconstant() {
+          Some(yz) => {
+            self.work += 1;
+            Ok((z, yz))
+          },
+          _ => {
+            match x.fast_unconstant() {
+              Some(xz) => {
+                let yz = apply(y, z);
+                Err((xz, yz))
+              },
+              _ => {
+                let (z, z2) = z.dup();
+                let yz = apply(y, z2);
+                Ok((z, yz))
+              }
+            }
+          },
+        };
+        match case {
+          Ok((z, yz)) => {
+            // Promote a reducible immediate to a shared operand
+            self.stack.push(yz.into());
+            self.stack.push(z.into());
+            if isI(&x) {
+              self.work += 1;
+            } else
+            {
+              self.stack.push(x.into());
+            }
+            self.work += 1;
+          },
+          Err((xz, yz)) => {
+            self.stack.push(yz.into());
+            if isI(&xz) {
+              self.work += 1;
+            } else
+            {
+              self.stack.push(xz.into());
+            }
+            self.work += 1;
+          },
+        }
         return true;
       }
     }
@@ -893,6 +1151,7 @@ impl System {
   }
   fn whnf_op(&mut self, op: Operand) -> Operand {
     if self.fuel == 0 { return op }
+    if !op.could_be_reducible() { return op }
     assert!(self.at() == self.stack_endstop);
     self.stack.push(op.into());
     while self.fuel != 0 && self.step() {
@@ -922,21 +1181,16 @@ impl System {
     loop {
       op = match op {
         Immediate(crumbs) => {
-          let len = reachesZero1(crumbs);
-          copy_to_unaligned(&mut self.output_words[self.output_at.0..], &[crumbs], self.output_at.1, false);
-          self.output_at += len as usize;
+          self.output_words.extend(&CrumbString::from(crumbs));
           return;
         },
         Shared(ptr) => match ptr.read().unwrap().deref() {
           Heap { crumbstring, .. } => {
-            let len = idxbitlength(crumbstring, 0);
-            copy_to_unaligned(&mut self.output_words[self.output_at.0..], &crumbstring, self.output_at.1, false);
-            self.output_at += len;
+            self.output_words.extend(&crumbstring);
             return;
           },
           Synth { fun, arg, .. } => {
-            self.output_words[self.output_at.0] &= mask_hi(self.output_at.1);
-            self.output_at += 2;
+            self.output_words.write0crumb();
             self.write_out(fun.clone());
             arg.clone()
           }
@@ -948,12 +1202,7 @@ impl System {
     let our_endstop = self.stack_endstop;
     assert!(self.at() > self.stack_endstop);
 
-    self.output_words[self.output_at.0] &= mask_hi(self.output_at.1);
-    let start = self.output_at.0 + 1;
-    self.output_at += 2 * (self.at() - self.stack_endstop - 1);
-    for i in start..self.output_at.0 {
-      self.output_words[i] = 0;
-    }
+    self.output_words.write0crumbs(self.at() - self.stack_endstop - 1);
     let head = self.stack.pop().unwrap().to_eval;
     self.stack_endstop = self.at();
     self.write_out(head);
@@ -966,11 +1215,12 @@ impl System {
 
       // This check is a wash on x86_64 and slows down WASM a lot, even though it
       // results in `write_out` being called less?
-      // if (could_be_reducible(self.stack[self.stack_endstop].to_eval))
-      while self.fuel > 0 && self.step() {
-        self.fuel -= 1;
-        assert!(self.at() > self.stack_endstop);
-      };
+      if self.stack.last().unwrap().to_eval.could_be_reducible() {
+        while self.fuel > 0 && self.step() {
+          self.fuel -= 1;
+          assert!(self.at() > self.stack_endstop);
+        };
+      }
 
       if self.stack_endstop == our_endstop {
         break; // for tail call
@@ -980,30 +1230,189 @@ impl System {
       assert!(self.at() == self.stack_endstop);
     }
   } }
-  fn eval(&mut self, input_crumbs: usize) -> usize {
+  fn do_eval(&mut self, fuel: u64) -> u64 {
     self.input_at = idxbit(0,0);
-    self.stop_at = idxbit(0,0) + 2*input_crumbs;
-    self.output_at = idxbit(0,0);
+    self.stack_endstop = 0;
     self.stack.truncate(0);
+    self.output_words = CrumbString::default();
+    self.fuel = fuel;
 
     self.skip_leading_zeros();
 
-    if !self.step() { return 0 }
-    self.fuel -= 1;
+    // println!("0: {:#?}", self);
+
+    if self.fuel == 0 {
+      let mut temp: Vec<StackFrame> = Vec::new();
+      while let Some(v) = self.refill() {
+        temp.push(v.into());
+      }
+      temp.reverse();
+      self.stack.extend(temp);
+    }
     while self.fuel > 0 && self.step() {
       self.fuel -= 1;
     };
 
+    // println!("f: {:#?}", self);
+    for StackFrame { to_eval, .. } in &self.stack {
+      goodop(to_eval);
+    }
     self.write_nf_from_whnf_stack();
-    return (self.output_at - idxbit(0,0))/2;
+    return fuel - self.fuel;
   }
-  // fn eval_vec(&mut self, input: Vec<u64>) -> Vec<u64> {
-  //   let len = idxbitlength(&input[..], 0);
-  //   let crumbs = (len - idxbit(0,0))/2;
-  //   self.input_words = input;
-  //   self.eval(crumbs);
-  // }
+  fn eval_crumbstring(&mut self, input: CrumbString<false>, fuel: u64) -> (u64, CrumbString<true>) {
+    self.input_words = input;
+    let used = self.do_eval(fuel);
+    return (used, std::mem::replace(&mut self.output_words, CrumbString::default()));
+  }
+  fn eval_string(&mut self, input: &str, fuel: u64) -> (u64, String) {
+    // println!("eval: {input}");
+    let (used, ret) = self.eval_crumbstring(CrumbString::<false>::sugar(input), fuel);
+    return (used, ret.unparse());
+  }
 }
 
 fn main() {
+  let mut sys = System::new();
+  let mut tests: u64 = 0;
+  let mut test = |input, fuel| {
+    let (used, output) = sys.eval_string(input, fuel);
+    // println!("{} -> {} in {} <= {}", input, output, used, fuel);
+  };
+  // test("2", 10);
+  // test("3", 10);
+  // test("021", 10);
+  // test("03021", 10);
+  // test("03011", 10);
+  // test("03031", 10);
+  // test("0001301", 10);
+
+  let repeat = |amt, s: &str| -> String {
+    vec![s.chars(); amt].iter().flat_map(|x| x.clone()).collect()
+  };
+
+  // let sus: Option<&str> = None;
+  let mut testcase = |input, output, fuel| {
+    // if sus.is_some() && Some(input) != sus { return }
+    let (used, actual) = sys.eval_string(input, fuel);
+    // println!("{} -> {} = {} in {} <= {}", input, actual, output, used, fuel);
+    assert_eq!(output, actual);
+    tests += 1;
+  };
+  testcase("00231", "3", 1);
+  testcase("0100231", "3", 2);
+  testcase("3", "3", 1);
+  testcase("033", "033", 1);
+  testcase("0100231", "00231", 1);
+  testcase("00231", "3", 2);
+  testcase("3", "3", 2);
+  testcase("0100231", "3", 4);
+  testcase("0100231", "3", 30);
+  testcase("000022330030232", "3", 25);
+  testcase("03000022330030232", "033", 25);
+  testcase("0030030232000022330030232", "00300302323", 25);
+  testcase("010000030030200302323022330030232", "0000030030200302323022330030232", 1);
+  testcase("00210000030030200302323022330030232", "1", 1);
+  testcase("010000030030200302323022330030232", "00300302323", 25);
+
+
+  for m in ["3"] {
+  for n in ["3", "2", "032"] {
+  for o in ["3", "2", "1", "032", "021", "0030232"] {
+    let mut t = |s: &str, fuel| {
+      let z = s.replace("m", m).replace("n", n).replace("o", o);
+      let (input, output) = z.split_once(" = ").unwrap();
+      let (used, actual) = sys.eval_string(input, fuel);
+      assert_eq!(output, actual);
+      tests += 1;
+    };
+    t("000Bmno = 0m0no", 4);
+    t("000302mno = 0m0no", 2);
+    t("000Cmno = 00mon", 10);
+    t("000030203m2no = 00mon", 4);
+    t("0003m02no = 00mon", 2);
+    t("000302m02no = 0mn", 3);
+    // these bump it up over word size for some cases
+    t("010000030030200302323022mno = 00mon", 11);
+    t("01010000030030200302323022mno = 00mon", 12);
+    t("002(0030232)(00000300302(B)3022mno) = 0030232", 1);
+    t("002(o)(0YY) = o", 100);
+    t("00(00SB(00SB(0SK)))mn = 0m0mn", 13);
+    t("00(#1)mn = 0mn", 13);
+    t("00(#2)mn = 0m0mn", 13);
+    t("00(00SBI)mn = 0m0mn", 13);
+    t("0000*(00SBI)(#1)mn = 0m0mn", 25);
+    // mul 2 2 = 4
+    t("0000*(00SBI)(00SBI)mn = 0m0m0m0mn", 25);
+    t("0000+(00SBI)(00SBI)mn = 0m0m0m0mn", 23);
+    t("0000*(#2)(00SBI)mn = 0m0m0m0mn", 30);
+    t("0000+(#2)(00SBI)mn = 0m0m0m0mn", 28);
+  } } }
+
+  for m in ["3"] {
+  for n in ["3", "2", "032"] {
+  for x in [0, 1, 2, 3, 4, 6] {
+  for y in [0, 1, 2, 3, 4, 6] {
+    let mut t = |s: String, fuel| {
+      let z = s.replace("m", m).replace("n", n).replace("x", &format!("(#{})", x)).replace("y", &format!("(#{})", y));
+      let (input, output) = z.split_once(" = ").unwrap();
+      let (used, actual) = sys.eval_string(input, fuel);
+      assert_eq!(output, actual);
+      tests += 1;
+    };
+    if x * y <= 12 {
+      t(format!("0000*xymn = {}n", repeat(x*y, "0m")), 150);
+    }
+    t(format!("0000+xymn = {}n", repeat(x+y, "0m")), 100)
+
+    // if (!x && y <= 2) t(`00${sugar(factorial(y))}mn = ${repeat(factorial_calc(y), '0m')}n`, 5000)
+  } } } }
+
+  let factorial = "0003020031100302003302003112003020030203003003003102020210220210300302320030200330200302003020302003302021030200302003302220030200330200302003020302003020312031222";
+  let asNat = "00300310203003023202021";
+
+  let fact = |mut x| {
+    let mut r = 1;
+    while x > 1 {
+      r *= x;
+      x -= 1;
+    }
+    return r;
+  };
+
+  assert!(fact(0) == 1);
+  assert!(fact(1) == 1);
+  assert!(fact(2) == 2);
+  assert!(fact(5) == 120);
+
+  // println!("{:?}", sys.eval_string(&format!("{asNat} 0{factorial} 021"), 100));
+  // for i in 0..10 {
+  //   println!("{:?}", sys.eval_string(&format!("{asNat} 0{factorial} 0030030232021"), i));
+  // }
+  // S =>
+  // println!("{:?}", sys.eval_string(&format!("{asNat} 0{factorial} 0030030232021"), 0x1B));
+  // println!("{:?}", sys.eval_string(&format!("{asNat} 0{factorial} 0030030232021"), 0x1C));
+  // println!("{:?}", sys.eval_string("000302000003020033020030200302030200330202103020030200330222003020033020030200302030200302031203122200031100030200330200311200302003020300300300310202021022021030030232003020033020030200302030200330202103020030200330222003020033020030200302030200302031203122200300302320210300302321021", 0x1));
+  // println!("{:?}", sys.eval_string(&format!("{asNat} 0{factorial} 00300302320030030232021"), 10000000));
+
+  for x in [0, 1, 2, 3, 4, 5] {
+  println!("{tests} passed, {x}");
+  for n in ["3", "2", "032"] {
+  for o in ["2", "3", "1", "032", "021", "0030232"] {
+    let mut t = |s: String, fuel| {
+      let z = s.replace("n", n).replace("o", o);
+      let v = x;
+      let (input, output) = z.split_once(" = ").unwrap();
+      let (used, actual) = sys.eval_string(input, fuel);
+      // println!("{v}: {} -> {} = {} in {} <= {}", input, actual, output, used, fuel);
+      assert_eq!(output, actual);
+      tests += 1;
+    };
+    t(format!("000{factorial}(#{x})no = {}o", repeat(fact(x), "0n")), [1000,1000,10000,10000,100000,1000000,10000000,100000000,1000000000][x]);
+    if n == "3" && o == "2" {
+      t(format!("{asNat} P{factorial}(#{x}) = {}021", repeat(fact(x), "0030030232")), 123248203829023423);
+    }
+  } } }
+
+  println!("{tests} passed");
 }

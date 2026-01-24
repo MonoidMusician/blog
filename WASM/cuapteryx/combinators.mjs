@@ -468,7 +468,7 @@ const combinatorTable = {
     name: "Theta (Turing fixed-point combinator)",
     1: 'a(Θa)',
     def: 'Y(SI)',
-    // value: '((((SS)K)((S(K((SS)(S((SS)K)))))K)(SI)))',
+    value: '((((SS)K)((S(K((SS)(S((SS)K)))))K)(SI)))',
   },
   // 'Θ': {
   //   name: "Theta (Turing fixed-point combinator)",

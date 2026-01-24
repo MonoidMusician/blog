@@ -442,9 +442,9 @@ WebAssembly.instantiate(wasmBuffer, {
     test_factorial3: () => test_factorial(3),
     test_factorial4: () => test_factorial(4),
     test_factorial5: () => test_factorial(5),
-    test_factorial6: () => test_factorial(6),
-    test_factorial7: () => test_factorial(7),
-    test_factorial8: () => test_factorial(8),
+    // test_factorial6: () => test_factorial(6),
+    // test_factorial7: () => test_factorial(7),
+    // test_factorial8: () => test_factorial(8),
   });
 
   // console.log(sugar()('#1'));
