@@ -5,7 +5,7 @@
 #![feature(const_convert)]
 #![feature(import_trait_associated_functions)]
 #![feature(derive_const)]
-use std::{fmt::Debug, ops::{Deref, DerefMut}, sync::{Arc, MappedRwLockReadGuard, RwLock, RwLockReadGuard, Weak}};
+use std::{fmt::Debug, ops::{Deref, DerefMut}};
 
 macro_rules! const_assert {
     ($x:expr $(,)?) => {
@@ -495,17 +495,100 @@ impl<const is_operand: bool> Debug for CrumbString<is_operand> {
   }
 }
 
+#[cfg(not(feature = "multithreaded"))]
+mod holdme {
+  pub type Hold<T> = std::rc::Rc <std::cell::RefCell<T>>;
+  pub type Weak<T> = std::rc::Weak<std::cell::RefCell<T>>;
+  pub type Seen<'a, T> = std::cell::Ref<'a, T>;
+  pub type SeenAs<'a, T> = std::cell::Ref<'a, T>;
+  pub type Held<'a, T> = std::cell::RefMut<'a, T>;
+
+  pub fn hold<T: Sized>(value: T) -> Hold<T> {
+    std::rc::Rc::new(std::cell::RefCell::new(value))
+  }
+  pub fn refc<T: ?Sized>(ptr: &Hold<T>) -> usize {
+    std::rc::Rc::strong_count(ptr)
+  }
+  pub fn is_exclusive<T: ?Sized>(ptr: &Hold<T>) -> bool {
+    refc(ptr) == 1
+  }
+  pub fn grab<'a, T: ?Sized>(ptr: &'a Hold<T>) -> Option<Held<'a, T>> {
+    ptr.try_borrow_mut().ok()
+  }
+  pub fn try_grab<'a, T: ?Sized>(ptr: &'a Hold<T>) -> Option<Held<'a, T>> {
+    ptr.try_borrow_mut().ok()
+  }
+  pub fn look<'a, T: ?Sized>(ptr: &'a Hold<T>) -> Option<Seen<'a, T>> {
+    ptr.try_borrow().ok()
+  }
+  pub fn see_as<'a, T1, T2, F>(seen: Seen<'a, T1>, fun: F) -> SeenAs<'a, T2>
+    where F: FnOnce(&T1) -> &T2, T2: ?Sized,
+  {
+    std::cell::Ref::map(seen, fun)
+  }
+  pub fn try_to_see_as<'a, T1, T2, F>(seen: Seen<'a, T1>, fun: F) -> Option<SeenAs<'a, T2>>
+    where F: FnOnce(&T1) -> Option<&T2>, T2: ?Sized,
+  {
+    std::cell::Ref::filter_map(seen, fun).ok()
+  }
+  pub fn linger<T: ?Sized>(ptr: &Hold<T>) -> Weak<T> {
+    std::rc::Rc::downgrade(ptr)
+  }
+}
+#[cfg(feature = "multithreaded")]
+mod holdme {
+  pub type Hold<T> = std::sync::Arc <std::sync::RwLock<T>>;
+  pub type Weak<T> = std::sync::Weak<std::sync::RwLock<T>>;
+  pub type Seen<'a, T> = std::sync::RwLockReadGuard<'a, T>;
+  pub type SeenAs<'a, T> = std::sync::MappedRwLockReadGuard<'a, T>;
+  pub type Held<'a, T> = std::sync::RwLockWriteGuard<'a, T>;
+
+  pub fn hold<T: Sized>(value: T) -> Hold<T> {
+    std::sync::Arc::new(std::sync::RwLock::new(value))
+  }
+  pub fn refc<T: ?Sized>(ptr: &Hold<T>) -> usize {
+    std::sync::Arc::strong_count(ptr)
+  }
+  pub fn is_exclusive<T: ?Sized>(ptr: &Hold<T>) -> bool {
+    refc(ptr) == 1
+  }
+  pub fn grab<'a, T: ?Sized>(ptr: &'a Hold<T>) -> Option<Held<'a, T>> {
+    ptr.write().ok()
+  }
+  pub fn try_grab<'a, T: ?Sized>(ptr: &'a Hold<T>) -> Option<Held<'a, T>> {
+    ptr.try_write().ok()
+  }
+  pub fn look<'a, T: ?Sized>(ptr: &'a Hold<T>) -> Option<Seen<'a, T>> {
+    ptr.read().ok()
+  }
+  pub fn see_as<'a, T1, T2, F>(seen: Seen<'a, T1>, fun: F) -> SeenAs<'a, T2>
+    where F: FnOnce(&T1) -> &T2, T2: ?Sized,
+  {
+    std::sync::RwLockReadGuard::map(seen, fun)
+  }
+  pub fn try_to_see_as<'a, T1, T2, F>(seen: Seen<'a, T1>, fun: F) -> Option<SeenAs<'a, T2>>
+    where F: FnOnce(&T1) -> Option<&T2>, T2: ?Sized,
+  {
+    std::sync::RwLockReadGuard::filter_map(seen, fun).ok()
+  }
+  pub fn linger<T: ?Sized>(ptr: &Hold<T>) -> Weak<T> {
+    std::sync::Arc::downgrade(ptr)
+  }
+}
+use holdme::*;
+
+
 
 #[derive(Clone)]
 enum Operand {
-  Shared(Arc<RwLock<SharedOperand>>),
+  Shared(Hold<SharedOperand>),
   Immediate(word),
 }
 use Operand::*;
 
 impl Operand {
   fn new(shared: SharedOperand) -> Operand {
-    Shared(Arc::new(RwLock::new(shared)))
+    Shared(hold(shared))
   }
 }
 impl Default for Operand {
@@ -520,7 +603,7 @@ impl Debug for Operand {
       &Immediate(w) =>
         f.write_str(CrumbString::<true>::from(w).unparse().as_str()),
       Shared(ptr) =>
-        ptr.read().unwrap().deref().fmt(f)
+        look(ptr).unwrap().deref().fmt(f)
     }
   }
 }
@@ -546,7 +629,7 @@ impl Debug for SharedOperand {
 fn match_crumbs(match_low: word, crumblen: u8, op: &Operand) -> bool {
   let crumbs = match op {
     &Immediate(crumbs) => crumbs,
-    Shared(ptr) => match ptr.read().unwrap().deref() {
+    Shared(ptr) => match look(ptr).unwrap().deref() {
       Heap { crumbstring, .. } => crumbstring[0],
       Synth { .. } => return false,
     },
@@ -563,7 +646,7 @@ fn isS(op: &Operand) -> bool {match_crumbs(0x3, 1, op)}
 #[derive(Default, Debug)]
 struct StackFrame {
   to_eval: Operand,
-  was_evaling: Weak<RwLock<SharedOperand>>, // weak ref! must be zeroed out when freed
+  was_evaling: Weak<SharedOperand>, // weak ref! must be zeroed out when freed
 }
 impl const From<Operand> for StackFrame {
   fn from(to_eval: Operand) -> Self {
@@ -592,7 +675,7 @@ struct System {
 fn goodop(op: &Operand) {
   match op {
     &Immediate(crumbs) => debug_assert_ne!(reachesZero1(crumbs), 0),
-    Shared(ptr) => match ptr.read().unwrap().deref() {
+    Shared(ptr) => match look(ptr).unwrap().deref() {
       Heap { crumbstring, .. } => {
         debug_assert_ne!(crumbstring.len(), 0);
         let calculated = idxbitlength(&crumbstring.0.words[..], 0);
@@ -632,7 +715,7 @@ impl SharedOperand {
       &Immediate(crumbs) => {
         *self = Heap { crumbstring: crumbs.into(), work: self.get_work() };
       },
-      Shared(ptr) => *self = ptr.read().unwrap().clone(),
+      Shared(ptr) => *self = look(ptr).unwrap().clone(),
     }
   }
 }
@@ -655,7 +738,7 @@ impl Operand {
           return Some(Immediate(crumbs << 4));
         } else { None }
       },
-      Shared(ptr) => match ptr.read().unwrap().deref() {
+      Shared(ptr) => match look(ptr).unwrap().deref() {
         Synth { fun, arg, .. } =>
           if isK(fun) { return Some(arg.clone()) } else { None },
         Heap { crumbstring, .. } =>
@@ -663,7 +746,7 @@ impl Operand {
             if crumbstring.len() == 1 {
               return Some(Immediate(crumbstring._last_word() << 4));
             }
-            if Arc::strong_count(ptr) == 1 {
+            if is_exclusive(ptr) {
               Some(ptr)
             } else {
               None
@@ -673,7 +756,7 @@ impl Operand {
     }?;
     // There is no way to upgrade a read guard into a write guard
     // (At least not with this design of RwLock)
-    let mut guard = try_heap.try_write().ok()?;
+    let mut guard = try_grab(try_heap)?;
     let Heap { crumbstring, .. } = guard.deref_mut() else { return None };
     let mut last_bits = 0;
     for i in (0..crumbstring.len()).rev() {
@@ -692,7 +775,7 @@ impl Operand {
     match self {
       Immediate(crumbs) =>
         return redexes(0, *crumbs) != 0,
-      Shared(ptr) => match ptr.read().unwrap().deref() {
+      Shared(ptr) => match look(ptr).unwrap().deref() {
         Heap { crumbstring, .. } => {
           let mut exp: i64 = 1;
           let mut trailing = 0;
@@ -748,7 +831,7 @@ fn apply(fun: Operand, arg: Operand) -> Operand {
   }
 
   fn small_op_buf<'a>(op: &'a Operand) -> Option<Result<
-    MappedRwLockReadGuard<'a, CrumbString<true>>,
+    SeenAs<'a, CrumbString<true>>,
     u64
   >> {
     match op {
@@ -756,15 +839,15 @@ fn apply(fun: Operand, arg: Operand) -> Operand {
         return Some(Err(*crumbs));
       },
       Shared(ptr) =>
-        RwLockReadGuard::filter_map(ptr.read().unwrap(), |v| {
+        try_to_see_as(look(ptr).unwrap(), |v| {
           match v {
             Heap { crumbstring, .. }
               if crumbstring.len() < 16
-              && Arc::strong_count(ptr) == 1
+              && is_exclusive(ptr)
               => Some(crumbstring),
             _ => None
           }
-        }).ok().map(Ok)
+        }).map(Ok)
     }
   }
   if let Some(fbuf) = small_op_buf(&fun)
@@ -904,11 +987,11 @@ impl System {
     loop {
       op = if
         let Shared(ptr) = &op &&
-        let Synth { fun, arg, work } = ptr.read().unwrap().deref()
+        let Synth { fun, arg, work } = look(ptr).unwrap().deref()
       {
-        if self.at() > self.stack_endstop && Arc::strong_count(ptr) == 1 {
+        if self.at() > self.stack_endstop && is_exclusive(ptr) {
           let at = self.at();
-          self.stack[at - 1].was_evaling = Arc::downgrade(ptr);
+          self.stack[at - 1].was_evaling = linger(ptr);
         }
         self.stack.push(StackFrame {
           to_eval: arg.clone(),
@@ -928,7 +1011,7 @@ impl System {
         Err(crumbs)
       },
       Shared(ptr) =>
-        Ok(RwLockReadGuard::map(ptr.read().unwrap(),|v| match v {
+        Ok(see_as(look(ptr).unwrap(),|v| match v {
           Heap { crumbstring, .. } => crumbstring,
           Synth { .. } => panic!("Should not by synth"),
         })),
@@ -976,7 +1059,7 @@ impl System {
     let mut evaled = Immediate(crumb as u64);
     for i in 1..=was_evaled {
       if let Some(ptr) = self.stack[self.at() - i].was_evaling.upgrade() {
-        let mut here = ptr.write().unwrap();
+        let mut here = grab(&ptr).unwrap();
         here.have_evaled(&evaled);
         let at = self.at();
         self.stack[at - i].was_evaling = Weak::new();
@@ -1102,18 +1185,18 @@ impl System {
     let (was_synth, mut op) = match &op {
       Immediate(_) => (false, op),
       Shared(ptr) => {
-        if let Heap { crumbstring, .. } = ptr.read().unwrap().deref()
+        if let Heap { crumbstring, .. } = look(ptr).unwrap().deref()
         && crumbstring[0] >> (word_size - 2) != 0
         {
           (false, Immediate(crumbstring[0]))
         } else
         if self.at() == self.stack_endstop
-        && Arc::strong_count(ptr) > 1
+        && !is_exclusive(ptr)
         && let Some(frame) = self.refill()
         {
           self.stack.push(StackFrame {
             to_eval: frame.to_eval,
-            was_evaling: Arc::downgrade(ptr),
+            was_evaling: linger(ptr),
           });
           (true, op)
         }
@@ -1124,12 +1207,12 @@ impl System {
     if was_synth
     && let Shared(ptr) = &op
     && self.at() == self.stack_endstop
-    && Arc::strong_count(ptr) > 1
+    && !is_exclusive(ptr)
     && let Some(frame) = self.refill()
     {
       self.stack.push(StackFrame {
         to_eval: frame.to_eval,
-        was_evaling: Arc::downgrade(ptr),
+        was_evaling: linger(ptr),
       });
     }
     let op = self.unpack_crumbstring_onto_stack(op);
@@ -1165,7 +1248,7 @@ impl System {
       op = match op {
         _ if self.fuel == 0 => return,
         Immediate(_) => return,
-        Shared(ptr) => match ptr.write().unwrap().deref_mut() {
+        Shared(ptr) => match grab(&ptr).unwrap().deref_mut() {
           Heap { .. } => return,
           Synth { fun, arg, .. } => {
             self.whnf2nf_op(fun.clone());
@@ -1184,7 +1267,7 @@ impl System {
           self.output_words.extend(&CrumbString::from(crumbs));
           return;
         },
-        Shared(ptr) => match ptr.read().unwrap().deref() {
+        Shared(ptr) => match look(&ptr).unwrap().deref() {
           Heap { crumbstring, .. } => {
             self.output_words.extend(&crumbstring);
             return;

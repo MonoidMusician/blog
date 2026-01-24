@@ -3,6 +3,9 @@ name = "blog"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+multithreaded = []
+
 [[bin]]
 name="quapteryx"
 path = "rust/Qua.rs"
