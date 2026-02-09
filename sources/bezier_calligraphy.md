@@ -319,7 +319,7 @@ And it turns out to be a useful abstraction for a lot of our calculations.
 
 ### Matching the curves up
 
-The two curves are controlled by their own $t$ parameters that are independent of each otherʼs!
+The two curves are controlled by their own \(t\) parameters that are independent of each otherʼs!
 We need to match them up somehow, and as discussed above, thereʼs a particular way to do that for our application:
 We need to find the times when they have _parallel tangent lines_, since that will tell us what is the furthest point of the pen nib (\(\mathbf{Q}\)) (locally) along any given point of the pen path (\(\mathbf{P}\)).
 
@@ -370,7 +370,7 @@ This puts the functions in lock-step in terms of their tangents, giving us what 
 
 #### Derivative of this
 
-Weʼll need the derive of this equation soon, so letʼs calculate it while weʼre here.
+Weʼll need the derivative of this equation soon, so letʼs calculate it while weʼre here.
 
 My first thought was great, we have a quadratic equation, so we know the formula and can just take the derivative of it!
 
@@ -434,7 +434,7 @@ a'q^2 + 2aqq' + b'q + bq' + c' = 0.
 
 And **this**, now _this_ has a nicer solution:
 \[
-q' = \frac{a' q^2 + b' q + c'}{2aq + b}.
+q' = -\frac{a' q^2 + b' q + c'}{2aq + b}.
 \]
 
 I think itʼs cute how the numerator is another quadratic polynomial with the derivatives of the coefficients of the original polynomial.
@@ -455,7 +455,7 @@ q^2 = \frac{-c-bq}{a}.
 
 With some work that gives us this formula:
 \[
-q' = \frac{a' q^2 + b' q + c'}{2aq + b} = \frac{(ab' - a' b)q + c' a - ca'}{a(2aq + b)},
+q' = -\frac{a' q^2 + b' q + c'}{2aq + b} = -\frac{(ab' - a' b)q + c' a - ca'}{a(2aq + b)},
 \]
 which is nice and symmetric (it is patterned a little like the cross product in the numerator) but not what I ended up going for, I think I was worried about floating-point precision but idk.
 :::
@@ -645,8 +645,8 @@ For the nonzero case, we reparameterize again according to:
 \]
 \[
 \begin{aligned}
-R_0 &:= \frac{3}{2}\frac{\kappa_0 (a \times d_1)}{(d_0 \times a)(d_0 \times d_1)^2},\\
-R_1 &:= \frac{3}{2}\frac{\kappa_1 (d_0 \times a)}{(a \times d_1)(d_0 \times d_1)^2}.\\
+R_0 &:= \frac{3}{2}\frac{\kappa_0 (a \times d_1)^2}{(d_0 \times a)(d_0 \times d_1)^2},\\
+R_1 &:= \frac{3}{2}\frac{\kappa_1 (d_0 \times a)^2}{(a \times d_1)(d_0 \times d_1)^2}.\\
 \end{aligned}
 \]
 

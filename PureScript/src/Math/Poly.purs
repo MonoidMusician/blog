@@ -3,15 +3,21 @@ module Math.Poly where
 import Math.Matrix
 import Prelude
 
-import Control.Apply (lift2)
+import Data.Align (class Align)
+import Data.Foldable (class Foldable, foldMap)
+import Data.Int as Int
 import Data.Newtype (unwrap)
+import Data.Number (sqrt)
 import Data.Number as Math
+import Data.Ord (abs)
 import Data.Pair (Pair(..))
+import Data.Traversable (class Traversable)
+import Idiolect (cube, sgn, slipadd, slipsub, sqre)
 
-padd :: forall @p @s. Apply p => Semiring s => p s -> p s -> p s
-padd = lift2 (+)
-psub :: forall @p @s. Apply p => Ring s => p s -> p s -> p s
-psub = lift2 (-)
+padd :: forall @p @s. Align p => Semiring s => p s -> p s -> p s
+padd = slipadd
+psub :: forall @p @s. Align p => Ring s => p s -> p s -> p s
+psub = slipsub
 
 infixl 6 padd as :+:
 infixl 6 psub as :-:
@@ -20,6 +26,26 @@ class PMul i j o where
   pmul :: i -> j -> o
 
 infixl 7 pmul as :*:
+
+class CrossP i j o | i j -> o where
+  crossP :: i -> j -> o
+
+infix 7 crossP as :×:
+
+crossPS :: forall @i @j @s. CrossP i j (Scalar s) => i -> j -> s
+crossPS i j = unwrap (crossP i j)
+
+instance (PMul i j o, Group o) => CrossP (Vec2 i) (Vec2 j) (Vec1 o) where
+  crossP (V2 lx ly) (V2 rx ry) = V1 (lx :*: ry <>- ly :*: rx)
+instance (PMul i j o, Group o) => CrossP (Vec3 i) (Vec3 j) (Vec3 o) where
+  crossP l r = dims <#> \d -> unwrap $
+    crossP (without d l) (without d r)
+
+norm2P :: forall @f @i @o. Foldable f => PMul i i o => Monoid o => f i -> o
+norm2P = foldMap \s -> s :*: s
+
+-- norm :: forall @f. Foldable f => f Number -> Number
+-- norm = Math.sqrt <<< norm2
 
 instance Semiring s => PMul s s s where
   pmul = mul
@@ -120,13 +146,19 @@ instance IsPoly Poly3 where
 instance IsPoly Poly4 where
   evalP (Poly4 c0 c1 c2 c3 c4) t = c0 <> t .* (c1 <> t .* (c2 <> t .* (c3 <> t .* c4)))
 
-class IsPoly p <= Solve p solutions | p -> solutions where
+class Traversable solutions <= Solve p solutions | p -> solutions where
   solve :: p Number -> solutions Number
   solveN :: p Number -> SolveN Number
 
 data SolveN c = EverywhereN | SolveN (Array c)
+derive instance Functor SolveN
+derive instance Foldable SolveN
+derive instance Traversable SolveN
 
 data Solve1 c = Everywhere1 | Nowhere1 | Solve1 c
+derive instance Functor Solve1
+derive instance Foldable Solve1
+derive instance Traversable Solve1
 
 solve1 :: forall c. Field c => Eq c => Poly1 c -> Solve1 c
 solve1 (Poly1 c0 c1) | c1 == zero =
@@ -139,8 +171,14 @@ instance Solve Poly1 Solve1 where
     Everywhere1 -> EverywhereN
     Nowhere1 -> SolveN []
     Solve1 c -> SolveN [c]
+instance Solve Bez1 Solve1 where
+  solve = solve <<< bez2polyS
+  solveN = solveN <<< bez2polyS
 
 data Solve2 c = Everywhere2 | Nowhere2 | Solve21 c | Solve22 c c
+derive instance Functor Solve2
+derive instance Foldable Solve2
+derive instance Traversable Solve2
 
 discr2 :: Poly2 Number -> Number
 discr2 (Poly2 c0 c1 c2) =
@@ -152,10 +190,19 @@ solve2 (Poly2 c0 c1 c2) | c2 == zero =
     Everywhere1 -> Everywhere2
     Nowhere1 -> Nowhere2
     Solve1 c -> Solve21 c
-solve2 p@(Poly2 _ c1 c2) =
+solve2 (Poly2 c0 c1 c2) | c0 == zero =
+  case solve1 (Poly1 c1 c2) of
+    Everywhere1 -> Everywhere2
+    Nowhere1 -> Solve21 zero
+    Solve1 c -> Solve22 zero c
+solve2 p@(Poly2 c0 c1 c2) =
   let
     d = discr2 p
-    rest root_d = (negate c1 + root_d) / (2.0 * c2)
+    rest_c2 root_d = (-c1 + root_d) / (2.0 * c2)
+    rest_c0 root_d = (2.0 * c0) / (-c1 - root_d)
+    -- For numeric precision, avoid subtracting like signs
+    rest root_d | eq @Int (sgn root_d) (sgn c1) = rest_c0 root_d
+    rest root_d | otherwise = rest_c2 root_d
   in case d `compare` 0.0 of
     LT -> Nowhere2
     EQ -> Solve21 (rest (Math.sqrt d))
@@ -168,7 +215,80 @@ instance Solve Poly2 Solve2 where
     Nowhere2 -> SolveN []
     Solve21 c -> SolveN [c]
     Solve22 c1 c2 -> SolveN [c1, c2]
+instance Solve Bez2 Solve2 where
+  solve = solve <<< bez2polyS
+  solveN = solveN <<< bez2polyS
 
-data Solve3 c = Everywhere3 | Nowhere3 | Solve31 c | Solve32 c c | Solve33 c c c
+data Solve3 r = Everywhere3 | Nowhere3 | Solve31 r | Solve32 r r | Solve33 r r r
+derive instance Functor Solve3
+derive instance Foldable Solve3
+derive instance Traversable Solve3
+
+solve3 :: Poly3 Number -> Solve3 Number
+solve3 (Poly3 d c b a) | a == zero =
+  case solve2 (Poly2 d c b) of
+    Everywhere2 -> Everywhere3
+    Nowhere2 -> Nowhere3
+    Solve21 r1 -> Solve31 r1
+    Solve22 r1 r2 -> Solve32 r1 r2
+solve3 (Poly3 d c b a) | d == zero =
+  case solve2 (Poly2 c b a) of
+    Everywhere2 -> Everywhere3
+    Nowhere2 -> Solve31 zero
+    Solve21 r1 -> Solve32 zero r1
+    Solve22 r1 r2 -> Solve33 zero r1 r2
+solve3 (Poly3 d c b a) =
+  case disc of
+  _ | disc == 0.0 ->
+      if p == 0.0
+        then Solve31 o
+        else Solve32
+          (o - 1.5*q/p) -- double root
+          (o + 3.0*q/p)
+    | disc > 0.0 -> -- implies p < 0
+        Solve33 0 1 2 <#>
+          let
+            rotate k = Math.pi * Int.toNumber k / 1.5
+            angle = Math.acos (1.5 * q / p / rootp3) / 3.0
+          in \k -> o + 2.0 * rootp3 * Math.cos (angle + rotate k)
+    | p < 0.0 -> Solve31 $
+        o - 2.0 * sgn q * rootp3 * cosh (acosh (-1.5 * abs q / p / rootp3) / 3.0)
+    | otherwise -> Solve31 $
+        o - 2.0 * rootp3 * sinh (asinh (1.5 * q / p / rootp3) / 3.0)
+  where
+  -- Offset for roots of non-depressed cubic
+  o = - b / (3.0 * a)
+  -- Coefficients for depressed cubic, x^3 + p x + q = 0
+  p = (3.0 * a * c - sqre(b)) / (3.0 * sqre(a))
+  q = (2.0 * cube(b) - 9.0*a*b*c + 27.0*sqre(a)*d) / (27.0 * cube(a))
+  disc = - (4.0 * cube(p) + 27.0 * sqre(q))
+  -- root p over three
+  rootp3 = sqrt (abs p / 3.0)
+
+  cosh x = (Math.exp x + Math.exp (-x)) / 2.0
+  sinh x = (Math.exp x - Math.exp (-x)) / 2.0 -- TODO: accuracy
+  acosh x = Math.log (x + Math.sqrt (x*x + 1.0))
+  asinh x = Math.log (x + Math.sqrt (x*x - 1.0))
 
 data Solve4 c = Everywhere4 | Nowhere4 | Solve41 c | Solve42 c c | Solve43 c c c | Solve44 c c c c
+derive instance Functor Solve4
+derive instance Foldable Solve4
+derive instance Traversable Solve4
+
+solve4 :: Poly4 Number -> Solve4 Number
+solve4 (Poly4 e d c b a) | a == zero =
+  case solve3 (Poly3 e d c b) of
+    Everywhere3 -> Everywhere4
+    Nowhere3 -> Nowhere4
+    Solve31 r1 -> Solve41 r1
+    Solve32 r1 r2 -> Solve42 r1 r2
+    Solve33 r1 r2 r3 -> Solve43 r1 r2 r3
+solve4 (Poly4 e d c b a) | e == zero =
+  case solve3 (Poly3 d c b a) of
+    Everywhere3 -> Everywhere4
+    Nowhere3 -> Solve41 zero
+    Solve31 r1 -> Solve42 zero r1
+    Solve32 r1 r2 -> Solve43 zero r1 r2
+    Solve33 r1 r2 r3 -> Solve44 zero r1 r2 r3
+-- https://www.geometrictools.com/GTE/Mathematics/RootsQuartic.h
+solve4 (Poly4 e d c b a) = Nowhere4

@@ -120,6 +120,7 @@ You can bug or help me write more ^^
 
 softwareengineering.stackexchange.com/questions/338665/when-to-use-a-parser-combinator-when-to-use-a-parser-generator#answer-338888 [softwareengineering.stackexchange.com]
 
+https://blog.reverberate.org/2013/07/ll-and-lr-parsing-demystified.html
 https://blog.reverberate.org/2013/09/ll-and-lr-in-context-why-parsing-tools.html
 
 https://langdev.stackexchange.com/questions/2253/what-are-the-advantages-of-parser-combinators
@@ -127,6 +128,26 @@ https://langdev.stackexchange.com/questions/2253/what-are-the-advantages-of-pars
 > "parser combinators" are what you get if you try to write a recursive descent parser in Haskell without going mad
 
 https://hackage.haskell.org/package/Earley
+
+https://wareya.wordpress.com/2025/09/26/earley-parsing-is-cheap-in-principle-and-practice-motivation-and-implementation/
+
+https://open.clemson.edu/all_dissertations/519/
+> PSLR(1): Pseudo-Scannerless Minimal LR(1) for the Deterministic Parsing of Composite Languages
+
+https://malloy.people.clemson.edu/publications/papers/sac08/paper.pdf
+> IELR(1): Practical LR(1) Parser Tables for Non-LR(1) Grammars with Conflict Resolution
+
+https://www.sciencedirect.com/science/article/pii/S0167642309001191
+> The IELR(1) algorithm for generating minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution
+
+https://cs.stackexchange.com/questions/3461/what-is-an-ielr1-parser
+https://github.com/PMCFG/PMCFG
+> PMCFG, i.e., phrase-structure formalisms such as:
+    CFG (context-free grammar)
+    LCFRS (linear context-free rewriting systems)
+    MCFG (multiple context-free grammar)
+
+"LMG" grammar parser???
 -->
 
 ## Widgets

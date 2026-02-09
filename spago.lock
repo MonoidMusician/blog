@@ -17,6 +17,7 @@
             "contravariant",
             "control",
             "datetime",
+            "day",
             "debug",
             "distributive",
             "dodo-printer",
@@ -24,6 +25,7 @@
             "either",
             "enums",
             "exceptions",
+            "exists",
             "fetch",
             "filterable",
             "foldable-traversable",
@@ -114,6 +116,7 @@
             "contravariant",
             "control",
             "datetime",
+            "day",
             "debug",
             "distributive",
             "dodo-printer",
@@ -164,6 +167,7 @@
             "numbers",
             "ordered-collections",
             "orders",
+            "pairing",
             "parallel",
             "parsing",
             "partial",
@@ -6347,6 +6351,14 @@
       }
     },
     "extra_packages": {
+      "day": {
+        "git": "https://github.com/paf31/purescript-day.git",
+        "ref": "v10.0.1",
+        "dependencies": [
+          "exists",
+          "pairing"
+        ]
+      },
       "free-boolean": {
         "git": "https://github.com/MonoidMusician/purescript-free-boolean.git",
         "ref": "main",
@@ -6416,6 +6428,46 @@
           "tailrec",
           "tuples",
           "unfoldable"
+        ]
+      },
+      "pairing": {
+        "git": "https://github.com/purescript-open-community/purescript-open-pairing.git",
+        "ref": "v6.2.0",
+        "dependencies": [
+          "free",
+          "functors",
+          "transformers"
+        ]
+      },
+      "parsing": {
+        "git": "https://github.com/purescript-contrib/purescript-parsing.git",
+        "ref": "v10.3.1",
+        "dependencies": [
+          "arrays",
+          "control",
+          "effect",
+          "either",
+          "enums",
+          "foldable-traversable",
+          "functions",
+          "identity",
+          "integers",
+          "lazy",
+          "lists",
+          "maybe",
+          "newtype",
+          "nullable",
+          "numbers",
+          "partial",
+          "prelude",
+          "st",
+          "strings",
+          "tailrec",
+          "transformers",
+          "tuples",
+          "unfoldable",
+          "unicode",
+          "unsafe-coerce"
         ]
       },
       "stylish": {
@@ -6747,6 +6799,15 @@
         "partial",
         "prelude",
         "tuples"
+      ]
+    },
+    "day": {
+      "type": "git",
+      "url": "https://github.com/paf31/purescript-day.git",
+      "rev": "23a4aa9c77854edc4ff28258a113dee7a9d600f5",
+      "dependencies": [
+        "exists",
+        "pairing"
       ]
     },
     "debug": {
@@ -7456,6 +7517,16 @@
         "prelude"
       ]
     },
+    "pairing": {
+      "type": "git",
+      "url": "https://github.com/purescript-open-community/purescript-open-pairing.git",
+      "rev": "4aa899a5e36ddec40258dc5ab4ce31a9a5298a36",
+      "dependencies": [
+        "free",
+        "functors",
+        "transformers"
+      ]
+    },
     "parallel": {
       "type": "git",
       "url": "https://github.com/purescript/purescript-parallel.git",
@@ -7477,7 +7548,7 @@
     "parsing": {
       "type": "git",
       "url": "https://github.com/purescript-contrib/purescript-parsing.git",
-      "rev": "6dc1e9cab195f4af3394b48c508b4794328edeac",
+      "rev": "3ad2900eb9a9d2b079f4b5a4547db7cf10a83eb4",
       "dependencies": [
         "arrays",
         "control",

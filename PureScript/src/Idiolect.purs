@@ -7,6 +7,7 @@ import Prelude
 import Control.Alternative (class Alt, class Alternative, (<|>))
 import Control.Apply (lift2)
 import Control.Plus (class Plus)
+import Data.Align (class Align, align, aligned)
 import Data.Argonaut (Json)
 import Data.Array as Array
 import Data.CodePoint.Unicode as U
@@ -16,6 +17,7 @@ import Data.Filterable (class Filterable, filter, filterMap, partitionMap)
 import Data.Foldable (class Foldable, fold, foldMap, intercalate, oneOfMap)
 import Data.FoldableWithIndex (class FoldableWithIndex, foldMapWithIndex)
 import Data.Function (on)
+import Data.Functor.Day (Day, day, runDay)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
 import Data.Maybe (Maybe(..), maybe, optional)
 import Data.Maybe as Maybe
@@ -29,6 +31,7 @@ import Data.TraversableWithIndex (forWithIndex, traverseWithIndex)
 import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
+import Partial.Unsafe (unsafeCrashWith)
 import Prim.Row as Row
 import Prim.RowList as RL
 import Record as Record
@@ -194,3 +197,46 @@ filterKey _ p r
   | p (Record.get (Proxy :: Proxy k) r)
   = Just (Record.get (Proxy :: Proxy k') r)
 filterKey _ _ _ = Nothing
+
+between :: forall a. Ord a => a -> a -> (a -> Boolean)
+between lo hi val = lo <= val && val <= hi
+
+unsafeFromMaybe :: forall a. String -> Maybe a -> a
+unsafeFromMaybe _ (Just a) = a
+unsafeFromMaybe reason Nothing = unsafeCrashWith reason
+
+theseop :: forall @x. (x -> x -> x) -> These x x -> x
+theseop binop (Both x1 x2) = binop x1 x2
+theseop _ (This x) = x
+theseop _ (That x) = x
+
+slip2 :: forall @f @x. Align f => (x -> x -> x) -> f x -> f x -> f x
+slip2 = align <<< theseop
+
+slip2sgn :: forall @f @x. Align f => (x -> x -> x) -> (x -> x) -> f x -> f x -> f x
+slip2sgn binop unop = align case _ of
+  Both x1 x2 -> binop x1 x2
+  This x -> x
+  That x -> unop x
+
+slipadd :: forall @f @x. Align f => Semiring x => f x -> f x -> f x
+slipadd = slip2 add
+slipsub :: forall @f @x. Align f => Ring x => f x -> f x -> f x
+slipsub = slip2sgn sub negate
+slipmul :: forall @f @x. Align f => Semiring x => f x -> f x -> f x
+slipmul = slip2 mul
+slipdiv :: forall @f @x. Align f => EuclideanRing x => DivisionRing x => f x -> f x -> f x
+slipdiv = slip2sgn div recip
+
+incorporate :: forall @x. Semigroup x => x -> Maybe x -> x
+incorporate x Nothing = x
+incorporate x (Just y) = x <> y
+
+sqre :: forall @x. Semiring x => x -> x
+sqre x = x * x
+
+cube :: forall @x. Semiring x => x -> x
+cube x = x * x * x
+
+sgn :: forall @i @o. Semiring i => Ord i => Ring o => i -> o
+sgn i = if i == zero then zero else if i > zero then one else negate one

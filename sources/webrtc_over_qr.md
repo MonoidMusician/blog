@@ -13,7 +13,7 @@ See there for caveats and compatibility and so on.
 
 <del>Most notably: automatic connection only works on Chromium-based browsers and only for [LAN]{t=} connections.</del>
 
-[Chromium has changed and no longer allows the side channel](https://webrtc-review.googlesource.com/c/src/+/366562).
+[Chromium has changed and no longer allows the smol side channel](https://webrtc-review.googlesource.com/c/src/+/366562).
 :::
 
 ## Baseline connection initiation (happy path \^\^)
@@ -129,7 +129,7 @@ Here are the steps for basic connection establishment:
     <div class="Error">
     <del>This only works on Chromium-based browsers! And only over [LAN]{t=}! (not behind [NAT]{t=})</del>
 
-    [Chromium has changed and no longer allows the side channel](https://webrtc-review.googlesource.com/c/src/+/366562).
+    [Chromium has changed and no longer allows the smol side channel](https://webrtc-review.googlesource.com/c/src/+/366562).
     </div>
 
     - The fingerprint comes from the `a=ice-ufrag:`{.sdp} line

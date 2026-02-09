@@ -149,5 +149,47 @@ workspace:
         - web-events
       git: https://github.com/purescript-web/purescript-web-dom.git
       ref: 326c125d2f9dd5c5c1e74ac17fb95d5ddd7b4450
+    parsing:
+      dependencies:
+        - arrays
+        - control
+        - effect
+        - either
+        - enums
+        - foldable-traversable
+        - functions
+        - identity
+        - integers
+        - lazy
+        - lists
+        - maybe
+        - newtype
+        - nullable
+        - numbers
+        - partial
+        - prelude
+        - st
+        - strings
+        - tailrec
+        - transformers
+        - tuples
+        - unfoldable
+        - unicode
+        - unsafe-coerce
+      git: https://github.com/purescript-contrib/purescript-parsing.git
+      ref: v10.3.1
+    day:
+      dependencies:
+        - exists
+        - pairing
+      git: https://github.com/paf31/purescript-day.git
+      ref: v10.0.1
+    pairing:
+      dependencies:
+        - free
+        - functors
+        - transformers
+      git: https://github.com/purescript-open-community/purescript-open-pairing.git
+      ref: v6.2.0
   packageSet:
     url: https://raw.githubusercontent.com/purescript/package-sets/psc-0.15.4-20221229/packages.json
