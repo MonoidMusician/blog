@@ -1350,6 +1350,7 @@ instance showInstr :: Show Instr where
 --   "(?![\\p{Pattern_Syntax}\\p{Pattern_White_Space}])[\\p{L}\\p{Nl}\\p{Mn}\\p{Mc}\\p{Nd}\\p{Pc}]"
 -- rOp = rawr
 --   "[\\p{Pattern_Syntax}]"
+-- https://www.unicode.org/reports/tr31/#Mathematical_Compatibility_Notation_Profile
 
 rID :: String
 rID =

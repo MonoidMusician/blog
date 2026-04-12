@@ -197,11 +197,13 @@ dedupBy method = statefulStream Nothing <@> case _, _ of
     { state: Just next, emit: Just next }
 
 dedupOn :: forall flow a b. Eq b => (a -> b) -> Stream flow a -> Lake a
-dedupOn f = statefulStream Nothing <@> case _, _ of
-  Just last, next | f next == last ->
-    { state: Just (f next), emit: Nothing }
-  _, next ->
-    { state: Just (f next), emit: Just next }
+dedupOn f = statefulStream Nothing <@> \last next ->
+  let next' = f next in
+  { state: Just next'
+  , emit: case last of
+      Just last' | next' == last' -> Nothing
+      _ -> Just next
+  }
 
 dedup :: forall flow a. Eq a => Stream flow a -> Lake a
 dedup = dedupBy eq

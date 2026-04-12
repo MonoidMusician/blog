@@ -22,6 +22,7 @@ import Riverdragon.Roar.Knob (Envelope, Knob(..), knobToAudio, planned, toKnob)
 import Riverdragon.Roar.Roarlette as YY
 import Riverdragon.Roar.Score (ScoreM, mtf, mtf_)
 import Riverdragon.Roar.Score as Y
+import Riverdragon.Roar.Sugar (Noise(..), toNode)
 import Riverdragon.Roar.Synth (installSynth, notesToNoises)
 import Riverdragon.Roar.Types (Roar, toRoars)
 import Riverdragon.Roar.Viz (oscilloscope, spectrogram)
@@ -49,8 +50,8 @@ oneVoice :: Env -> Int -> River Unit -> ScoreM
 oneVoice { pinkEnv, sineEnv } semitones release = do
   -- Console.logShow semitones
   let volume = pitchGain semitones
-  -- pink <- toNode PinkNoise
-  -- pinkGain <- Y.gain pink { adsr: pinkEnv, volume: 0.2, release }
+  pink <- toNode PinkNoise
+  pinkGain <- Y.gain { adsr: pinkEnv, volume: 0.2, release } pink
   frequency <- mtf_ semitones -- this live updates if tuning or temperament changes
   sine <- Y.osc
     { detune: 0
@@ -61,7 +62,7 @@ oneVoice { pinkEnv, sineEnv } semitones release = do
   sineGain <- Y.gain gainKnob sine
   let leave = delay (100.0 # Milliseconds) release
   { ctx: _ctx } <- ask
-  pure { value: [{ audio: [ sineGain ], gain: gainKnob }], leave }
+  pure { value: [{ audio: [ sineGain, pinkGain ], gain: gainKnob }], leave }
 
 harpsynthorgVoiceV1 :: forall env. env -> Int -> River Unit -> ScoreM
   { value :: Array
@@ -192,6 +193,6 @@ widgetHarpsynthorg _ = pure $ Egg do
     [ synth.playPause
     , synth.midi
     , D.div [ D.Self =:= \el -> mempty <$ sendScopeParent el ] mempty
-    -- , pinkEnvUi
-    -- , sineEnvUi
+    , pinkEnvUi
+    , sineEnvUi
     ]

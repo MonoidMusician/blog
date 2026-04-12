@@ -62,6 +62,7 @@ import Data.Compactable (class Compactable, compact, separateDefault)
 import Data.Either (Either(..), either)
 import Data.Either.Nested (type (\/))
 import Data.Filterable (class Filterable, filter, filterDefault, filterMap, partitionDefault, partitionMapDefault)
+import Data.Generic.Rep as G
 import Data.Identity (Identity(..))
 import Data.Int as I
 import Data.Int as Int
@@ -101,7 +102,7 @@ import Foreign.Object (Object)
 import Foreign.Object as Obj
 import Foreign.Object as Object
 import Idiolect (type (/\/), JSON, only, (+?), (/|\), (?+))
-import Parser.Printer.Juxt (class Conjuxt, class Disjuxt, class DisjuxtEnum, class GuideFlow, class IConjuxtRow, class IDisjuxtRow, class SelectVariantRow, CaseTree(..), _EitherRow, _MaybeL, _MaybeRow, _TheseRow, _disjuxt2, casesSplit, cleaveCases, conjuxt0, conjuxt2, disjuxt0, disjuxtEnum, iconjuxtRow, idisjuxtRow, rec0, recjuxt, selectVariant, var0, (!!!), (!>), (/!\), (>$<$>), (???), (\!/))
+import Parser.Printer.Juxt (class Conjuxt, class Disjuxt, class DisjuxtEnum, class GuideFlow, class IConjuxtRow, class IDisjuxtRow, class SelectVariantRow, CaseTree(..), _EitherRow, _MaybeL, _MaybeRow, _TheseRow, _disjuxt2, casesSplit, cleaveCases, conjuxt0, conjuxt2, disjuxt0, disjuxtEnum, iconjuxtRow, idisjuxtRow, rec0, recjuxt, selectVariant, var0, (!!!), (!>), (/!\), (>$<$>), (><>), (???), (\!/))
 import Parser.Printer.Juxt as Juxt
 import Parser.Selective (class Casing, applyCaseTree)
 import Parser.Selective as Sel
@@ -1196,8 +1197,32 @@ instance
   ) => AutoJSON (Variant fields) reg where
     autoJ = object (autoJVRL @rl)
 
+instance (AutoJSON l reg, AutoJSON r reg) => AutoJSON (G.Sum l r) reg where
+  autoJ = sumToEither >$<$> either G.Inl G.Inr
+    !!! autoJ \!/ autoJ
+    where
+    sumToEither (G.Inl l) = Left l
+    sumToEither (G.Inr r) = Right r
+instance (AutoJSONs fields reg, IsSymbol name) => AutoJSON (G.Constructor name fields) reg where
+  autoJ = tupled !!! _P @name ctor !> coerce (autoJs @fields @reg)
+
+class Ord reg <= AutoJSONs t reg where
+  autoJs :: JRACodec reg t
+
+instance (AutoJSONs l reg, AutoJSONs r reg) => AutoJSONs (G.Product l r) reg where
+  autoJs = (\(G.Product l r) -> Tuple l r) >$<$> uncurry G.Product
+    !!! autoJs /!\ autoJs
+instance (AutoJSON field reg) => AutoJSONs (G.Argument field) reg where
+  autoJs = coerce (item (autoJ @field @reg))
+
+gautoJ :: forall @t rep @reg. G.Generic t rep => AutoJSON rep reg => JRCodec reg t
+gautoJ = G.from >$<$> G.to !!! autoJ
+
 _N :: forall p x y. Newtype y x => Coercible (p x x) (p y y) => p x x -> p y y
 _N = coerce
+
+_P :: forall @v @p. Profunctor p => p (Proxy v) (Proxy v) -> p Unit Unit
+_P = Proxy ><> unit
 
 instance AutoJSON t reg => AutoJSON (Identity t) reg where autoJ = _N autoJ
 instance AutoJSON t reg => AutoJSON (Conj t) reg where autoJ = _N autoJ

@@ -92,8 +92,10 @@ module Riverdragon.River
   , subscribe
   , subscribeM
   , subscribeM1
+  , reenableM1
   , subscribeIsh
   , onDestroyed
+  , endOfRoad
   , dam
   , stillRiver
   , unsafeRiver
@@ -114,6 +116,7 @@ module Riverdragon.River
   , emitState
   , statefulStream
   , limitTo
+  , whileJust
   , selfGating
   , singleShot
   , selfGatingEf
@@ -125,9 +128,9 @@ module Riverdragon.River
   , mapLatest
   , latestStream
   , (>>~)
-  , latestStreamEf
+  , latestStreamM
   , allStreams
-  , allStreamsEf
+  , allStreamsM
   , fix
   , fixPrj
   , fixPrjBurst
@@ -147,10 +150,10 @@ import Control.Monad.ResourceT (ResourceM, oneSubScopeAtATime, scopedStart, scop
 import Control.Plus (class Plus, empty)
 import Data.Array as Array
 import Data.Bifoldable (bifoldMap)
-import Data.Compactable (separateDefault)
+import Data.Compactable (compact, separateDefault)
 import Data.Filterable (class Compactable, class Filterable, filterDefault, filterMap, partitionDefaultFilterMap, partitionMapDefault)
 import Data.HeytingAlgebra (ff, implies, tt)
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..), isNothing, maybe)
 import Data.Set as Set
 import Data.These (These(..))
 import Data.Traversable (class Foldable, foldMap, mapAccumL, traverse, traverse_)
@@ -182,6 +185,7 @@ data Stream (flow :: IsFlowing) a = Stream IsFlowing
   ( { receive :: a -!> Unit, commit :: Id -!> Unit, destroyed :: Allocar Unit } -&>
     { burst :: Array a, sources :: Array Id, unsubscribe :: Allocar Unit }
   )
+type role Stream representational representational
 -- | A lake is (mostly) stagnant until you tap into it. Resources may be
 -- | allocated per-subscriber. A lake may also be obtained from a river.
 -- |
@@ -357,9 +361,11 @@ combineStreams logic comb (Stream t1 e1) (Stream t2 e2) = Stream (t1 <> t2) \cbs
     , unsubscribe: r1.unsubscribe <> r2.unsubscribe
     }
 
+-- | Like `<*>`, but only emits a value when the left stream fires.
 sampleOnLeft :: forall flow a b. Stream flow (a -> b) -> Stream flow a -> Stream flow b
 sampleOnLeft = combineStreams (This tt) ($)
 
+-- | Like `<*>`, but only emits a value when the right stream fires.
 sampleOnRight :: forall flow a b. Stream flow (a -> b) -> Stream flow a -> Stream flow b
 sampleOnRight = combineStreams (That tt) ($)
 
@@ -525,6 +531,10 @@ subscribeM1 stream cb = do
     newScope <- revolving
     void $ scopedStart_ "subscribeM1" newScope $ cb a
 
+reenableM1 :: forall flow m. MonadResource m => Stream flow Boolean -> ResourceM Unit -> m Unit
+reenableM1 stream cb = do
+  subscribeM1 stream (when <@> cb)
+
 -- | Subscribe with an additional callback for when the stream is destroyed.
 subscribeIsh :: forall flow a m. MonadResource m => Allocar Unit -> Stream flow a -> (a -!> Unit) -> m Unit
 subscribeIsh destroyed (Stream _ stream) receive = destr =<< liftEffect do
@@ -547,6 +557,10 @@ subscribeIsh destroyed (Stream _ stream) receive = destr =<< liftEffect do
 
 onDestroyed :: forall a m. MonadResource m => Effect Unit -> River a -> m Unit
 onDestroyed cb stream = void $ subscribeIsh cb stream mempty
+
+endOfRoad :: forall a. River a -> River Unit
+endOfRoad stream = unsafeCopyFlowing stream $ makeLake' \destroy cb ->
+  onDestroyed (cb unit <> destroy) stream
 
 -- | Dam.
 dam :: forall flowIn a. Stream flowIn a -> Lake a
@@ -807,9 +821,15 @@ limitTo n (Stream flow setup) = Stream flow \cbs -> do
   setUnsub sub.unsubscribe
   pure sub
 
+-- | Cut off the stream when it returns `Nothing`.
+whileJust :: forall flow a. Stream flow (Maybe a) -> Lake a
+whileJust = compact <<< selfGating isNothing
+
+-- | Cut off the stream when the predicate returns true
 selfGating :: forall flow a. (a -> Boolean) -> Stream flow a -> Lake a
 selfGating pred = selfGatingEf \stop -> pure \a -> when (pred a) stop
 
+-- | Only accept one element.
 singleShot :: forall flow. Stream flow ~> Lake
 singleShot = selfGating tt
 
@@ -837,6 +857,8 @@ selfGatingEf logic (Stream flow setup) = Stream flow \cbs -> do
   pure sub
 
 
+-- | We can use a `Lake` to instantiate other streams, which gives us the
+-- | burst and a river to share downstream subscriptions.
 withInstantiated :: forall flow a b.
   Stream flow a ->
   (Array a -> River a -> Lake b) ->
@@ -845,6 +867,7 @@ withInstantiated toFlow f = alLake do
   { burst, stream } <- instantiate toFlow
   pure (f burst stream)
 
+-- | Allow it to emit several elements.
 mapArray :: forall flow a b. (a -> Array b) -> Stream flow a -> Stream flow b
 mapArray f (Stream t g) = mayMemoize $ Stream t \cbs -> do
   r <- g cbs { receive = \a -> traverse_ cbs.receive (f a) }
@@ -874,6 +897,8 @@ alLake' mkLake = Stream NotFlowing \cbs -> do
 --   burst <- traverse f r.burst
 --   pure r { burst = burst }
 
+-- | We can map benign effects during a stream, both rivers and lakes, since
+-- | the difference should not be observable.
 mapAl :: forall flow a b. (a -> Allocar b) -> Stream flow a -> Stream flow b
 mapAl f (Stream t g) = mayMemoize $ Stream t \cbs -> do
   r <- g cbs { receive = \a -> cbs.receive =<< f a }
@@ -935,33 +960,33 @@ mapLatest :: forall flowInner flowIn a b. (a -> Stream flowInner b) -> Stream fl
 mapLatest = flip latestStream
 
 latestStream :: forall flowIn flowInner a b. Stream flowIn a -> (a -> Stream flowInner b) -> Lake b
-latestStream source mkStream = latestStreamEf source (mkStream >>> pure)
+latestStream source mkStream = latestStreamM source (mkStream >>> pure)
 
 infixl 1 latestStream as >>~
 
-latestStreamEf ::
+latestStreamM ::
   forall flowIn flowInner a b.
   Stream flowIn a ->
   (a -> ResourceM (Stream flowInner b)) ->
   Lake b
-latestStreamEf source mkStream = makeLake \cb -> do
-  revolving <- selfScope >>= oneSubScopeAtATime "latestStreamEf"
+latestStreamM source mkStream = makeLake \cb -> do
+  revolving <- selfScope >>= oneSubScopeAtATime "latestStreamM"
   subscribe source \a -> do
     -- Unsubscribe first (by creating a new revolving scope) in case one of the
     -- next actions would have triggered the old stream to emit any more events
     -- before the subscription got properly replaced
     newScope <- revolving
-    void $ scopedStart_ "latestStreamEf" newScope do
+    void $ scopedStart_ "latestStreamM" newScope do
       stream <- mkStream a
       subscribe stream cb
 
 -- | Will subscribe to all streams produced. Use with care!
-allStreamsEf ::
+allStreamsM ::
   forall flowIn flowInner a b.
   Stream flowIn a ->
   (a -> ResourceM (Stream flowInner b)) ->
   Lake b
-allStreamsEf source mkStream = makeLake \cb -> do
+allStreamsM source mkStream = makeLake \cb -> do
   subscribeM source \a -> do
     stream <- mkStream a
     subscribe stream cb
@@ -971,7 +996,7 @@ allStreams ::
   Stream flowIn a ->
   (a -> Stream flowInner b) ->
   Lake b
-allStreams source mkStream = allStreamsEf source $ pure <<< mkStream
+allStreams source mkStream = allStreamsM source $ pure <<< mkStream
 
 
 -- | Compute a “fixpoint” or “fixed point” of a stream function.
@@ -1028,11 +1053,11 @@ fix' :: forall flow1 flow2 flow3 o i.
       }
   ) ->
   Lake o
-fix' mkLoop = makeLake \cb -> do
-  { stream: feedback, send } <- createRiver
+fix' mkLoop = makeLake' \finished cb -> do
+  { stream: feedback, send, destroy } <- createRiver
   { loopback, output } <- mkLoop feedback
-  subscribe loopback send
-  subscribe output cb
+  subscribeIsh destroy loopback send
+  subscribeIsh (finished <> destroy) output cb
 
 -- | This efficiently sorts “mail” values based on their key, so that upstream
 -- | only receives on listener and the downstream rivers only get pinged for
@@ -1064,16 +1089,22 @@ mailbox upstream = inSubScope "mailbox" do
     upstream
     \{ key, value } -> do
       -- this runs only if there has been a subscriber for the event
-      mailboxes.onKey key \downstreamSend -> do
+      mailboxes.onKey key \{ send: downstreamSend } -> do
         downstreamSend value
   -- if we're been keep good track of Alloc vs Effect, allocLazy is slightly
   -- nicer than raw unsafePerformEffect
   byKey <- liftEffect $ allocLazy $ pure \selected -> do
     -- if it has been destroyed, return an empty stream
-    iteM destroyed.get (pure empty) $ map _.result $ scopedStart "mailbox" scope do
-      downstream <- createRiver
-      liftEffect do mailboxes.set selected downstream.send
-      pure downstream.stream
+    iteM destroyed.get (pure empty) do
+      -- look for an existing stream
+      mailboxes.get selected >>= case _ of
+        Just { stream } -> pure stream
+        Nothing -> _.result <$> scopedStart "mailbox" scope do
+          -- create a new river and record and return it
+          downstream <- createRiver
+          liftEffect do mailboxes.set selected downstream
+          pure downstream.stream
+          -- TODO: delete when back down to zero subscribers?
   pure byKey
 
 mailboxRiver :: forall flowOut k v. Ord k =>

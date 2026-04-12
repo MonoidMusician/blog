@@ -5,12 +5,18 @@ import Prelude
 import Control.Apply (lift2)
 import Data.Align (class Align, align)
 import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap)
 import Data.Distributive (class Distributive, collect, collectDefault, distribute)
 import Data.Eq (class Eq1)
 import Data.Foldable (class Foldable, any, foldMap, foldl, foldr, sum)
 import Data.FoldableWithIndex (class FoldableWithIndex)
+import Data.Function (on)
 import Data.FunctorWithIndex (class FunctorWithIndex)
+import Data.Generic.Rep (class Generic)
+import Data.Int as Int
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Monoid (power)
 import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (class Newtype, un, unwrap)
@@ -22,16 +28,23 @@ import Data.Pair (Pair(..))
 import Data.Profunctor (dimap)
 import Data.Semigroup.Foldable (class Foldable1, fold1)
 import Data.Semigroup.Traversable (class Traversable1)
+import Data.Show.Generic (genericShow)
 import Data.These (These(..), these)
 import Data.Traversable (class Traversable, traverse)
 import Data.TraversableWithIndex (class TraversableWithIndex)
-import Data.Tuple (Tuple(..), snd)
-import Idiolect (sqre, theseop, (/|\), (<#>:))
+import Data.Tuple (Tuple(..), fst, snd)
+import Debug (spy, spyWith)
+import Idiolect (neighbors, sqre, theseop, (/|\), (<#>:))
+import Monoids.BoundsWith (BoundsWith(..), MaxWith(..), MinWith(..))
+import Parser.Optimized.Types (unsafeFromJust)
 import Safe.Coerce (coerce)
+import Unsafe.Coerce (unsafeCoerce)
 
 type Degrees = Number
 type Radians = Number
 type Pixels = Number
+type Time = Number -- time 0.0 to 1.0 on a Bézier curve
+type Fraction = Number -- fraction from 0.0 to 1.0 on some scale
 
 -- | Groups are monoids with inverses such that `inv m <> m = mempty = m <> inv m`
 class Monoid m <= Group m where
@@ -91,11 +104,111 @@ infixl 7 sdiv as /.
 
 -- x +<t>+ y
 affComb :: forall @s @v. SModule s v => Ring s => v -> s -> v -> v
-affComb x t y = (one - t) .* x <> t .* y
+affComb x t y = x <> t .* (y <> (negate one) .* x)
+  -- (one - t) .* x <> t .* y
+
+interp :: forall @s @v. SModule s v => Ring s => v -> v -> (s -> v)
+interp = flip <<< affComb
 
 infixl 5 affComb as +<
 infixl 5 identity as >+
+infixl 5 interp as +<*>+
 
+interpS :: forall @s. Ring s => s -> s -> (s -> s)
+interpS x y = unwrap <<< interp (V1 x) (V1 y)
+
+affCombS :: forall @s. Ring s => s -> s -> s -> s
+affCombS x t y = unwrap $ affComb (V1 x) t (V1 y)
+
+infixl 5 affCombS as .+<
+infixl 5 identity as >+.
+
+interpsWith :: forall x y z s. (x -> y -> s -> z) -> Array x -> Array y -> s -> Array z
+interpsWith f xs ys t = Array.zipWith (\x y -> f x y t) xs ys
+
+multiinterpWith :: forall @x. (x -> x -> Number -> x) -> NonEmptyArray (Tuple Number x) -> Number -> x
+multiinterpWith f = NEA.sortWith fst >>> \points ->
+  let fallback = NEA.last points # snd in
+  case NEA.fromArray (pairs points) of
+    -- Just one item
+    Nothing -> \_ -> fallback
+    Just items -> \t ->
+      items
+      -- Find a pair in the right range
+      # NEA.findMap (inRange t)
+      -- Fall back to the last item
+      # fromMaybe fallback
+  where
+  inRange t (Pair (Tuple t0 x0) (Tuple t1 x1))
+    | t0 <= t && t <= t1 =
+      Just $ f x0 x1 $ uninterp t0 t1 t
+    -- Catch t before the items
+    | t <= t0 = Just x0
+  inRange _ _ = Nothing
+
+uninterp :: forall @s. Field s => s -> s -> s -> s
+uninterp t0 t1 t = (t - t0) / (t1 - t0)
+
+triinterpWith :: forall @v. (v -> v -> Number -> v) -> NonEmptyArray { t :: Number, r :: Number, p :: v } -> Number -> v
+triinterpWith i = NEA.sortWith _.t >>> \points ->
+  case NEA.toArray points of
+    [{ p }] -> const p
+    [{ p: p0 }, { p: p1 }] -> i p0 p1
+    pointz | bends <- spyWith "bends" (map _seeBend) $ mkBend <$> neighbors pointz, _ <- spyWith "straights" (pairsWith _seeStraight) bends ->
+      case _ of
+        t | Just r <- inBend t bends -> r
+        t | Just r <- onStraight t bends -> r
+        t | t <= (NEA.head points).t -> (NEA.head points).p
+        _ -> (NEA.last points).p
+  where
+  mkBend = case _ of
+    { prev: Just prev, here: here@{ r }, next: Just next }
+      | dt <- r * (min (here.t - prev.t) (next.t - here.t))
+      , t0 <- here.t - dt, t1 <- here.t + dt
+      , p0 <- i prev.p here.p $ uninterp prev.t here.t t0
+      , p1 <- i here.p next.p $ uninterp here.t next.t t1
+      , bend <- { dt, t0, t1, p0, p1 } ->
+      { prev: Just prev, here, next: Just next, bend: { dt, t0, t1, p0, p1 } }
+    { prev, here, next } -> { prev, here, next, bend: { dt: 0.0, t0: here.t, t1: here.t, p0: here.p, p1: here.p } }
+  _seeBend = \{ here: { p }, bend: { dt, t0, t1, p0, p1 } } -> Array.fold
+    let
+      ht = Array.fold [ "(", "t", "-", unsafeCoerce t0, ")", "/", "(", unsafeCoerce t1, "-", unsafeCoerce t0, ")" ]
+      x y z t = Array.fold [ unsafeCoerce y, "*", "(", "1", "-", unsafeCoerce t, ")", "+", unsafeCoerce z, "*", unsafeCoerce t ]
+    in
+    [ unsafeCoerce t0, " < t < ", unsafeCoerce t1, ": "
+    , x (unsafeCoerce $ "(" <> x p0 p ht <> ")") (unsafeCoerce $ "(" <> x p p1 ht <> ")") ht
+    ]
+  _seeStraight = \{ here: { p: p0, t: t0 }, bend: { t1: r0 } } { here: { p: p1, t: t1 }, bend: { t0: r1 } } -> Array.fold
+    let t = Array.fold [ "(", "t", "-", unsafeCoerce t0, ")", "/", "(", unsafeCoerce t1, "-", unsafeCoerce t0, ")" ] in
+    [ unsafeCoerce r0, " < t < ", unsafeCoerce r1, ": "
+    , unsafeCoerce p0, "*", "(", "1", "-", unsafeCoerce t, ")", "+", unsafeCoerce p1, "*", unsafeCoerce t
+    ]
+  inBend t = Array.findMap case _ of
+    { here, bend: { t0, t1, p0, p1 } }
+      | t0 < t && t < t1, ht <- uninterp t0 t1 t -> Just $
+        i (i p0 here.p ht) (i here.p p1 ht) ht
+    _ -> Nothing
+  onStraight t = Array.findMap case _ of
+    { prev: Just prev, here, bend }
+      | prev.t < t && t < bend.t0 -> Just $
+        i prev.p here.p $ uninterp prev.t here.t t
+    { here, next: Just next, bend }
+      | bend.t1 < t && t < next.t -> Just $
+        i here.p next.p $ uninterp here.t next.t t
+    _ -> Nothing
+
+triinterp :: forall @v. SModule Number v => NonEmptyArray { t :: Number, r :: Number, p :: v } -> Number -> v
+triinterp = triinterpWith interp
+
+frac :: Int -> Int -> Number
+frac n d = Int.toNumber n / Int.toNumber d
+
+pointsBetween :: Number -> Number -> Int -> Array Number
+pointsBetween p0 p1 n = Array.range 0 n <#> \i ->
+  interpS p0 p1 (frac i n)
+
+pointsBounds :: Bounds Number -> Int -> Array Number
+pointsBounds { min: Min bmin, max: Max bmax } = pointsBetween bmin bmax
 
 norm2 :: forall @f @s. Foldable f => Semiring s => f s -> s
 norm2 = un Additive <<< foldMap \s -> Additive (s * s)
@@ -133,6 +246,11 @@ class (Transforms t v) <= STransforms s t v | t -> v s where
   det :: t -> s
 
 infixr 2 tf as $*
+
+tfS :: forall @t @s. Transforms t (Vec1 s) => t -> s -> s
+tfS t s = unwrap (tf t (V1 s))
+infixr 2 tfS as $.
+
 infixr 3 tfC as <.
 infixr 3 tfCFlipped as .>
 tfCFlipped :: forall @t @v. Transforms t v => t -> t -> t
@@ -223,6 +341,9 @@ instance (Functor f, Monoid (f v), Untransforms t v) => Untransforms (LTF f t) (
 instance (Functor f, Monoid (f v), STransforms s t v) => STransforms s (LTF f t) (f v) where
   det (LTF t) = det t
 
+ltf :: forall @f @t @v. Functor f => Monoid (f v) => Transforms t v => t -> f v -> f v
+ltf = tf <<< LTF
+
 -- | Main vector/matrix/Bézier types                                        | --
 
 data Vec3 s = V3 s s s
@@ -258,6 +379,13 @@ _Y2 = V2 zero one :: forall @s. Semiring s => Vec2 s
 _X3 = V3 one zero zero :: forall @s. Semiring s => Vec3 s
 _Y3 = V3 zero one zero :: forall @s. Semiring s => Vec3 s
 _Z3 = V3 zero zero one :: forall @s. Semiring s => Vec3 s
+
+v1X = (\(V1 x) -> x) :: forall @s. Vec1 s -> s
+v2X = (\(V2 x _) -> x) :: forall @s. Vec2 s -> s
+v2Y = (\(V2 _ y) -> y) :: forall @s. Vec2 s -> s
+v3X = (\(V3 x _ _) -> x) :: forall @s. Vec3 s -> s
+v3Y = (\(V3 _ y _) -> y) :: forall @s. Vec3 s -> s
+v3Z = (\(V3 _ _ z) -> z) :: forall @s. Vec3 s -> s
 
 type V3 = Vec3 Number
 type V2 = Vec2 Number
@@ -395,6 +523,12 @@ type BBox3 s = Vec3 (Bounds s)
 mkBound :: forall s. s -> Bounds s
 mkBound s = { min: Min s, max: Max s }
 
+justBound :: forall s. s -> Maybe (Bounds s)
+justBound = Just <<< mkBound
+
+overBounds :: forall s s'. (s -> s') -> Bounds s -> Bounds s'
+overBounds f { min: Min s0, max: Max s1 } = { min: Min (f s0), max: Max (f s1) }
+
 getBounds :: forall @f @g @s. Distributive f => Functor g => Foldable1 g => Ord s => g (f s) -> f (Bounds s)
 getBounds = collect (map mkBound) >>> map fold1
 
@@ -406,6 +540,26 @@ disjointBounds ls rs = (ls /|\ rs) # any
   \(Tuple { min: Min lmin, max: Max lmax } { min: Min rmin, max: Max rmax }) ->
     lmax < rmin || lmin > rmax
 
+boundsWithout :: forall @meta @ord. BoundsWith ord meta -> Bounds ord
+boundsWithout (BoundsWith (MinWith bmin _) (MaxWith bmax _)) = { min: Min bmin, max: Max bmax }
+
+extent :: forall @s. Ring s => Bounds s -> s
+extent { min: Min bmin, max: Max bmax } = bmax - bmin
+
+extents :: forall @f @s. Functor f => Ring s => f (Bounds s) -> f s
+extents = map extent
+
+center :: forall @s. Field s => Bounds s -> s
+center { min: Min bmin, max: Max bmax } = (bmin + bmax) / (one + one)
+
+bounds2bez :: forall @s. Bounds s -> Bez1 s
+bounds2bez { min: Min bmin, max: Max bmax } = B1 bmin bmax
+
+padBounds :: forall @s. Ring s => s -> Bounds s -> Bounds s
+padBounds amt { min: Min bmin, max: Max bmax } = { min: Min (bmin - amt), max: Max (bmax + amt) }
+
+boundsNorm :: forall @s. Semiring s => Bounds s
+boundsNorm = { min: Min zero, max: Max one }
 
 -- | Helper functions                                                       | --
 
@@ -432,6 +586,48 @@ mkLin2 :: forall s. Vec2 (Vec2 s) -> Lin2 s
 mkLin2 (V2 (V2 c1 c2) (V2 c3 c4)) = Lin2 c1 c2 c3 c4
 unLin2 :: forall s. Lin2 s -> Vec2 (Vec2 s)
 unLin2 (Lin2 c1 c2 c3 c4) = V2 (V2 c1 c2) (V2 c3 c4)
+
+scale :: forall @t @s @v. SModule s t => Transforms t v => s -> t
+scale s = s .* tfI
+
+translate2 :: forall @s. Semiring s => Vec2 s -> Afn2 s
+translate2 v = mkAfn2 (Tuple v tfI)
+
+lineangle :: V2 -> Radians
+lineangle (V2 x y) = Math.atan2 y x
+
+rotl2 :: Radians -> Lin2 Number
+rotl2 angle = Lin2 (Math.cos angle) (-Math.sin angle) (Math.sin angle) (Math.cos angle)
+
+rota2 :: Radians -> Afn2 Number
+rota2 = mkAfn2 <<< Tuple mempty <<< rotl2
+
+d2r = (Math.pi / 180.0) :: Number
+r2d = 180.0 / Math.pi :: Number
+
+radiansAround2 :: Radians -> Vec2 Number -> Afn2 Number
+radiansAround2 angle = translate2 >>> \t ->
+  (t <. rota2 angle) <^ t
+
+degreesAround2 :: Degrees -> Vec2 Number -> Afn2 Number
+degreesAround2 = (_ * d2r) >>> radiansAround2
+
+-- Transform one line to the other, while preserving aspect ratio
+-- (Rotating and scaling, no skewing)
+line2line2 :: B12 -> B12 -> Afn2 Number
+line2line2 (B1 p0 p1) (B1 q0 q1) =
+  let
+    unP = translate2 (inv p0)
+    toQ = translate2 q0
+    angle = lineangle (q1 <>- q0) - lineangle (p1 <>- p0)
+    rot = rota2 angle
+    ratio = norm (q1 <>- q0) / norm (p1 <>- p0)
+  in unP .> rot .> scale ratio .> toQ
+
+bounds2bounds1 :: Bounds Number -> Bounds Number -> Afn1 Number
+bounds2bounds1 { min: Min fmin, max: Max fmax } { min: Min tmin, max: Max tmax } =
+  let s = (tmax - tmin)/(fmax - fmin) in
+  Afn1 s (tmin - s * fmin)
 
 submat3 :: forall s. Lin3 s -> Lin3 (Lin2 s)
 submat3 (Lin3 c1 c2 c3  c4 c5 c6  c7 c8 c9) = Lin3
@@ -478,28 +674,51 @@ instance Ring s => Cross (Vec3 s) (Vec3 s) where
 
 class (Align b, Align p) <= Bez2Poly b p | b -> p where
   bez2poly :: forall @v. Group v => b v -> p v
+  poly2bez :: forall @v @s. Field s => SModule s v => p v -> b v
 
 bez2polyS :: forall @b @p @v. Bez2Poly b p => Ring v => b v -> p v
 bez2polyS = map unwrap <<< bez2poly <<< map V1
 
+poly2bezS :: forall @b @p @v. Bez2Poly b p => Field v => p v -> b v
+poly2bezS = map unwrap <<< poly2bez <<< map V1
+
 instance Bez2Poly Bez1 Poly1 where
   bez2poly (B1 p0 p1) = Poly1 p0 (p0 -<> p1)
+  poly2bez (Poly1 c0 c1) = B1 c0 (c0 <> c1)
 instance Bez2Poly Bez2 Poly2 where
   bez2poly (B2 p0 p1 p2) = Poly2 p0
     (gmul 2 (p0 -<> p1))
     (p0 <>- p1 <> p1 -<> p2)
+  poly2bez (Poly2 c0 c1 c2) = B2 c0 (halfOf (c0 <> c1)) (c0 <> c1 <> c2)
+    where halfOf = smul (one / (one + one))
 instance Bez2Poly Bez3 Poly3 where
   bez2poly (B3 p0 p1 p2 p3) = Poly3
     p0
     (gmul 3 (p0 -<> p1))
     (gmul 3 (p0 <>- p1 <> p1 -<> p2))
     (p0 -<> gmul 3 p1 <> gmul 3 p2 -<> p3)
+  poly2bez (Poly3 c0 c1 c2 c3) = B3
+    c0
+    (c0 <> thirdOf c1)
+    (c0 <> mmul 2 (thirdOf c1) <> thirdOf c2)
+    (c0 <> c1 <> c2 <> c3)
+    where thirdOf = smul (one / (one + one + one))
 
-instance Bez2Poly Poly0 Poly0 where bez2poly = identity
-instance Bez2Poly Poly1 Poly1 where bez2poly = identity
-instance Bez2Poly Poly2 Poly2 where bez2poly = identity
-instance Bez2Poly Poly3 Poly3 where bez2poly = identity
-instance Bez2Poly Poly4 Poly4 where bez2poly = identity
+instance Bez2Poly Poly0 Poly0 where
+  bez2poly = identity
+  poly2bez = identity
+instance Bez2Poly Poly1 Poly1 where
+  bez2poly = identity
+  poly2bez = identity
+instance Bez2Poly Poly2 Poly2 where
+  bez2poly = identity
+  poly2bez = identity
+instance Bez2Poly Poly3 Poly3 where
+  bez2poly = identity
+  poly2bez = identity
+instance Bez2Poly Poly4 Poly4 where
+  bez2poly = identity
+  poly2bez = identity
 
 
 -- | Monoid and module instances                                            | --
@@ -602,7 +821,7 @@ instance Ring s => STransforms s (Lin3 s) (Vec3 s) where
     c2 * (c4 * c9 - c6 * c7) +
     c3 * (c4 * c8 - c5 * c7)
 instance Field s => Untransforms (Lin3 s) (Vec3 s) where
-  tfR t = smul (sqre (recip (det t))) $ cofactors3 t
+  tfR t = smul (recip (det t)) $ cofactors3 t
 
 instance Semiring s => Transforms (Afn3 s) (Vec3 s) where
   tf (Afn3 c1 c2 c3 c4 c5 c6 c7 c8 c9 t1 t2 t3) (V3 s1 s2 s3) = V3
@@ -648,7 +867,7 @@ instance Semiring s => Transforms (Lin2 s) (Vec2 s) where
 instance Ring s => STransforms s (Lin2 s) (Vec2 s) where
   det (Lin2 c1 c2 c3 c4) = c1 * c4 - c2 * c3
 instance Field s => Untransforms (Lin2 s) (Vec2 s) where
-  tfR t@(Lin2 c1 c2 c3 c4) = smul (sqre (recip (det t))) $ Lin2
+  tfR t@(Lin2 c1 c2 c3 c4) = smul (recip (det t)) $ Lin2
     (c4) (-c2)
     (-c3) (c1)
 
@@ -697,21 +916,27 @@ instance Semiring s => Transforms (Vec3 s) (Vec3 s) where
   tf = (<>)
   tfI = mempty
   tfC = (<>)
+instance Ring s => Untransforms (Vec3 s) (Vec3 s) where
+  tfR = inv
 -- | Vector translation
 instance Semiring s => Transforms (Vec2 s) (Vec2 s) where
   tf = (<>)
   tfI = mempty
   tfC = (<>)
+instance Ring s => Untransforms (Vec2 s) (Vec2 s) where
+  tfR = inv
 -- | Vector translation
 instance Semiring s => Transforms (Vec1 s) (Vec1 s) where
   tf = (<>)
   tfI = mempty
   tfC = (<>)
+instance Ring s => Untransforms (Vec1 s) (Vec1 s) where
+  tfR = inv
 
 
 -- | Boring structural instances                                            | --
 
-class Pairs t t' | t -> t' where
+class (Traversable t, Traversable t') <= Pairs t t' | t -> t' where
   pairsWith :: forall v r. (v -> v -> r) -> t v -> t' r
   extendL :: forall v. v -> t' v -> t v
   extendR :: forall v. t' v -> v -> t v
@@ -756,6 +981,10 @@ instance Pairs Array Array where
   pairsWith pair vs = Array.zipWith pair vs (Array.drop 1 vs)
   extendL = Array.cons
   extendR = Array.snoc
+instance Pairs NonEmptyArray Array where
+  pairsWith pair vs = Array.zipWith pair (NEA.toArray vs) (NEA.drop 1 vs)
+  extendL = NEA.cons'
+  extendR = NEA.snoc'
 instance Pairs PolyN PolyN where
   pairsWith f = coerce (pairsWith @Array @Array f)
   extendL :: forall v. v -> PolyN v -> PolyN v
@@ -906,6 +1135,43 @@ instance Monad Poly3
 instance Monad Poly2
 instance Monad Poly1
 instance Monad Poly0
+
+derive instance Generic (Vec3 t) _
+derive instance Generic (Vec2 t) _
+derive instance Generic (Vec1 t) _
+derive instance Generic (Lin3 t) _
+derive instance Generic (Lin2 t) _
+derive instance Generic (Lin1 t) _
+derive instance Generic (Afn3 t) _
+derive instance Generic (Afn2 t) _
+derive instance Generic (Afn1 t) _
+derive instance Generic (Bez3 t) _
+derive instance Generic (Bez2 t) _
+derive instance Generic (Bez1 t) _
+derive instance Generic (Poly4 t) _
+derive instance Generic (Poly3 t) _
+derive instance Generic (Poly2 t) _
+derive instance Generic (Poly1 t) _
+derive instance Generic (Poly0 t) _
+
+instance Show t => Show (Vec3 t) where show = genericShow
+instance Show t => Show (Vec2 t) where show = genericShow
+instance Show t => Show (Vec1 t) where show = genericShow
+instance Show t => Show (Lin3 t) where show = genericShow
+instance Show t => Show (Lin2 t) where show = genericShow
+instance Show t => Show (Lin1 t) where show = genericShow
+instance Show t => Show (Afn3 t) where show = genericShow
+instance Show t => Show (Afn2 t) where show = genericShow
+instance Show t => Show (Afn1 t) where show = genericShow
+instance Show t => Show (Bez3 t) where show = genericShow
+instance Show t => Show (Bez2 t) where show = genericShow
+instance Show t => Show (Bez1 t) where show = genericShow
+instance Show t => Show (Poly4 t) where show = genericShow
+instance Show t => Show (Poly3 t) where show = genericShow
+instance Show t => Show (Poly2 t) where show = genericShow
+instance Show t => Show (Poly1 t) where show = genericShow
+instance Show t => Show (Poly0 t) where show = genericShow
+
 
 instance Foldable1 Vec3 where
   foldl1 f (V3 s1 s2 s3) = s1 `f` s2 `f` s3

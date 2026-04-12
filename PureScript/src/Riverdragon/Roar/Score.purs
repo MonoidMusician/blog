@@ -5,8 +5,8 @@ import Prelude
 import Control.Monad.MutStateT (MutStateT, mutStateT, runMutStateT, unMutStateT)
 import Control.Monad.Reader (class MonadReader, ReaderT, asks, runReaderT)
 import Control.Monad.Reader.Class (ask)
-import Control.Monad.ResourceM (class MonadResource, destr, liftResourceM, selfScope, waitr, whenReady)
-import Control.Monad.ResourceT (ResourceT, Scope, oneSubScopeAtATime, scopedRun, scopedStart_, start)
+import Control.Monad.ResourceM (class MonadResource, destr, liftResourceM, readyThenTeardown, selfScope, track)
+import Control.Monad.ResourceT (ResourceT, Scope, ResourceM, oneSubScopeAtATime, scopedRun, scopedStart_, start)
 import Data.Array ((!!))
 import Data.Array as Array
 import Data.Compactable (compact)
@@ -22,6 +22,7 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Aff (Aff, Fiber)
 import Effect.Class (liftEffect)
+import Idiolect ((>==))
 import Prim.Boolean (False, True)
 import Prim.Row as Row
 import Riverdragon.River (Lake, Stream, alwaysBurst, dam, unsafeRiver, (>>~))
@@ -41,7 +42,7 @@ import Web.Audio.Node as AudioNode
 import Web.Audio.Node as Node
 import Web.Audio.Types (AudioContext, AudioNode, BiquadFilterType, Float, Frequency, OscillatorType(..))
 import Web.Audio.Types as Audio
-import Widget (Interface, storeInterface)
+import Widget (Interface, valueInterface)
 
 type ScoreM = MutStateT ScoreSt (ReaderT ScoreRd (ResourceT Effect))
 type ScoreAsync = MutStateT ScoreSt (ReaderT ScoreRd (ResourceT Aff))
@@ -82,7 +83,7 @@ perform ::
     , wait :: Fiber Unit
     , scope :: Scope
     }
-perform options creator = perform' options (creator >>> map { result: unit, audio: _ })
+perform options creator = perform' options (creator >== { result: unit, audio: _ })
   <#> \{ ctx, destroy, wait, scope } -> { ctx, destroy, wait, scope }
 
 perform' ::
@@ -101,31 +102,50 @@ perform' ::
     , wait :: Fiber Unit
     , scope :: Scope
     }
-perform' options creator = do
-  ctx <- createAudioContext options
-  temperament <- storeInterface
-  temperament.send temperaments.equal
-  pitch <- storeInterface
-  pitch.send 440.0
+perform' options creator = start "perform" (performM' options (asks _.ctx >>= creator))
+  <#> \{ result: { result, ctx }, destroy, wait, scope } -> { result, ctx, destroy, wait, scope }
+
+performM ::
+  forall options unused ffi flow.
+    Row.Union options unused
+      ( latencyHint :: LatencyHint
+      , sampleRate :: Int
+      ) =>
+    FFI (Record options) ffi =>
+  Record options ->
+  ScoreM (Stream flow (Array Roar)) ->
+  ResourceM AudioContext
+performM options creator = _.ctx <$> performM' options (creator <#> { result: unit, audio: _ })
+
+performM' ::
+  forall options unused ffi flow result.
+    Row.Union options unused
+      ( latencyHint :: LatencyHint
+      , sampleRate :: Int
+      ) =>
+    FFI (Record options) ffi =>
+  Record options ->
+  ScoreM { audio :: Stream flow (Array Roar), result :: result } ->
+  ResourceM
+    { result :: result
+    , ctx :: AudioContext
+    }
+performM' options creator = do
+  ctx <- liftEffect do createAudioContext options
+  temperament <- track do valueInterface temperaments.equal
+  pitch <- track do valueInterface 440.0
   let
     iface = { temperament, pitch }
     state0 =
       { id: 0
       , worklets: Map.empty
       }
-  r <- start "perform" do
-    Tuple _state { audio: outputs, result } <- runReaderT (runMutStateT state0 (creator ctx)) { ctx, iface }
-    connecting (dam outputs) (destination ctx)
-    destr do Context.close ctx
-    pure result
-  pure
-    { result: r.result
-    , ctx
-    , destroy: r.destroy
-    , wait: r.wait
-    , scope: r.scope
-    }
+  Tuple _state { audio: outputs, result } <- runReaderT (runMutStateT state0 creator) { ctx, iface }
+  connecting (dam outputs) (destination ctx)
+  destr do Context.close ctx
+  pure { result, ctx }
 
+-- | Get the current scope.
 scoreScope :: ScoreM
   { run :: ScoreM ~> Effect
   , runAsync :: ScoreAsync ~> Aff
@@ -144,6 +164,7 @@ scoreScope = do
     runAsync act = map _.result $ scopedRun "scoreScope2" scope $ flip runReaderT ctx $ flip unMutStateT st $ act
   pure { run: run :: ScoreM ~> Effect, runAsync: runAsync :: ScoreAsync ~> Aff, scope, ctx: ctx.ctx, iface: ctx.iface }
 
+-- | Like `subscribeM1` but for `ScoreM`: keep only the latest score running.
 scoreStream :: forall flow1 flow2 x. Stream flow1 (ScoreM x) -> ScoreM (Stream flow2 x)
 scoreStream upstream = do
   st <- mutStateT pure
@@ -160,13 +181,15 @@ scoreStream upstream = do
       runHere act
   pure stream
 
+-- | Kick off the computation then get the result when it is available.
 scoreAsync :: forall a. ScoreAsync a -> ScoreM (Aff a)
 scoreAsync act = do
   { runAsync } <- scoreScope
   running <- liftEffect $ runningAff $ runAsync act
-  waitr do void running
   pure running
 
+-- | Create a gain node immediately, and route the audio through it when it
+-- | comes online asynchronously.
 roarAsync :: ScoreAsync Roar -> ScoreM Roar
 roarAsync act = do
   creating <- scoreAsync act
@@ -187,7 +210,7 @@ scoreKnobs knobs = do
   pure { defaults, apply: liftResourceM <<< applyKnobs }
 
 
--- | Get the 0th output of the node
+-- | Get the default (0th) output of the node
 port0 :: forall name source read write params.
   AudioNode name source read write params -> Roar
 port0 = flip outOfNode 0
@@ -202,8 +225,9 @@ createSourceNode' ::
 createSourceNode' givens creator = do
   { ctx } <- ask
   node <- liftEffect do creator ctx givens
-  whenReady do Node.startNow node
-  destr do Node.stopNow node
+  readyThenTeardown
+    do Node.startNow node
+    do Node.stopNow node
   pure node
 
 -- | Helper for creating a source node with knobs: starts when the score is
@@ -266,13 +290,17 @@ roarings = gain 1.0
 
 
 
+-- | Audio gain, multiply the signal by a constant.
 gain :: forall knob roar. ToKnob knob => ToRoars roar => knob -> roar -> ScoreM Roar
 gain knob input =
   port0 <$> createSinkNode
     [ input ]
     { gain: knob }
     AudioNode.createGainNode
+infixr 2 gain as *~
 
+-- | Oscillator node: set the type, frequency, and adjust the frequency by
+-- | a detune amount.
 osc ::
   forall flowOscillatorType oscType frequencyKnob detuneKnob.
     ToLake flowOscillatorType oscType =>
@@ -341,6 +369,7 @@ mtf note = do
     freq = fromMaybe 440.0 reference * Number.pow 2.0 octaves
   pure freq
 
+-- | Midi note to frequency, based on the live temperament and pitch.
 mtf_ :: forall flow flowInt. ToLake flowInt Int => flowInt -> ScoreM (Stream flow Frequency)
 mtf_ notes = do
   { temperament, pitch } <- asks _.iface
@@ -350,6 +379,7 @@ mtf_ notes = do
     note <- toLake notes
     in mtf note
 
+-- | Create a sine wave as a composite of frequencies.
 freqs :: forall flow knob. ToKnob knob => Stream flow (Array knob) -> ScoreM Roar
 freqs = roarings <=< scoreStream <<< map (traverse \frequency -> osc { type: Sine, frequency, detune: 0 })
 

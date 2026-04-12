@@ -19,12 +19,12 @@ class Token(str):
         ])(s)+'"'
     @staticmethod
     def str(s):
+        if s is True: return Token.on
+        if s is False: return Token.off
         if isinstance(s, Token): return s
         if isinstance(s, re.Pattern): s = s.pattern
-        if s is True: s = "on"
-        if s is False: s = "off"
         s = str(s)
-        if "" == s or set(s).intersection(set(" \r\n\t\"\'{}()")):
+        if "" == s or set(s).intersection(set(" \r\n\t\"\'{}();")):
             return Token(Token.escape(s))
         return Token(s)
     # Tilde and tilde-star notation for regexes
@@ -37,14 +37,28 @@ class Token(str):
             return Token.str(pre + s.pattern)
         return Token.str(s)
     @staticmethod
-    def comment(s: str):
+    def comment(*s: str):
+        s = "\n".join(s)
         lines = s.split("\n")
         if len(lines) == 1:
-            return Token("# " + s)
-        return [Token("# " + l if not l.isspace() else "#") for l in lines]
+            return Token("# " + s if s and not s.isspace() else "#")
+        common = len(s)
+        for l in lines:
+            if not l or l.isspace(): continue
+            common = min(common, len(l) - len(l.lstrip(' ')))
+        return [Token("# " + l[common:] if l and not l.isspace() else "#") for l in lines]
+    def iscomment(t):
+        return isinstance(t, Token) and len(t) and t[0] == "#"
+    @staticmethod
+    def var(name: str):
+        # TODO: validate?
+        return Token("$"+name)
+Token.on = Token("on")
+Token.off = Token("off")
+Token.always = Token("always")
 comment = Token.comment
-def Comment(s):
-    return [Token(), Token.comment(s)]
+def Comment(*s):
+    return [Token(), Token.comment(*s)]
 # Directive, list, str (and tuple -> directive)
 class Directive:
     scalars = [str, int, float, bool, re.Pattern, Token]
@@ -64,21 +78,34 @@ class Directive:
                 if not len(arg):
                     continue
                 arg = Directive(*arg)
-            if isinstance(arg, Directive) or Directive.is_scalar(arg):
+            if isinstance(arg, Directive) or isinstance(arg, Body) or Directive.is_scalar(arg):
                 ret.append(arg)
             else:
                 ret.extend(Directive.flatten(arg))
         return ret
     def __init__(self, name, *args):
         args = Directive.flatten(args)
+        if len(args) and args[0] == "":
+            args = args[1:]
         self.name = name
         self.params = []
         self.children = []
+        floating = []
         for arg in args:
-            if not len(self.children) and Directive.is_scalar(arg):
+            if Token.iscomment(arg):
+                floating.append(arg)
+            elif not len(self.children) and Directive.is_scalar(arg):
+                self.params.extend(floating)
+                floating = []
                 self.params.append(arg)
             else:
+                self.children.extend(floating)
+                floating = []
                 self.children.append(arg)
+        if len(self.children):
+            self.children.extend(floating)
+        else:
+            self.params.extend(floating)
     def __str__(self):
         if isinstance(self, list):
             return "\n".join(str(item) for item in self)
@@ -88,14 +115,28 @@ class Directive:
         if len(self.children):
             block = []
             block.append(Token("{"))
-            for child in self.children:
-                if not isinstance(child, Directive) or child.name is not None:
-                    block.append('    ' + str(child).replace('\n', '\n    '))
+            for children in self.children:
+                for child in children.children if isinstance(children, Body) else [children]:
+                    if not isinstance(child, Directive) or child.name is not None:
+                        block.append('    ' + str(child).replace('\n', '\n    '))
             block.append(Token("}"))
+            if len(block) == 2: block = [Token("{}")]
             parts.append("\n".join(block))
             return " ".join(parts)
         else:
-            return " ".join(parts)+Token(";")
+            comments = []
+            while len(parts) and Token.iscomment(parts[-1]):
+                comments.insert(0, parts.pop())
+            return " ".join([" ".join(parts)+Token(";"), *comments])
+class Body:
+    def __init__(self, *args):
+        self.children = Directive.flatten(args)
+    def __str__(self):
+        block = []
+        for child in self.children:
+            if not isinstance(child, Directive) or child.name is not None:
+                block.append('    ' + str(child).replace('\n', '\n    '))
+        return "\n".join(block)
 
 def includable(name, *content):
     return list(content)
@@ -194,8 +235,22 @@ def serve(root, location="/", index="index.html", dir=True, autoindex=None, disa
         )
     return _
 
+def canned(text: str, mime="text/plain;charset=utf-8", location=None):
+    ret = [
+        ("add_header", "Content-Type", mime),
+        ("return", 200, text) if len(text) else ("return", 204),
+    ]
+    if location is not None:
+        return Directive("location", location, ret)
+    return ret
+
 def when(condition, *items):
+    if callable(condition): condition = condition()
     if condition:
         return list(items)
     return []
 
+
+if_request_method = lambda which, body: Directive("if", Token("($request_method = "+Token.str(which)+")"), body)
+by_request_method = lambda methods: [if_request_method(k, v) for k,v in methods.items()]
+add_headers = lambda headers: [Directive("add_header", k, v) for k,v in headers.items()]

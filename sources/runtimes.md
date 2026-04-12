@@ -68,7 +68,7 @@ Languages tend to have to provide defaults and configuration for security, [e.g.
 ### JIT
 
 JITs have a difficult tradeoff: JIT loading times versus code speed while actually running.
-A lot of code is run during startup only and is not worth JITing.
+A lot of code (especially in scripting languages) is run during startup only and is not worth JITing.
 However, really powerful JITs like for JavaScript and WASM, can do amazing things with using runtime information to rewrite more optimizations during runtime for “hot” code that is used in predictable ways, even with JavaScript dynamic typing.
 
 ### FFI/Native Code

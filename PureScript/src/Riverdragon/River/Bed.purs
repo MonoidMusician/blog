@@ -59,6 +59,7 @@ import Effect.Timer as Timer
 import Effect.Unsafe (unsafePerformEffect)
 import Idiolect (type (-!>))
 import Idiolect (type (-!>)) as ReExports
+import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
 import Web.Event.Event as Web
 import Web.Event.EventPhase (EventPhase(..))
@@ -300,7 +301,13 @@ eventListener :: forall m. MonadResource m =>
   (Web.Event -> Effect Unit) -> m Unit
 eventListener { eventType, eventPhase, eventTarget } cb = do
   let capture = eventPhase == Capturing
-  listener <- liftEffect do Event.eventListener cb
+  listener <- liftEffect do
+    Event.eventListener case eventPhase of
+      -- need to manually filter for this phase
+      AtTarget -> \event -> do
+        when (unsafePartial Web.eventPhase event == AtTarget) do
+          cb event
+      _ -> cb
   liftEffect do Event.addEventListener eventType listener capture eventTarget
   destr do Event.removeEventListener eventType listener capture eventTarget
 
@@ -566,6 +573,26 @@ interval (Milliseconds period) cb = do
 runningAff :: forall a. Aff a -> Effect (Aff a)
 runningAff act = do
   launchAff act >>= Left >>> prealloc >>= \settled -> pure do
+    liftEffect settled.get >>= case _ of
+      Left fiber -> do
+        result <- Aff.joinFiber fiber
+        liftEffect $ settled.set (Right result)
+        pure result
+      Right result -> pure result
+
+-- Start an `Aff` computation and save it as a `Fiber`, which shares the result
+-- in the returned `Aff` computation. If the resource is destroyed before the
+-- fiber finishes, it is cancelled.
+startAff :: forall m a. MonadResource m => Aff a -> m (Aff a)
+startAff act = do
+  settled <- do
+    -- Launch the aff as a fiber
+    fiber <- liftEffect do launchAff act
+    -- Record the canceler as a destructor
+    destr do Aff.launchAff_ (Aff.killFiber (Aff.error "Destroyed") fiber)
+    -- Save the fiber or just the plain result (to avoid memory leaks)
+    liftEffect do prealloc (Left fiber :: Either (Aff.Fiber a) a)
+  pure do
     liftEffect settled.get >>= case _ of
       Left fiber -> do
         result <- Aff.joinFiber fiber

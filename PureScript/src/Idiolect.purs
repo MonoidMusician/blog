@@ -4,25 +4,29 @@ module Idiolect where
 
 import Prelude
 
-import Control.Alternative (class Alt, class Alternative, (<|>))
-import Control.Apply (lift2)
+import Control.Alternative (class Alt, class Alternative, alt, (<|>))
+import Control.Apply (applyFirst, applySecond, lift2)
 import Control.Plus (class Plus)
-import Data.Align (class Align, align, aligned)
+import Control.Semigroupoid (composeFlipped)
+import Data.Align (class Align, align)
 import Data.Argonaut (Json)
 import Data.Array as Array
 import Data.CodePoint.Unicode as U
+import Data.Distributive (class Distributive, distribute)
 import Data.Either (Either(..))
 import Data.Either.Nested (type (\/))
 import Data.Filterable (class Filterable, filter, filterMap, partitionMap)
 import Data.Foldable (class Foldable, fold, foldMap, intercalate, oneOfMap)
 import Data.FoldableWithIndex (class FoldableWithIndex, foldMapWithIndex)
 import Data.Function (on)
-import Data.Functor.Day (Day, day, runDay)
+import Data.Functor (mapFlipped)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
+import Data.HeytingAlgebra (implies)
 import Data.Maybe (Maybe(..), maybe, optional)
 import Data.Maybe as Maybe
 import Data.Newtype (class Newtype)
 import Data.Number as Number
+import Data.Semigroup.Foldable (class Foldable1, foldr1)
 import Data.String as String
 import Data.Symbol (class IsSymbol)
 import Data.These (These(..))
@@ -50,6 +54,10 @@ type Id a = a
 infixl 0 type Id as $
 
 infixr 8 Number.pow as **
+
+-- Bullet points! like `do` but without layout i guess
+-- ugh not accepted by PureScript
+-- infixr 0 identity as •
 
 morph :: forall f g b. Foldable f => Plus g => Applicative g => f b -> g b
 morph = oneOfMap pure
@@ -134,6 +142,65 @@ infixr 10 Maybe.maybe as ?+
 maybeFlipped :: forall a b. (a -> b) -> b -> Maybe a -> b
 maybeFlipped = flip Maybe.maybe
 infixl 10 maybeFlipped as +?
+
+infixr 0 Maybe.fromMaybe as :?
+
+fromMaybeFlipped :: forall a. Maybe a -> a -> a
+fromMaybeFlipped = flip Maybe.fromMaybe
+infixl 10 fromMaybeFlipped as ?:
+
+withIndices :: forall @f @t idx. FunctorWithIndex idx f => f t -> f (Tuple idx t)
+withIndices = mapWithIndex Tuple
+
+indices :: forall @f @t idx. FunctorWithIndex idx f => f t -> f idx
+indices = mapWithIndex const
+
+distributeThen :: forall @f a b g. Distributive f => Functor g => (g a -> b) -> g (f a) -> f b
+distributeThen f = distribute >== f
+
+chooseBy :: forall @f @b. Functor f => Foldable1 f => Maybe (b -> b -> b) -> f b -> f b
+chooseBy Nothing v = v
+chooseBy (Just f) v = v $> foldr1 f v
+
+neighbors :: forall v. Array v -> Array { prev :: Maybe v, here :: v, next :: Maybe v }
+neighbors vs = Array.zipWith (#) vs $ Array.zipWith { prev: _, next: _, here: _ }
+  ([Nothing] <|> Just <$> Array.dropEnd 1 vs)
+  (Just <$> Array.drop 1 vs <|> [Nothing])
+
+infixr 0 add as +$
+infixl 1 add as #+
+infixr 0 mul as *$
+infixl 1 mul as #*
+infixr 0 sub as -$
+infixl 1 sub as #-
+infixr 0 div as /$
+infixl 1 div as #/
+infixr 0 append as <>$
+infixl 1 append as #<>
+infixr 0 disj as ||$
+infixl 1 disj as #||
+infixr 0 conj as &&$
+infixl 1 conj as #&&
+infixr 0 implies as =>$
+infixl 1 implies as #=>
+infixr 0 Array.index as !!$
+infixl 1 Array.index as #!!
+infixr 0 Tuple as /\$
+infixl 1 Tuple as #/\
+infixr 0 compose as <<<$
+infixl 1 compose as #<<<
+infixr 0 composeFlipped as >>>$
+infixl 1 composeFlipped as #>>>
+infixr 0 map as <$>$
+infixl 1 map as #<$>
+infixr 0 mapFlipped as <#>$
+infixl 1 mapFlipped as #<#>
+infixr 0 applyFirst as <*$
+infixl 1 applyFirst as #<*
+infixr 0 applySecond as *>$
+infixl 1 applySecond as #*>
+infixr 0 alt as <|>$
+infixl 1 alt as #<|>
 
 tripleQuoted :: String -> String
 tripleQuoted input =

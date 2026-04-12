@@ -5,25 +5,31 @@ import Math.Poly
 import Prelude
 
 import Control.Alt ((<|>))
-import Control.Apply (lift2, lift3)
+import Control.Alternative (guard)
+import Control.Apply (lift2)
 import Data.Align (class Align)
 import Data.Array as Array
-import Data.Distributive (class Distributive, collect)
-import Data.Foldable (all, any, fold, foldMap)
-import Data.Maybe (Maybe(..), fromMaybe, fromMaybe')
+import Data.Distributive (class Distributive, collect, distribute)
+import Data.Filterable (filter)
+import Data.Foldable (all, any, foldMap)
+import Data.Maybe (Maybe(..), fromMaybe')
 import Data.Newtype (unwrap)
-import Data.Number (nan)
 import Data.Number as Math
 import Data.Ord.Max (Max(..))
 import Data.Ord.Min (Min(..))
 import Data.Pair (Pair(..))
-import Data.Semigroup.Foldable (class Foldable1)
+import Data.Semigroup.First (First(..))
+import Data.Semigroup.Foldable (class Foldable1, fold1, foldMap1)
 import Data.Semigroup.Traversable (class Traversable1)
+import Data.Set.NonEmpty (NonEmptySet)
+import Data.Set.NonEmpty as NES
 import Data.Tuple (Tuple(..))
-import Idiolect (incorporate, only, unsafeFromMaybe, (/|\), (<#?), (<#?>))
+import Idiolect (incorporate, only, unsafeFromMaybe, (/|\), (<#?), (<#?>), (>==))
+import Monoids.BoundsWith (BoundsWith(..), MaxWith(..), MinWith(..), BoundsWithNES)
+import Monoids.BoundsWith as Bounds
 import Safe.Coerce (coerce)
 
-epsilon = 1.0e-10 :: Number
+type BoundsAtTimes ord = BoundsWith ord (NonEmptySet Time)
 
 -- | Uses second and third derivatives to compute the signed curvature in 2D.
 curvature2D :: V2 -> V2 -> Number
@@ -71,15 +77,22 @@ solveTangent = deriv @(curve _) @(bez _) >>> solveTangentD
 pslope :: forall @s. Ring s => Bez1 (Vec2 s) -> Vec2 s
 pslope (B1 p0 p1) = p0 -<> p1
 
+radians2slope :: Radians -> Vec2 Number
+radians2slope angle = V2 (Math.cos angle) (Math.sin angle)
+
+degrees2slope :: Degrees -> Vec2 Number
+degrees2slope = (_ * (Math.pi / 180.0)) >>> radians2slope
+
 class (Align b, Traversable1 b) <= Bezier b where
   endpoints :: b ~> Bez1
   evalB :: forall @s @v. SModule s v => Ring s => b v -> s -> v
-  bboxB :: b V2 -> Vec2 (Bounds Number)
+  bboxB' :: b V2 -> Vec2 (BoundsAtTimes Number)
   splitB :: forall @s @v. SModule s v => Ring s => b v -> s -> Pair (b v)
   -- https://cs.nyu.edu/~exact/doc/subdiv1.pdf
 class DeCasteljau b o | b -> o where
   deCasteljau :: forall @s @v. SModule s v => Ring s => b v -> s ->
     { point :: v, left :: b v, right :: b v, inner :: o v }
+  castUp :: forall @s @v. SModule s v => Field s => o v -> b v
 
 _splitB :: forall @b o @s @v. DeCasteljau b o => SModule s v => Ring s => b v -> s -> Pair (b v)
 _splitB b t = Pair <$> _.left <*> _.right $ deCasteljau b t
@@ -92,21 +105,83 @@ cut b (B1 t0 t1) = from_t0_to_t1 where
   Pair to_t1 _ = splitB b t1 -- 0 <= t1 <= 1
   Pair _ from_t0_to_t1 = splitB to_t1 (t0 / t1) -- 0 <= t0 <= t1
 
+evalBSS :: forall @b @s. Bezier b => Ring s => b s -> s -> s
+evalBSS curve t = unwrap $ evalB (map V1 curve :: b (Vec1 s)) t
+
+bboxB's :: forall @b @f. Bezier b => Foldable1 f => Functor f => f (b V2) -> Vec2 (BoundsAtTimes Number)
+bboxB's = collect bboxB' >>> map fold1
+
+bboxBp :: forall @b. Bezier b => b V2 -> Vec2 (BoundsWithNES Number V2)
+bboxBp curve = bboxB' curve <#> map (NES.map (evalB curve))
+
+bboxBps :: forall @b @f. Bezier b => Foldable1 f => Functor f => f (b V2) -> Vec2 (BoundsWithNES Number V2)
+bboxBps = collect bboxBp >>> map fold1
+
+bboxB :: forall @b. Bezier b => b V2 -> Vec2 (Bounds Number)
+bboxB = bboxB' >== boundsWithout
+
+bboxBs :: forall @b @f. Bezier b => Foldable1 f => Functor f => f (b V2) -> Vec2 (Bounds Number)
+bboxBs = collect bboxB >>> map fold1
+
+atX :: forall @b sol. Bezier b => Solve b sol => b V2 -> Number -> Maybe (Bounds Number)
+atX curve x = atX' curve x <#> boundsWithout
+
+atX' :: forall @b sol. Bezier b => Solve b sol => b V2 -> Number -> Maybe (BoundsAtTimes Number)
+atX' curve x =
+  let V2 curveX curveY = distribute curve in
+  case solveN (curveX <#> (_ - x)) of
+    EverywhereN -> Just let V2 _ bboxY = bboxB' curve in bboxY
+    SolveN ts -> ts
+      # filter (between 0.0 1.0)
+      # foldMap \t ->
+        Just $ Bounds.mkBoundNES t $ evalBSS curveY t
+
+atY' :: forall @b sol. Bezier b => Solve b sol => b V2 -> Number -> Maybe (BoundsAtTimes Number)
+atY' curve y =
+  let V2 curveX curveY = distribute curve in
+  case solveN (curveY <#> (_ - y)) of
+    EverywhereN -> Just let V2 bboxX _ = bboxB' curve in bboxX
+    SolveN ts -> ts
+      # filter (between 0.0 1.0)
+      # foldMap \t ->
+        Just $ Bounds.mkBoundNES t $ evalBSS curveX t
+
+extremaX :: forall @b @f. Foldable1 f => Bezier b => f (b V2) -> B12
+extremaX curves = B1 p0 p1
+  where
+  getX (V2 x _) = x
+  BoundsWith (MinWith _ (First p0)) (MaxWith _ (First p1)) =
+    curves # foldMap1 \curve ->
+      getX (bboxB' curve) <#> (NES.min >>> evalB curve >>> First)
+
+extremaY :: forall @b @f. Foldable1 f => Bezier b => f (b V2) -> B12
+extremaY curves = B1 p0 p1
+  where
+  getY (V2 _ y) = y
+  BoundsWith (MinWith _ (First p0)) (MaxWith _ (First p1)) =
+    curves # foldMap1 \curve ->
+      getY (bboxB' curve) <#> (NES.min >>> evalB curve >>> First)
+
 instance DeCasteljau Bez0 Bez0 where
   deCasteljau (Poly0 pt) _ = { point: pt, left: Poly0 pt, right: Poly0 pt, inner: Poly0 pt }
+  castUp (Poly0 pt) = Poly0 pt
 instance DeCasteljau Bez1 Bez0 where
   deCasteljau (B1 p0 p1) t =
     let pt = p0 +<t>+ p1 in
     { point: pt, left: B1 p0 pt, right: B1 pt p1, inner: Poly0 pt }
+  castUp (Poly0 pt) = B1 pt pt
 instance DeCasteljau Bez2 Bez1 where
   deCasteljau (B2 p0 p1 p2) t =
     let { point: pt, left: B1 p01 _, right: B1 _ p12 } = deCasteljau (B1 (p0 +<t>+ p1) (p1 +<t>+ p2)) t in
     { point: pt, left: B2 p0 p01 pt, right: B2 pt p12 p2, inner: B1 p01 p12 }
+  castUp (B1 p0 p1) = B2 p0 (p0 +<(one / (one + one))>+ p1) p1
 instance DeCasteljau Bez3 Bez2 where
   deCasteljau (B3 p0 p1 p2 p3) t =
     let inner = B2 (p0 +<t>+ p1) (p1 +<t>+ p2) (p2 +<t>+ p3)
         { point: pt, left: B2    p01 p012 _ , right: B2 _  p123 p23 } = deCasteljau inner t
     in  { point: pt, left: B3 p0 p01 p012 pt, right: B3 pt p123 p23 p3, inner }
+  castUp (B2 p0 p1 p2) = B3 p0 (p0 +<third>+ p1) (p2 +<third>+ p1) p2
+    where third = one / (one + one + one)
 
 _deCasteljau ::
   forall @b b' o' @s @v.
@@ -123,10 +198,10 @@ _deCasteljau curve t =
   in  { point, left: p0 <: left, right: right :> p1, inner }
 
 
-bbox1 :: forall f. Distributive f => Bez1 (f Number) -> f (Bounds Number)
-bbox1 = getBounds
+bbox1' :: forall f. Distributive f => Bez1 (f Number) -> f (BoundsAtTimes Number)
+bbox1' = distribute >== \(B1 p0 p1) -> Bounds.mkBoundNES 0.0 p0 <> Bounds.mkBoundNES 1.0 p1
 
-bboxN ::
+bboxN' ::
   forall curve bez poly sol.
     Bezier curve =>
     Deriv (curve V2) (bez V2) =>
@@ -134,24 +209,25 @@ bboxN ::
     Solve poly sol =>
     SModule Number (poly V1) =>
     Foldable1 curve =>
-  curve V2 -> Vec2 (Bounds Number)
-bboxN bez = ado
-  x <- getBounds $ endpoints bez
-  y <- bbFromTangent (V2 0.0 1.0)
-  z <- bbFromTangent (V2 1.0 0.0)
-  in incorporate x (y <> z) where
-  tangentsAt :: V2 -> SolveN V2
+  curve V2 -> Vec2 (BoundsAtTimes Number)
+bboxN' bez = ado
+  base <- bbox1' $ endpoints bez
+  xs <- bbFromTangent (V2 1.0 0.0)
+  ys <- bbFromTangent (V2 0.0 1.0)
+  in incorporate base (xs <> ys) where
+  tangentsAt :: V2 -> Array (Vec2 { t :: Time, p :: Number })
   tangentsAt angle =
-    evalB bez <$> solveTangent bez angle
-  bbFromTangent :: V2 -> Vec2 (Maybe (Bounds Number))
+    Array.fromFoldable (solveTangent bez angle)
+      <#? between 0.0 1.0
+      <#> \t -> { t, p: _ } <$> evalB bez t
+  bbFromTangent :: V2 -> Vec2 (Maybe (BoundsAtTimes Number))
   bbFromTangent = tangentsAt
-    >>> collect (map (mkBound >>> Just))
-    >>> map fold
+    >>> Bounds.getBounds_ (NES.singleton <<< _.t) _.p
 
 instance Bezier Bez1 where
   endpoints (B1 p0 p1) = B1 p0 p1
   evalB (B1 p0 p1) t = p0 +<t>+ p1
-  bboxB = bbox1
+  bboxB' = bbox1'
   splitB (B1 p0 p1) t =
     let pt = p0 +<t>+ p1 in
     Pair (B1 p0 pt) (B1 pt p1)
@@ -160,13 +236,13 @@ instance Bezier Bez1 where
 instance Bezier Bez2 where
   endpoints (B2 p0 _ p2) = B1 p0 p2
   evalB (B2 p0 p1 p2) = evalB =<< evalB (B1 (B1 p0 p1) (B1 p1 p2))
-  bboxB b = bboxN b
+  bboxB' b = bboxN' b
   splitB = _splitB
 
 instance Bezier Bez3 where
   endpoints (B3 p0 _ _ p3) = B1 p0 p3
   evalB (B3 p0 p1 p2 p3) = evalB =<< evalB (B1 (B2 p0 p1 p2) (B2 p1 p2 p3))
-  bboxB b = bboxN b
+  bboxB' b = bboxN' b
   splitB = _splitB
 
 

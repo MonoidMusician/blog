@@ -38,6 +38,8 @@ import Web.DOM.ClassName (ClassName(..))
 import Web.DOM.Element as Element
 import Web.DOM.ElementId (ElementId(..))
 import Web.DOM.ElementName (ElementName(..))
+import Web.DOM.NamespaceURI (NamespaceURI(..))
+import Web.DOM.PropName (PropName(..))
 import Web.Event.Event (EventType(..))
 import Web.Event.Event as Event
 import Web.Event.Internal.Types as Web
@@ -75,14 +77,14 @@ mapAppend :: forall f b. Functor f => Semigroup b => f b -> b -> f b
 mapAppend fm m = fm <#> (_ <> m)
 infixl 1 mapAppend as <>.
 
--- | `D.button[] $$~ "Some " $<> changingContent <>$ " and text"`
+-- | `D.button[] $$~ "Some " $$<> changingContent <>$$ " and text"`
 textAppendMap :: forall f. Functor f => String -> f Dragon -> f Dragon
 textAppendMap m fm = (text m <> _) <$> fm
-infixr 0 textAppendMap as $<>
--- | `D.button[] $$~ "Some " $<> changlingContent <>$ " and text"`
+infixr 0 textAppendMap as $$<>
+-- | `D.button[] $$~ "Some " $$<> changlingContent <>$$ " and text"`
 mapAppendText :: forall f. Functor f => f Dragon -> String -> f Dragon
 mapAppendText fm m = fm <#> (_ <> text m)
-infixl 1 mapAppendText as <>$
+infixl 1 mapAppendText as <>$$
 
 
 textAppend :: String -> Dragon -> Dragon
@@ -176,7 +178,7 @@ nbsp = text "\x00A0"
 --------------------------------------------------------------------------------
 
 html_ :: forall flow. String -> Array (Stream flow AttrProp) -> Dragon -> Dragon
-html_ name attrs = Element Nothing name (dam (oneStream attrs))
+html_ name attrs = Element Nothing (ElementName name) (dam (oneStream attrs))
 
 p = html_"p" :: forall flow. Array (Stream flow AttrProp) -> Dragon -> Dragon
 b = html_"b" :: forall flow. Array (Stream flow AttrProp) -> Dragon -> Dragon
@@ -263,16 +265,16 @@ script = html_"script" <@> mempty :: forall flow. Array (Stream flow AttrProp) -
 --------------------------------------------------------------------------------
 
 attr :: forall t. AttrType t => String -> t -> AttrProp
-attr name val = Attr Nothing name $ attrType val
+attr name val = Attr Nothing (AttrName name) $ attrType val
 
 data_ :: forall t. AttrType t => String -> t -> AttrProp
-data_ name val = Attr Nothing ("data-"<>name) $ attrType val
+data_ name val = Attr Nothing (AttrName ("data-"<>name)) $ attrType val
 
 aria_ :: String -> String -> AttrProp
-aria_ name val = Attr Nothing ("aria-"<>name) val
+aria_ name val = Attr Nothing (AttrName ("aria-"<>name)) val
 
 prop :: forall t. PropType t => String -> t -> AttrProp
-prop name val = Prop name $ propType val
+prop name val = Prop (PropName name) $ propType val
 
 
 --------------------------------------------------------------------------------
@@ -404,7 +406,7 @@ instance TypeEquals i String => AutoDOM (i -> ElementId) (i -> AttrProp) where
 instance AutoDOM EventType ((Web.Event -!> Unit) -> AttrProp) where
   auto = coerce on_
 instance AutoDOM ElementName (Array (Stream flow AttrProp) -> Dragon -> Dragon) where
-  auto = coerce html_
+  auto = coerce (html_ :: String -> Array (Stream flow AttrProp) -> Dragon -> Dragon)
 instance AutoDOM AttrName (String -> AttrProp) where
   auto = coerce (Attr Nothing)
 instance AutoDOM String Dragon where
@@ -508,18 +510,20 @@ onToggleOpen = onToggle <<< __open :: (Boolean -!> Unit) -> AttrProp
 
 -- (yoinked from d3 i think?)
 
-svgNS = "http://www.w3.org/2000/svg" :: String
-xhtmlNS = "http://www.w3.org/1999/xhtml" :: String
-xlinkNS = "http://www.w3.org/1999/xlink" :: String
-xmlNS = "http://www.w3.org/XML/1998/namespace" :: String
-xmlnsNS = "http://www.w3.org/2000/xmlns/" :: String
+svgNS = NamespaceURI "http://www.w3.org/2000/svg" :: NamespaceURI
+xhtmlNS = NamespaceURI "http://www.w3.org/1999/xhtml" :: NamespaceURI
+xlinkNS = NamespaceURI "http://www.w3.org/1999/xlink" :: NamespaceURI
+xmlNS = NamespaceURI "http://www.w3.org/XML/1998/namespace" :: NamespaceURI
+xmlnsNS = NamespaceURI "http://www.w3.org/2000/xmlns/" :: NamespaceURI
+inkscapeNS = NamespaceURI "http://www.inkscape.org/namespaces/inkscape" :: NamespaceURI
+sodipodiNS = NamespaceURI "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" :: NamespaceURI
 
 --------------------------------------------------------------------------------
 -- | ## SVG stuff                                                           | --
 --------------------------------------------------------------------------------
 
 svg_ :: forall flow. String -> Array (Stream flow AttrProp) -> Dragon -> Dragon
-svg_ name attrs = Element (Just svgNS) name (dam (oneStream attrs))
+svg_ name attrs = Element (Just svgNS) (ElementName name) (dam (oneStream attrs))
 
 svg = svg_"svg" :: forall flow. Array (Stream flow AttrProp) -> Dragon -> Dragon
 g = svg_"g" :: forall flow. Array (Stream flow AttrProp) -> Dragon -> Dragon

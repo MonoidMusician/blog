@@ -2,6 +2,7 @@ module Main where
 
 import Prelude
 
+import Airplane.Main as Airplane.Main
 import Data.Foldable (foldl)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
@@ -49,6 +50,7 @@ widgets = foldl Object.union Object.empty
     , "Riverdragon.Main.Live" /\ Riverdragon.Main.Live.widget
     , "Riverdragon.Roar.Live" /\ Riverdragon.Roar.Live.widget
     , "Riverdragon.Test" /\ Riverdragon.Test.widget
+    , "Airplane" /\ Airplane.Main.widget
     , "" /\ Widget.Datatypes.widget
     ]
   ]

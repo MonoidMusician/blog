@@ -3,22 +3,28 @@ module Riverdragon.Dragon.Wings where
 import Prelude
 
 import Control.Alt ((<|>))
+import Control.Extend (extend)
 import Control.Monad.ResourceM (class MonadResource, destr)
+import Control.Plus (empty)
 import Data.Array as Array
+import Data.Compactable (compact)
+import Data.Filterable (filter)
 import Data.Foldable (for_)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), isNothing, maybe)
 import Data.String as String
 import Data.Time.Duration (Milliseconds)
+import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Class (liftEffect)
-import Idiolect (filterFst, nonEmpty)
+import Idiolect (filterFst, nonEmpty, withIndices, (>==))
 import Riverdragon.Dragon (AttrProp, Dragon(..), renderElSt)
 import Riverdragon.Dragon.Bones (($$), ($~~), (.$), (.$$), (.$$~), (.<>), (:.), (:~), (<:>), (=!=), (=:=), (=?=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.River (Lake, Stream, createRiverStore, instantiate, limitTo, makeLake, oneStream)
+import Riverdragon.River (Lake, Stream, River, createRiverStore, instantiate, limitTo, makeLake, oneStream)
+import Riverdragon.River as River
 import Riverdragon.River.Bed (eventListener, rolling)
-import Riverdragon.River.Beyond (delay)
+import Riverdragon.River.Beyond (delay, withLast)
 import Web.DOM.ElementId (ElementId)
 import Web.DOM.NonElementParentNode (getElementById)
 import Web.Event.Event (EventType(..))
@@ -39,8 +45,7 @@ listenInput includeFirst id = makeLake \cb -> do
       { eventType: EventType "input"
       , eventPhase: None
       , eventTarget: InputElement.toEventTarget el
-      } \_ -> do
-        cb =<< InputElement.value el
+      } \_ -> cb =<< InputElement.value el
 
 instantiateListenInput :: forall flow m. MonadResource m => Boolean -> ElementId -> m (Stream flow String)
 instantiateListenInput includeFirst id = _.stream <$> instantiate (listenInput includeFirst id)
@@ -48,6 +53,45 @@ instantiateListenInput includeFirst id = _.stream <$> instantiate (listenInput i
 vanishing :: Milliseconds -> Lake Dragon -> Lake Dragon
 vanishing ms stream = stream <#> \element -> Replacing do
   pure element <|> limitTo 1 (delay ms (pure (mempty :: Dragon)))
+
+-- | View an array stream as a live array of DOM nodes, such that they are only
+-- | created and deleted at the end of the DOM fragment, and each update goes to
+-- | the individual nodeʼs persistent renderer.
+-- |
+-- | This is basically a mini version of VDOM diffing, just for arrays. It does
+-- | not have any logic for referential identity/keyed children, it just treats
+-- | elements by index.
+liveArray :: forall flow r. Stream flow (Array r) -> (Int -> River r -> Dragon) -> Dragon
+liveArray itemsStream render = Egg do
+  -- Create a `River` here since we will listen to it multiple times
+  -- and want to see the same events
+  { burst, stream } <- instantiate itemsStream
+  let
+    -- | Include the burst only here, to kick off `addingItems`.
+    startItems :: River (Array r)
+    startItems = maybe empty pure (Array.last burst) <|> stream
+
+    -- | The event stream of new items, with a dedicated listener.
+    addingItems :: Lake (Tuple Int (River (Maybe r)))
+    addingItems = withLast startItems # River.mapArray do
+      newItems >== extend \(Tuple i added) ->
+        pure (Just added) <|> (stream <#> (_ Array.!! i))
+
+    -- | Look for new items at the end of the array.
+    newItems :: { last :: Maybe (Array r), next :: Array r } -> Array (Tuple Int r)
+    newItems { last, next } = Array.drop (maybe 0 Array.length last) $ withIndices next
+
+    -- | Render the river of `Just`s until it returns `Nothing`.
+    renderUntilNothing :: Tuple Int (River (Maybe r)) -> Dragon
+    renderUntilNothing (Tuple i itemUpdates) =
+      Replacing $ pure (render i stillPresent) <|> limitTo 1 (mempty <$ wentAway)
+      where
+      stillPresent = compact itemUpdates :: River r
+      wentAway = filter isNothing itemUpdates
+
+  -- The combination of `Appending` with inner `Replacing` produces a list
+  -- we can append and delete items from.
+  pure $ Appending $ renderUntilNothing <$> addingItems
 
 inputValidated ::
   String ->

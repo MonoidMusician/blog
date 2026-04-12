@@ -9,7 +9,7 @@ As a quick [recap](selective_applicatives_theoretical_basis.html):
 
 - Selective applicative functors are meant to sit in between applicatives and monads in terms of constraints vs flexibility.
   The implementation has more freedom (there are more selective applicative structures for a carrier type than monad or applicative structures!), while the combinators offer fewer guarantees than monads.
-- The original formulation of selective applicative functors was about selectively running effects, based on previous results in the applicative functor (what I call “determined choice”).
+- The original formulation of selective applicative functors was about selectively running or skipping effects, based on previous results in the applicative functor (what I call “determined choice”).
 - I argued that this is not enough, and we should really encode exclusive (and exhaustive) determined choice.
 - This required focusing on arrows instead of functors, but we got pretty far with focusing on applicative arrows `f (i -> o)`{.haskell} (which can be seen as a [change of enriching category](https://ncatlab.org/nlab/show/change+of+enriching+category)).
 - We derived laws: the basic laws for “raw control flow” (consisting of associativities and identities for the sequential and branching structures), and the near-semiring laws for “refined control flow” (refining the interaction of sequencing and branching).
@@ -20,7 +20,7 @@ One of the main obstacles is that there is no “state transformer functor” fo
 
 - For monads, [`newtype StateT s m o = StateT (s -> m (s, o))`{.haskell}](https://hackage-content.haskell.org/package/mtl-2.3.2/docs/Control-Monad-State-Lazy.html#t:StateT)^[Yes, I prefer that order of the tuple, since it is actually a `Functor`{.haskell} then.] is the state monad transformer.
 - For arrows more generally, it is [`newtype StateArrow s p i o = StateArrow (p (s, i) (s, o))`{.haskell}](https://hackage.haskell.org/package/arrows-0.4.4.2/docs/Control-Arrow-Transformer-State.html).^[There is also a `CoStateArrow`{.haskell}, with `p (s -> i) (s -> o)`{.haskell}, but this is not compatible with selective applicative functors.]
-- We can then see that `StateT`{.haskell} is derived via the isomorphism
+- We can then see that `StateT`{.haskell} is derived via the chain of isomorphisms
 
   ```haskell
   StateArrow s (Kleisli m) i o
@@ -37,7 +37,7 @@ One of the main obstacles is that there is no “state transformer functor” fo
 So, if we want to work on the theory in full generality, and incorporate things like state monads, we will want to work with arrows instead of functors.^[I believe that state monads are the main piece that is left out by considering functors instead of arrows.]
 
 But this comes at a cost: arrows have worse syntax, you have to work with them point-free.
-The benefit of working with selective applicative functors was that we just had to consider `case`{.haskell} structure as its own thing, but otherwise they were just functors `f o`{.haskell}.
+The benefit of working with selective applicative functors was that we just had to consider `case`{.haskell} structure as its own thing, but otherwise they were just applicative functors `f o`{.haskell} which we already had applicative `do`{.haskell}/`ado`{.purescript} notation for.
 
 So I think a reasonable middle ground is that we should work with arrows that we can lower to applicative arrows, that is, equipped with a natural isomorphism `forall i o. p i o <-> f (g i -> h o)`{.haskell}, for functors `f`{.haskell}, `g`{.haskell}, and `h`{.haskell} determined by `p`{.haskell}.
 The `g`{.haskell} and `h`{.haskell} functors here serve the purpose of tracking the additional state variables that come along for the ride.
