@@ -270,7 +270,7 @@ intersect _p _q =
       bbp = getBounds p
       bbq = getBounds q
     in if disjointBounds bbp bbq then [] else
-    if max (mag bbp) (mag bbq) < epsilon / 4.0
+    if max (mag bbp) (mag bbq) < epsilon
     -- Return middle time, sampling the original curve there
     then [Pair (sample pt _p) (sample qt _q)]
     else do

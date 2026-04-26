@@ -3,9 +3,11 @@ module Train.Main where
 import Prelude
 
 import Control.Comonad (extract)
+import Control.Monad.Error.Class (throwError)
+import Control.Monad.Reader (ask)
 import Control.Monad.ResourceM (destr, inSubScope, selfDestructor)
 import Control.Monad.ResourceT (Dir(..), ResourceM)
-import Control.Monad.State (class MonadState, State, execState, get, modify_)
+import Control.Monad.State (class MonadState, State, execState, get, gets, modify_)
 import Control.Monad.Writer (class MonadWriter, censor, tell)
 import Control.Plus (empty, (<|>))
 import Data.Array as Array
@@ -13,6 +15,7 @@ import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.BooleanAlgebra.NormalForm (asArray)
 import Data.CodePoint.Unicode (isAsciiUpper, isDecDigit)
+import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..), either, hush, isLeft)
 import Data.Filterable (filter, filterMap, separate)
 import Data.Foldable (all, any, fold, foldM, foldMap, foldl, intercalate, sum, traverse_)
@@ -48,23 +51,25 @@ import Data.Semigroup.Last (Last(..))
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Show.Generic (genericShow)
+import Data.String (codePointFromChar)
 import Data.String as String
 import Data.Symbol (class IsSymbol)
 import Data.Time.Duration (Milliseconds(..))
-import Data.Traversable (mapAccumL, traverse)
+import Data.Traversable (for, mapAccumL, traverse)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested ((/\))
 import Debug (spy, spyWith)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
+import Effect.Now (now)
 import Effect.Random (randomInt)
 import Effect.Ref as Ref
 import Effect.Uncurried (EffectFn2, runEffectFn2)
 import Foreign.Object as FO
-import Idiolect (incorporate, insteadOf, intercalateMap, minimumWith, neighbors, sgn, withIndices, (#..), (#:..), (#<>), (..$), (<#>:), (<#?>), (<>$), (==<), (>==))
+import Idiolect (incorporate, insteadOf, intercalateMap, minimumWith, neighbors, sgn, sqre, withIndices, (#..), (#:..), (#<>), (..$), (<#>:), (<#?>), (<>$), (==<), (>==))
 import Math.Bezier as Bezier
-import Math.Matrix (Afn2(..), B32, BBox2, Bez3(..), Bounds, LTF(..), V2, V3, Vec2(..), Vec3(..), d2r, disjointBounds, dot, inv, mkBound, norm, norm2, normalize, pairs, pairsWith, r2d, rotl2, tf, tfBounds, translate2, unAfn2, ($*), (+<), (-<>), (.*), (<.), (<>+), (<>-), (<^), (>+))
+import Math.Matrix (Afn2(..), B32, BBox2, Bez3(..), Bounds, LTF(..), V2, V3, Vec2(..), Vec3(..), bounds2bounds1, d2r, disjointBounds, dot, inv, mkBound, norm, norm2, normalize, pairs, pairsWith, r2d, rotl2, tf, tfBounds, translate2, unAfn2, ($*), ($.), (+<), (-<>), (.*), (<.), (<>+), (<>-), (<^), (>+))
 import Math.Poly (deriv)
 import Monoids.BoundsWith (BoundsWith, MinWith(..))
 import Parser.Comb.Dragon (renderParseError)
@@ -78,8 +83,9 @@ import Riverdragon.Dragon.Wings (deletable, sourceCode)
 import Riverdragon.River (Course(..), Lake, River, coursing, createRiver, createRiverStore, createStore, dam, fix, instantiate, limitTo, makeLake, makeLake', memoize, singleShot, statefulStream, stillRiver, store, subscribe, subscribeM)
 import Riverdragon.River as River
 import Riverdragon.River.Bed (freshId)
-import Riverdragon.River.Beyond (debounce, dedup, documentEvent, instanced, withLast)
+import Riverdragon.River.Beyond (animationLoop, debounce, dedup, documentEvent, everyFrame, instanced, withLast)
 import Riverdragon.River.Streamline (Interval(..), bbInterval, clamp2D, linmap2D)
+import Safe.Coerce (coerce)
 import Type.Proxy (Proxy(..))
 import Uncurried.RWSE (RWSE, runRWSE)
 import Web.DOM (Element)
@@ -312,7 +318,7 @@ type Standard =
   , strength :: Pair Number
   , curve :: B32
   , strokes :: Pair B32
-  , samples :: Array V2
+  , samples :: Array { p :: V2, pathlength :: Pair Number, i :: Int, t :: Number }
   , bbox ::
     { stroke :: BBox2 Number
     , centerline :: BBox2 Number
@@ -371,19 +377,39 @@ standardize key curve@(B3 p0 p1 p2 p3) = do
         strokes = dilate curve
         bbox = { stroke: Bezier.bboxBs strokes, centerline: Bezier.bboxB curve }
         strength = Pair (norm $ p0 -<> p1) (norm $ p2 -<> p3)
-        samples = ((_ / 100.0) <<< Int.toNumber) <$> Array.range 0 100
-          <#> Bezier.evalB curve
-        pathlength = sum $ pairsWith (\q1 q2 -> norm (q1 -<> q2)) samples
+        basesamples = Array.range 0 100 <#> \i ->
+          let t = Int.toNumber i / 100.0
+          in { i, t, p: Bezier.evalB curve t }
+        trackLength { l, p: q0 } { i, t, p: q1 } =
+          let l' = l + norm (q0 -<> q1) in
+          { accum: { l: l', p: q1 }, value: { pathlength: Pair l l', p: q1, i, t } }
+        { accum: { l: pathlength }, value: samples } = mapAccumL trackLength { l: 0.0, p: p0 } basesamples
         beeline = norm (p0 -<> p3)
-        r = { key, id, strength, curve, samples: [], strokes, bbox, pathlength, beeline }
+        r = { key, id, strength, curve, samples, strokes, bbox, pathlength, beeline }
       setProp @"library" $ Map.insert id r library
       pure r
 
 type Canonized =
   { canon :: Standard
+  , pos :: Pair Pos
   , transform :: Afn2 Number
   , transformI :: Afn2 Int -- FIXME
   }
+
+newtype Route = Route
+  { segments :: Array { segment :: Canonized, i :: Int, pathlength :: Pair Number }
+  , pathlength :: Number
+  -- Information about loops, crossings, signals maybe
+  -- Time
+  }
+mkRoute :: Array Canonized -> Route
+mkRoute segments =
+  let
+    mapper l0 (Tuple i segment) =
+      let l1 = l0 + segment.canon.pathlength in
+      { accum: l1, value: { segment, i, pathlength: Pair l0 l1 } }
+    { accum: pathlength, value: segments } = mapAccumL mapper 0.0 $ withIndices segments
+  in Route { pathlength, segments }
 
 canonCurve :: Canonized -> B32
 canonCurve p = tf (LTF p.transform) p.canon.curve
@@ -464,22 +490,42 @@ renderTraintle cmds = D.Egg do
     statefulStream { library: force standardCurves, hitmap: Map.empty } (dedup cmds)
       \s c -> let r = runTraintle s c in { emit: Just r, state: r.state }
   curve <- defineL \id -> D.path [ D.id =:= id, D.attr "d" <:> _.curve <$> running ]
+  looping <- River.store do
+    everyFrame # River.mapAl \_ -> now <#> unInstant >>> \(Milliseconds t) ->
+      let
+        duration = 24.0 * 1000.0
+        loopPos = (t Math.% (2.0 * duration)) / duration
+        loopAndBack = if loopPos <= 1.0 then loopPos else 2.0 - loopPos
+      in loopAndBack
   let
-    railmask inner outer = mask $ defL \id ->
-      D.svg_"mask" [ D.id =:= id ] $ fold
-        [ clone curve
-          [ D.stylish =:= D.smarts
-            { "stroke": "white"
-            , "stroke-width": show outer <> "px"
-            }
-          ]
-        , clone curve
-          [ D.stylish =:= D.smarts
-            { "stroke": "black"
-            , "stroke-width": show inner <> "px"
-            }
-          ]
+    railmask = newmask curve
+    newmask curve inner outer = maskOf $ fold
+      [ clone curve
+        [ D.stylish =:= D.smarts
+          { "stroke": "white"
+          , "stroke-width": show outer <> "px"
+          }
         ]
+      , clone curve
+        [ D.stylish =:= D.smarts
+          { "stroke": "black"
+          , "stroke-width": show inner <> "px"
+          }
+        ]
+      ]
+    maskOf contents = mask $ defL \id -> D.svg_"mask" [ D.id =:= id ] contents
+    freshTrains = River.latestStream running \{ segments } ->
+      let
+        route = mkRoute segments
+        canonCurves = canonCurve <$> segments
+        consist = [ 16.0 ] <>$ Array.range 0 1 #.. const [ 64.0, 32.0 ] #<> [ 64.0 ]
+        walkFrom point = walkPaths canonCurves point consist
+        seedTrain =
+          looping.stream <#> \loopTime ->
+            case routeAtTime route loopTime of
+              Just { at, to, curvature, i, t } -> { at, to: inv to, curvature, i, t, delta: mempty, distance: zero }
+              Nothing -> endPath canonCurves
+      in walkFrom <$> seedTrain
   pure $ fold
     [ D.svg
       [ D.attr "viewBox" <:> _.viewBox <$> running
@@ -507,14 +553,42 @@ renderTraintle cmds = D.Egg do
       --       , "stroke-width": "24px"
       --       }
       --     ]
-      , clone curve
-          [ D.stylish =:= D.smarts
-            { "stroke": "#5a2814"
-            , "stroke-width": "16px"
-            , "opacity": "0.8"
-            }
-          , railmask 13 15
+      , running >@ \{ paths } -> paths #.. \path -> Egg do
+          thisOne <- defineL \id -> D.path [ D.id =:= id, D.attr "d" =:= path ]
+          pure $ clone thisOne
+            [ D.stylish =:= D.smarts
+              { "stroke": "#5a2814"
+              , "stroke-width": "16px"
+              }
+            , newmask thisOne 12 16
+            ]
+      , D.g [ maskOf $ D.g [] $ fold
+          [ clone curve
+              [ D.stylish =:= D.smarts
+                { "stroke": "white"
+                , "stroke-width": "16px"
+                }
+              ]
+          , running >@ \{ paths } -> paths #.. \path -> Egg do
+            thisOne <- defineL \id -> D.path [ D.id =:= id, D.attr "d" =:= path ]
+            pure $ clone thisOne
+              [ D.stylish =:= D.smarts
+                { "stroke": "black"
+                , "stroke-width": "13px"
+                }
+              , newmask thisOne 11 13
+              ]
           ]
+        ] $
+          running >@ \{ paths } -> paths #.. \path -> Egg do
+            thisOne <- defineL \id -> D.path [ D.id =:= id, D.attr "d" =:= path ]
+            pure $ clone thisOne
+              [ D.stylish =:= D.smarts
+                { "stroke": "#cbd4d8"
+                , "stroke-width": "15px"
+                }
+              , newmask thisOne 13 15
+              ]
       , clone curve
           [ D.stylish =:= D.smarts
             { "stroke": "#cbd4d8"
@@ -542,62 +616,70 @@ renderTraintle cmds = D.Egg do
               }
             ] mempty
         ]
-      , D.Replacing $ running <#> \{ trains } -> do
-          let
-            trainUnits = NEA.drop 1 trains # pairs # withIndices # filter (Int.even <<< fst) # map snd
-              # neighbors
-          D.g [ D.stylish =:= D.smarts { "opacity": 0.9 } ] $ fold $ trainUnits #.. \{ here: Pair back train, next } ->
+      , D.g [ D.stylish =:= D.smarts { "opacity": 1.0 } ] $
+          D.Replacing $ freshTrains <#> \trains -> do
             let
-              towards = case next of
-                Nothing -> train.to
-                Just (Pair { delta } _) -> delta
-            in
-            [ clone (pure "#g115")
-                [ D.attr "transform" =:= intercalate " "
-                  [ case back.at of
-                    V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
-                  , case back.delta of
-                    V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
-                  , "translate(64, 0) rotate(-90,-384,208)"
+              trainUnits = NEA.drop 1 trains # pairs # withIndices # filter (Int.even <<< fst) # map snd
+                # neighbors
+              cslope = -sqre 9.0 / 2.0
+              jog curvature = "translate(" <> show 0.0 <> ", " <> show (curvature * cslope) <> ")"
+            fold $ trainUnits #.. \{ here: Pair back train, next } ->
+              let
+                towards = case next of
+                  Nothing -> train.to
+                  Just (Pair { delta } _) -> delta
+              in
+              [ clone (pure "#g115")
+                  [ D.attr "transform" =:= intercalate " "
+                    [ case back.at of
+                      V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
+                    , case back.delta of
+                      V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
+                    , jog back.curvature
+                    , "translate(64, 0) rotate(-90,-384,208)"
+                    ]
                   ]
-                ]
-            , clone (pure "#use115")
-                [ D.attr "transform" =:= intercalate " "
-                  [ case back.at of
-                    V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
-                  , case back.to of
-                    V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
-                  , "translate(64, 0) rotate(-90,-384,208)"
+              , clone (pure "#use115")
+                  [ D.attr "transform" =:= intercalate " "
+                    [ case back.at of
+                      V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
+                    , case back.to of
+                      V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
+                    , jog back.curvature
+                    , "rotate(180) translate(64, 0) rotate(-90,-384,208)"
+                    ]
                   ]
-                ]
-            , clone (pure "#g115")
-                [ D.attr "transform" =:= intercalate " "
-                  [ case train.at of
-                    V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
-                  , case towards of
-                    V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
-                  , "rotate(180) translate(64, 0) rotate(-90,-384,208)"
+              , clone (pure "#g115")
+                  [ D.attr "transform" =:= intercalate " "
+                    [ case train.at of
+                      V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
+                    , case towards of
+                      V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
+                    , jog train.curvature
+                    , "rotate(180) translate(64, 0) rotate(-90,-384,208)"
+                    ]
                   ]
-                ]
-            , clone (pure "#use115")
-                [ D.attr "transform" =:= intercalate " "
-                  [ case train.at of
-                    V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
-                  , case train.to of
-                    V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
-                  , "translate(64, 0) rotate(-90,-384,208)"
+              , clone (pure "#use115")
+                  [ D.attr "transform" =:= intercalate " "
+                    [ case train.at of
+                      V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
+                    , case train.to of
+                      V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
+                    , jog train.curvature
+                    , "rotate(180) translate(64, 0) rotate(-90,-384,208)"
+                    ]
                   ]
-                ]
-            , clone (pure "#g43")
-                [ D.attr "transform" =:= intercalate " "
-                  [ case train.at of
-                    V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
-                  , case train.delta of
-                    V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
+              , clone (pure "#g43")
+                  [ D.attr "transform" =:= intercalate " "
+                    [ case train.at of
+                      V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
+                    , case train.delta of
+                      V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
+                    ]
+                  -- , D.attr "opacity" =:= 0.4
                   ]
-                ]
-            ]
-      , D.Replacing $ running <#> \{ trains } ->
+              ]
+      , D.Replacing $ freshTrains <#> \trains ->
           D.g [ D.stylish =:= D.smarts { "opacity": 0.0 } ] $ fold $ trains #.. \train ->
             [ D.svg_"circle"
                 [ D.attr "r" =:= "4px"
@@ -635,6 +717,20 @@ renderTraintle cmds = D.Egg do
       --           "C" <> intercalateMap " " (\(V2 x y) -> show (64.0 * x) <> "," <> show (64.0 * y)) [ p1, p2, p3 ]
       --     , D.stylish =:= D.smarts { "stroke": "purple", "stroke-width": 2.0 }
       --     ] mempty
+      , D.svg_"circle"
+          [ D.attr "r" =:= "4px"
+          , River.latestStream running \{ segments } ->
+              let route = mkRoute segments in
+              looping.stream <#> \t -> case routeAtTime route t of
+                Just { at: V2 x y } -> D.MultiAttr
+                  [ D.attr "cx" x
+                  , D.attr "cy" y
+                  ]
+                Nothing -> D.MultiAttr []
+          , D.stylish =:= D.smarts
+            { "fill": "red"
+            }
+          ] mempty
       ]
     , D.Replacing $ _.info <$> running
     ]
@@ -652,83 +748,103 @@ type InterState =
 
 runTraintle :: InterState -> Array Command -> _ -- { info :: Dragon, curve :: String, pos :: Pos, viewBox :: String, trains :: _, state :: InterState }
 runTraintle { library, hitmap } cmds =
-  { curve, viewBox, pos: endpoint, trains, segments, info: _, state: { library: _st.library, hitmap: _st.hitmap } } $
-    definitions
-      [ D.text "cmds" /\ D.show cmds
-      , D.text "paths" /\ D.show (Array.length result.paths)
-      , D.text "paths" /\ D.show result.paths
-      , D.text "distances" /\ D.show (trains <#> _.distance)
-      , D.text "trains" /\ D.show trains
-      , D.text "segments" /\ D.show segments
-      , D.text "endpoint" /\ D.show endpoint
-      , D.text "bounds" /\ D.show bounds
-      -- , D.text "curve" /\ D.show curve
-      , D.text "norm" /\ D.show norm
-      , D.text "rotation" /\ D.show rotation
-      , D.text "quadrant" /\ D.show (quadrant endpoint.to)
-      , D.text "preBounds" /\ D.show preBounds
-      , D.text "library" /\ D.show _st.library
-      ]
+  { curve, viewBox, pos: endpoint
+  , trains, segments, paths: result.paths
+  , state: { library: _st.library, hitmap: _st.hitmap }
+  , error: either identity mempty resultSplit
+  , info: _
+  } $ definitions $
+    (either (\e -> [ D.text "error" /\ D.text e ]) mempty resultSplit) <>
+    [ D.text "cmds" /\ D.show cmds
+    , D.text "paths" /\ D.show (Array.length result.paths)
+    , D.text "paths" /\ D.show result.paths
+    , D.text "distances" /\ D.show (trains <#> _.distance)
+    , D.text "trains" /\ D.show trains
+    , D.text "segments" /\ D.show segments
+    , D.text "endpoint" /\ D.show endpoint
+    , D.text "bounds" /\ D.show bounds
+    -- , D.text "curve" /\ D.show curve
+    , D.text "norm" /\ D.show norm
+    , D.text "rotation" /\ D.show rotation
+    , D.text "quadrant" /\ D.show (quadrant endpoint.to)
+    , D.text "preBounds" /\ D.show preBounds
+    , D.text "library" /\ D.show _st.library
+    ]
   where
-  silent :: TraintleM ~> TraintleM
-  silent act = do
-    { path } <- get
-    r <- censor mempty act
-    setProp @"path" path
-    pure r
-  renderCommand :: Command -> TraintleM Unit
-  renderCommand (Silent inner) = do
-    silent $ traverse_ renderCommand inner
-  renderCommand (SetVariable Nothing name) = do
-    { pos } <- get
-    prop (Proxy @"locations") %= Map.insert name pos
-  renderCommand (SetVariable (Just extra) name) = do
-    { pos } <- get
-    prop (Proxy @"stacks") %= Map.insertWith (flip append) name (pos <$ List.range 0 extra)
-  renderCommand (GetVariable Nothing name) = do
-    { locations } <- get
-    case Map.lookup name locations of
-      Just pos -> setProp @"pos" pos
-      Nothing -> pure unit -- error??
-  renderCommand (GetVariable (Just extra) name) = do
-    { stacks } <- get
-    case List.drop extra <$> Map.lookup name stacks of
-      Just (pos : left) -> do
-        setProp @"pos" pos
-        prop (Proxy @"stacks") %= Map.insert name left
-      Just Nil -> pure unit -- error??
-      Nothing -> pure unit -- error??
-  renderCommand v = trackBounds (withAligned shouldReverse renderAligned v)
-  shouldReverse = case _ of
-    Q -> true
-    A -> true
-    _ -> false
   origin = { at: V2 0 0, to: V2 1 0 }
   action = do
     traverse_ renderCommand cmds
     state <- get
     paths <- routesToPaths state.path.segments
     pure { paths }
-  _st@{ path: { commands: preCurve, segments }, pos: endpoint } /\ resultSplit /\ { bounds: preBounds } = action
-    # runRWSE { functions: Map.empty, origin }
+  _st@{ path: { commands: curve, segments }, pos: endpoint } /\ resultSplit /\ { bounds: preBounds } = action
+    # runRWSE { origin, mode: Drawing }
       { pos: origin
-      , path: mempty, locations: Map.empty, stacks: Map.empty
+      , path: mempty
+      , locations: Map.empty, stacks: Map.empty
+      , subroutines: Map.empty
+      , routes: Map.empty
       , hitmap, library
       }
-  result = either absurd identity resultSplit
+  result = either mempty identity resultSplit
   bounds :: Vec2 (Bounds Int)
   bounds = unwrap $ incorporate (App $ mkBound <$> endpoint.at) preBounds <> defaultBounds
-  defaultBounds = App $ pure $ mkBound (-16) <> mkBound 16
+  defaultBounds = App $ pure $ mkBound (-4) <> mkBound 4
   viewBox = case bounds of
     V2 { min: Min mx, max: Max mX } { min: Min my, max: Max mY } ->
       intercalate " " $ show <<< (16 * _) <$>
         [ mx - 4, my - 4, mX - mx + 8, mY - my + 8 ]
   norm = fst $ alignGrid false endpoint
   rotation = (fst $ snd $ alignGrid false endpoint) (V2 1 2)
-  curve = "M0,0" <> preCurve
   trains =
     walkPaths (canonCurve <$> segments) (endPath (canonCurve <$> segments))
       $ [ 16.0 ] <>$ Array.range 0 1 #.. const [ 64.0, 32.0 ] #<> [ 64.0 ]
+
+silent :: TraintleM ~> TraintleM
+silent act = do
+  { path } <- get
+  r <- censor mempty act
+  setProp @"path" path
+  pure r
+
+renderCommand :: Command -> TraintleM Unit
+renderCommand (Silent inner) = do
+  silent $ traverse_ renderCommand inner
+renderCommand (SetVariable Nothing name) = do
+  { pos } <- get
+  prop (Proxy @"locations") %= Map.insert name pos
+renderCommand (SetVariable (Just extra) name) = do
+  { pos } <- get
+  prop (Proxy @"stacks") %= Map.insertWith (flip append) name (pos <$ List.range 0 extra)
+renderCommand (GetVariable Nothing name) = do
+  { locations } <- get
+  case Map.lookup name locations of
+    Just pos -> setProp @"pos" pos
+    Nothing -> throwError $ "Unknown variable " <> show name
+renderCommand (GetVariable (Just extra) name) = do
+  { stacks } <- get
+  case List.drop extra <$> Map.lookup name stacks of
+    Just (pos : left) -> do
+      setProp @"pos" pos
+      prop (Proxy @"stacks") %= Map.insert name left
+    Just Nil -> throwError $ "Variable had no values " <> show name
+    Nothing -> throwError $ "Unknown variable " <> show name
+renderCommand Origin = do
+  { origin } <- ask
+  setProp @"pos" origin
+renderCommand (Subroutine name (Just cmds)) = do
+  prop (Proxy @"subroutines") %= Map.insert name cmds
+renderCommand (Subroutine name Nothing) = do
+  { subroutines } <- get
+  case Map.lookup name subroutines of
+    Just cmds -> traverse_ renderCommand cmds
+    Nothing -> throwError $ "Unknown subroutine " <> show name
+renderCommand v = trackBounds (withAligned shouldReverse renderAligned v)
+  where
+  shouldReverse = case _ of
+    Q -> true
+    A -> true
+    _ -> false
 
 renderAligned :: Reorienter -> Vec2 Int -> Command -> TraintleM { delta :: Vec2 Int, slope :: Vec2 Int }
 renderAligned rotate = case _, _ of
@@ -762,7 +878,7 @@ renderAligned rotate = case _, _ of
         let t' = Int.toNumber <$> Afn2 xx yx xy yy (16 * x) (16 * y)
         case F.find (\r -> r.curve == B3 mempty p1 p2 p3) library of
           Just canon -> do
-            let segment = { canon, transform: t', transformI: t }
+            let segment = { canon, transform: t', transformI: t, pos: tfPos t canon }
             modify_ $ (prop (Proxy @"path") <<< prop (Proxy @"segments")) $ (_ <> [ segment ])
           Nothing -> pure unit
       "l", [ p3 ] -> do
@@ -773,9 +889,15 @@ renderAligned rotate = case _, _ of
         let t' = Int.toNumber <$> Afn2 xx yx xy yy (16 * x) (16 * y)
         let line dest = B3 mempty (0.33 .* dest) (0.67 .* dest) dest
         canon <- standardize { delta: 2 .* slope, from: slope, to: slope } $ line p3
-        let segment = { canon, transform: t', transformI: t }
+        let segment = { canon, transform: t', transformI: t, pos: tfPos t canon }
         modify_ $ (prop (Proxy @"path") <<< prop (Proxy @"segments")) $ (_ <> [ segment ])
       _, _ -> pure unit
+  tfPos :: Afn2 Int -> Standard -> Pair Pos
+  tfPos t { key: { from, to, delta } } = Pair
+    { at: p, to: r $* from }
+    { at: t $* delta, to: r $* to }
+    where
+    Tuple p r = unAfn2 t
 
   curves =
     { "0 to 26":  [ V2 34.536001 0.0, V2 59.412619 5.70631, V2 80.0 16.0 ]
@@ -790,9 +912,10 @@ renderAligned rotate = case _, _ of
 
 
 type Pos = { at :: Vec2 Int, to :: Vec2 Int }
+data TrainMode = Drawing | Routing String
 type TraintleM = RWSE
-  { functions :: Map String (Array Command)
-  , origin :: Pos
+  { origin :: Pos
+  , mode :: TrainMode
   }
   { bounds :: Maybe (App Vec2 (Bounds Int))
   }
@@ -807,16 +930,19 @@ type TraintleM = RWSE
   , stacks :: Map String (List Pos)
   , library :: Map Int Standard
   , hitmap :: HitMap
+  , subroutines :: Map String (Array Command)
+  , routes :: Map String Route
   }
-  Void
+  String
 
 data Command
   = Q | W | E | A | S | D | Z | X | C
   | Silent (Array Command)
   | SetVariable (Maybe Int) String
   | GetVariable (Maybe Int) String
-  | Function String
+  | Subroutine String (Maybe (Array Command))
   | Teleport (Maybe Int) (Maybe Int) (Maybe Int) (Maybe Int) | Origin
+  | TrainRoute String (Array TrainUnit) (Array Command)
 derive instance Eq Command
 derive instance Ord Command
 
@@ -852,36 +978,63 @@ parseCommandsWith finish continue ("o" : s) = (Silent (pure E) : _) <$> parseCom
 parseCommandsWith finish continue ("j" : s) = (Silent (pure A) : _) <$> parseCommandsWith finish continue s
 parseCommandsWith finish continue ("k" : s) = (Silent (pure S) : _) <$> parseCommandsWith finish continue s
 parseCommandsWith finish continue ("l" : s) = (Silent (pure D) : _) <$> parseCommandsWith finish continue s
--- @ function
--- capital, or quotes: named place
--- <x,y>, <x,y:>, <:dx,dy>, <x,y:dx,dy>: relative teleport to:facing
--- =: teleport to origin, of function or whole program
+-- @NAME{...}: drawing subroutine
+parseCommandsWith finish continue ("@" : s0)
+  | Tuple name s1 <- parseNAME $ skipWS s0 =
+    case skipWS s1 of
+      "{" : s2 -> let
+        exitScope = case _ of
+          "}" : s3 -> Tuple (Just s3) Nil
+          _ -> Tuple Nothing Nil
+        in case parseCommandsWith (Tuple (Just Nil) Nil) exitScope s2 of
+          Tuple Nothing _ -> continue ("@" : s0)
+          Tuple (Just s3) cmds ->
+            (Subroutine name (Just (List.toUnfoldable cmds)) : _) <$> parseCommandsWith finish continue s3
+      _ -> (Subroutine name Nothing : _) <$> parseCommandsWith finish continue s1
+-- ~NAME(...){...}: train and route
+--     <==:{=}:{%}:{=}:<==
+--     <======={======}{======}{======}=======>
+parseCommandsWith finish continue ("~" : s0)
+  | Tuple name s1 <- parseNAME $ skipWS s0
+  , Tuple train s2 <- parseTrain $ skipWS s1
+  , Tuple route s3 <- parseRoute $ skipWS s2
+  =
+    (TrainRoute name (maybe [] List.toUnfoldable train) (List.toUnfoldable route) : _) <$>
+      parseCommandsWith finish continue s3
+-- &NAME{...}: route
 -- {...}: logic?
+-- <x,y>, <x,y:>, <:dx,dy>, <x,y:dx,dy>: relative teleport to:facing
 -- $var: procedure variables?
+-- *var: multiplicative variables?
 -- 0-9, 0-9(...): repeat
 -- (?...): without writing paths
+parseCommandsWith finish continue ("(" : inner)
+  = parseCommandsWith finish continue ("1" : "(" : inner)
 parseCommandsWith finish continue s
   | digits <- List.takeWhile (all isDecDigit <<< String.toCodePointArray) s
   , Just num <- Int.fromString (fold digits) =
     case skipWS $ List.drop (List.length digits) s of
-      "(" : inner -> let
+      "(" : questionInner -> let
         exitScope = case _ of
           ")" : more -> Tuple (Just (Tuple num more)) Nil
           _ -> Tuple Nothing Nil
+        Tuple question inner = case questionInner of
+          "?" : inner -> Tuple ((\cmds -> (Silent (List.toUnfoldable cmds) : _))) inner
+          inner -> Tuple (<>) inner
         in case parseCommandsWith (Tuple (Just (Tuple 1 mempty)) Nil) exitScope inner of
           Tuple Nothing _ -> continue s
           Tuple (Just (Tuple repeats more)) cmds ->
-            (power cmds repeats <> _) <$> parseCommandsWith finish continue more
+            question (power cmds repeats) <$> parseCommandsWith finish continue more
       c : more ->
         case parseCommands (pure c) of
           Left _ -> continue (c : more)
           Right cmds -> (power cmds num <> _) <$> parseCommandsWith finish continue more
       Nil -> finish
-parseCommandsWith finish continue ("(" : inner) = let
-  exitScope = case _ of
-    ")" : more -> continue more
-    more -> continue more -- ?
-  in parseCommandsWith finish exitScope inner
+-- capital, or quotes: load named place
+-- =NAME: set named place
+-- =: teleport to origin, of function or whole program
+-- /NAME: append to named variable's stack (repeat if desired)
+-- \NAME: pop from named variable's stack (teleport to location)
 parseCommandsWith finish continue s
   | Tuple name more <- parseNAME s
   , name /= "" = (GetVariable Nothing name : _) <$> parseCommandsWith finish continue more
@@ -889,8 +1042,6 @@ parseCommandsWith finish continue ("=" : s0)
   | Tuple name more <- parseNAME $ skipWS s0
   =
     ((if name == "" then Origin else (SetVariable Nothing name)) : _) <$> parseCommandsWith finish continue more
--- /: append to named variable's stack (repeat if desired)
--- \: pop from named variable's stack (teleport to location)
 parseCommandsWith finish continue ("/" : s0)
   | taken <- List.length $ List.takeWhile (_ == "/") s0
   , s1 <- List.drop taken s0
@@ -919,9 +1070,77 @@ skipWS ("#" : s) = skipWS $ List.dropWhile (_ /= "\n") s
 skipWS s = s
 
 parseNAME :: List String -> Tuple String (List String)
+parseNAME ("\"" : s) =
+  let taken = List.takeWhile (_ /= "\"") s
+  in Tuple (fold taken) (List.drop (List.length taken + 1) s)
 parseNAME s =
-  let taken = List.takeWhile (all isAsciiUpper <<< String.toCodePointArray) s
+  let taken = List.takeWhile (all (isAsciiUpper || eq (codePointFromChar '_')) <<< String.toCodePointArray) s
   in Tuple (fold taken) (List.drop (List.length taken) s)
+
+data Direction = Forward | Backward | Bothward
+derive instance Eq Direction
+derive instance Ord Direction
+derive instance Generic Direction _
+instance Show Direction where show = genericShow
+data TrainUnit = Locomotive Direction Int | Car String Int
+derive instance Eq TrainUnit
+derive instance Ord TrainUnit
+derive instance Generic TrainUnit _
+instance Show TrainUnit where show = genericShow
+
+parseTrain :: List String -> Tuple (Maybe (List TrainUnit)) (List String)
+parseTrain ("(" : s0) =
+  let
+    go acc s1 = case parseTrainUnit $ skipWS s1 of
+      Tuple Nothing s2 -> Tuple (Just acc)
+        case skipWS s2 of
+          ")" : s3 -> s3
+          s3 -> s3
+      Tuple (Just u) s2 -> go (u : acc) s2
+  in go empty s0
+parseTrain s = Tuple Nothing s
+
+-- <== Locomotive Forward 3
+-- ==> Locomotive Backward 3
+-- <=> Locomotive Bothward 3
+-- {=} Car "=" 3
+parseTrainUnit :: List String -> Tuple (Maybe TrainUnit) (List String)
+parseTrainUnit s0 =
+  case skipWS s0 of
+    "<" : s1 -> parseLoco true 1 s1
+    "=" : s1 -> parseLoco false 1 s1
+    "{" : s1 -> parseCar "" s1
+    ":" : s1 -> parseTrainUnit s1
+    _ -> Tuple Nothing s0
+  where
+  parseCar acc s1 =
+    case s1 of
+      "}" : s2 -> Tuple (if acc == "" then Nothing else Just (Car acc (String.length acc + 2))) s2
+      s2@(")" : _) -> Tuple (if acc == "" then Nothing else Just (Car acc (String.length acc + 1))) s2
+      s2@("]" : _) -> Tuple (if acc == "" then Nothing else Just (Car acc (String.length acc + 1))) s2
+      Nil -> Tuple (if acc == "" then Nothing else Just (Car acc (String.length acc + 1))) Nil
+      c : s2 -> parseCar (acc <> c) s2
+  parseLoco starts acc s1 =
+    case s1 of
+      ">" : s2 -> Tuple (Just (loco starts true (acc + 1))) s2
+      "=" : s2 -> parseLoco starts (acc + 1) s2
+      s2 -> Tuple (Just (loco starts false acc)) s2
+  loco starts finishes = case starts, finishes of
+    true, false -> Locomotive Forward
+    true, true -> Locomotive Bothward
+    false, true -> Locomotive Backward
+    false, false -> Locomotive Bothward
+
+parseRoute :: List String -> Tuple (List Command) (List String)
+parseRoute ("{" : s0) =
+  let
+    go s1 = case parseCommandsWith (Tuple empty empty) (Tuple <@> Nil) s1 of
+      Tuple s2 cmds -> Tuple cmds
+        case skipWS s2 of
+          "}" : s3 -> s3
+          s3 -> s3
+  in go s0
+parseRoute s = Tuple empty s
 
 withAligned :: forall i.
   (i -> Boolean) ->
@@ -1043,6 +1262,7 @@ mask ids = D.attr "mask" <:> ids <#> \id -> "url(" <> id <> ")"
 type OnPath =
   { at :: V2
   , to :: V2
+  , curvature :: Number
   , t :: Number
   , i :: Int
   , delta :: V2
@@ -1051,13 +1271,13 @@ type OnPath =
 
 startPath :: Array B32 -> OnPath
 startPath = Array.head >>> case _ of
-  Nothing -> { at: mempty, to: V2 0.0 0.0, t: 0.0, i: 0, delta: mempty, distance: 0.0 }
-  Just (B3 p0 p1 _ _) -> { at: p0, to: normalize $ p1 <>- p0, t: 0.0, i: 0, delta: mempty, distance: 0.0 }
+  Nothing -> { at: mempty, to: V2 0.0 0.0, t: 0.0, i: 0, delta: mempty, distance: 0.0, curvature: 0.0 }
+  Just (B3 p0 p1 _ _) -> { at: p0, to: normalize $ p1 <>- p0, t: 0.0, i: 0, delta: mempty, distance: 0.0, curvature: 0.0 }
 
 endPath :: Array B32 -> OnPath
 endPath items = case Array.last items of
-  Nothing -> { at: mempty, to: V2 0.0 0.0, t: 0.0, i: 0, delta: mempty, distance: 0.0 }
-  Just (B3 _ _ p2 p3) -> { at: p3, to: normalize $ p2 <>- p3, t: 1.0, i: Array.length items - 1, delta: mempty, distance: 0.0 }
+  Nothing -> { at: mempty, to: V2 0.0 0.0, t: 0.0, i: 0, delta: mempty, distance: 0.0, curvature: 0.0 }
+  Just (B3 _ _ p2 p3) -> { at: p3, to: normalize $ p2 <>- p3, t: 1.0, i: Array.length items - 1, delta: mempty, distance: 0.0, curvature: 0.0 }
 
 
 walkPaths ::
@@ -1065,26 +1285,25 @@ walkPaths ::
   Array Number ->
   NonEmptyArray OnPath
 walkPaths curves start distances =
-  let
-    step Nothing _ = Nothing
-    step (Just whence) distance =
-      let
-        matches :: Array OnPath
-        matches = join $ curves <#>: \i curve ->
-          Bezier.intersectCircle { p: whence.at, r: distance } curve <#> \{ p, t } ->
-            let
-              tangent = Bezier.evalB (deriv curve) t
-              to = sgn (dot tangent whence.to) .* tangent
-              delta = whence.at -<> p
-            in { at: p, to, t, i, delta, distance: norm delta }
-        rightDirection = Array.filter (\{ delta } -> dot whence.to delta > 0.0) matches
-        closestSegments = rightDirection #.. \r@{ i } -> Just (MinWith (abs (i - whence.i)) (NEA.singleton r))
-        composite { t, i } = t + Int.toNumber i
-        closestPoint = minimumWith (\r -> Math.abs (composite r - composite whence))
-          $ asArray $ closestSegments #.. (extract >>> NEA.toArray)
-      in closestPoint
-  in
-    NEA.cons' start $ Array.catMaybes $ Array.scanl step (Just start) distances
+  NEA.cons' start $ Array.catMaybes $ Array.scanl step (Just start) distances
+  where
+  step Nothing _ = Nothing
+  step (Just whence) distance = closestPoint
+    where
+    matches :: Array OnPath
+    matches = join $ curves <#>: \i curve ->
+      Bezier.intersectCircle { p: whence.at, r: distance } curve <#> \{ p, t } ->
+        let
+          tangent = Bezier.evalB (deriv curve) t
+          to = sgn (dot tangent whence.to) .* tangent
+          delta = whence.at -<> p
+        in { at: p, to, t, i, delta, distance: norm delta, curvature: Bezier.curvatureAt curve t }
+    rightDirection = Array.filter (\{ delta } -> dot whence.to delta > 0.0) matches
+    closestSegments = rightDirection #.. \r -> Just (MinWith (abs (r.i - whence.i)) (NEA.singleton r))
+    composite { t, i } = t + Int.toNumber i
+    closestPoint = minimumWith (\r -> Math.abs (composite r - composite whence))
+      $ asArray $ closestSegments #.. (extract >>> NEA.toArray)
+
 
 dilate :: B32 -> Pair B32
 dilate curve@(B3 p0 p1 p2 p3) | p1 == p0 +<0.33>+ p3 && p2 == p0 +<0.67>+ p3 =
@@ -1150,4 +1369,22 @@ bezsToPath segments =
   in intercalate " " $ _.value
     $ mapAccumL seg (NEA.head segments # \(B3 p0 _ _ _) -> p0 <>- V2 one one)
     $ segments
+
+routeAtTime :: Route -> Number -> Maybe { at :: V2, to :: V2, curve :: B32, t :: Number, curvature :: Number, segment :: Canonized, i :: Int }
+routeAtTime (Route { segments, pathlength }) ofRoute = do
+  let alongRoute = pathlength * ofRoute
+  { i, pathlength: Pair segmentStart _, segment } <- segments
+    # Array.find \{ pathlength: Pair _ segmentEnd } -> segmentEnd >= alongRoute
+  let leftover = alongRoute - segmentStart
+  bookends <- segment.canon.samples # pairs
+    # Array.find \(Pair _ { pathlength: Pair _ endsUp }) -> endsUp >= leftover
+  case bookends of
+    Pair { t: t0, pathlength: Pair l0 _ } { t: t1, pathlength: Pair _ l1 } -> do
+      let
+        curve = canonCurve segment
+        t = bounds2bounds1 (coerce { min: l0, max: l1 }) (coerce { min: t0, max: t1 }) $. leftover
+        at = Bezier.evalB curve t
+        to = normalize $ Bezier.evalB (deriv curve) t
+        curvature = Bezier.curvatureAt curve t
+      Just { at, to, curvature, curve, t, i, segment }
 

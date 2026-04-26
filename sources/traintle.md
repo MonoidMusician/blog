@@ -2,8 +2,6 @@
 :::{widget="Traintle"}
 :::
 
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" fill="none" style="width:100%;height:100%;background:light-dark(white,black);color-scheme:light dark" viewBox="0 0 256 256"><defs><mask id="i" maskUnits="userSpaceOnUse"><g stroke-width="16"><use xlink:href="#a" stroke="#fff"/><use xlink:href="#a" stroke="#000" stroke-width="12"/></g></mask><mask id="h" maskUnits="userSpaceOnUse"><g stroke-width="16"><use xlink:href="#b" stroke="#fff"/><use xlink:href="#b" stroke="#000" stroke-width="12"/></g></mask><mask id="g" maskUnits="userSpaceOnUse"><g stroke-width="16"><use xlink:href="#c" stroke="#fff"/><use xlink:href="#c" stroke="#000" stroke-width="12"/></g></mask><mask id="f" maskUnits="userSpaceOnUse"><g stroke-width="16"><use xlink:href="#d" stroke="#fff"/><use xlink:href="#d" stroke="#000" stroke-width="12"/></g></mask><mask id="n" maskUnits="userSpaceOnUse"><g stroke-width="15"><use xlink:href="#a" stroke="#fff"/><use xlink:href="#a" stroke="#000" stroke-width="13"/></g></mask><mask id="m" maskUnits="userSpaceOnUse"><g stroke-width="15"><use xlink:href="#b" stroke="#fff"/><use xlink:href="#b" stroke="#000" stroke-width="13"/></g></mask><mask id="l" maskUnits="userSpaceOnUse"><g stroke-width="15"><use xlink:href="#c" stroke="#fff"/><use xlink:href="#c" stroke="#000" stroke-width="13"/></g></mask><mask id="k" maskUnits="userSpaceOnUse"><g stroke-width="15"><use xlink:href="#d" stroke="#fff"/><use xlink:href="#d" stroke="#000" stroke-width="13"/></g></mask><mask id="j" maskUnits="userSpaceOnUse"><use xlink:href="#e" stroke="#fff" stroke-width="15"/><g style="mix-blend-mode:darken"><use xlink:href="#d" stroke="#000" stroke-width="13"/><use xlink:href="#d" stroke="#fff" stroke-width="11"/></g><g style="mix-blend-mode:darken"><use xlink:href="#c" stroke="#000" stroke-width="13"/><use xlink:href="#c" stroke="#fff" stroke-width="11"/></g><g style="mix-blend-mode:darken"><use xlink:href="#b" stroke="#000" stroke-width="13"/><use xlink:href="#b" stroke="#fff" stroke-width="11"/></g><g style="mix-blend-mode:darken"><use xlink:href="#a" stroke="#000" stroke-width="13"/><use xlink:href="#a" stroke="#fff" stroke-width="11"/></g></mask><g id="e"><path id="d" d="M112 80v176"/><path id="c" d="M240 80a64 64 0 1 1-128 0 64 64 0 0 1 128 0"/><path id="b" d="M240 80v144m-120-16H0m176-64H0"/><path id="a" d="M240 80a120 128 0 0 1-120 128"/></g></defs><use xlink:href="#e" stroke="#918b85" stroke-width="28"/><use xlink:href="#e" stroke="#361f13" stroke-dasharray="2.76,5.28" stroke-dashoffset="5.28" stroke-width="24"/><g stroke="#5a2814" stroke-width="16" opacity=".8"><use xlink:href="#d" mask="url(#f)"/><use xlink:href="#c" mask="url(#g)"/><use xlink:href="#b" mask="url(#h)"/><use xlink:href="#a" mask="url(#i)"/></g><g stroke="#cbd4d8" stroke-width="15" mask="url(#j)"><use xlink:href="#d" mask="url(#k)"/><use xlink:href="#c" mask="url(#l)"/><use xlink:href="#b" mask="url(#m)"/><use xlink:href="#a" mask="url(#n)"/></g></svg>
-
 <svg
    inkscape:export-ydpi="256.70172"
    inkscape:export-xdpi="256.70172"
@@ -31,15 +29,15 @@
      inkscape:deskcolor="#e4e4e4"
      inkscape:document-units="px"
      showgrid="true"
-     inkscape:zoom="3.0044221"
-     inkscape:cx="39.941126"
-     inkscape:cy="13.646551"
+     inkscape:zoom="4.7941084"
+     inkscape:cx="-41.822166"
+     inkscape:cy="6.2576807"
      inkscape:window-width="1583"
      inkscape:window-height="1220"
      inkscape:window-x="0"
      inkscape:window-y="0"
      inkscape:window-maximized="0"
-     inkscape:current-layer="g42"
+     inkscape:current-layer="g116"
      showguides="true"><inkscape:grid
        type="xygrid"
        id="grid132"
@@ -95,19 +93,19 @@
        id="linearGradient157"
        gradientUnits="userSpaceOnUse"
        gradientTransform="matrix(0,-0.90476187,0.90476187,0,-756.73814,439.29759)"
-       x1="7.7500062"
-       y1="35.750004"
-       x2="7.7500062"
-       y2="45.250008" /><linearGradient
+       x1="-85"
+       y1="633.00006"
+       x2="-94.5"
+       y2="633.00006" /><linearGradient
        inkscape:collect="always"
        xlink:href="#linearGradient103396"
        id="linearGradient158"
        gradientUnits="userSpaceOnUse"
        gradientTransform="rotate(-90,-192.73217,613.57737)"
-       x1="-10.53572"
-       y1="81.464302"
-       x2="-10.53572"
-       y2="90.964302" /></defs><g
+       x1="-94.9048"
+       y1="623.19049"
+       x2="-104.4048"
+       y2="623.19049" /></defs><g
      id="g1067"
      inkscape:label="yellow boxcar"
      inkscape:transform-center-y="32"
@@ -205,10 +203,10 @@
                y="0"
                xlink:href="#g156"
                id="use17"
-               transform="translate(0,14.99999)"
                inkscape:label="wheelset"
                style="display:inline"
-               sodipodi:insensitive="true" /><g
+               sodipodi:insensitive="true"
+               transform="translate(0,14.99999)" /><g
                id="g156"
                inkscape:label="wheelset"><use
                  x="0"
