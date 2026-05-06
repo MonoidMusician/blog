@@ -7,11 +7,14 @@ module Control.Monad.Cell.Basics where
 import Prelude
 
 import Control.Monad.Error.Class (class MonadError, class MonadThrow)
-import Control.Monad.Reader (class MonadAsk, class MonadReader, class MonadTrans, ReaderT(..), ask, local)
+import Control.Monad.Except (ExceptT)
+import Control.Monad.Identity.Trans (IdentityT)
+import Control.Monad.MutStateT (MutStateT)
+import Control.Monad.Reader (class MonadAsk, class MonadReader, class MonadTrans, ReaderT(..), ask, lift, local)
 import Control.Monad.ST (ST)
 import Control.Monad.ST.Internal as STRef
-import Control.Monad.State (class MonadState)
-import Control.Monad.Writer (class MonadTell, class MonadWriter)
+import Control.Monad.State (class MonadState, StateT)
+import Control.Monad.Writer (class MonadTell, class MonadWriter, WriterT)
 import Data.Either (Either(..))
 import Data.Pair (Pair(..))
 import Data.Tuple (Tuple(..))
@@ -21,6 +24,7 @@ import Effect.Aff as Aff
 import Effect.Aff.Class (class MonadAff)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Ref as Ref
+import Uncurried.RWSET (RWSET)
 
 
 -- | This is an abstract interface to a simple mutable cell.
@@ -243,3 +247,14 @@ instance monadStateCellfie :: Monad m => MonadState s (Cellfie s m) where
 
 derive newtype instance semigroupCellfie :: (Semigroup a, Apply m) => Semigroup (Cellfie v m a)
 derive newtype instance monoidCellfie :: (Monoid a, Applicative m) => Monoid (Cellfie v m a)
+
+
+
+instance Cellular m => Cellular (StateT s m) where _mintCell = _mintCell >>> lift >>> map (liftCell lift)
+instance Cellular m => Cellular (ReaderT r m) where _mintCell = _mintCell >>> lift >>> map (liftCell lift)
+instance Cellular m => Cellular (ExceptT e m) where _mintCell = _mintCell >>> lift >>> map (liftCell lift)
+instance Cellular m => Cellular (IdentityT m) where _mintCell = _mintCell >>> lift >>> map (liftCell lift)
+instance Cellular m => Cellular (MutStateT s m) where _mintCell = _mintCell >>> lift >>> map (liftCell lift)
+instance (Cellular m, Monoid w) => Cellular (WriterT w m) where _mintCell = _mintCell >>> lift >>> map (liftCell lift)
+instance (Cellular m, Monoid w) => Cellular (RWSET r w s e m) where _mintCell = _mintCell >>> lift >>> map (liftCell lift)
+

@@ -4,8 +4,10 @@ import Control.Monad.ResourceT
 
 import Control.Monad.Error.Class (class MonadError, catchError, throwError)
 import Control.Monad.Except (ExceptT, mapExceptT)
+import Control.Monad.Identity.Trans (IdentityT, mapIdentityT)
 import Control.Monad.MutStateT (MutStateT, mapMutStateT)
 import Control.Monad.Reader (ReaderT, mapReaderT)
+import Control.Monad.Rec.Class (class MonadRec)
 import Control.Monad.State (StateT, mapStateT)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (WriterT, mapWriterT)
@@ -17,6 +19,7 @@ import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Ref as Ref
 import Prelude (class Monoid, type (~>), Unit, bind, discard, join, map, pure, unit, void, zero, (*>), (<#>), (<$), (<$>), (<*), (<<<), (<=<), (=<<), (>>=), (>>>))
+import Uncurried.RWSET (RWSET, mapRWSET)
 
 class MonadEffect m <= MonadResource m where
   selfScope :: m Scope
@@ -147,3 +150,9 @@ instance MonadResource m => MonadResource (ExceptT e m) where
 instance MonadResource m => MonadResource (MutStateT r m) where
   selfScope = lift selfScope
   _inScope scope = mapMutStateT (_inScope scope)
+instance (Monoid w, MonadResource m, MonadRec m) => MonadResource (RWSET r w s e m) where
+  selfScope = lift selfScope
+  _inScope scope = mapRWSET (_inScope scope)
+instance MonadResource m => MonadResource (IdentityT m) where
+  selfScope = lift selfScope
+  _inScope scope = mapIdentityT (_inScope scope)

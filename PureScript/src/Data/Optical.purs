@@ -47,6 +47,22 @@ findAt ::
   path -> m (Maybe a)
 findAt path = gets (preview (_Optic @path @_ @s @s path))
 
+ofAt ::
+  forall path s a m z.
+    MonadState s m =>
+    Optical path (Forget a) s s a a =>
+  (a -> z) -> path -> m z
+ofAt f path = gets (f <<< view (_Optic @path @_ @s @s path))
+infix 1 ofAt as $@
+
+fromAt ::
+  forall path s a m z.
+    MonadState s m =>
+    Optical path (Forget a) s s a a =>
+  path -> (a -> z) -> m z
+fromAt = flip ofAt
+infix 1 fromAt as @#
+
 setAt ::
   forall path s a m.
     MonadState s m =>
@@ -93,12 +109,21 @@ trySwapModifyAt ::
   path -> (a -> a) -> m (Maybe a)
 trySwapModifyAt path fn = findAt path <* modifyAt path fn
 
+appendAt ::
+  forall path s a m.
+    MonadState s m =>
+    Optical path (->) s s a a =>
+    Monoid a =>
+  path -> a -> m Unit
+appendAt path value = modifyAt path (_ <> value)
+
 infix 1 setAt as @=
 infix 1 swapAt as <@=
 infix 1 trySwapAt as <?@=
 infix 1 modifyAt as @~
 infix 1 swapModifyAt as <@~
 infix 1 trySwapModifyAt as <?@~
+infix 1 appendAt as @<>
 
 
 
@@ -173,7 +198,6 @@ else instance
   ( IsSymbol key
   , Row.Cons key a inner s
   , Row.Cons key b inner t
-  , Row.Lacks key inner
   , Strong p
   ) => OpticalProxy Symbol ((key) :: Symbol) p (Record s) (Record t) a b where
   _Optic_Proxy key = prop key

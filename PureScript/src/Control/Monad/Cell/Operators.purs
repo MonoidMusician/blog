@@ -30,4 +30,7 @@ swapifyCell :: forall ops m v. Functor m => { modify :: Modify m v | ops } -> (v
 swapifyCell { modify: Modify modify } fn = _.info <$> modify \prev -> Tuple (fn prev) prev
 infix 1 swapifyCell as <&~
 
+appendCell :: forall ops m v r. Functor m => Monoid v => { update :: (v -> v) -> m r | ops } -> v -> m Unit
+appendCell { update } value = void do update (_ <> value)
+infix 1 appendCell as &<>
 

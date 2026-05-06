@@ -6,9 +6,9 @@ import Control.Alternative (guard)
 import Control.Comonad (extract)
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Reader (ask)
-import Control.Monad.ResourceM (destr, inSubScope, selfDestructor)
+import Control.Monad.ResourceM (inSubScope, selfDestructor)
 import Control.Monad.ResourceT (Dir(..), ResourceM)
-import Control.Monad.State (class MonadState, State, execState, get, gets, modify_)
+import Control.Monad.State (class MonadState, State, execState, get)
 import Control.Monad.Writer (class MonadWriter, censor, tell)
 import Control.Plus (empty, (<|>))
 import Data.Array as Array
@@ -41,6 +41,7 @@ import Data.Monoid.Conj (Conj(..))
 import Data.Newtype (un, unwrap, wrap)
 import Data.NonEmpty ((:|))
 import Data.Number as Math
+import Data.Optical ((@<>), (@=))
 import Data.Ord (abs)
 import Data.Ord.Max (Max(..))
 import Data.Ord.Min (Min(..))
@@ -827,7 +828,7 @@ renderTraintle cmds = D.Egg do
     ]
 
 setProp :: forall @sym t r r' m. MonadState (Record r) m => IsSymbol sym => Row.Cons sym t r' r => t -> m Unit
-setProp v = modify_ $ L.set (prop (Proxy :: Proxy sym)) v
+setProp v = Proxy @sym @= v
 
 tellR :: forall w m. MonadWriter w m => (w -> w) -> m Unit
 tellR f = tell $ f (mempty :: w)
@@ -965,10 +966,10 @@ renderAligned cmd = do
       { pos, library } <- get
       case findCurve { pos: reversies pos, radius } library of
         Just segment@(Pair fwd _) -> do
-          modify_ $ (prop (Proxy @"path") <<< prop (Proxy @"commands"))
-            (_ <> ("C" <> intercalateMap " " (intercalateMap "," show) (Array.drop 1 $ Array.fromFoldable $ canonCurve segment)))
-          modify_ $ (prop (Proxy @"path") <<< prop (Proxy @"segments")) $ (_ <> [ segment ])
-          setProp @"pos" case fwd of
+          Proxy @"path" /\ Proxy @"commands" @<>
+            ("C" <> intercalateMap " " (intercalateMap "," show) (Array.drop 1 $ Array.fromFoldable $ canonCurve segment))
+          Proxy @"path" /\ Proxy @"segments" @<> [ segment ]
+          Proxy @"pos" @= case fwd of
             { pos: Pair _ arrived } -> reversies arrived
         Nothing -> throwError "Could not find appropriate segment"
 
