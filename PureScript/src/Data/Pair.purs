@@ -63,3 +63,6 @@ instance FoldableWithIndex Boolean Pair where
   foldMapWithIndex f (Pair a b) = f false a <> f true b
 instance TraversableWithIndex Boolean Pair where
   traverseWithIndex f (Pair a b) = Pair <$> f false a <*> f true b
+
+instance (Show t) => Show (Pair t) where
+  show (Pair a b) = "(Pair " <> show a <> " " <> show b <> ")"

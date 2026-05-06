@@ -249,6 +249,9 @@ a = html_"a" :: forall flow. Array (Stream flow AttrProp) -> Dragon -> Dragon
 aW :: forall flow. String -> Array (Stream flow AttrProp) -> Dragon -> Dragon
 aW href attrs = a :@href :~attrs
 
+xlink_href :: forall t. AttrType t => t -> AttrProp
+xlink_href = Attr (Just xlinkNS) (AttrName "xlink:href") <<< attrType
+
 --------------------------------------------------------------------------------
 -- | ## Elements with attributes but no children                            | --
 --------------------------------------------------------------------------------
@@ -604,8 +607,14 @@ instance attrableBoolean :: (Monoid o, WithSep o, Applicative m) => Attrable Boo
     then mkAttr k unit
     else pure mempty
 
-instance attrableWithStep :: (WithSep o, Applicative m) => Attrable String m o where
+instance attrableWithSep :: (WithSep o, Applicative m) => Attrable String m o where
   mkAttr k v = pure (withSeps k (withoutSep v))
+
+instance attrableNumber :: (WithSep o, Applicative m) => Attrable Number m o where
+  mkAttr k = mkAttr k <<< Prelude.show
+
+instance attrableInt :: (WithSep o, Applicative m) => Attrable Int m o where
+  mkAttr k = mkAttr k <<< Prelude.show
 
 instance attrableStylish :: (Applicative m) => Attrable Stylish m Stylish where
   mkAttr k v = pure (withSeps k v)

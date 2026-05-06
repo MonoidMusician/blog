@@ -17,11 +17,13 @@ import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Class (liftEffect)
+import Effect.Class.Console as Console
+import Effect.Random (random)
 import Idiolect (filterFst, nonEmpty, withIndices, (>==))
 import Riverdragon.Dragon (AttrProp, Dragon(..), renderElSt)
 import Riverdragon.Dragon.Bones (($$), ($~~), (.$), (.$$), (.$$~), (.<>), (:.), (:~), (<:>), (=!=), (=:=), (=?=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.River (Lake, River, Stream, createRiverStore, instantiate, limitTo, makeLake, oneStream, store)
+import Riverdragon.River (Lake, River, Stream, createRiverStore, createStore, instantiate, limitTo, makeLake, oneStream, singleShot, store)
 import Riverdragon.River as River
 import Riverdragon.River.Bed (eventListener, rolling)
 import Riverdragon.River.Beyond (delay, withLast)
@@ -52,7 +54,12 @@ instantiateListenInput includeFirst id = _.stream <$> instantiate (listenInput i
 
 vanishing :: Milliseconds -> Lake Dragon -> Lake Dragon
 vanishing ms stream = stream <#> \element -> Replacing do
-  pure element <|> limitTo 1 (delay ms (pure (mempty :: Dragon)))
+  pure element <|> singleShot (delay ms (pure (mempty :: Dragon)))
+
+deletable :: forall m. MonadResource m => Dragon -> m Dragon
+deletable = createStore >=> \{ stream, send, destroy } -> do
+  destr $ send mempty *> destroy
+  pure $ D.Replacing stream
 
 -- | View an array stream as a live array of DOM nodes, such that they are only
 -- | created and deleted at the end of the DOM fragment, and each update goes to

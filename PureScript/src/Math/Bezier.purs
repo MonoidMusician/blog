@@ -15,6 +15,7 @@ import Data.Foldable (all, any, foldMap)
 import Data.Maybe (Maybe(..), fromMaybe')
 import Data.Newtype (unwrap)
 import Data.Number as Math
+import Data.Number as Number
 import Data.Ord.Max (Max(..))
 import Data.Ord.Min (Min(..))
 import Data.Pair (Pair(..))
@@ -24,6 +25,7 @@ import Data.Semigroup.Traversable (class Traversable1)
 import Data.Set.NonEmpty (NonEmptySet)
 import Data.Set.NonEmpty as NES
 import Data.Tuple (Tuple(..))
+import Debug (spy)
 import Idiolect (incorporate, only, unsafeFromMaybe, (/|\), (<#?), (<#?>), (>==))
 import Monoids.BoundsWith (BoundsWith(..), MaxWith(..), MinWith(..), BoundsWithNES)
 import Monoids.BoundsWith as Bounds
@@ -246,6 +248,7 @@ instance Bezier Bez3 where
   splitB = _splitB
 
 
+-- TODO: reduce duplicate points
 intersect :: B32 -> B32 -> Array (Pair { t :: Number, p :: V2 })
 intersect _p _q =
   go
@@ -275,6 +278,32 @@ intersect _p _q =
       p' <- bisect pt /|\ bisect p # \(Pair p0 p1) -> [p0, p1]
       q' <- bisect qt /|\ bisect q # \(Pair q0 q1) -> [q0, q1]
       go p' q'
+
+doesIntersect :: B32 -> B32 -> Boolean
+doesIntersect _p _q =
+  go
+    -- Track the time intervals along with the curve at those spots
+    (Tuple (B1 (V1 0.0) (V1 1.0)) _p)
+    (Tuple (B1 (V1 0.0) (V1 1.0)) _q)
+  where
+  -- Largest dimension of box
+  mag (V2 bx by) = max (unwrap bx.max - unwrap bx.min) (unwrap by.max - unwrap by.min)
+
+  go :: Tuple B11 B32 -> Tuple B11 B32 -> Boolean
+  go (Tuple pt p) (Tuple qt q) =
+    let
+      -- Use approximate bounding box
+      bbp = getBounds p
+      bbq = getBounds q
+    in if disjointBounds bbp bbq then false else
+    if max (mag bbp) (mag bbq) < epsilon
+    then true
+    else do
+      -- Bisect the time intervals and the curves themselves
+      let
+        Pair p0 p1 = bisect pt /|\ bisect p
+        Pair q0 q1 = bisect qt /|\ bisect q
+      go p0 q0 || go p0 q1 || go p1 q0 || go p1 q1
 
 sameCurve :: B32 -> B32 -> Maybe (Afn1 V2)
 sameCurve p q =
@@ -383,8 +412,8 @@ fit { p0, p1, d0: d0', d1: d1', k0, k1 } = do
       r1 = 1.5 * (((d0xδp / δpxd1) / (d0xd1 / k1)) / (d0xd1 / d0xδp))
       c0 = Poly4 (r1 - 1.0) 1.0 (-2.0*r1*r0) 0.0 (r1*(r0*r0))
       c1 = Poly4 (r0 - 1.0) 1.0 (-2.0*r0*r1) 0.0 (r0*(r1*r1))
-      ρ0s = Array.fromFoldable $ solve4 c0
-      ρ1s = Array.fromFoldable $ solve4 c1
+      ρ0s = Array.nub $ Array.filter (Number.isFinite) $ Array.fromFoldable $ solve4 c0
+      ρ1s = Array.nub $ Array.filter (Number.isFinite) $ Array.fromFoldable $ solve4 c1
 
       ρρs0 = ρ0s <#> \ρ0 -> Pair ρ0 (1.0 - r0*(ρ0*ρ0))
       ρρs1 = ρ1s <#> \ρ1 -> Pair (1.0 - r1*(ρ1*ρ1)) ρ1
@@ -397,5 +426,40 @@ fit { p0, p1, d0: d0', d1: d1', k0, k1 } = do
       try xs ys = if Array.null xs then ys else xs
       select f = try (Array.filter f δs)
       priorities = Array.foldr select δs
+      -- _ = spy "fit" { p0, p1, d0, d1, k0, k1, r0, r1, c0, c1, ρ0s, ρ1s, ρρs0, ρρs1, ρρs2, ρs, δs }
     priorities [ all nonneg, all near, any nonneg, any near ]
   pure $ B3 p0 (p0 <>+ δ0 .* d0) (δ1 .* d1 -<> p1) p1
+
+bezierCircle :: Array B32
+bezierCircle =
+  [
+  --   B3 (V2 1.0 0.0) (V2 1.0 0.265216) (V2 0.894643 0.51957) (V2 Math.sqrt2 Math.sqrt2)
+  -- , B3 (V2 Math.sqrt2 Math.sqrt2) (V2 0.51957 0.894643) (V2 0.265216 1.0) (V2 0.0 1.0)
+  -- , B3 (V2 0.0 1.0) (V2 (-0.265216) 1.0) (V2 (-0.51957) 0.894643) (V2 (-Math.sqrt2) Math.sqrt2)
+  -- , B3 (V2 (-Math.sqrt2) Math.sqrt2) (V2 (-0.894643) 0.51957) (V2 (-1.0) 0.265216) (V2 (-1.0) 0.0)
+  -- , B3 (V2 (-1.0) 0.0) (V2 (-1.0) (-0.265216)) (V2 (-0.894643) (-0.51957)) (V2 (-Math.sqrt2) (-Math.sqrt2))
+  -- , B3 (V2 (-Math.sqrt2) (-Math.sqrt2)) (V2 (-0.51957) (-0.894643)) (V2 (-0.265216) (-1.0)) (V2 0.0 (-1.0))
+  -- , B3 (V2 0.0 (-1.0)) (V2 0.265216 (-1.0)) (V2 0.51957 (-0.894643)) (V2 Math.sqrt2 (-Math.sqrt2))
+  -- , B3 (V2 Math.sqrt2 (-Math.sqrt2)) (V2 0.894643 (-0.51957)) (V2 1.0 (-0.265216)) (V2 1.0 0.0)
+  seg 0.0 (-1.0) (-0.404462) (-1.0) (-0.769099) (-0.756358) (-0.92388) (-0.382683)
+  , seg (-0.92388) (-0.382683) (-1.07866) (-0.00900904) (-0.993105) 0.421109 (-0.707107) 0.707107
+  , seg (-0.707107) 0.707107 (-0.421109) 0.993105 0.00900904 1.07866 0.382683 0.92388
+  , seg 0.382683 0.92388 0.756358 0.769099 1.0 0.404462 1.0 0.0
+  , seg 1.0 0.0 1.0 (-0.265216) 0.894643 (-0.51957) 0.707107 (-0.707107)
+  , seg 0.707107 (-0.707107) 0.51957 (-0.894643) 0.265216 (-1.0) 0.0 (-1.0)
+  ]
+  where
+  seg x0 y0 x1 y1 x2 y2 x3 y3 = B3 (V2 x0 y0) (V2 x1 y1) (V2 x2 y2) (V2 x3 y3)
+
+intersectCircle :: { p :: V2, r :: Number } -> B32 -> Array
+  { t :: Number, p :: V2, radians :: Radians, degrees :: Degrees }
+intersectCircle { p: center, r } curve =
+  let
+    mkCircle = translate2 center <. scale r
+    circle = LTF (LTF mkCircle) $* bezierCircle
+  in circle >>= \arc -> do
+    Pair _ { p, t } <- intersect arc curve
+    let
+      V2 dx dy = center -<> p
+      radians = Math.atan2 dy dx
+    pure { p, t, radians, degrees: radians * r2d }

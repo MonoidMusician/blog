@@ -2,6 +2,8 @@ module Monoids.BoundsWith where
 
 import Prelude
 
+import Control.Comonad (class Comonad)
+import Control.Extend (class Extend, extend)
 import Data.Bifunctor (class Bifunctor)
 import Data.Distributive (class Distributive, collect)
 import Data.Foldable (class Foldable, any, fold)
@@ -55,6 +57,15 @@ derive instance (Eq ord, Eq meta) => Eq (BoundsWith ord meta)
 derive instance (Ord ord, Ord meta) => Ord (MinWith ord meta)
 derive instance (Ord ord, Ord meta) => Ord (MaxWith ord meta)
 derive instance (Ord ord, Ord meta) => Ord (BoundsWith ord meta)
+
+instance Extend (MinWith ord) where
+  extend f r@(MinWith ord _) = MinWith ord (f r)
+instance Extend (MaxWith ord) where
+  extend f r@(MaxWith ord _) = MaxWith ord (f r)
+instance Comonad (MinWith ord) where
+  extract (MinWith _ meta) = meta
+instance Comonad (MaxWith ord) where
+  extract (MaxWith _ meta) = meta
 
 mkBound :: forall @meta @ord. meta -> ord -> BoundsWith ord meta
 mkBound meta ord = BoundsWith (MinWith ord meta) (MaxWith ord meta)

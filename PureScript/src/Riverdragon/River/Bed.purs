@@ -446,20 +446,20 @@ prealloc2 defaultL defaultR =
       , swapR: \v -> swapSTR refR v
       }
 
-refc :: Allocar
+refcounting :: Allocar
   { get :: Allocar Int
   , set :: Int -> Allocar Unit
   , incr :: Allocar Unit
-  , decr :: Allocar Unit
+  , decr :: Allocar Int
   , delta :: Int -> Allocar Unit
   , bracket :: Aff ~> Aff
   }
-refc = prealloc 0 <#> \{ get, set } ->
+refcounting = prealloc 0 <#> \{ get, set } ->
   let delta d = set <<< (_ + d) =<< get in
   { get: get
   , set: set
   , incr: delta 1
-  , decr: delta (-1)
+  , decr: delta (-1) *> get
   , delta
   , bracket:
     (\act -> Aff.bracket (liftEffect $ delta 1) (const (liftEffect $ delta (-1))) (const act)) :: Aff ~> Aff

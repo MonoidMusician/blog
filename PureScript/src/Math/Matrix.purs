@@ -529,6 +529,19 @@ justBound = Just <<< mkBound
 overBounds :: forall s s'. (s -> s') -> Bounds s -> Bounds s'
 overBounds f { min: Min s0, max: Max s1 } = { min: Min (f s0), max: Max (f s1) }
 
+-- corners :: forall f. Foldable1 f => f (Bounds s) -> NonEmptyArray (f Number)
+-- corners = ?help
+
+-- tfBounds :: forall t s. Transforms t s => t -> Bounds s -> Bounds s
+-- tfBounds t = overBounds (tf t)
+
+corners :: forall s. Vec2 (Bounds s) -> NonEmptyArray (Vec2 s)
+corners (V2 { min: Min mx, max: Max mX } { min: Min my, max: Max mY }) =
+  NEA.cons' (V2 mx my) [ V2 mx mY, V2 mX my, V2 mX mY ]
+
+tfBounds :: forall t s. Transforms t (Vec2 s) => Ord s => t -> Vec2 (Bounds s) -> Vec2 (Bounds s)
+tfBounds t = getBounds <<< map (tf t) <<< corners
+
 getBounds :: forall @f @g @s. Distributive f => Functor g => Foldable1 g => Ord s => g (f s) -> f (Bounds s)
 getBounds = collect (map mkBound) >>> map fold1
 

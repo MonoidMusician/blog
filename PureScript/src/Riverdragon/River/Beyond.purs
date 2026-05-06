@@ -3,8 +3,8 @@ module Riverdragon.River.Beyond where
 import Prelude
 
 import Control.Alt ((<|>))
-import Control.Monad.ResourceM (class MonadResource, track)
-import Control.Monad.ResourceT (start)
+import Control.Monad.ResourceM (class MonadResource, _addWaiters, _inScope, addDestructor, inSubScope, selfScope, track)
+import Control.Monad.ResourceT (ResourceM, Scope(..), Waiters, _destructor, _shareWaiters, mkSubscope, start)
 import Data.Array as Array
 import Data.DateTime.Instant (Instant)
 import Data.DateTime.Instant as Instant
@@ -23,13 +23,14 @@ import Effect (Effect, foreachE, whileE)
 import Effect.Aff (Aff)
 import Effect.Aff as Aff
 import Effect.Class (liftEffect)
+import Effect.Class.Console as Console
 import Effect.Now (now)
 import Effect.Timer (clearInterval, clearTimeout, setInterval, setTimeout)
 import Partial.Unsafe (unsafePartial)
 import Riverdragon.Dragon.Breath (microtask)
 import Riverdragon.River (Allocar, Lake, River, Stream, allStreams, dam, fixPrjBurst, foldStream, mailboxRiver, makeLake, makeLake', mapAl, oneStream, singleShot, statefulStream, subscribeIsh, unsafeCopyFlowing, withInstantiated, (<?*>), (>>~))
 import Riverdragon.River as River
-import Riverdragon.River.Bed (breaker, eventListener, freshId, ordMap, prealloc, pushArray, requestAnimationFrame)
+import Riverdragon.River.Bed (accumulator, breaker, eventListener, freshId, ordMap, prealloc, pushArray, refcounting, requestAnimationFrame)
 import Web.DOM.Element as Element
 import Web.Event.Event (EventType(..))
 import Web.Event.Event as Event
@@ -398,3 +399,35 @@ devicePixelRatio = River.mayMemoize $ River.unsafeRiver $
   makeLake \cb -> void $ track do
     cb =<< _devicePixelRatio.now
     { destroy: _ } <$> _devicePixelRatio.subscribe cb
+
+instanced :: forall resource m. MonadResource m => m resource -> ResourceM (m resource)
+instanced createAndDestroy = do
+  status <- liftEffect do prealloc (Nothing :: Maybe { resource :: resource, waiters :: Waiters, destroy :: Effect Unit })
+  refc <- liftEffect do refcounting
+  parentScope <- selfScope
+  let
+    attach { resource, waiters, destroy } = do
+      liftEffect refc.incr
+      _addWaiters waiters
+      addDestructor do
+        liftEffect refc.decr >>= case _ of
+          0 -> liftEffect destroy
+          _ -> pure unit
+      pure resource
+  pure do
+    currentStatus <- liftEffect do status.get
+    case currentStatus of
+      Just resourceGotten -> do
+        attach resourceGotten
+      Nothing -> do
+        -- Create a custom scope off of the parent scope
+        recordWaiters <- liftEffect accumulator
+        customScope@(Scope { destroy }) <- mkSubscope "instanced" parentScope
+          <#> \(Scope scope) -> Scope scope { putWaiters = scope.putWaiters <> recordWaiters.put }
+        -- Run the creation below the parent scope
+        resource <- _inScope customScope do
+          createAndDestroy
+        waiters <- liftEffect do _shareWaiters =<< recordWaiters.reset
+        liftEffect do status.set (Just { resource, waiters, destroy })
+        -- Then make sure this client scope is attached to it too
+        attach { resource, waiters, destroy }

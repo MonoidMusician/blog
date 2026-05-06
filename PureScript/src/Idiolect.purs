@@ -16,7 +16,7 @@ import Data.Distributive (class Distributive, distribute)
 import Data.Either (Either(..))
 import Data.Either.Nested (type (\/))
 import Data.Filterable (class Filterable, filter, filterMap, partitionMap)
-import Data.Foldable (class Foldable, fold, foldMap, intercalate, oneOfMap)
+import Data.Foldable (class Foldable, fold, foldMap, intercalate, maximumBy, minimumBy, oneOfMap)
 import Data.FoldableWithIndex (class FoldableWithIndex, foldMapWithIndex)
 import Data.Function (on)
 import Data.Functor (mapFlipped)
@@ -265,6 +265,12 @@ filterKey _ p r
   = Just (Record.get (Proxy :: Proxy k') r)
 filterKey _ _ _ = Nothing
 
+minimumWith :: forall f a b. Foldable f => Ord b => (a -> b) -> f a -> Maybe a
+minimumWith k = minimumBy (\x y -> k x `compare` k y)
+
+maximumWith :: forall f a b. Foldable f => Ord b => (a -> b) -> f a -> Maybe a
+maximumWith k = maximumBy (\x y -> k x `compare` k y)
+
 between :: forall a. Ord a => a -> a -> (a -> Boolean)
 between lo hi val = lo <= val && val <= hi
 
@@ -307,3 +313,6 @@ cube x = x * x * x
 
 sgn :: forall @i @o. Semiring i => Ord i => Ring o => i -> o
 sgn i = if i == zero then zero else if i > zero then one else negate one
+
+insteadOf :: forall @t. t -> t -> t
+insteadOf = const
