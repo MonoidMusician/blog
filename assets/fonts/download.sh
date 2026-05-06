@@ -50,7 +50,7 @@ bash google-font-download --format woff2 -o Sofia.css "Sofia":400 -l latin
 bash google-font-download --format woff2 -o Amaranth.css "Amaranth":{400,700}{,i} -l latin
 bash google-font-download --format woff2 -o EB_Garamond_GR.css "EB Garamond":{400,700}{,i} -l "$(echo greek{,-ext} | tr ' ' ',')"
 bash google-font-download --format woff2 -o Fira_Sans_GR.css "Fira Sans":{400,700}{,i} -l "$(echo greek{,-ext} | tr ' ' ',')"
-
+bash google-font-download --format woff2 -o Petit_Formal_Script.css "Petit Formal Script":400 -l latin
 
 popd
 

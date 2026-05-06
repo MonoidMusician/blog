@@ -21,7 +21,7 @@ import Idiolect (filterFst, nonEmpty, withIndices, (>==))
 import Riverdragon.Dragon (AttrProp, Dragon(..), renderElSt)
 import Riverdragon.Dragon.Bones (($$), ($~~), (.$), (.$$), (.$$~), (.<>), (:.), (:~), (<:>), (=!=), (=:=), (=?=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.River (Lake, Stream, River, createRiverStore, instantiate, limitTo, makeLake, oneStream)
+import Riverdragon.River (Lake, River, Stream, createRiverStore, instantiate, limitTo, makeLake, oneStream, store)
 import Riverdragon.River as River
 import Riverdragon.River.Bed (eventListener, rolling)
 import Riverdragon.River.Beyond (delay, withLast)
@@ -65,7 +65,7 @@ liveArray :: forall flow r. Stream flow (Array r) -> (Int -> River r -> Dragon) 
 liveArray itemsStream render = Egg do
   -- Create a `River` here since we will listen to it multiple times
   -- and want to see the same events
-  { burst, stream } <- instantiate itemsStream
+  { burst, stream } <- store itemsStream
   let
     -- | Include the burst only here, to kick off `addingItems`.
     startItems :: River (Array r)

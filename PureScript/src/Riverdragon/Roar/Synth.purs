@@ -18,7 +18,7 @@ import Effect.Class.Console as Console
 import Riverdragon.Dragon (Dragon)
 import Riverdragon.Dragon.Bones ((=:=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.River (Lake, River, Stream, createRiver, createRiverStore, instantiate, mailboxRiver, stillRiver, whileJust, (/?*\))
+import Riverdragon.River (Lake, River, Stream, createRiver, createRiverStore, mailboxRiver, stillRiver, store, whileJust, (/?*\))
 import Riverdragon.River as River
 import Riverdragon.River.Beyond (KeyPhase(..), fallingLeaves, keyEvents)
 import Riverdragon.Roar.Score (ScoreM, performM, scoreScope)
@@ -202,7 +202,7 @@ synthInputs sendNote = do
   River.subscribeM midiMessages.stream case _ of
     [0x90, note, velocity] -> do
       -- Track aftertouch values until the note is released
-      { stream: aftertouch } <- instantiate $ whileJust $ aftertouchFor note
+      { stream: aftertouch } <- store $ whileJust $ aftertouchFor note
       let event = { key: note, pressed: velocity > 0, velocity: if velocity > 0 then Just velocity else Nothing, aftertouch }
       liftEffect do sendNote event
     [0x80, note, velocity] -> do

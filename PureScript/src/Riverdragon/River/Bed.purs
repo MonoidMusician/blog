@@ -147,9 +147,8 @@ infix 1 swapSTR as <&=
 modifySTR :: forall v. STRef Global v -> (v -> v) -> Allocar Unit
 modifySTR r fn = liftST do void do STRef.modify fn r
 infix 1 modifySTR as &~
-swapifySTR :: forall v. STRef Global v -> (v -> v) -> Allocar Unit
-swapifySTR r fn = liftST do
-  void do STRef.modify' (\value -> { state: fn value, value }) r
+swapifySTR :: forall v. STRef Global v -> (v -> v) -> Allocar v
+swapifySTR r fn = liftST do STRef.modify' (\value -> { state: fn value, value }) r
 infix 1 swapifySTR as <&~
 
 -- | Cleanup means it only runs once!

@@ -16,7 +16,7 @@ A programming language syntax with good parsability and prosody, hopefully.
 - General structure / design philosophy:
   - `[…]`{.tmttmt} for vectors
   - `{…}`{.tmttmt} for hashes/records
-    - `{. K=V … .}`{.tmttmt} for hashes, which allow implicit weakening
+    - `{. K=V … .}`{.tmttmt} or `{… K=V … …}`{.tmttmt} for hashes, which allow implicit weakening
       - [e.g.]{t=} `{. type="error" error=$$ .} | {. type="result" value=$ .}`{.tmttmt}
     - `{ K=V … }`{.tmttmt} for records, which allow matching on the exact field names
       - [e.g.]{t=} `{ error=$$ } | { result=$ }`{.tmttmt}
@@ -251,15 +251,17 @@ annotation_term (< any_balanced_syntax) =
   | '('  'stmt' ':' stmt  ')'
   | '('  'tm'   ':' tm    ')'
   | '('  'ty'   ':' ty    ')'
-  | '(' 'json'  ':' json  ')'
+  | '('  'json' ':' json  ')'
   | '(' '*name' ':' name* ')'
   | '(' '*stmt' ':' stmt* ')'
   | '(' '*tm'   ':' tm*   ')'
   | '(' '*ty'   ':' ty*   ')'
+  | '(' '*json' ':' json  ')'
   | '(' '+name' ':' name+ ')'
   | '(' '+stmt' ':' stmt+ ')'
   | '(' '+tm'   ':' tm+   ')'
   | '(' '+ty'   ':' ty+   ')'
+  | '(' '+json' ':' json  ')'
 
 
 ## Annotation or type annotation
@@ -397,3 +399,9 @@ build-options-with-monad: { X=X Y=Y args=args } => options:
 `@comment`{.tmttmt} syntax check, but do not incorporate, the attributed piece of syntax
 
 `@log`{.tmttmt}
+
+
+## Bed
+
+```tmttmt {load-from=assets/js/Riverdragon/Bed.tmt}
+```

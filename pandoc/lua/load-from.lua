@@ -1,7 +1,7 @@
 function CodeBlock(h)
   fname = h.attr.attributes['load-from']
   if fname and not string.find(fname, '../', 1, true) then
-    allowed = { 'assets/misc/', 'assets/files/' }
+    allowed = { 'assets/misc/', 'assets/files/', 'assets/js/' }
     matched = nil
     for _, path in ipairs(allowed) do
       if string.sub(fname, 1, string.len(path)) == path then
