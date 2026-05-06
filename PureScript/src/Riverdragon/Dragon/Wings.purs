@@ -17,13 +17,11 @@ import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Class (liftEffect)
-import Effect.Class.Console as Console
-import Effect.Random (random)
 import Idiolect (filterFst, nonEmpty, withIndices, (>==))
 import Riverdragon.Dragon (AttrProp, Dragon(..), renderElSt)
 import Riverdragon.Dragon.Bones (($$), ($~~), (.$), (.$$), (.$$~), (.<>), (:.), (:~), (<:>), (=!=), (=:=), (=?=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.River (Lake, River, Stream, createRiverStore, createStore, instantiate, limitTo, makeLake, oneStream, singleShot, store)
+import Riverdragon.River (Lake, River, Stream, createRiverStore, createStore, limitTo, makeLake, oneStream, singleShot)
 import Riverdragon.River as River
 import Riverdragon.River.Bed (eventListener, rolling)
 import Riverdragon.River.Beyond (delay, withLast)
@@ -49,8 +47,8 @@ listenInput includeFirst id = makeLake \cb -> do
       , eventTarget: InputElement.toEventTarget el
       } \_ -> cb =<< InputElement.value el
 
-instantiateListenInput :: forall flow m. MonadResource m => Boolean -> ElementId -> m (Stream flow String)
-instantiateListenInput includeFirst id = _.stream <$> instantiate (listenInput includeFirst id)
+storeListenInput :: forall flow m. MonadResource m => Boolean -> ElementId -> m (Stream flow String)
+storeListenInput includeFirst id = _.stream <$> River.store (listenInput includeFirst id)
 
 vanishing :: Milliseconds -> Lake Dragon -> Lake Dragon
 vanishing ms stream = stream <#> \element -> Replacing do
@@ -72,7 +70,7 @@ liveArray :: forall flow r. Stream flow (Array r) -> (Int -> River r -> Dragon) 
 liveArray itemsStream render = Egg do
   -- Create a `River` here since we will listen to it multiple times
   -- and want to see the same events
-  { burst, stream } <- store itemsStream
+  { burst, stream } <- River.store itemsStream
   let
     -- | Include the burst only here, to kick off `addingItems`.
     startItems :: River (Array r)

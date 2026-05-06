@@ -481,6 +481,7 @@ storeLast :: forall a. Allocar
   , run :: (a -!> Unit) -!> Unit
   , set :: a -&> Unit
   , swap :: a -&> Maybe a
+  , clear :: Allocar Unit
   }
 storeLast = newSTR Nothing <#> \ref ->
   { get: getSTR ref
@@ -489,6 +490,7 @@ storeLast = newSTR Nothing <#> \ref ->
       Just v -> f v
   , set: \v -> setSTR ref (Just v)
   , swap: \v -> swapSTR ref (Just v)
+  , clear: setSTR ref Nothing
   }
 
 -- | The variable is only `true` for the lifetime of the function.

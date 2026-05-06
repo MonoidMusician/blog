@@ -3,8 +3,8 @@ module Riverdragon.River.Beyond where
 import Prelude
 
 import Control.Alt ((<|>))
-import Control.Monad.ResourceM (class MonadResource, _addWaiters, _inScope, addDestructor, inSubScope, selfScope, track)
-import Control.Monad.ResourceT (ResourceM, Scope(..), Waiters, _destructor, _shareWaiters, mkSubscope, start)
+import Control.Monad.ResourceM (class MonadResource, _addWaiters, _inScope, addDestructor, selfScope, track)
+import Control.Monad.ResourceT (ResourceM, Scope(..), Waiters, _shareWaiters, mkSubscope, start)
 import Data.Array as Array
 import Data.DateTime.Instant (Instant)
 import Data.DateTime.Instant as Instant
@@ -23,7 +23,6 @@ import Effect (Effect, foreachE, whileE)
 import Effect.Aff (Aff)
 import Effect.Aff as Aff
 import Effect.Class (liftEffect)
-import Effect.Class.Console as Console
 import Effect.Now (now)
 import Effect.Timer (clearInterval, clearTimeout, setInterval, setTimeout)
 import Partial.Unsafe (unsafePartial)

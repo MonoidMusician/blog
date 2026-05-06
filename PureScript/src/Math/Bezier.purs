@@ -248,9 +248,12 @@ instance Bezier Bez3 where
   splitB = _splitB
 
 
--- TODO: reduce duplicate points
 intersect :: B32 -> B32 -> Array (Pair { t :: Number, p :: V2 })
-intersect _p _q =
+intersect = intersectPrec epsilon
+
+-- TODO: reduce duplicate points
+intersectPrec :: Number -> B32 -> B32 -> Array (Pair { t :: Number, p :: V2 })
+intersectPrec prec _p _q =
   go
     -- Track the time intervals along with the curve at those spots
     (Tuple (B1 (V1 0.0) (V1 1.0)) _p)
@@ -270,7 +273,7 @@ intersect _p _q =
       bbp = getBounds p
       bbq = getBounds q
     in if disjointBounds bbp bbq then [] else
-    if max (mag bbp) (mag bbq) < epsilon
+    if max (mag bbp) (mag bbq) < prec
     -- Return middle time, sampling the original curve there
     then [Pair (sample pt _p) (sample qt _q)]
     else do
@@ -451,14 +454,16 @@ bezierCircle =
   where
   seg x0 y0 x1 y1 x2 y2 x3 y3 = B3 (V2 x0 y0) (V2 x1 y1) (V2 x2 y2) (V2 x3 y3)
 
-intersectCircle :: { p :: V2, r :: Number } -> B32 -> Array
-  { t :: Number, p :: V2, radians :: Radians, degrees :: Degrees }
-intersectCircle { p: center, r } curve =
+intersectCirclePrec ::
+  Number -> { p :: V2, r :: Number } -> B32 ->
+  Array
+    { t :: Number, p :: V2, radians :: Radians, degrees :: Degrees }
+intersectCirclePrec prec { p: center, r } curve =
   let
     mkCircle = translate2 center <. scale r
     circle = LTF (LTF mkCircle) $* bezierCircle
   in circle >>= \arc -> do
-    Pair _ { p, t } <- intersect arc curve
+    Pair _ { p, t } <- intersectPrec prec arc curve
     let
       V2 dx dy = center -<> p
       radians = Math.atan2 dy dx

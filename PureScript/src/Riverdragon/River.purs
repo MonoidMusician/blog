@@ -811,11 +811,13 @@ limitTo n (Stream flow setup) = Stream flow \cbs -> do
   setUnsub <- rolling
   receive <- breaker cbs.receive
   commit <- breaker cbs.commit
+  reachedLimit <- prealloc mempty
   let destroyed = receive.trip <> commit.trip <> cbs.destroyed
-  incr <- threshold n (setUnsub mempty <> destroyed)
+  incr <- threshold n $ reachedLimit.set
+    (setUnsub mempty <> destroyed <> reachedLimit.set mempty)
   sub <- setup
-    { receive: receive.run
-    , commit: const incr <> commit.run
+    { receive: receive.run <> const incr
+    , commit: commit.run <> const (join reachedLimit.get)
     , destroyed: destroyed
     }
   setUnsub sub.unsubscribe
@@ -845,7 +847,7 @@ selfGatingEf logic (Stream flow setup) = Stream flow \cbs -> do
   process <- logic (setUnsub mempty <> destroyed)
   sub <- setup $
       { receive: lastValue.set
-      , commit: const $ lastValue.run process
+      , commit: const (lastValue.run process *> lastValue.clear)
       , destroyed: mempty
       }
     <>

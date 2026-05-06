@@ -2,6 +2,7 @@ module Train.Main where
 
 import Prelude
 
+import Control.Alternative (guard)
 import Control.Comonad (extract)
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Reader (ask)
@@ -18,7 +19,7 @@ import Data.CodePoint.Unicode (isAsciiUpper, isDecDigit)
 import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..), either, hush, isLeft)
 import Data.Filterable (filter, filterMap, separate)
-import Data.Foldable (all, any, fold, foldM, foldMap, foldl, intercalate, sum, traverse_)
+import Data.Foldable (all, any, findMap, fold, foldM, foldMap, foldl, for_, intercalate, oneOfMap, sum, traverse_)
 import Data.Foldable as F
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Functor.App (App(..))
@@ -58,7 +59,7 @@ import Data.Time.Duration (Milliseconds(..))
 import Data.Traversable (for, mapAccumL, traverse)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested ((/\))
-import Debug (spy, spyWith)
+import Debug (spy, spyWith, traceM)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
@@ -69,7 +70,7 @@ import Effect.Uncurried (EffectFn2, runEffectFn2)
 import Foreign.Object as FO
 import Idiolect (incorporate, insteadOf, intercalateMap, minimumWith, neighbors, sgn, sqre, withIndices, (#..), (#:..), (#<>), (..$), (<#>:), (<#?>), (<>$), (==<), (>==))
 import Math.Bezier as Bezier
-import Math.Matrix (Afn2(..), B32, BBox2, Bez3(..), Bounds, LTF(..), V2, V3, Vec2(..), Vec3(..), bounds2bounds1, d2r, disjointBounds, dot, inv, mkBound, norm, norm2, normalize, pairs, pairsWith, r2d, rotl2, tf, tfBounds, translate2, unAfn2, ($*), ($.), (+<), (-<>), (.*), (<.), (<>+), (<>-), (<^), (>+))
+import Math.Matrix (Afn2(..), B32, BBox2, Bez1(..), Bez3(..), Bounds, LTF(..), Lin2(..), V2, V3, Vec2(..), Vec3(..), bounds2bounds1, d2r, disjointBounds, dot, inv, mkAfn2, mkBound, norm, norm2, normalize, pairs, pairsWith, r2d, rotl2, tf, tfBounds, tfI, translate2, unAfn2, ($*), ($.), (+<), (-<>), (.*), (<.), (<>+), (<>-), (<^), (>+))
 import Math.Poly (deriv)
 import Monoids.BoundsWith (BoundsWith, MinWith(..))
 import Parser.Comb.Dragon (renderParseError)
@@ -79,7 +80,7 @@ import Prim.Row as Row
 import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones (off_, text, ($$), ($~~), (.$), (.$$), (.$~~), (<:>), (=:=), (>$), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (deletable, sourceCode)
+import Riverdragon.Dragon.Wings (deletable, liveArray, sourceCode)
 import Riverdragon.River (Course(..), Lake, River, coursing, createRiver, createRiverStore, createStore, dam, fix, instantiate, limitTo, makeLake, makeLake', memoize, singleShot, statefulStream, stillRiver, store, subscribe, subscribeM)
 import Riverdragon.River as River
 import Riverdragon.River.Bed (freshId)
@@ -141,7 +142,7 @@ widget { interface } = do
           -- TODO: listen for escape key to cancel?
           pure unit
 
-        { stream: intersections } <- instantiate $ (\(Pair c1 c2) -> Bezier.intersect c1 c2) <$> do
+        { stream: intersections } <- store $ (\(Pair c1 c2) -> Bezier.intersect c1 c2) <$> do
           traverse (traverse _.receive) curves
 
         pure $ fold
@@ -251,7 +252,7 @@ widget { interface } = do
               , k1: 1.0 / ((1.0 / k1) + sgn k1 * delta)
               }
 
-        { stream: possibilities } <- instantiate $ (fit identity <> inner <> outer) <$> do
+        { stream: possibilities } <- store $ (fit identity <> inner <> outer) <$> do
           traverse _.receive curve
 
         pure $ fold
@@ -315,6 +316,7 @@ widget { interface } = do
 type Standard =
   { key :: { from :: Vec2 Int, to :: Vec2 Int, delta :: Vec2 Int }
   , id :: Int
+  , radius :: Int
   , strength :: Pair Number
   , curve :: B32
   , strokes :: Pair B32
@@ -336,28 +338,98 @@ type Standard =
   , beeline :: Number -- norm (p3 <>- p0)
   }
 
+allRadii = [ 7, 13, 21, 27, 41 ]
+
 standardCurves :: Lazy (Map Int Standard)
 standardCurves = defer \_ -> _.library $ flip execState { library: Map.empty } do
-  _ <- standardize { from: V2 1 0, to: V2 2 1, delta: V2 5 1 } curves."0 to 26"
-  _ <- standardize { from: V2 2 1, to: V2 1 1, delta: V2 4 3 } curves."26 to 45"
-  _ <- standardize { from: V2 1 1, to: V2 1 2, delta: V2 3 4 } curves."45 to 64"
-  _ <- standardize { from: V2 1 2, to: V2 0 1, delta: V2 1 5 } curves."64 to 90"
-  _ <- standardize { from: V2 1 0, to: V2 1 1, delta: V2 5 2 } curves."0 to 45"
-  _ <- standardize { from: V2 1 1, to: V2 0 1, delta: V2 2 5 } curves."45 to 90"
-  _ <- standardize { from: V2 2 1, to: V2 1 2, delta: V2 3 3 } curves."26 to 64"
-  _ <- standardize { from: V2 1 2, to: V2 (-1) 2, delta: V2 0 6 } curves."64 to 116"
+  _ <- standardize { from: V2 1 0, to: V2 2 1, delta: V2 5 1 } 13 curves."0 to 26"
+  _ <- standardize { from: V2 2 1, to: V2 1 1, delta: V2 4 3 } 13 curves."26 to 45"
+  -- _ <- standardize { from: V2 1 1, to: V2 1 2, delta: V2 3 4 } 13 curves."45 to 64"
+  -- _ <- standardize { from: V2 1 2, to: V2 0 1, delta: V2 1 5 } 13 curves."64 to 90"
+  _ <- standardize { from: V2 1 0, to: V2 1 1, delta: V2 5 2 } 7 curves."0 to 45"
+  -- _ <- standardize { from: V2 1 1, to: V2 0 1, delta: V2 2 5 } 7 curves."45 to 90"
+  _ <- standardize { from: V2 2 1, to: V2 1 2, delta: V2 3 3 } 7 curves."26 to 64"
+  _ <- standardize { from: V2 1 2, to: V2 (-1) 2, delta: V2 0 6 } 7 curves."64 to 116"
+
+  for_ [ Tuple 21 curves21, Tuple 27 curves27, Tuple 41 curves41 ] \(Tuple radius curve) -> do
+    let
+      deltaFor (B3 _ _ _ p3) = Int.round <<< (_ / 16.0) <$> p3
+    _ <- standardize { from: V2 1 0, to: V2 2 1, delta: deltaFor curve."0 to 26" } radius curve."0 to 26"
+    _ <- standardize { from: V2 2 1, to: V2 1 1, delta: deltaFor curve."26 to 45" } radius curve."26 to 45"
+    pure unit
   pure unit
   where
   curves =
     { "0 to 26": B3 mempty (V2 34.536001 0.0) (V2 59.412619 5.70631) (V2 80.0 16.0)
-    , "64 to 90": B3 mempty (V2 10.29369 20.587381) (V2 16.0 45.463999) (V2 16.0 80.0)
+    -- , "64 to 90": B3 mempty (V2 10.29369 20.587381) (V2 16.0 45.463999) (V2 16.0 80.0)
     , "26 to 45": B3 mempty (V2 20.882696 10.44135) (V2 37.658719 21.65872) (V2 64.0 48.0)
-    , "45 to 64": B3 mempty (V2 26.34128 26.341281) (V2 37.55865 43.117304) (V2 48.0 64.0)
+    -- , "45 to 64": B3 mempty (V2 26.34128 26.341281) (V2 37.55865 43.117304) (V2 48.0 64.0)
     , "0 to 45": B3 mempty (V2 28.921554 0.0) (V2 57.180985 9.18099) (V2 80.0 32.0)
-    , "45 to 90": B3 mempty (V2 22.81901 22.81902) (V2 32.0 51.07845) (V2 32.0 80.0)
+    -- , "45 to 90": B3 mempty (V2 22.81901 22.81902) (V2 32.0 51.07845) (V2 32.0 80.0)
     , "26 to 64": B3 mempty (V2 20.7716 10.3857) (V2 37.6143 27.2284) (V2 48.0 48.0)
     , "64 to 116": B3 mempty (V2 15.1084 30.2167) (V2 15.1084 65.7833) (V2 0.0 96.0)
     }
+  curves21 =
+    { "0 to 26": B3 mempty (V2 74.0603 0.0) (V2 121.167 20.0401) (V2 144.0 32.0)
+    , "26 to 45": B3 mempty (V2 32.568 16.284) (V2 70.7313 38.7313) (V2 96.0 64.0)
+    }
+  curves27 =
+    { "0 to 26": B3 mempty (V2 71.3258 0.0) (V2 147.999 24.9521) (V2 192.0 48.0)
+    , "26 to 45": B3 mempty (V2 46.0583 23.0291) (V2 78.2998 46.2998) (V2 112.0 80.0)
+    }
+  curves41 =
+    { "0 to 26": B3 mempty (V2 91.9714 0.0) (V2 216.015 25.0079) (V2 288.0 64.0)
+    , "26 to 45": B3 mempty (V2 72.4365 36.2181) (V2 142.3 94.2998) (V2 176.0 128.0)
+    }
+
+tfPos :: Afn2 Int -> Pos -> Pos
+tfPos t { at, to } = { at: t $* at, to: r $* to }
+  where Tuple _p r = unAfn2 t
+
+rotations :: forall s. Ring s => Array (Lin2 s)
+rotations = do
+  let rot90 = Lin2 zero (negate one) one zero
+  [ tfI
+  , rot90
+  , rot90 <. rot90
+  , rot90 <. rot90 <. rot90
+  ]
+
+reverseKey ::
+  { from :: Vec2 Int
+  , to :: Vec2 Int
+  , delta :: Vec2 Int
+  } ->
+  Lin2 Int ->
+  { from :: Vec2 Int
+  , to :: Vec2 Int
+  , delta :: Vec2 Int
+  }
+reverseKey { from, to, delta } t =
+  { delta: t $* opp delta, from: t $* opp to, to: t $* opp from }
+  where opp (V2 x y) = V2 y x
+
+findCurve :: { pos :: Pos, radius :: Int } -> Map Int Standard -> Maybe Canonized
+findCurve { pos: { at: start, to: heading }, radius } library = library # findMap \standard -> do
+  guard $ standard.radius == abs radius
+  rotations # findMap \rot0 -> do
+    let rot = rot0 <. if radius > 0 then tfI else Lin2 one zero zero (negate one)
+    guard $ heading == (rot $* standard.key.from)
+    let end = start <> standard.key.delta
+    library # findMap \standard2 -> do
+      rotations # findMap \rot2 -> do
+        guard $ standard2.key == reverseKey standard.key rot2
+        Just $ Pair (makeHere start rot standard) (makeHere end rot2 standard2)
+  where
+  makeHere :: Vec2 Int -> Lin2 Int -> Standard -> _
+  makeHere here rot canon =
+    let
+      transformI = mkAfn2 $ Tuple here rot
+      transform = mkAfn2 $ Tuple (((16.0 * _) <<< Int.toNumber) <$> here) $ Int.toNumber <$> rot
+      pos = tfPos transformI <$> Pair
+        { at: mempty, to: canon.key.from }
+        { at: canon.key.delta, to: canon.key.to }
+    in { canon, pos, transformI, transform }
 
 standardize ::
   forall r m.
@@ -365,9 +437,9 @@ standardize ::
   { from :: Vec2 Int
   , to :: Vec2 Int
   , delta :: Vec2 Int
-  } -> B32 ->
+  } -> Int -> B32 ->
   m Standard
-standardize key curve@(B3 p0 p1 p2 p3) = do
+standardize key radius curve@(B3 p0 p1 p2 p3) = do
   { library } <- get
   case F.find (\r -> r.key == key) library of
     Just r -> pure r
@@ -385,11 +457,21 @@ standardize key curve@(B3 p0 p1 p2 p3) = do
           { accum: { l: l', p: q1 }, value: { pathlength: Pair l l', p: q1, i, t } }
         { accum: { l: pathlength }, value: samples } = mapAccumL trackLength { l: 0.0, p: p0 } basesamples
         beeline = norm (p0 -<> p3)
-        r = { key, id, strength, curve, samples, strokes, bbox, pathlength, beeline }
+        r = { key, id, radius, strength, curve, samples, strokes, bbox, pathlength, beeline }
       setProp @"library" $ Map.insert id r library
+      case key.delta of
+        V2 dx dy | dx /= dy && dx /= 0 && dy /= 0 ->
+          void $ standardize (reverseKey key tfI) radius $
+            (opp p3 <>- _) <<< opp <$> B3 p3 p2 p1 p0
+        _ -> pure unit
+      for_ [ key.from, key.to ] \slope@(V2 dx dy) -> do
+        standardize { delta: 2 .* slope, from: slope, to: slope } 0 $
+          Bezier.castUp $ Bezier.castUp $ B1 mempty $
+            V2 (32.0 * Int.toNumber dx) (32.0 * Int.toNumber dy)
       pure r
+  where opp (V2 x y) = V2 y x
 
-type Canonized =
+type Canonized = Pair
   { canon :: Standard
   , pos :: Pair Pos
   , transform :: Afn2 Number
@@ -405,23 +487,23 @@ newtype Route = Route
 mkRoute :: Array Canonized -> Route
 mkRoute segments =
   let
-    mapper l0 (Tuple i segment) =
-      let l1 = l0 + segment.canon.pathlength in
+    mapper l0 (Tuple i segment@(Pair { canon } _)) =
+      let l1 = l0 + canon.pathlength in
       { accum: l1, value: { segment, i, pathlength: Pair l0 l1 } }
     { accum: pathlength, value: segments } = mapAccumL mapper 0.0 $ withIndices segments
   in Route { pathlength, segments }
 
 canonCurve :: Canonized -> B32
-canonCurve p = tf (LTF p.transform) p.canon.curve
+canonCurve (Pair p _) = tf (LTF p.transform) p.canon.curve
 
 canonStrokeBox :: Canonized -> BBox2 Number
-canonStrokeBox { canon: { bbox: { stroke } }, transform } =
+canonStrokeBox (Pair { canon: { bbox: { stroke } }, transform } _) =
   tfBounds transform stroke
 
 type HitMap = Map (Afn2 Number) (Map (Pair Int) Boolean)
 
 continues :: Canonized -> Canonized -> Maybe Boolean
-continues p q =
+continues (Pair p _) (Pair q _) =
   let
     Tuple pStart prot = unAfn2 p.transformI
     Tuple qStart qrot = unAfn2 q.transformI
@@ -440,7 +522,7 @@ continues p q =
 intersects :: forall m r. MonadState { hitmap :: HitMap | r } m => Pair Canonized -> m Boolean
 intersects (Pair p q) | disjointBounds (canonStrokeBox p) (canonStrokeBox q) = pure false
 intersects (Pair p q) | Just result <- continues p q = pure $ not result
-intersects (Pair p q) = do
+intersects (Pair (Pair p _) (Pair q _)) = do
   { hitmap } <- get
   let relate = p.transform <^ q.transform
   let ids = (Pair p.canon.id q.canon.id)
@@ -478,8 +560,10 @@ dragonEither f g = trackEither >>> map (withHead f ||| withHead g) >>> D.Replaci
   where
   withHead :: forall z. (River z -> Dragon) -> Tuple z (Lake z) -> Dragon
   withHead h (Tuple z zs) = D.Egg do
-    { stream: zz } <- instantiate zs
+    { stream: zz } <- store zs
     pure $ h (pure z <|> zz)
+
+-- trundle
 
 -- wdassssssdaaxdwwwwwwwwwassaxddsssdxasssssdwaaadxwdaxaddaaxwwdxaa
 -- 16dwwwaa16saawww8dxwwwdd16sdd6wdd16sddwww8axwwwaa16saawww
@@ -493,7 +577,7 @@ renderTraintle cmds = D.Egg do
   looping <- River.store do
     everyFrame # River.mapAl \_ -> now <#> unInstant >>> \(Milliseconds t) ->
       let
-        duration = 24.0 * 1000.0
+        duration = 20.0 * 1000.0
         loopPos = (t Math.% (2.0 * duration)) / duration
         loopAndBack = if loopPos <= 1.0 then loopPos else 2.0 - loopPos
       in loopAndBack
@@ -518,7 +602,7 @@ renderTraintle cmds = D.Egg do
       let
         route = mkRoute segments
         canonCurves = canonCurve <$> segments
-        consist = [ 16.0 ] <>$ Array.range 0 1 #.. const [ 64.0, 32.0 ] #<> [ 64.0 ]
+        consist = [ 16.0 ] <>$ Array.range 0 2 #.. const [ 64.0, 32.0 ] #<> [ 64.0 ]
         walkFrom point = walkPaths canonCurves point consist
         seedTrain =
           looping.stream <#> \loopTime ->
@@ -526,13 +610,19 @@ renderTraintle cmds = D.Egg do
               Just { at, to, curvature, i, t } -> { at, to: inv to, curvature, i, t, delta: mempty, distance: zero }
               Nothing -> endPath canonCurves
       in walkFrom <$> seedTrain
+    withTrainUnits = liveArray $ freshTrains <#> \trains -> do
+      NEA.drop 1 trains # pairs # withIndices
+        # filter (Int.even <<< fst)
+        # map snd # neighbors
   pure $ fold
     [ D.svg
       [ D.attr "viewBox" <:> _.viewBox <$> running
       , D.attr "preserveAspectRatio" =:= "xMidYMid meet"
+      , D.classy =:= D.smarts
+        { "full-width": true
+        }
       , D.stylish =:= D.smarts
-        { "width": "1024px"
-        , "height": "512px"
+        { "max-height": "80vh"
         , "background": "light-dark(white,black)"
         , "color-scheme": "light dark"
         , "fill": "none"
@@ -617,64 +707,65 @@ renderTraintle cmds = D.Egg do
             ] mempty
         ]
       , D.g [ D.stylish =:= D.smarts { "opacity": 1.0 } ] $
-          D.Replacing $ freshTrains <#> \trains -> do
+          withTrainUnits \_idx trainUnit ->
             let
-              trainUnits = NEA.drop 1 trains # pairs # withIndices # filter (Int.even <<< fst) # map snd
-                # neighbors
               cslope = -sqre 9.0 / 2.0
               jog curvature = "translate(" <> show 0.0 <> ", " <> show (curvature * cslope) <> ")"
-            fold $ trainUnits #.. \{ here: Pair back train, next } ->
-              let
-                towards = case next of
-                  Nothing -> train.to
-                  Just (Pair { delta } _) -> delta
-              in
-              [ clone (pure "#g115")
-                  [ D.attr "transform" =:= intercalate " "
-                    [ case back.at of
+              awayfrom = trainUnit <#> \{ prev, here: Pair back train } -> case prev of
+                Nothing -> train.delta
+                Just _ -> back.delta
+              towards = trainUnit <#> \{ here: Pair back train, next } -> case next of
+                Nothing -> train.delta
+                Just (Pair { delta } _) -> delta
+            in D.g [] $ fold
+              [ mempty
+              , clone (pure "#g115")
+                  [ dam $ D.attr "transform" <:> intercalate (pure " ")
+                    [ trainUnit <#> \{ here: Pair back train, next } -> case back.at of
                       V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
-                    , case back.delta of
+                    , awayfrom <#> case _ of
                       V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
-                    , jog back.curvature
-                    , "translate(64, 0) rotate(-90,-384,208)"
+                    , trainUnit <#> \{ here: Pair back train, next } -> jog back.curvature
+                    , pure "translate(64, 0) rotate(-90,-384,208)"
                     ]
                   ]
               , clone (pure "#use115")
-                  [ D.attr "transform" =:= intercalate " "
-                    [ case back.at of
+                  [ dam $ D.attr "transform" <:> intercalate (pure " ")
+                    [ trainUnit <#> \{ here: Pair back train, next } -> case back.at of
                       V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
-                    , case back.to of
+                    , trainUnit <#> \{ here: Pair back train, next } -> case back.to of
                       V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
-                    , jog back.curvature
-                    , "rotate(180) translate(64, 0) rotate(-90,-384,208)"
+                    , trainUnit <#> \{ here: Pair back train, next } -> jog back.curvature
+                    , pure "rotate(180) translate(64, 0) rotate(-90,-384,208)"
                     ]
                   ]
               , clone (pure "#g115")
-                  [ D.attr "transform" =:= intercalate " "
-                    [ case train.at of
+                  [ dam $ D.attr "transform" <:> intercalate (pure " ")
+                    [ trainUnit <#> \{ here: Pair back train, next } -> case train.at of
                       V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
-                    , case towards of
+                    , towards <#> case _ of
                       V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
-                    , jog train.curvature
-                    , "rotate(180) translate(64, 0) rotate(-90,-384,208)"
+                    , trainUnit <#> \{ here: Pair back train, next } -> jog train.curvature
+                    , pure "rotate(180) translate(64, 0) rotate(-90,-384,208)"
                     ]
                   ]
               , clone (pure "#use115")
-                  [ D.attr "transform" =:= intercalate " "
-                    [ case train.at of
+                  [ dam $ D.attr "transform" <:> intercalate (pure " ")
+                    [ trainUnit <#> \{ here: Pair back train, next } -> case train.at of
                       V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
-                    , case train.to of
+                    , trainUnit <#> \{ here: Pair back train, next } -> case train.to of
                       V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
-                    , jog train.curvature
-                    , "rotate(180) translate(64, 0) rotate(-90,-384,208)"
+                    , trainUnit <#> \{ here: Pair back train, next } -> jog train.curvature
+                    , pure "rotate(180) translate(64, 0) rotate(-90,-384,208)"
                     ]
                   ]
-              , clone (pure "#g43")
-                  [ D.attr "transform" =:= intercalate " "
-                    [ case train.at of
+              , clone (pure "#g189425-2")
+                  [ dam $ D.attr "transform" <:> intercalate (pure " ")
+                    [ trainUnit <#> \{ here: Pair back train, next } -> case train.at of
                       V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
-                    , case train.delta of
+                    , trainUnit <#> \{ here: Pair back train, next } -> case train.delta of
                       V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
+                    , pure "rotate(180, -32, 0)"
                     ]
                   -- , D.attr "opacity" =:= 0.4
                   ]
@@ -717,20 +808,20 @@ renderTraintle cmds = D.Egg do
       --           "C" <> intercalateMap " " (\(V2 x y) -> show (64.0 * x) <> "," <> show (64.0 * y)) [ p1, p2, p3 ]
       --     , D.stylish =:= D.smarts { "stroke": "purple", "stroke-width": 2.0 }
       --     ] mempty
-      , D.svg_"circle"
-          [ D.attr "r" =:= "4px"
-          , River.latestStream running \{ segments } ->
-              let route = mkRoute segments in
-              looping.stream <#> \t -> case routeAtTime route t of
-                Just { at: V2 x y } -> D.MultiAttr
-                  [ D.attr "cx" x
-                  , D.attr "cy" y
-                  ]
-                Nothing -> D.MultiAttr []
-          , D.stylish =:= D.smarts
-            { "fill": "red"
-            }
-          ] mempty
+      -- , D.svg_"circle"
+      --     [ D.attr "r" =:= "4px"
+      --     , River.latestStream running \{ segments } ->
+      --         let route = mkRoute segments in
+      --         looping.stream <#> \t -> case routeAtTime route t of
+      --           Just { at: V2 x y } -> D.MultiAttr
+      --             [ D.attr "cx" x
+      --             , D.attr "cy" y
+      --             ]
+      --           Nothing -> D.MultiAttr []
+      --     , D.stylish =:= D.smarts
+      --       { "fill": "red"
+      --       }
+      --     ] mempty
       ]
     , D.Replacing $ _.info <$> running
     ]
@@ -757,10 +848,11 @@ runTraintle { library, hitmap } cmds =
     (either (\e -> [ D.text "error" /\ D.text e ]) mempty resultSplit) <>
     [ D.text "cmds" /\ D.show cmds
     , D.text "paths" /\ D.show (Array.length result.paths)
-    , D.text "paths" /\ D.show result.paths
-    , D.text "distances" /\ D.show (trains <#> _.distance)
-    , D.text "trains" /\ D.show trains
-    , D.text "segments" /\ D.show segments
+    -- , D.text "paths" /\ D.show result.paths
+    , D.text "train distances" /\ D.show (trains <#> _.distance)
+    -- , D.text "trains" /\ D.show trains
+    , D.text "segments" /\ D.show (Array.length segments)
+    -- , D.text "segments" /\ D.show (segments <#> map _ { canon { samples = unit } })
     , D.text "endpoint" /\ D.show endpoint
     , D.text "bounds" /\ D.show bounds
     -- , D.text "curve" /\ D.show curve
@@ -768,7 +860,8 @@ runTraintle { library, hitmap } cmds =
     , D.text "rotation" /\ D.show rotation
     , D.text "quadrant" /\ D.show (quadrant endpoint.to)
     , D.text "preBounds" /\ D.show preBounds
-    , D.text "library" /\ D.show _st.library
+    -- , D.text "library" /\ D.show _st.library
+    , D.text "hitmap" /\ D.show (Map.size _st.hitmap)
     ]
   where
   origin = { at: V2 0 0, to: V2 1 0 }
@@ -785,6 +878,7 @@ runTraintle { library, hitmap } cmds =
       , subroutines: Map.empty
       , routes: Map.empty
       , hitmap, library
+      , radii: Pair 7 13
       }
   result = either mempty identity resultSplit
   bounds :: Vec2 (Bounds Int)
@@ -839,76 +933,44 @@ renderCommand (Subroutine name Nothing) = do
   case Map.lookup name subroutines of
     Just cmds -> traverse_ renderCommand cmds
     Nothing -> throwError $ "Unknown subroutine " <> show name
-renderCommand v = trackBounds (withAligned shouldReverse renderAligned v)
-  where
-  shouldReverse = case _ of
-    Q -> true
-    A -> true
-    _ -> false
+renderCommand (SetRadius i) = do
+  setProp @"radii" $
+    fromMaybe (fromMaybe 0 (Array.last allRadii)) <<< Array.index allRadii <$>
+      Pair i (i+1)
+renderCommand v = trackBounds (renderAligned v)
 
-renderAligned :: Reorienter -> Vec2 Int -> Command -> TraintleM { delta :: Vec2 Int, slope :: Vec2 Int }
-renderAligned rotate = case _, _ of
-  slope@(V2 dx dy), W -> { delta: 2 .* slope, slope } <$ pathCommand slope "l" [ V2 (Int.toNumber (32 * dx)) (Int.toNumber (32 * dy)) ]
-  slope@(V2 dx dy), S -> { delta: -2 .* slope, slope } <$ pathCommand slope "l" [ V2 (Int.toNumber (-32 * dx)) (Int.toNumber (-32 * dy)) ]
-  slope, Z -> pure { delta: 2 .* fromQuadrant 1 slope, slope }
-  slope, C -> pure { delta: 2 .* toQuadrant 1 slope, slope }
-  slope, X -> pure { delta: mempty, slope: -1 .* slope }
-  slope@(V2 1 0), E -> { delta: V2 5 1, slope: V2 2 1 } <$ pathCommand slope "c" curves."0 to 26"
-  slope@(V2 2 1), E -> { delta: V2 4 3, slope: V2 1 1 } <$ pathCommand slope "c" curves."26 to 45"
-  slope@(V2 1 1), E -> { delta: V2 3 4, slope: V2 1 2 } <$ pathCommand slope "c" curves."45 to 64"
-  slope@(V2 1 2), E -> { delta: V2 1 5, slope: V2 0 1 } <$ pathCommand slope "c" curves."64 to 90"
-  slope@(V2 1 0), D -> { delta: V2 5 2, slope: V2 1 1 } <$ pathCommand slope "c" curves."0 to 45"
-  slope@(V2 1 1), D -> { delta: V2 2 5, slope: V2 0 1 } <$ pathCommand slope "c" curves."45 to 90"
-  slope@(V2 2 1), D -> { delta: V2 3 3, slope: V2 1 2 } <$ pathCommand slope "c" curves."26 to 64"
-  slope@(V2 1 2), D -> { delta: V2 0 6, slope: V2 (-1) 2 } <$ pathCommand slope "c" curves."64 to 116"
-  slope, A -> renderAligned rotate slope D
-  slope, Q -> renderAligned rotate slope E
-  slope, _ -> pure { delta: mempty, slope }
+renderAligned :: Command -> TraintleM Unit
+renderAligned cmd = do
+  { radii: Pair sharp shallow } <- get
+  case cmd of
+    W -> pathCommand false 0
+    S -> pathCommand true 0
+    Z -> jog \slope -> { delta: 2 .* fromQuadrant 1 slope, slope }
+    C -> jog \slope -> { delta: 2 .* toQuadrant 1 slope, slope }
+    X -> jog \slope -> { delta: mempty, slope: -1 .* slope }
+    E -> pathCommand false shallow
+    D -> pathCommand false sharp
+    A -> pathCommand false (-sharp)
+    Q -> pathCommand false (-shallow)
+    _ -> pure unit
   where
-  pathCommand :: Vec2 Int -> String -> Array (Vec2 Number) -> TraintleM Unit
-  pathCommand slope c points = do
-    modify_ $ (prop (Proxy @"path") <<< prop (Proxy @"commands"))
-      (_ <> (c <> intercalateMap " " (intercalateMap "," show <<< rotate) points))
-    case c, points of
-      "c", [ p1, p2, p3 ] -> do
-        { pos: { at: V2 x y }, library } <- get
-        let V2 xx xy = rotate (V2 1 0)
-        let V2 yx yy = rotate (V2 0 1)
-        let t = Afn2 xx yx xy yy x y
-        let t' = Int.toNumber <$> Afn2 xx yx xy yy (16 * x) (16 * y)
-        case F.find (\r -> r.curve == B3 mempty p1 p2 p3) library of
-          Just canon -> do
-            let segment = { canon, transform: t', transformI: t, pos: tfPos t canon }
-            modify_ $ (prop (Proxy @"path") <<< prop (Proxy @"segments")) $ (_ <> [ segment ])
-          Nothing -> pure unit
-      "l", [ p3 ] -> do
-        { pos: { at: V2 x y } } <- get
-        let V2 xx xy = rotate (V2 1 0)
-        let V2 yx yy = rotate (V2 0 1)
-        let t = Afn2 xx yx xy yy x y
-        let t' = Int.toNumber <$> Afn2 xx yx xy yy (16 * x) (16 * y)
-        let line dest = B3 mempty (0.33 .* dest) (0.67 .* dest) dest
-        canon <- standardize { delta: 2 .* slope, from: slope, to: slope } $ line p3
-        let segment = { canon, transform: t', transformI: t, pos: tfPos t canon }
-        modify_ $ (prop (Proxy @"path") <<< prop (Proxy @"segments")) $ (_ <> [ segment ])
-      _, _ -> pure unit
-  tfPos :: Afn2 Int -> Standard -> Pair Pos
-  tfPos t { key: { from, to, delta } } = Pair
-    { at: p, to: r $* from }
-    { at: t $* delta, to: r $* to }
-    where
-    Tuple p r = unAfn2 t
-
-  curves =
-    { "0 to 26":  [ V2 34.536001 0.0, V2 59.412619 5.70631, V2 80.0 16.0 ]
-    , "64 to 90": [ V2 10.29369 20.587381, V2 16.0 45.463999, V2 16.0 80.0 ]
-    , "26 to 45": [ V2 20.882696 10.44135, V2 37.658719 21.65872, V2 64.0 48.0 ]
-    , "45 to 64": [ V2 26.34128 26.341281, V2 37.55865 43.117304, V2 48.0 64.0 ]
-    , "0 to 45": [ V2 28.921554 0.0, V2 57.180985 9.18099, V2 80.0 32.0 ]
-    , "45 to 90": [ V2 22.81901 22.81902, V2 32.0 51.07845, V2 32.0 80.0 ]
-    , "26 to 64": [ V2 20.7716 10.3857, V2 37.6143 27.2284, V2 48.0 48.0 ]
-    , "64 to 116": [ V2 15.1084 30.2167, V2 15.1084 65.7833, V2 0.0 96.0 ]
-    }
+  jog f = do
+    { pos: { at, to } } <- get
+    let { delta, slope } = f to
+    setProp @"pos" { at: at <> delta, to: slope }
+  pathCommand :: Boolean -> Int -> TraintleM Unit
+  pathCommand =
+    (if _ then \{ at, to } -> { at, to: inv to } else identity) >>>
+    \reversies radius -> do
+      { pos, library } <- get
+      case findCurve { pos: reversies pos, radius } library of
+        Just segment@(Pair fwd _) -> do
+          modify_ $ (prop (Proxy @"path") <<< prop (Proxy @"commands"))
+            (_ <> ("C" <> intercalateMap " " (intercalateMap "," show) (Array.drop 1 $ Array.fromFoldable $ canonCurve segment)))
+          modify_ $ (prop (Proxy @"path") <<< prop (Proxy @"segments")) $ (_ <> [ segment ])
+          setProp @"pos" case fwd of
+            { pos: Pair _ arrived } -> reversies arrived
+        Nothing -> throwError "Could not find appropriate segment"
 
 
 type Pos = { at :: Vec2 Int, to :: Vec2 Int }
@@ -932,11 +994,13 @@ type TraintleM = RWSE
   , hitmap :: HitMap
   , subroutines :: Map String (Array Command)
   , routes :: Map String Route
+  , radii :: Pair Int
   }
   String
 
 data Command
   = Q | W | E | A | S | D | Z | X | C
+  | SetRadius Int
   | Silent (Array Command)
   | SetVariable (Maybe Int) String
   | GetVariable (Maybe Int) String
@@ -978,6 +1042,11 @@ parseCommandsWith finish continue ("o" : s) = (Silent (pure E) : _) <$> parseCom
 parseCommandsWith finish continue ("j" : s) = (Silent (pure A) : _) <$> parseCommandsWith finish continue s
 parseCommandsWith finish continue ("k" : s) = (Silent (pure S) : _) <$> parseCommandsWith finish continue s
 parseCommandsWith finish continue ("l" : s) = (Silent (pure D) : _) <$> parseCommandsWith finish continue s
+parseCommandsWith finish continue ("r" : s)
+  | digits <- List.takeWhile (all isDecDigit <<< String.toCodePointArray) s
+  , Just num <- Int.fromString (fold digits)
+  = (SetRadius (num-1) : _) <$> parseCommandsWith finish continue
+      (List.drop (List.length digits) s)
 -- @NAME{...}: drawing subroutine
 parseCommandsWith finish continue ("@" : s0)
   | Tuple name s1 <- parseNAME $ skipWS s0 =
@@ -1292,7 +1361,7 @@ walkPaths curves start distances =
     where
     matches :: Array OnPath
     matches = join $ curves <#>: \i curve ->
-      Bezier.intersectCircle { p: whence.at, r: distance } curve <#> \{ p, t } ->
+      Bezier.intersectCirclePrec 0.05 { p: whence.at, r: distance } curve <#> \{ p, t } ->
         let
           tangent = Bezier.evalB (deriv curve) t
           to = sgn (dot tangent whence.to) .* tangent
@@ -1306,7 +1375,7 @@ walkPaths curves start distances =
 
 
 dilate :: B32 -> Pair B32
-dilate curve@(B3 p0 p1 p2 p3) | p1 == p0 +<0.33>+ p3 && p2 == p0 +<0.67>+ p3 =
+dilate curve@(B3 p0 _ _ p3) | curve == Bezier.castUp (Bezier.castUp (B1 p0 p3)) =
   let
     delta = 8.0
     d = normalize $ p0 -<> p3
@@ -1370,13 +1439,23 @@ bezsToPath segments =
     $ mapAccumL seg (NEA.head segments # \(B3 p0 _ _ _) -> p0 <>- V2 one one)
     $ segments
 
-routeAtTime :: Route -> Number -> Maybe { at :: V2, to :: V2, curve :: B32, t :: Number, curvature :: Number, segment :: Canonized, i :: Int }
+type OnRoute =
+  { segment :: Canonized
+  , i :: Int
+  , t :: Number
+  , at :: V2
+  , to :: V2
+  , curve :: B32
+  , curvature :: Number
+  }
+
+routeAtTime :: Route -> Number -> Maybe OnRoute
 routeAtTime (Route { segments, pathlength }) ofRoute = do
   let alongRoute = pathlength * ofRoute
-  { i, pathlength: Pair segmentStart _, segment } <- segments
+  { i, pathlength: Pair segmentStart _, segment: segment@(Pair { canon } _) } <- segments
     # Array.find \{ pathlength: Pair _ segmentEnd } -> segmentEnd >= alongRoute
   let leftover = alongRoute - segmentStart
-  bookends <- segment.canon.samples # pairs
+  bookends <- canon.samples # pairs
     # Array.find \(Pair _ { pathlength: Pair _ endsUp }) -> endsUp >= leftover
   case bookends of
     Pair { t: t0, pathlength: Pair l0 _ } { t: t1, pathlength: Pair _ l1 } -> do
@@ -1387,4 +1466,6 @@ routeAtTime (Route { segments, pathlength }) ofRoute = do
         to = normalize $ Bezier.evalB (deriv curve) t
         curvature = Bezier.curvatureAt curve t
       Just { at, to, curvature, curve, t, i, segment }
+
+-- walkRoute :: Route -> Either Number OnRoute
 

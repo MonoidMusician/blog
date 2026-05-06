@@ -453,8 +453,8 @@ _test_auto3 = input [ ClassName =&= mempty, ElementId =&= "theInput" ] :: Dragon
 
 id = attr "id" :: String -> AttrProp
 title = attr "title" :: String -> AttrProp
-className = prop "className" <<< PropString :: String -> AttrProp
-classy = prop "className" :: Classy -> AttrProp
+className = prop "classList" <<< PropString :: String -> AttrProp
+classy = prop "classList" :: Classy -> AttrProp
 style = prop "style" <<< PropString :: String -> AttrProp
 stylish = prop "style" :: Stylish -> AttrProp
 value = prop "value" :: forall t. PropType t => t -> AttrProp

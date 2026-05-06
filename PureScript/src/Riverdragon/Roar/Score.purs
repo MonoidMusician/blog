@@ -176,7 +176,7 @@ scoreStream upstream = do
       scopedRun "scoreStream runHere" newScope $ liftResourceM $
         flip runReaderT ctx $
           flip unMutStateT st $ act
-  { stream } <- River.instantiate $
+  { stream } <- River.store $
     upstream >>~ \act -> compact $ affToLake do
       runHere act
   pure stream
