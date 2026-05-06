@@ -11,7 +11,7 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 
 
-data Machine m i o = Machine (i -> m (Tuple (Machine m i o) o))
+newtype Machine m i o = Machine (i -> m (Tuple (Machine m i o) o))
 type PureMachine i o = forall m. Applicative m => Machine m i o
 
 data KMachine :: forall kind. (Type -> Type) -> (kind -> Type) -> (kind -> Type) -> Type

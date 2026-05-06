@@ -6,7 +6,7 @@ import Control.Monad.Cell.Basics (class Cellular, mintCell)
 import Control.Monad.Cell.Interface (Interface)
 import Control.Monad.Cell.Machines (PureMachine, mkMachine, progressMachine, syncMachine)
 import Control.Monad.Cell.Operators ((<&=))
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), isJust)
 import Data.Tuple (Tuple(..))
 
 -- | A cell that works via incremental updates to a monoid.
@@ -42,3 +42,18 @@ mintThreshold n0 cb0 = progressMachine (Just (Tuple n0 cb0)) case _ of
     | otherwise -> Nothing <$ cb
   Nothing -> pure Nothing
 
+mintBreaker :: forall m i. Cellular m =>
+  (i -> m Unit) ->
+  m
+    { run :: i -> m Unit
+    , trip :: m Unit
+    , running :: m Boolean
+    }
+mintBreaker act = mintCell (Just act) <#> \cell ->
+  { run: \i -> do
+      cell.get >>= case _ of
+        Nothing -> pure unit
+        Just fn -> fn i
+  , trip: cell.set Nothing
+  , running: isJust <$> cell.get
+  }

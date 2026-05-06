@@ -1,3 +1,7 @@
+-- @inline export mintCell always
+-- @inline export cellularEffect._mintCell arity=1
+-- @inline export cellularST._mintCell arity=1
+-- @inline export cellularAff._mintCell arity=1
 module Control.Monad.Cell.Basics where
 
 import Prelude
@@ -83,16 +87,22 @@ class Monad m <= Cellular m where
 mintCell :: forall @v @m. Cellular m => v -> m (Cell m v)
 mintCell = _mintCell @m @v
 
-instance Cellular Effect where
+instance cellularEffect :: Cellular Effect where
   _mintCell = Ref.new >>> map \ref ->
     { get: Ref.read ref
     , set: Ref.write <@> ref
-    , swap: \v -> Ref.modify' (\value -> { state: v, value }) ref
-    , update: \f -> Ref.modify' (\prev -> let next = f prev in { state: next, value: Pair prev next }) ref
-    , modify: Modify \f -> Ref.modify' (\prev -> let Tuple next info = f prev in { state: next, value: { prev, next, info } }) ref
+    , swap: \v -> modify' (\value -> { state: v, value }) ref
+    , update: \f -> modify' (\prev -> let next = f prev in { state: next, value: Pair prev next }) ref
+    , modify: Modify \f -> modify' (\prev -> let Tuple next info = f prev in { state: next, value: { prev, next, info } }) ref
     }
+    where
+    modify' :: forall s r. (s -> { state :: s, value :: r }) -> Ref.Ref s -> Effect r
+    modify' f ref = do
+      -- purescript-backend-es does not optimize Ref.modify'
+      { state, value } <- f <$> Ref.read ref
+      value <$ Ref.write state ref
 
-instance Cellular (ST r) where
+instance cellularST :: Cellular (ST r) where
   _mintCell = STRef.new >>> map \ref ->
     { get: STRef.read ref
     , set: (STRef.write <@> ref) >>> void
@@ -101,7 +111,7 @@ instance Cellular (ST r) where
     , modify: Modify \f -> STRef.modify' (\prev -> let Tuple next info = f prev in { state: next, value: { prev, next, info } }) ref
     }
 
-instance Cellular Aff where
+instance cellularAff :: Cellular Aff where
   _mintCell = _mintCell >>> liftEffect >>> map (liftCell liftEffect)
 
 
