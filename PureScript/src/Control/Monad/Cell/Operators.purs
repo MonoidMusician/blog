@@ -26,6 +26,10 @@ updateCell :: forall ops m v r. Functor m => { update :: (v -> v) -> m r | ops }
 updateCell = map void <<< _.update
 infix 1 updateCell as &~
 
+updatedCell :: forall ops m v. Functor m => { modify :: Modify m v | ops } -> (v -> v) -> m v
+updatedCell { modify: Modify modify } fn = _.info <$> modify \prev -> join Tuple (fn prev)
+infix 1 updatedCell as &<~
+
 swapifyCell :: forall ops m v. Functor m => { modify :: Modify m v | ops } -> (v -> v) -> m v
 swapifyCell { modify: Modify modify } fn = _.info <$> modify \prev -> Tuple (fn prev) prev
 infix 1 swapifyCell as <&~
@@ -33,4 +37,8 @@ infix 1 swapifyCell as <&~
 appendCell :: forall ops m v r. Functor m => Monoid v => { update :: (v -> v) -> m r | ops } -> v -> m Unit
 appendCell { update } value = void do update (_ <> value)
 infix 1 appendCell as &<>
+
+pushCell :: forall ops m v r. Functor m => { push :: v -> m r | ops } -> v -> m r
+pushCell = _.push
+infix 1 pushCell as &<<
 

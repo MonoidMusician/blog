@@ -302,12 +302,16 @@ any_balanced_syntax (< any_balanced_comment) =
 normalize: ["if" cond "then" result "else" result] => result;
 ## desugars to:
 normalize: ["if" cond "then" result#1 "else" result#2] => result#0:
-  eq result#1 result#2 => result#0
+  ?eq result#1 result#2 => result#0
+  ## ^ this question mark means that `eq` itself can fail
+  ## but it only falls through to the next case of `normalize`,
+  ## it does not fail the whole function
 
 build-options:: { X=Boolean Y=("built-in" | ["provided" $$]) args=*$ } -> *$
 build-options: { X=X Y=Y args=args } => options##:
   {# start with empty options #}
   [] => options##
+
   X => {{
   | "true":
     append2 options## [ "--use-X" ] => options##

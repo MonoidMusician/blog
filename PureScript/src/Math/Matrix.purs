@@ -520,10 +520,19 @@ type BBox1 s = Vec1 (Bounds s)
 type BBox2 s = Vec2 (Bounds s)
 type BBox3 s = Vec3 (Bounds s)
 
-mkBound :: forall s. s -> Bounds s
+mkBound :: forall @s. s -> Bounds s
 mkBound s = { min: Min s, max: Max s }
 
-justBound :: forall s. s -> Maybe (Bounds s)
+mkBounds :: forall @s. s -> s -> Bounds s
+mkBounds ms mS = { min: Min ms, max: Max mS }
+
+unitBounds :: forall @s. Semiring s => Bounds s
+unitBounds = mkBounds zero one
+
+normBounds :: forall @s. Ring s => Bounds s
+normBounds = mkBounds (negate one) one
+
+justBound :: forall @s. s -> Maybe (Bounds s)
 justBound = Just <<< mkBound
 
 overBounds :: forall s s'. (s -> s') -> Bounds s -> Bounds s'
@@ -562,8 +571,11 @@ extent { min: Min bmin, max: Max bmax } = bmax - bmin
 extents :: forall @f @s. Functor f => Ring s => f (Bounds s) -> f s
 extents = map extent
 
-center :: forall @s. Field s => Bounds s -> s
-center { min: Min bmin, max: Max bmax } = (bmin + bmax) / (one + one)
+midpoint :: forall @s. Field s => Bounds s -> s
+midpoint { min: Min bmin, max: Max bmax } = (bmin + bmax) / (one + one)
+
+center :: forall @f @s. Functor f => Field s => f (Bounds s) -> f s
+center = map midpoint
 
 bounds2bez :: forall @s. Bounds s -> Bez1 s
 bounds2bez { min: Min bmin, max: Max bmax } = B1 bmin bmax
@@ -573,6 +585,12 @@ padBounds amt { min: Min bmin, max: Max bmax } = { min: Min (bmin - amt), max: M
 
 boundsNorm :: forall @s. Semiring s => Bounds s
 boundsNorm = { min: Min zero, max: Max one }
+
+clampBound :: forall @s. Ord s => Bounds s -> s -> s
+clampBound { min: Min bmin, max: Max bmax } = clamp bmin bmax
+
+clampBounds :: forall @f @s. Apply f => Ord s => f (Bounds s) -> f s -> f s
+clampBounds = lift2 clampBound
 
 -- | Helper functions                                                       | --
 
@@ -641,6 +659,13 @@ bounds2bounds1 :: Bounds Number -> Bounds Number -> Afn1 Number
 bounds2bounds1 { min: Min fmin, max: Max fmax } { min: Min tmin, max: Max tmax } =
   let s = (tmax - tmin)/(fmax - fmin) in
   Afn1 s (tmin - s * fmin)
+
+bounds2bounds2 :: BBox2 Number -> BBox2 Number -> Afn2 Number
+bounds2bounds2 (V2 fx fy) (V2 tx ty) =
+  let
+    Afn1 sx dx = bounds2bounds1 fx tx
+    Afn1 sy dy = bounds2bounds1 fy ty
+  in Afn2 sx zero zero sy dx dy
 
 submat3 :: forall s. Lin3 s -> Lin3 (Lin2 s)
 submat3 (Lin3 c1 c2 c3  c4 c5 c6  c7 c8 c9) = Lin3

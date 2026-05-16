@@ -7,7 +7,7 @@ import Control.Monad.ResourceM (destr, selfDestructor, track_)
 import Control.Monad.ResourceT (ResourceM, start, start_)
 import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global (Global)
-import Control.Plus (empty)
+import Control.Plus (empty, (<|>))
 import Data.Argonaut (Json)
 import Data.Argonaut as Json
 import Data.Array as Array
@@ -15,7 +15,7 @@ import Data.Either (Either(..), hush)
 import Data.Enum (fromEnum)
 import Data.Filterable (filterMap)
 import Data.Foldable (for_, traverse_)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (for)
 import Data.Tuple (snd)
 import Data.Tuple.Nested (type (/\), (/\))
@@ -32,8 +32,10 @@ import Idiolect (JSON, filterFst, (>==))
 import Parser.Printer.JSON as C
 import Riverdragon.Dragon (Dragon, renderEl, snapshot)
 import Riverdragon.Dragon.Bones as Dragon
-import Riverdragon.River (Allocar, River, createRiverStore, createStore, mailbox, mailboxRiver, stillRiver)
+import Riverdragon.River (Allocar, River, createRiverStore, createStore, mailbox, mailboxRiver, stillRiver, unsafeRiver)
+import Riverdragon.River as River
 import Riverdragon.River.Bed (allocLazy)
+import Riverdragon.River.Beyond (dedup, withLast)
 import Web.DOM (Element, ParentNode)
 import Web.DOM.AttrName (AttrName(..))
 import Web.DOM.Document as Document
@@ -56,6 +58,7 @@ type Interface a =
   , receive :: River a
   , loopback :: River a
   , mailbox :: a -> River Unit
+  , active :: a -> River Boolean
   , current :: Effect (Maybe a)
   , destroy :: Allocar Unit
   }
@@ -65,6 +68,7 @@ disconnected =
   , receive: empty
   , loopback: empty
   , mailbox: \_ -> empty
+  , active: \_ -> pure false
   , current: pure Nothing
   , destroy: mempty
   }
@@ -74,6 +78,7 @@ stillInterface :: forall a.
   , receive :: River a
   , loopback :: River a
   , mailbox :: a -> River Unit
+  , active :: a -> River Boolean
   , current :: Effect (Maybe a)
   , destroy :: Allocar Unit
   } -> Interface a
@@ -82,15 +87,31 @@ stillInterface i =
   , receive: stillRiver i.receive
   , loopback: stillRiver i.loopback
   , mailbox: \k -> stillRiver (i.mailbox k)
+  , active: \k -> stillRiver (i.active k)
   , current: i.current
   , destroy: i.destroy
   }
+
+mailboxActive :: forall a. Ord a => River a -> ResourceM (a -> River Boolean)
+mailboxActive stream = do
+  updates <- mailbox do
+    stream # dedup # withLast # River.mapArray \{ last, next } ->
+      maybe empty (pure <<< { key: _, value: false }) last <|> pure { key: next, value: true }
+  pure \target -> River.copyBurst (eq target <$> stream) (updates target)
+
+mailboxActiveRiver :: forall a. Ord a => River a -> (a -> River Boolean)
+mailboxActiveRiver stream = do
+  let updates = mailboxRiver do
+        unsafeRiver $ stream # dedup # withLast # River.mapArray \{ last, next } ->
+          maybe empty (pure <<< { key: _, value: false }) last <|> pure { key: next, value: true }
+  \target -> River.copyBurst (eq target <$> stream) (updates target)
 
 storeInterface :: forall a. Ord a => Allocar (Interface a)
 storeInterface = _.result <$> start "storeInterface" do
   destroy <- selfDestructor
   stream <- createRiverStore Nothing
   byKey <- mailbox (map { key: _, value: unit } stream.stream)
+  activeByKey <- mailboxActive stream.stream
   pure $ stillInterface
     { send: stream.send
     -- Here we don't have a notion of actors, so receive = loopback,
@@ -98,6 +119,7 @@ storeInterface = _.result <$> start "storeInterface" do
     , receive: stream.stream
     , loopback: stream.stream
     , mailbox: byKey
+    , active: activeByKey
     , current: stream.current
     , destroy
     }
@@ -107,6 +129,7 @@ valueInterface v0 = _.result <$> start "valueInterface" do
   destroy <- selfDestructor
   stream <- createStore v0
   byKey <- mailbox (map { key: _, value: unit } stream.stream)
+  activeByKey <- mailboxActive stream.stream
   pure $ stillInterface
     { send: stream.send
     -- Here we don't have a notion of actors, so receive = loopback,
@@ -114,6 +137,7 @@ valueInterface v0 = _.result <$> start "valueInterface" do
     , receive: stream.stream
     , loopback: stream.stream
     , mailbox: byKey
+    , active: activeByKey
     , current: Just <$> stream.current
     , destroy
     }
@@ -141,6 +165,7 @@ sessionStorageInterface = allocLazy do
     destroy <- selfDestructor
     stream <- createRiverStore =<< liftEffect do Storage.getItem key storage
     byKey <- mailbox (map { key: _, value: unit } stream.stream)
+    activeByKey <- mailboxActive stream.stream
     pure $ stillInterface
       { send: (Storage.setItem key <@> storage) <> stream.send
       -- Here we don't have a notion of actors, so receive = loopback,
@@ -148,6 +173,7 @@ sessionStorageInterface = allocLazy do
       , receive: stream.stream
       , loopback: stream.stream
       , mailbox: byKey
+      , active: activeByKey
       , current: stream.current
       , destroy
       }
@@ -171,11 +197,13 @@ obtainInterface share k = do
     let
       int = r k1
       receive = filterMap (filterFst (notEq i)) int.receive
+      loopback = int.receive <#> snd
     in stillInterface
       { send: \v -> int.send (i /\ v)
       , receive: receive
-      , loopback: int.receive <#> snd
-      , mailbox: mailboxRiver (map { value: unit, key: _ } receive)
+      , loopback: loopback
+      , mailbox: mailboxRiver (map { value: unit, key: _ } loopback)
+      , active: mailboxActiveRiver loopback
       , current: int.current <#> map \(_ /\ v) -> v
       -- We are not allowed to destroy from a datashare
       , destroy: mempty
@@ -185,6 +213,7 @@ adaptInterface :: forall ctx err @b @a. Monoid ctx => C.OneCodec ctx err Void a 
 adaptInterface codec interface =
   { send: interface.send <<< C.encode codec
   , mailbox: interface.mailbox <<< C.encode codec
+  , active: interface.active <<< C.encode codec
   , receive: filterMap (hush <<< C.decode' codec) interface.receive
   , loopback: filterMap (hush <<< C.decode' codec) interface.loopback
   , current: interface.current <#> bindFlipped

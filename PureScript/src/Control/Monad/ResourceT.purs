@@ -4,6 +4,7 @@ import Prelude
 
 import Control.Alternative (class Alternative)
 import Control.Apply (lift2)
+import Control.Monad.Cell.Basics (class Cellular, _mintCell, liftCell)
 import Control.Monad.Cont (class MonadCont, callCC)
 import Control.Monad.Error.Class (class MonadError, class MonadThrow, catchError, throwError)
 import Control.Monad.Reader (class MonadAsk, class MonadReader, ask, local)
@@ -296,3 +297,5 @@ instance MonadRec m => MonadRec (ResourceT m) where
   tailRecM k a = ResourceT \r -> tailRecM (k' r) a
     where
     k' r a' = case k a' of ResourceT f -> pure =<< f r
+instance Cellular m => Cellular (ResourceT m) where
+  _mintCell = _mintCell >>> lift >>> map (liftCell lift)

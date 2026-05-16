@@ -71,7 +71,7 @@ import Effect.Uncurried (EffectFn2, runEffectFn2)
 import Foreign.Object as FO
 import Idiolect (incorporate, insteadOf, intercalateMap, minimumWith, neighbors, sgn, sqre, withIndices, (#..), (#:..), (#<>), (..$), (<#>:), (<#?>), (<>$), (==<), (>==))
 import Math.Bezier as Bezier
-import Math.Matrix (Afn2(..), B32, BBox2, Bez1(..), Bez3(..), Bounds, LTF(..), Lin2(..), V2, V3, Vec2(..), Vec3(..), bounds2bounds1, d2r, disjointBounds, dot, inv, mkAfn2, mkBound, norm, norm2, normalize, pairs, pairsWith, r2d, rotl2, tf, tfBounds, tfI, translate2, unAfn2, ($*), ($.), (+<), (-<>), (.*), (<.), (<>+), (<>-), (<^), (>+))
+import Math.Matrix (Afn2(..), B32, BBox2, Bez1(..), Bez3(..), Bounds, LTF(..), Lin2(..), V2, V3, Vec2(..), Vec3(..), bounds2bounds1, bounds2bounds2, clampBounds, d2r, disjointBounds, dot, inv, mkAfn2, mkBound, mkBounds, norm, norm2, normalize, pairs, pairsWith, r2d, rotl2, tf, tfBounds, tfI, translate2, unAfn2, ($*), ($.), (+<), (-<>), (.*), (<.), (<>+), (<>-), (<^), (>+))
 import Math.Poly (deriv)
 import Monoids.BoundsWith (BoundsWith, MinWith(..))
 import Parser.Comb.Dragon (renderParseError)
@@ -86,7 +86,7 @@ import Riverdragon.River (Course(..), Lake, River, coursing, createRiver, create
 import Riverdragon.River as River
 import Riverdragon.River.Bed (freshId)
 import Riverdragon.River.Beyond (animationLoop, debounce, dedup, documentEvent, everyFrame, instanced, withLast)
-import Riverdragon.River.Streamline (Interval(..), bbInterval, clamp2D, linmap2D)
+import Riverdragon.River.Streamline (clientRect)
 import Safe.Coerce (coerce)
 import Type.Proxy (Proxy(..))
 import Uncurried.RWSE (RWSE, runRWSE)
@@ -128,14 +128,12 @@ widget { interface } = do
         River.subscribeM dragging \selected -> inSubScope "envelopeComponent" do
           documentEvent (EventType "mousemove") MouseEvent.fromEvent \event -> do
             Ref.read svgRef >>= traverse_ \svg -> do
-              bb <- bbInterval svg
+              bb <- clientRect svg
               let
-                ptExternal = clamp2D { x: Interval 0.0 32.0, y: Interval 0.0 32.0 } $
-                  linmap2D bb { x: Interval (-2.0) 34.0, y: Interval (-2.0) 34.0 }
-                    { x: Int.toNumber (MouseEvent.clientX event)
-                    , y: Int.toNumber (MouseEvent.clientY event)
-                    }
-              selected $ V2 ptExternal.x ptExternal.y
+                ptExternal = clampBounds (V2 (mkBounds 0.0 32.0) (mkBounds 0.0 32.0)) $
+                  bounds2bounds2 bb (V2 (mkBounds (-2.0) 34.0) (mkBounds (-2.0) 34.0)) $*
+                    Int.toNumber <$> V2 (MouseEvent.clientX event) (MouseEvent.clientY event)
+              selected ptExternal
           destroy <- selfDestructor
           documentEvent (EventType "mouseup") Just \_ -> do
             -- TODO: confirm or cancel? stuff like that
@@ -202,14 +200,12 @@ widget { interface } = do
         River.subscribeM dragging \selected -> inSubScope "envelopeComponent" do
           documentEvent (EventType "mousemove") MouseEvent.fromEvent \event -> do
             Ref.read svgRef >>= traverse_ \svg -> do
-              bb <- bbInterval svg
+              bb <- clientRect svg
               let
-                ptExternal = clamp2D { x: Interval 0.0 32.0, y: Interval 0.0 32.0 } $
-                  linmap2D bb { x: Interval (-2.0) 34.0, y: Interval (-2.0) 34.0 }
-                    { x: Int.toNumber (MouseEvent.clientX event)
-                    , y: Int.toNumber (MouseEvent.clientY event)
-                    }
-              selected $ V2 ptExternal.x ptExternal.y
+                ptExternal = clampBounds (V2 (mkBounds 0.0 32.0) (mkBounds 0.0 32.0)) $
+                  bounds2bounds2 bb (V2 (mkBounds (-2.0) 34.0) (mkBounds (-2.0) 34.0)) $*
+                    Int.toNumber <$> V2 (MouseEvent.clientX event) (MouseEvent.clientY event)
+              selected ptExternal
           destroy <- selfDestructor
           documentEvent (EventType "mouseup") Just \_ -> do
             -- TODO: confirm or cancel? stuff like that

@@ -12,6 +12,7 @@ It is their behaviors, their interfaces, that are interesting.
 [Even lifecycle/RAII can be decoupled from an “object” and a “class”.](resource_acquisition.html)
 
 Iʼve been experimenting with a different approach that simply seems cleaner.
+Less noise, fewer inconsequential details to worry about^[no worrying about function vs method calls, when to use `this`{.purescript}, whether to use getters+setters, …], more flexibility.
 
 [OOP]{t=} sort of developed from the perspective of C turning into C++:
 it started with passing mutable struct pointers to individual global functions, and then C++ organized these “members” and “methods” into a class.
@@ -29,9 +30,12 @@ A constructor doesnʼt even need `this`{.javascript}, it can just return a recor
 
 In fact, this is what Iʼve been doing in PureScript.
 
-Since PureScript has row types (enabling anonymous records), I donʼt need to foreign import types for objects: I just declare their interface and import a single function that creates that interface.
+Since PureScript has row types (enabling anonymous records), I donʼt need to foreign import types for objects: I just declare their interface and import a single function that creates a new instance of that interface.
 
 While pure functional programming is a good fit for immutable data, I think this barebones-OOP style is an easier approach for mutable data, resources that change under effects.
+
+And it is multi-paradigm: it fits great in PureScript, probably is workable in Haskell without anonymous records, but it also works great in JavaScript, probably Python – who knows where it could lead, new languages perhaps?
+
 
 ## Records of Closures
 
@@ -93,8 +97,8 @@ No opaque foreign type.
 
 And no module import to remember: methods are always available on the record with simple dot syntax, and you donʼt have to remember whether the object comes first or last in the arguments.
 
-:::Details
-A function has access to variables in its local namespace (instantiated for its current call) plus the namespace where it was created, all the way on up to the global namespace usually.
+:::{.Details box-name="Closures"}
+A function instantiated at runtime has access to variables in its local namespace (created for its current call) plus the namespace where it was created, all the way on up to the/a global namespace usually.
 Pairing the underlying code with a chain of namespaces is known as a __closure__.
 As an optimization, only the required variables may be packed in a closure, as opposed to whole namespaces.
 
@@ -176,7 +180,7 @@ it should support reading and writing.
 An asynchronous cell in [`Aff`{.purescript}](https://pursuit.purescript.org/packages/purescript-aff) could even maintain its state remotely, via network requests. (… not that I would recommend that.)
 
 More interestingly, interfaces that are already asynchronous could be virtualized across the network.
-Layer on caching, depending on the semantics.
+Could layer on caching, depending on the semantics.
 
 
 ### Mutable variables have no contract
@@ -206,10 +210,10 @@ You store it in an immutable variable, and each time it is called in an effectfu
 
 Contrast this to bare imperative programming, where you declare plain variables with *no* contract for how they are used, no description of how they evolve over the program.
 
-This is especially frustrating in the small scale and large:
+This is especially frustrating in both the small scale and large:
 
 - in individual loops, a mutable variable can represent all sorts of monoids ([`Max Number`{.purescript}](https://pursuit.purescript.org/packages/purescript-orders/6.0.0/docs/Data.Ord.Min#t:Min), [`Additive Int`{.purescript}](https://pursuit.purescript.org/packages/purescript-prelude/6.0.2/docs/Data.Monoid.Additive#t:Additive), [`Conj Boolean`{.purescript}](https://pursuit.purescript.org/packages/purescript-prelude/6.0.2/docs/Data.Monoid.Conj#t:Conj), and so many more), and it increases cognitive load trying to figure out what behavior it has
-  - not every behavior is modeled by a monoid, but I think you will find that most are! and it is easier if the basic behavior is able to be described like this, and you just have to pay attention to the cases of exceptional behavior
+  - not every behavior is modeled by a monoid, but I think you will find that a lot are! and it is easier if the basic behavior is able to be described like this, and you just have to pay attention to the cases of exceptional behavior
 - invariants over the course of a whole program run or object lifetime are also difficult to track: you have to chase down their use sites, not the definition site
 
 
@@ -248,7 +252,7 @@ This forms a monoid, stating that the way to inherit from multiple scopes is sim
 You could possibly envision scopes containing locks in multithreaded languages.
 But I am not sure how well that would work with a monoid structure…
 
-(Basically my complaint about multithreaded data structures is that if everything is mutable, everything needs a lock. But these locks are just floating about in space, it is not clear how they fit together into a coherent constellation. If they instead live externally in a `Scope`{.purescript} that governs a group of resources, it may be slightly clearer.)
+(Basically my complaint about multithreaded data structures is that if everything is mutable, everything needs a lock. But these locks are just floating about in space, it is not clear how they fit together into a coherent constellation. If they instead live externally in a `Scope`{.purescript} that governs a group of resources, it may be slightly clearer. Functional programming helps by separating the mutable cell from a complex immutable data structure beneath.)
 
 
 ### Inheritance/extensibility
@@ -257,6 +261,8 @@ I think the story for extensibility is actually okay.
 You can merge records together to add more methods.
 Inheritance through composition: you can instantiate other objects and manage methods however you see fit.
 
+It is not compatible with prototypal inheritance.
+But if you really want *dynamic* extensibility in particular, you could maybe do something with [proxies](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy).
 
 ### Erlang-style processes
 
@@ -299,13 +305,16 @@ data SwitchProcess m switch stay
   | ProcessTrySwitch (m switch) (m stay)
   | SwitchLater (m (SwitchProcess m switch stay))
 
-data SwitchProcessing m switch stay o
-  = SwitchProcessed (SwitchProcess m switch stay) (m o)
+data SwitchProcessing m switch stay output
+    -- about to produce an output, with information on
+    -- what happens to its internal state or if it should
+    -- try to switch away
+  = SwitchProcessed (SwitchProcess m switch stay) (m output)
   | SwitchProcessing stay
     -- this `m` can block for a while and then return,
     -- either returning the output immediately or
     -- asking for a new state to continue processing
-    (m (Either o (stay -> m (SwitchProcessing m switch stay o))))
+    (m (Either o (stay -> m (SwitchProcessing m switch stay output))))
 ```
 
 > An async processor that queues inputs until the state is available, and
@@ -362,6 +371,8 @@ to demonstrate the concept^[I think my best examples are yet to be written … I
 
 ### Riverdragon FRP
 
+#### River (Stream Flowing)
+
 Creating a river (a flowing stream) is a resource action, so it returns a record of methods: the created `stream`{.purescript} and a way to send events through it.
 
 ```purescript
@@ -391,10 +402,34 @@ instantiate ::
 
 `_.destroy`{.purescript} is just a convenience method, since it is already registered with the `Scope`{.purescript} from `MonadResource`{.purescript}.
 
+#### Lake (Stream NotFlowing)
+
+`Stream`{.purescript}s follow this pattern somewhat, they are anything that implements this interface, basically:
+
+```purescript
+data Stream (flow :: IsFlowing) a = Stream IsFlowing
+  ( { receive :: a -!> Unit, commit :: Id -!> Unit, destroyed :: Effect Unit } -&>
+    { burst :: Array a, sources :: Array Id, unsubscribe :: Effect Unit }
+  )
+```
+
+But `Lake`{.purescript}s have an alternative interface, that handles the extra details.
+
+```purescript
+makeLake :: forall a. ((a -!> Unit) -> ResourceM Unit) -> Stream NotFlowing a
+
+makeLakeFFI :: forall a. ((a -!> Unit) -> Effect (Effect Unit)) -> Stream NotFlowing a
+```
+
+It is available in with the nice `ResourceM`{.purescript} monad, to track what resources need to be destroyed when the subscriber leaves, and in an FFI friendly version that is the classic event producer pattern: take a callback, set up some resources, and return an unsubscribe function.
+
+The `Stream`{.purescript} itself does not use bare methods, it has dedicated module functions `subscribe :: forall flow a m. MonadResource m => Stream flow a -> (a -!> Unit) -> m Unit`{.purescript} and so on, since they require some logic not covered by the `Stream`{.purescript} interface itself.
+
+
 ### Interface to a mutable value
 
 I use this for the widgets on my blog.
-It is pretty similar to the above (in fact, it was inspired by and in turn inspired it).
+It is pretty similar to the above (in fact, it was inspired by and in turn re-inspired it).
 
 ```purescript
 -- | An interface to a mutable value, stored in one location. It may not have
@@ -404,6 +439,7 @@ type Interface a =
   , receive :: River a
   , loopback :: River a
   , mailbox :: a -> River Unit
+  , active :: a -> River Boolean
   , current :: Effect (Maybe a)
   , destroy :: Effect Unit
   }
@@ -412,17 +448,22 @@ type Interface a =
 The benefits over a `Ref`{.purescript} are:
 
 #.  You can receive notifications of the events via the `River`{.purescript}s.
+
 #.  Input and output are separated (`send`{.purescript} vs `current`{.purescript}), so you can map over them with a pair of functions, one for each direction.
     This allows widgets on my blog to communicate uniformly via JSON, while themselves seeing `Interface Int`{.purescript} or whatever type they de/encode.
+
+    :::Details
+    It is often useful to split the input and output sides of any interface like this, so it becomes a [`Profunctor`](https://pursuit.purescript.org/packages/purescript-profunctor/6.0.1/docs/Data.Profunctor) instead of an [`Invariant`](https://pursuit.purescript.org/packages/purescript-invariant/6.0.0/docs/Data.Functor.Invariant#t:Invariant) functor.
+    :::
 
 #.  The key nicety is `loopback`{.purescript} vs `receive`{.purescript}, which can filter out events emitted out from a particular interface versus the events coming in to it.
     This is incredibly useful for UI events, where naïvely updating a text box could cause it to lose its selection.^[Of course, this is possible to avoid with [the correct web APIs](https://pursuit.purescript.org/packages/purescript-textcursor/2.0.0/docs/Web.Util.TextCursor), but few people put in that effort, sigh…]
 
     (Of course, any particular implementation of `Interface`{.purescript} is free to ignore this and implement `receive = loopback`{.purescript}, but it is still nice.)
 
-#.  Finally, `mailbox`{.purescript} allows efficiently notifying for particular values.
+#.  Finally, `mailbox`{.purescript} and `active`{.purescript} allow efficiently notifying for particular values.
     You can imagine a selection index maintained as an `Interface Int`{.purescript} and 1000 DOM elements listening to see if they are selected.
-    (This form isnʼt quite correct for that, but you get the idea.)
+    It is more efficient than `\value -> filter (== value) loopback`{.purescript} but retains the clean centralized state: it is the responsibility of `mailbox`{.purescript} and `active`{.purescript} to synchonize to that source of truth.
 
 ### Remote resources
 
@@ -477,24 +518,26 @@ Additionally, it makes sure to free its closure to prevent resources from leakin
 Rolling accepts a new cleanup function each time it is called, running the old one.
 This is incredibly useful when subscribing to streams: sometimes you want each new event to teardown the previous actions.
 
+They both use `cell <&=`{.purescript} which stands for `cell.swap`{.purescript}.
+
 When specialized to `Effect`{.purescript}, these both basically optimize away with [`purescript-backend-optimizer`](https://github.com/aristanetworks/purescript-backend-optimizer/), using a `let`{.javascript} binding:
 
 ```javascript
-var mintRollingE = () => {
-  let a$p = () => {
-  };
-  return (next) => () => {
-    const a$p$1 = a$p;
-    a$p = next;
-    return a$p$1();
-  };
-};
 var mintCleanupE = (x) => () => {
   let a$p = x;
   return () => {
     const a$p$1 = a$p;
     a$p = () => {
     };
+    return a$p$1();
+  };
+};
+var mintRollingE = () => {
+  let a$p = () => {
+  };
+  return (next) => () => {
+    const a$p$1 = a$p;
+    a$p = next;
     return a$p$1();
   };
 };
@@ -527,9 +570,10 @@ mintBreaker act = mintCell (Just act) <#> \cell ->
 
 I think what I have outlined here is a much simpler approach that cuts to the heart of what we need from interfaces to objects and mutability.
 
+It doesnʼt need to be done in functional languages or with monads, it works well in JavaScript with plain effectful functions!^[Even `Scope`{t=} works, using the usual tricks for local monads via a global variable, plus some care around closures/callbacks/asynchrony. like, stream callbacks ought to run in the scope that the stream was created in, not whatever happened to trigger the event.]
+
 Iʼve been using this to develop [Riverdragon](riverdragon_implementation.html), my take on [FRP]{t=}.^[Riverdragon needs surprisingly few object behaviors for its helpers: about 10.]
 Iʼve even been using it to port Riverdragon from PureScript to other languages: I think [everything should be compatible with FRP](https://tech.lgbt/@monoidmusician/116449166586150538) and I wanna use Riverdragon everywhere.
-It doesnʼt need to be done in functional languages or with monads, it works well in JavaScript with plain effectful functions!^[Even `Scope`{t=} works, using the usual tricks for local monads via a global variable, plus some care around closures/callbacks/asynchrony.]
 
 I will keep using it, in my own work.
 Perhaps it can make its way to a published library.
@@ -538,6 +582,7 @@ It would be even nicer to reimagine a whole ecosystem around it.
 - https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Riverdragon/River.purs
 - https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Riverdragon/River/Bed.purs
 - https://github.com/MonoidMusician/blog/tree/main/PureScript/src/Control/Monad/Cell
+- https://github.com/MonoidMusician/blog/blob/main/assets/js/Riverdragon/Bed.ts
 
 Maybe you will join me too.
 Maybe we can make simpler new languages based on these concepts.

@@ -5,7 +5,6 @@ import Math.Poly
 import Prelude
 
 import Control.Alt ((<|>))
-import Control.Alternative (guard)
 import Control.Apply (lift2)
 import Data.Align (class Align)
 import Data.Array as Array
@@ -25,8 +24,7 @@ import Data.Semigroup.Traversable (class Traversable1)
 import Data.Set.NonEmpty (NonEmptySet)
 import Data.Set.NonEmpty as NES
 import Data.Tuple (Tuple(..))
-import Debug (spy)
-import Idiolect (incorporate, only, unsafeFromMaybe, (/|\), (<#?), (<#?>), (>==))
+import Idiolect (incorporate, only, unsafeFromMaybe, (/|\), (<#?), (>==))
 import Monoids.BoundsWith (BoundsWith(..), MaxWith(..), MinWith(..), BoundsWithNES)
 import Monoids.BoundsWith as Bounds
 import Safe.Coerce (coerce)

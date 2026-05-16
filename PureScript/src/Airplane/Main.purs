@@ -30,7 +30,7 @@ import Effect.Class.Console as Console
 import Fetch (fetch)
 import Idiolect (incorporate, indices, sqre, withIndices, (-$), (<#?))
 import Math.Bezier (atX, bboxBs, castUp, extremaX, radians2slope)
-import Math.Matrix (Afn1(..), B12, BBox2, Bez1(..), Bounds, Degrees, LTF(..), V1, V2, V3, Vec1(..), Vec2(..), Vec3(..), bounds2bez, bounds2bounds1, boundsNorm, boundsWithout, center, degreesAround2, extent, getBounds, interp, interpS, interpsWith, line2line2, ltf, mkBound, multiinterpWith, overBounds, padBounds, pairsWith, pointsBetween, pointsBounds, tf, tfI, tfR, tfS, triinterp, triinterpWith, uninterp, v2X, v2Y, ($*), ($.), (+<), (.+<), (<.), (>+), (>+.))
+import Math.Matrix (Afn1(..), B12, BBox2, Bez1(..), Bounds, Degrees, LTF(..), V1, V2, V3, Vec1(..), Vec2(..), Vec3(..), bounds2bez, bounds2bounds1, boundsNorm, boundsWithout, center, degreesAround2, extent, getBounds, interp, interpS, interpsWith, line2line2, ltf, midpoint, mkBound, multiinterpWith, overBounds, padBounds, pairsWith, pointsBetween, pointsBounds, tf, tfI, tfR, tfS, triinterp, triinterpWith, uninterp, v2X, v2Y, ($*), ($.), (+<), (.+<), (<.), (>+), (>+.))
 import Math.Mesh (mkMesh)
 import Math.Mesh as Mesh
 import Math.SVG (SVGNode, printPathData)
@@ -93,7 +93,7 @@ widget _ = do
             fromNorm = tfR toNorm
             normed = LTF toNorm $* chord
             symmetric = samplePoints <#> \(V2 x y) ->
-              V2 x $ y -$ center (fromMaybe (mkBound y) $ foldMap atX curves x) - maybe 0.0 center (atX chord x)
+              V2 x $ y -$ midpoint (fromMaybe (mkBound y) $ foldMap atX curves x) - maybe 0.0 midpoint (atX chord x)
           pure { airfoil, curves, samples, samplePoints, symmetric, bb, angles, chord, toNorm, fromNorm, normed }
         airfoilR =
           let find k = unsafeFromJust k $ Map.lookup k airfoils in
@@ -169,7 +169,7 @@ widget _ = do
           let
             bounds = getBounds points
             recentering :: V3
-            recentering = tfR $ center <$> bounds
+            recentering = tfR $ center bounds
           pure $ Mesh.transform recentering wingMesh <#> map toOBJ
 
         hstab =
@@ -199,7 +199,7 @@ widget _ = do
 
                   fitY@(Afn1 s _) = foilBBX `bounds2bounds1` form
                   oversize = 1.3
-                  fitZ = Afn1 one lift <. Afn1 (negate oversize * s) zero <. Afn1 one (negate (center foilBBY))
+                  fitZ = Afn1 one lift <. Afn1 (negate oversize * s) zero <. Afn1 one (negate (midpoint foilBBY))
                 in thisFoil <#> \(V2 y z) ->
                   let V2 x' y' = tfR rot $* V2 x (fitY $. y)
                   in V3 x' y' (fitZ $. z)
@@ -211,7 +211,7 @@ widget _ = do
             let
               bounds = getBounds points
               recentering :: V3
-              recentering = tfR $ center <$> bounds
+              recentering = tfR $ center bounds
             pure $ Mesh.transform recentering mesh <#> map toOBJ
         objFile = Mesh.objFile do
           tell $ tripleQuoted """
@@ -241,7 +241,7 @@ widget _ = do
           let
             bbX = v2X planform.bb
             bbY = v2Y planform.bb
-            mkY v = center bbY + (v / 20.0) * extent bbY
+            mkY v = midpoint bbY + (v / 20.0) * extent bbY
           in 400 # pointsBounds bbX # map
             \x -> V2 x $ mkY $ twist (planform.x2norm x)
       trackI <- River.createStore 0.0

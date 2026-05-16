@@ -89,6 +89,7 @@ module Riverdragon.River
   , createProxy'
   , makeLake
   , makeLake'
+  , makeLakeFFI
   , subscribe
   , subscribeM
   , subscribeM1
@@ -104,6 +105,7 @@ module Riverdragon.River
   , noBurst
   , bursting
   , alwaysBurst
+  , copyBurst
   , coursing
   , Course(..)
   , instantiate
@@ -508,6 +510,10 @@ makeLake' streamTemplate = Stream NotFlowing \cbs -> do
         cbs.commit id
     pure { burst: _, sources: [id], unsubscribe }
 
+makeLakeFFI :: forall a. ((a -!> Unit) -> Effect (Effect Unit)) -> Stream NotFlowing a
+makeLakeFFI f = makeLake \cb -> do
+  destr =<< liftEffect (f cb)
+
 
 -- | Subscribe to a stream with a specific callback (`a -!> Unit`). Returns an
 -- | unsubscribe procedure (`Allocar Unit`).
@@ -608,6 +614,12 @@ alwaysBurstM :: forall flow m. Monoid m => Stream flow m -> Stream flow m
 alwaysBurstM (Stream t stream) =
   Stream t \cbs -> stream cbs <#>
     \r -> r { burst = if Array.null r.burst then [mempty] else r.burst }
+
+copyBurst :: forall flow a. Stream flow a -> Stream flow a -> Stream flow a
+copyBurst forBurst (Stream t stream) = Stream t \cbs -> do
+  burst <- burstOf forBurst
+  r <- stream cbs
+  pure r { burst = burst }
 
 
 data Course a
@@ -811,13 +823,11 @@ limitTo n (Stream flow setup) = Stream flow \cbs -> do
   setUnsub <- rolling
   receive <- breaker cbs.receive
   commit <- breaker cbs.commit
-  reachedLimit <- prealloc mempty
   let destroyed = receive.trip <> commit.trip <> cbs.destroyed
-  incr <- threshold n $ reachedLimit.set
-    (setUnsub mempty <> destroyed <> reachedLimit.set mempty)
+  incr <- threshold n (setUnsub mempty <> destroyed)
   sub <- setup
-    { receive: receive.run <> const incr
-    , commit: commit.run <> const (join reachedLimit.get)
+    { receive: receive.run
+    , commit: const incr <> commit.run
     , destroyed: destroyed
     }
   setUnsub sub.unsubscribe
@@ -847,7 +857,7 @@ selfGatingEf logic (Stream flow setup) = Stream flow \cbs -> do
   process <- logic (setUnsub mempty <> destroyed)
   sub <- setup $
       { receive: lastValue.set
-      , commit: const (lastValue.run process *> lastValue.clear)
+      , commit: const $ lastValue.run process
       , destroyed: mempty
       }
     <>

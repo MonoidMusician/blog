@@ -5,6 +5,7 @@ import Prelude
 import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Reader (class MonadAsk, class MonadReader, ReaderT, ask, local, runReaderT)
+import Control.Monad.State (State, state)
 import Control.Monad.Writer (WriterT, runWriter, tell)
 import Data.Array (all, any)
 import Data.Array as A
@@ -24,17 +25,17 @@ import Data.List (List(..), foldMap, foldr, (:))
 import Data.List as List
 import Data.Map (Map, SemigroupMap(..))
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe, isNothing)
+import Data.Maybe (Maybe(..), fromMaybe, isNothing, maybe)
 import Data.Monoid (power)
 import Data.Monoid.Endo (Endo(..))
 import Data.Newtype (class Newtype, unwrap)
 import Data.Pair (Pair(..))
 import Data.Set (Set)
 import Data.Set as Set
-import Data.Traversable (class Traversable, for_, sequence, traverse)
+import Data.Traversable (class Traversable, for, for_, sequence, traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst, snd, uncurry)
-import Idiolect (intercalateMap, nonEmpty)
+import Idiolect (intercalateMap, nonEmpty, withIndices)
 import Parser.Languages.TMTTMT.TypeCheck (class TypeSystem, constructExpr)
 import Parser.Languages.TMTTMT.TypeCheck.Structural (BasicSubsetF(..), Items, Options, Sifted(..), TmVar, TyVar, printPattern)
 import Parser.Languages.TMTTMT.Types (Calling(..), Case(..), Condition(..), Declaration(..), Expr(..), Matching(..), Pattern(..))
@@ -118,6 +119,11 @@ derive instance foldableVSifted :: Foldable VSifted
 derive instance traversableVSifted :: Traversable VSifted
 type QSifted = Sifted VSifted
 type QSiftQ = QSifted
+  { quantifiers :: List { var :: TyVar, exists :: Boolean }
+  , core :: Quantified
+  }
+type QSiftQs = QSifted (Array (Tuple Int InnerQs))
+type InnerQs =
   { quantifiers :: List { var :: TyVar, exists :: Boolean }
   , core :: Quantified
   }
@@ -231,8 +237,6 @@ compareTupled neutral cmp = compareSemigroupMap \(Pair l r) -> do
       unwrap result `Map.union` unwrap padding
   padBack <$> compareSemigroupMap cmp (Pair l r)
 
-{-
-
 compareFunctions :: forall t. Monoid t => t -> Comparer t -> Comparer (Array (Tuple t t))
 compareFunctions neutral cmp =
   map (unionFunctions' neutral cmp) >>> case _ of
@@ -243,15 +247,17 @@ compareFunctions neutral cmp =
       -- intersection `(i -> o) & (j -> u)` and differences
       in Compared
         -- given that `(i -> o) = (i & j -> o) & (i \ j -> o)`,
-        -- then `(i -> o) \ ((i -> o) & (j -> u)) = (i & j -> o \ u)`
-        { left: map A.singleton $ mkfn ij.both ou.left
+        -- then `(i -> o) \ ((i -> o) & (j -> u)) = (i -> o) & some(i & j -> o \ u)`
+        -- but we approximate it with `(i -> o)` alone, since we do not need
+        -- to refine functions during case expressions
+        { left: map A.singleton $ mkfn (Just i) (Just o)
         -- `(i -> o) & (j -> u) = (i & j -> o & u) & (i \ j -> o) & (j \ i -> u)`
         , both: nonmt $ A.catMaybes
           [ mkfn ij.both ou.both
           , mkfn ij.left (Just o)
           , mkfn ij.right (Just u)
           ]
-        , right: map A.singleton $ mkfn ij.both ou.right
+        , right: map A.singleton $ mkfn (Just j) (Just u)
         }
     _ -> Compared { left: Nothing, both: Nothing, right: Nothing }
   where
@@ -288,27 +294,65 @@ compareQSifted neutral cmp (Pair (Sifted l) (Sifted r)) = Compared
     }
   }
   where
-  nonmt (Sifted r)
-    | Set.isEmpty r.singleton
-    , isNothing r.anyScalar
-    , isNothing r.listOf
-    , Map.isEmpty (unwrap r.tupled)
-    , Array.null r.function
-    , Array.null (unwrap r.other).tyvarapp = Nothing
-  nonmt r = Just r
+  nonmt (Sifted s)
+    | Set.isEmpty s.singleton
+    , isNothing s.anyScalar
+    , isNothing s.listOf
+    , Map.isEmpty (unwrap s.tupled)
+    , Array.null s.function
+    , Array.null (unwrap s.other).tyvarapp = Nothing
+  nonmt s = Just s
   Compared singleton = map fold $ compareSet (Pair l.singleton r.singleton)
   Compared anyScalar = map join $ compareMaybe compareUnit (Pair l.anyScalar r.anyScalar)
   Compared listOf = map join $ compareMaybe cmp (Pair l.listOf r.listOf)
   Compared tupled = map (fromMaybe (SemigroupMap Map.empty)) $
     compareTupled neutral cmp (Pair l.tupled r.tupled)
   Compared function = map fold $ compareFunctions neutral cmp (Pair l.function r.function)
-  Compared tyvarapp = map (fold :: Maybe _ -> Array _) $ ?help (Pair (unwrap l.other).tyvarapp (unwrap r.other).tyvarapp)
+  Compared tyvarapp = map (fold :: Maybe _ -> Array _) $ compareDiscreteArray cmp (Pair (unwrap l.other).tyvarapp (unwrap r.other).tyvarapp)
+
+compareDiscreteArray :: forall t. Comparer t -> Comparer (Array t)
+compareDiscreteArray cmp (Pair l r)
+  | Array.length l == Array.length r
+  , Just both <- (for (cmp <$> Array.zipWith Pair l r) case _ of
+          Compared { left: Nothing, right: Nothing, both } -> both
+          _ -> Nothing
+    )
+  =
+    Compared { left: Nothing, both: Just both, right: Nothing }
+compareDiscreteArray _ (Pair l r) = Compared
+  { left: Just l, both: Nothing, right: Just r }
+
+compareDiscrete :: forall t. Eq t => Comparer t
+compareDiscrete (Pair l r) | l == r = Compared
+  { left: Nothing, both: Just l, right: Nothing }
+compareDiscrete (Pair l r) = Compared
+  { left: Just l, both: Nothing, right: Just r }
+
+realFoldl1 f2 f1 = NEA.uncons >>>
+  \{ head, tail } -> Array.foldl f2 (f1 head) tail
+
+-- unifyVar :: forall tyVar. Ord tyVar => (tyVar -> TyVar) ->
+--   Int -> List { var :: tyVar, exists :: Boolean } -> tyVar ->
+--   Int -> List { var :: tyVar, exists :: Boolean } -> tyVar ->
+--   State (Map tyVar { deps :: Maybe (Set tyVar), each :: Map Int tyVar }) tyVar
+-- unifyVar tyVar lwhich lcontext l rwhich rcontext r = state \allVars -> do
+--   ?help
 
 -- intersectQuantified :: NonEmptyArray Quantified -> Quantified
--- intersectQuantified = map sift >>> shallow >>> deep
+-- intersectQuantified =
+--   map sift >>> withIndices >>>
+--     realFoldl1 shallow (awa >>> Just) >>> maybe mempty deep
+--   >>> unsift
 --   where
---   shallow = NEA.foldl1 \l r ->
---     let Compared c = compareQSifted mempty ?help (join Pair <$> (Pair l r)) in c.both
+--   awa = uncurry \i -> map (Tuple i >>> Array.singleton)
+--   shallow :: Maybe QSiftQs -> Tuple Int QSiftQ -> Maybe QSiftQs
+--   shallow Nothing _ = Nothing
+--   shallow (Just l) (Tuple i r) =
+--     let Compared c = compareQSifted mempty intoIntersection (Pair l (awa (Tuple i r))) in
+--     c.both
+--   intoIntersection :: Pair (Array (Tuple Int InnerQs)) -> Compared (Maybe (Array (Tuple Int InnerQs)))
+--   intoIntersection (Pair ls rs) = Compared
+--     { left: Nothing, both: Just (ls <> rs), right: Nothing }
 --   deep = ?help
 
 unionFunctions' :: forall t. Monoid t => t -> Comparer t -> Array (Tuple t t) -> Maybe (Tuple t t)
@@ -318,7 +362,6 @@ unionFunctions' neutral cmp = NEA.fromArray >>> map \fns -> do
   cmpIntersect = map join <<< lift2 \l r ->
     let Compared c = cmp (Pair l r) in c.both
 
--}
 
 --------------------------------------------------------------------------------
 

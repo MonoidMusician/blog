@@ -2,6 +2,7 @@ module Control.Monad.ResourceM where
 
 import Control.Monad.ResourceT
 
+import Control.Monad.Cell.Basics (class Cellular)
 import Control.Monad.Error.Class (class MonadError, catchError, throwError)
 import Control.Monad.Except (ExceptT, mapExceptT)
 import Control.Monad.Identity.Trans (IdentityT, mapIdentityT)
@@ -21,12 +22,12 @@ import Effect.Ref as Ref
 import Prelude (class Monoid, type (~>), Unit, bind, discard, join, map, pure, unit, void, zero, (*>), (<#>), (<$), (<$>), (<*), (<<<), (<=<), (=<<), (>>=), (>>>))
 import Uncurried.RWSET (RWSET, mapRWSET)
 
-class MonadEffect m <= MonadResource m where
+class (Cellular m, MonadEffect m) <= MonadResource m where
   selfScope :: m Scope
   -- Somewhat unsafe, e.g. with `mempty :: Scope`
   _inScope :: Scope -> m ~> m
 
-instance MonadEffect m => MonadResource (ResourceT m) where
+instance (Cellular m, MonadEffect m) => MonadResource (ResourceT m) where
   selfScope = ResourceT \scope -> pure scope
   _inScope scope (ResourceT f) = ResourceT \_ -> f scope
 
