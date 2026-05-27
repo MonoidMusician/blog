@@ -4,23 +4,29 @@ module Idiolect where
 
 import Prelude
 
-import Control.Alternative (class Alt, class Alternative, (<|>))
-import Control.Apply (lift2)
+import Control.Alternative (class Alt, class Alternative, alt, (<|>))
+import Control.Apply (applyFirst, applySecond, lift2)
 import Control.Plus (class Plus)
+import Control.Semigroupoid (composeFlipped)
+import Data.Align (class Align, align)
 import Data.Argonaut (Json)
 import Data.Array as Array
 import Data.CodePoint.Unicode as U
+import Data.Distributive (class Distributive, distribute)
 import Data.Either (Either(..))
 import Data.Either.Nested (type (\/))
 import Data.Filterable (class Filterable, filter, filterMap, partitionMap)
-import Data.Foldable (class Foldable, fold, foldMap, intercalate, oneOfMap)
+import Data.Foldable (class Foldable, fold, foldMap, intercalate, maximumBy, minimumBy, oneOfMap)
 import Data.FoldableWithIndex (class FoldableWithIndex, foldMapWithIndex)
 import Data.Function (on)
+import Data.Functor (mapFlipped)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
+import Data.HeytingAlgebra (implies)
 import Data.Maybe (Maybe(..), maybe, optional)
 import Data.Maybe as Maybe
 import Data.Newtype (class Newtype)
 import Data.Number as Number
+import Data.Semigroup.Foldable (class Foldable1, foldr1)
 import Data.String as String
 import Data.Symbol (class IsSymbol)
 import Data.These (These(..))
@@ -29,6 +35,7 @@ import Data.TraversableWithIndex (forWithIndex, traverseWithIndex)
 import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
+import Partial.Unsafe (unsafeCrashWith)
 import Prim.Row as Row
 import Prim.RowList as RL
 import Record as Record
@@ -47,6 +54,10 @@ type Id a = a
 infixl 0 type Id as $
 
 infixr 8 Number.pow as **
+
+-- Bullet points! like `do` but without layout i guess
+-- ugh not accepted by PureScript
+-- infixr 0 identity as •
 
 morph :: forall f g b. Foldable f => Plus g => Applicative g => f b -> g b
 morph = oneOfMap pure
@@ -132,6 +143,65 @@ maybeFlipped :: forall a b. (a -> b) -> b -> Maybe a -> b
 maybeFlipped = flip Maybe.maybe
 infixl 10 maybeFlipped as +?
 
+infixr 0 Maybe.fromMaybe as :?
+
+fromMaybeFlipped :: forall a. Maybe a -> a -> a
+fromMaybeFlipped = flip Maybe.fromMaybe
+infixl 10 fromMaybeFlipped as ?:
+
+withIndices :: forall @f @t idx. FunctorWithIndex idx f => f t -> f (Tuple idx t)
+withIndices = mapWithIndex Tuple
+
+indices :: forall @f @t idx. FunctorWithIndex idx f => f t -> f idx
+indices = mapWithIndex const
+
+distributeThen :: forall @f a b g. Distributive f => Functor g => (g a -> b) -> g (f a) -> f b
+distributeThen f = distribute >== f
+
+chooseBy :: forall @f @b. Functor f => Foldable1 f => Maybe (b -> b -> b) -> f b -> f b
+chooseBy Nothing v = v
+chooseBy (Just f) v = v $> foldr1 f v
+
+neighbors :: forall v. Array v -> Array { prev :: Maybe v, here :: v, next :: Maybe v }
+neighbors vs = Array.zipWith (#) vs $ Array.zipWith { prev: _, next: _, here: _ }
+  ([Nothing] <|> Just <$> Array.dropEnd 1 vs)
+  (Just <$> Array.drop 1 vs <|> [Nothing])
+
+infixr 0 add as +$
+infixl 1 add as #+
+infixr 0 mul as *$
+infixl 1 mul as #*
+infixr 0 sub as -$
+infixl 1 sub as #-
+infixr 0 div as /$
+infixl 1 div as #/
+infixr 0 append as <>$
+infixl 1 append as #<>
+infixr 0 disj as ||$
+infixl 1 disj as #||
+infixr 0 conj as &&$
+infixl 1 conj as #&&
+infixr 0 implies as =>$
+infixl 1 implies as #=>
+infixr 0 Array.index as !!$
+infixl 1 Array.index as #!!
+infixr 0 Tuple as /\$
+infixl 1 Tuple as #/\
+infixr 0 compose as <<<$
+infixl 1 compose as #<<<
+infixr 0 composeFlipped as >>>$
+infixl 1 composeFlipped as #>>>
+infixr 0 map as <$>$
+infixl 1 map as #<$>
+infixr 0 mapFlipped as <#>$
+infixl 1 mapFlipped as #<#>
+infixr 0 applyFirst as <*$
+infixl 1 applyFirst as #<*
+infixr 0 applySecond as *>$
+infixl 1 applySecond as #*>
+infixr 0 alt as <|>$
+infixl 1 alt as #<|>
+
 tripleQuoted :: String -> String
 tripleQuoted input =
   let
@@ -194,3 +264,55 @@ filterKey _ p r
   | p (Record.get (Proxy :: Proxy k) r)
   = Just (Record.get (Proxy :: Proxy k') r)
 filterKey _ _ _ = Nothing
+
+minimumWith :: forall f a b. Foldable f => Ord b => (a -> b) -> f a -> Maybe a
+minimumWith k = minimumBy (\x y -> k x `compare` k y)
+
+maximumWith :: forall f a b. Foldable f => Ord b => (a -> b) -> f a -> Maybe a
+maximumWith k = maximumBy (\x y -> k x `compare` k y)
+
+between :: forall a. Ord a => a -> a -> (a -> Boolean)
+between lo hi val = lo <= val && val <= hi
+
+unsafeFromMaybe :: forall a. String -> Maybe a -> a
+unsafeFromMaybe _ (Just a) = a
+unsafeFromMaybe reason Nothing = unsafeCrashWith reason
+
+theseop :: forall @x. (x -> x -> x) -> These x x -> x
+theseop binop (Both x1 x2) = binop x1 x2
+theseop _ (This x) = x
+theseop _ (That x) = x
+
+slip2 :: forall @f @x. Align f => (x -> x -> x) -> f x -> f x -> f x
+slip2 = align <<< theseop
+
+slip2sgn :: forall @f @x. Align f => (x -> x -> x) -> (x -> x) -> f x -> f x -> f x
+slip2sgn binop unop = align case _ of
+  Both x1 x2 -> binop x1 x2
+  This x -> x
+  That x -> unop x
+
+slipadd :: forall @f @x. Align f => Semiring x => f x -> f x -> f x
+slipadd = slip2 add
+slipsub :: forall @f @x. Align f => Ring x => f x -> f x -> f x
+slipsub = slip2sgn sub negate
+slipmul :: forall @f @x. Align f => Semiring x => f x -> f x -> f x
+slipmul = slip2 mul
+slipdiv :: forall @f @x. Align f => EuclideanRing x => DivisionRing x => f x -> f x -> f x
+slipdiv = slip2sgn div recip
+
+incorporate :: forall @x. Semigroup x => x -> Maybe x -> x
+incorporate x Nothing = x
+incorporate x (Just y) = x <> y
+
+sqre :: forall @x. Semiring x => x -> x
+sqre x = x * x
+
+cube :: forall @x. Semiring x => x -> x
+cube x = x * x * x
+
+sgn :: forall @i @o. Semiring i => Ord i => Ring o => i -> o
+sgn i = if i == zero then zero else if i > zero then one else negate one
+
+insteadOf :: forall @t. t -> t -> t
+insteadOf = const

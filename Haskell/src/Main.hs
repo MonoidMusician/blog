@@ -1,6 +1,9 @@
 module Main where
 
 import qualified ParseMachine
+import qualified WASMFP
 
 main :: IO ()
-main = ParseMachine.main
+main = do
+  -- ParseMachine.main
+  WASMFP.main

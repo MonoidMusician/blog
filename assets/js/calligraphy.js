@@ -263,7 +263,7 @@ const fit = (f0,f1,d0,d1,k0,k1) => {
   const axd1 = cross2(a, d1);
   let δs;
   if (d0xd1 === 0) {
-    δs = [Math.sqrt((2/3)*(d0xa)/k0), Math.sqrt((2/3)*(axd1)/k1)];
+    δs = [[Math.sqrt((2/3)*(d0xa)/k0), Math.sqrt((2/3)*(axd1)/k1)]];
   } else {
     const ep = 1e-9;
     if (Math.abs(axd1) < ep || Math.abs(d0xa) < ep) {

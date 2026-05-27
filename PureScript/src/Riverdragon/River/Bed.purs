@@ -59,6 +59,7 @@ import Effect.Timer as Timer
 import Effect.Unsafe (unsafePerformEffect)
 import Idiolect (type (-!>))
 import Idiolect (type (-!>)) as ReExports
+import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
 import Web.Event.Event as Web
 import Web.Event.EventPhase (EventPhase(..))
@@ -146,9 +147,8 @@ infix 1 swapSTR as <&=
 modifySTR :: forall v. STRef Global v -> (v -> v) -> Allocar Unit
 modifySTR r fn = liftST do void do STRef.modify fn r
 infix 1 modifySTR as &~
-swapifySTR :: forall v. STRef Global v -> (v -> v) -> Allocar Unit
-swapifySTR r fn = liftST do
-  void do STRef.modify' (\value -> { state: fn value, value }) r
+swapifySTR :: forall v. STRef Global v -> (v -> v) -> Allocar v
+swapifySTR r fn = liftST do STRef.modify' (\value -> { state: fn value, value }) r
 infix 1 swapifySTR as <&~
 
 -- | Cleanup means it only runs once!
@@ -300,7 +300,13 @@ eventListener :: forall m. MonadResource m =>
   (Web.Event -> Effect Unit) -> m Unit
 eventListener { eventType, eventPhase, eventTarget } cb = do
   let capture = eventPhase == Capturing
-  listener <- liftEffect do Event.eventListener cb
+  listener <- liftEffect do
+    Event.eventListener case eventPhase of
+      -- need to manually filter for this phase
+      AtTarget -> \event -> do
+        when (unsafePartial Web.eventPhase event == AtTarget) do
+          cb event
+      _ -> cb
   liftEffect do Event.addEventListener eventType listener capture eventTarget
   destr do Event.removeEventListener eventType listener capture eventTarget
 
@@ -440,20 +446,20 @@ prealloc2 defaultL defaultR =
       , swapR: \v -> swapSTR refR v
       }
 
-refc :: Allocar
+refcounting :: Allocar
   { get :: Allocar Int
   , set :: Int -> Allocar Unit
   , incr :: Allocar Unit
-  , decr :: Allocar Unit
+  , decr :: Allocar Int
   , delta :: Int -> Allocar Unit
   , bracket :: Aff ~> Aff
   }
-refc = prealloc 0 <#> \{ get, set } ->
+refcounting = prealloc 0 <#> \{ get, set } ->
   let delta d = set <<< (_ + d) =<< get in
   { get: get
   , set: set
   , incr: delta 1
-  , decr: delta (-1)
+  , decr: delta (-1) *> get
   , delta
   , bracket:
     (\act -> Aff.bracket (liftEffect $ delta 1) (const (liftEffect $ delta (-1))) (const act)) :: Aff ~> Aff
@@ -475,6 +481,7 @@ storeLast :: forall a. Allocar
   , run :: (a -!> Unit) -!> Unit
   , set :: a -&> Unit
   , swap :: a -&> Maybe a
+  , clear :: Allocar Unit
   }
 storeLast = newSTR Nothing <#> \ref ->
   { get: getSTR ref
@@ -483,6 +490,7 @@ storeLast = newSTR Nothing <#> \ref ->
       Just v -> f v
   , set: \v -> setSTR ref (Just v)
   , swap: \v -> swapSTR ref (Just v)
+  , clear: setSTR ref Nothing
   }
 
 -- | The variable is only `true` for the lifetime of the function.
@@ -566,6 +574,26 @@ interval (Milliseconds period) cb = do
 runningAff :: forall a. Aff a -> Effect (Aff a)
 runningAff act = do
   launchAff act >>= Left >>> prealloc >>= \settled -> pure do
+    liftEffect settled.get >>= case _ of
+      Left fiber -> do
+        result <- Aff.joinFiber fiber
+        liftEffect $ settled.set (Right result)
+        pure result
+      Right result -> pure result
+
+-- Start an `Aff` computation and save it as a `Fiber`, which shares the result
+-- in the returned `Aff` computation. If the resource is destroyed before the
+-- fiber finishes, it is cancelled.
+startAff :: forall m a. MonadResource m => Aff a -> m (Aff a)
+startAff act = do
+  settled <- do
+    -- Launch the aff as a fiber
+    fiber <- liftEffect do launchAff act
+    -- Record the canceler as a destructor
+    destr do Aff.launchAff_ (Aff.killFiber (Aff.error "Destroyed") fiber)
+    -- Save the fiber or just the plain result (to avoid memory leaks)
+    liftEffect do prealloc (Left fiber :: Either (Aff.Fiber a) a)
+  pure do
     liftEffect settled.get >>= case _ of
       Left fiber -> do
         result <- Aff.joinFiber fiber

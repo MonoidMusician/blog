@@ -282,6 +282,7 @@ abbreviations = Map.fromFoldable
   , "SKI" /\ Jargon "SKI Combinator Calculus" FormatColon "a minimal foundation for computation"
   , "API" /\ Jargon "Application Programming Interface" FormatEquiv "interface of components for programming"
   , "iff" /\ Jargon "if and only if" FormatNone ""
+  , "IME" /\ Acronym "Input Method Editor"
   ]
 
 matching :: String -> Array String

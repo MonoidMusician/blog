@@ -31,7 +31,7 @@ Verity = Ve = {};
     apply: applier && ((_target, _thisArg, args) => applier(...args)),
   });
   const sugarArg = handler => sugar(handler, handler(undefined));
-  const sugarStr = handler => sugar(handler, handler)
+  const sugarStr = handler => sugar(handler, handler);
 
   // Create a getter for the property:
   //     _.name = v => v.name
@@ -742,12 +742,27 @@ Verity = Ve = {};
     this.setAttributes(copyFrom.getAttributes());
   };
   Node.prototype.clearChildren = function() {
-    for (let c of Array.from(this.children)) {
+    for (let c of Array.from(this.childNodes)) {
       c.removeSelf();
     }
+    return this;
   };
   Node.prototype.removeSelf = function() {
     this.parentNode.removeChild(this);
+  };
+  NodeList.prototype.indexOf = Array.prototype.indexOf;
+  Node.prototype.indexOfNode = function(node) {
+    return this.childNodes.indexOf(node);
+  };
+  Node.prototype.nodeIndexOfSelf = function() {
+    return this.parentNode.childNodes.indexOf(this);
+  };
+  HTMLCollection.prototype.indexOf = Array.prototype.indexOf;
+  Element.prototype.indexOf = function(node) {
+    return this.children.indexOf(node);
+  };
+  Element.prototype.indexOfSelf = function() {
+    return this.parentElement.children.indexOf(this);
   };
 
   // Useful for typed DOM APIs like `document.querySelectorAll`

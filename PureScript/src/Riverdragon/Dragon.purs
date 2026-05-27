@@ -17,7 +17,7 @@ import Effect.Console as Console
 import Effect.Uncurried (EffectFn3, mkEffectFn3, runEffectFn3)
 import Idiolect ((>==))
 import Riverdragon.Dragon.Breath (removeSelf, setAttributeNS, unsafeSetProperty)
-import Riverdragon.River (Lake, Stream, bursting, subscribe, subscribeIsh)
+import Riverdragon.River (Lake, Stream, bursting, subscribe, subscribeUntil)
 import Riverdragon.River.Bed (Allocar, accumulator, eventListener, freshId, ordMap, prealloc, pushArray, rolling, unsafeAllocate)
 import Riverdragon.River.Beyond (mkAnimFrameBuffer)
 import Safe.Coerce (coerce)
@@ -25,19 +25,20 @@ import Web.DOM (Comment, Document, Element, Node)
 import Web.DOM (Element) as Web
 import Web.DOM.Attr (getValue)
 import Web.DOM.Attr as Attr
-import Web.DOM.AttrName (AttrName(..))
+import Web.DOM.AttrName (AttrName)
 import Web.DOM.Comment as Comment
 import Web.DOM.Document (createComment, createElement, createElementNS, createTextNode)
 import Web.DOM.Element (setAttribute)
 import Web.DOM.Element as Element
 import Web.DOM.ElementId (ElementId)
-import Web.DOM.ElementName (ElementName(..))
+import Web.DOM.ElementName (ElementName)
 import Web.DOM.HTMLCollection as HTMLCollection
 import Web.DOM.NamedNodeMap (getAttributes)
-import Web.DOM.NamespaceURI (NamespaceURI(..))
+import Web.DOM.NamespaceURI (NamespaceURI)
 import Web.DOM.Node (appendChild, insertBefore, parentNode, setTextContent)
 import Web.DOM.NonElementParentNode (getElementById)
 import Web.DOM.ParentNode (children)
+import Web.DOM.PropName (PropName(..))
 import Web.DOM.Text as Text
 import Web.Event.Event (Event) as Web
 import Web.Event.Event (EventType(..))
@@ -54,7 +55,7 @@ data Dragon
   | Replacing (Lake Dragon)
   -- Appends a new `Dragon` each time
   | Appending (Lake Dragon)
-  | Element (Maybe String) String (Lake AttrProp) Dragon
+  | Element (Maybe NamespaceURI) ElementName (Lake AttrProp) Dragon
   | Text (Lake String)
 
 instance semigroupDragon :: Semigroup Dragon where
@@ -68,10 +69,11 @@ instance monoidDragon :: Monoid Dragon where
   mempty = Fragment []
 
 data AttrProp
-  = Attr (Maybe String) String String
-  | Prop String PropVal
+  = Attr (Maybe NamespaceURI) AttrName String
+  | Prop (PropName PropVal) PropVal
   | Listener String (Maybe (Web.Event -> Effect Unit))
   | MultiAttr (Array AttrProp)
+  -- | DynamicAttr (Lake AttrProp)
   | Self (Element -> Effect (Effect Unit))
 instance semigroupAttrProp :: Semigroup AttrProp where
   append (MultiAttr []) r = r
@@ -99,17 +101,17 @@ renderProps el stream = do
       MultiAttr nested -> traverse_ receive nested
       -- important for xmlns at least on firefox apparently
       -- https://stackoverflow.com/questions/35057909/difference-between-setattribute-and-setattributensnull#comment135086722_45548128
-      Attr Nothing name val -> setAttribute (AttrName name) val el
+      Attr Nothing name val -> setAttribute name val el
       -- ugh
       Attr (Just ns) name val -> do
-        case Element.namespaceURI el == Just (NamespaceURI ns) of
-          true -> setAttribute (AttrName name) val el
-          false -> setAttributeNS (Just (NamespaceURI ns)) (AttrName name) val el
-      Prop name valTy -> case valTy of
-        PropString val -> runEffectFn3 unsafeSetProperty el name val
-        PropBoolean val -> runEffectFn3 unsafeSetProperty el name val
-        PropInt val -> runEffectFn3 unsafeSetProperty el name val
-        PropNumber val -> runEffectFn3 unsafeSetProperty el name val
+        case Element.namespaceURI el == Just ns of
+          true -> setAttribute name val el
+          false -> setAttributeNS (Just ns) name val el
+      Prop (PropName name) valTy -> case valTy of
+        PropString val -> runEffectFn3 unsafeSetProperty el (PropName name) val
+        PropBoolean val -> runEffectFn3 unsafeSetProperty el (PropName name) val
+        PropInt val -> runEffectFn3 unsafeSetProperty el (PropName name) val
+        PropNumber val -> runEffectFn3 unsafeSetProperty el (PropName name) val
       Listener ty mcb -> do
         (listeners.remove ty) >>= sequence_
         case mcb of
@@ -218,8 +220,8 @@ renderDragonIn = mkEffectFn3 \mgr insert -> case _ of
       unsubscribe
       removeSelf el
   Element ns ty props children -> do
-    let create = maybe createElement (createElementNS <<< Just <<< NamespaceURI)
-    el <- create ns (ElementName ty) mgr.doc
+    let create = maybe createElement (createElementNS <<< Just)
+    el <- create ns ty mgr.doc
     unSubscribeProps <- renderProps el (mgr.renderThread props)
     destroyChildren <- runEffectFn3 renderDragonIn mgr (appendChild <@> Element.toNode el) children
     insert (Element.toNode el)
@@ -240,7 +242,7 @@ renderDragonIn = mkEffectFn3 \mgr insert -> case _ of
     unsubPrev <- rolling
     let inactive = for_ bookmarks (Comment.toNode >>> removeSelf)
     { destroy: unsubscribe } <- start "renderDragonIn Replacing" $
-      subscribeIsh inactive (mgr.renderThread revolving) \newValue -> do
+      subscribeUntil inactive (mgr.renderThread revolving) \newValue -> do
         unsubPrev mempty
         unsubPrev <<< _.destroy =<< runEffectFn3 renderDragonIn mgr insert' newValue
     pure $ fromBookmarks bookmarks do
@@ -252,7 +254,7 @@ renderDragonIn = mkEffectFn3 \mgr insert -> case _ of
     unsubAll <- accumulator
     let inactive = for_ bookmarks (Comment.toNode >>> removeSelf)
     { destroy: unsubscribe } <- start "renderDragonIn Appending" $
-      subscribeIsh inactive (mgr.renderThread items) \newChild -> do
+      subscribeUntil inactive (mgr.renderThread items) \newChild -> do
         unsubAll.put <<< _.destroy =<< runEffectFn3 renderDragonIn mgr insert' newChild
     pure $ fromBookmarks bookmarks do
       unsubscribe

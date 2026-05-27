@@ -13,6 +13,7 @@ package:
     - contravariant
     - control
     - datetime
+    - day
     - debug
     - distributive
     - dodo-printer
@@ -20,6 +21,7 @@ package:
     - either
     - enums
     - exceptions
+    - exists
     - fetch
     - filterable
     - foldable-traversable

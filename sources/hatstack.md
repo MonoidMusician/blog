@@ -394,10 +394,10 @@ As mentioned above, there is no compile-time checking for these constructs, they
 :   Create a singleton set (pop one, push one).
 
 `pack`{.fu} (`{#}`{.hatstack})
-:   Turn a stack-list into a set.
+:   Turn a length-headed list into a set.
 
 `unpack`{.fu} (`#`{.hatstack})
-:   Turn a set into a stack-list, with the smallest member on top (after the length of the set).
+:   Turn a set into a length-headed list, with the smallest member on top (after the length of the set).
 
 `powerset`{.fu} (`𝒫`{.hatstack})
 :   Return the set of all subsets of the argument, of size \(2^n\).
@@ -500,13 +500,46 @@ This ensures that a tuple or list with \(n\) entries is a set with \(n\) members
 
 ### Glossary
 
+There are many ways of organizing parts into a whole, so it is important to talk about and distinguish them.
+
 stack–items
+:   The items on the current stack can be accessed with `$0`{.hatstack} (head, most recent value added), `$1`{.hatstack}, `$2`{.hatstack}, [etc.]{t=}, and the _saved_ stack with `.0`{.hatstack}, `.1`{.hatstack}, and so on.
+    The stacks are the primary place that data lives in order to interact with procedures.
+    The brace operators (`#[`{.hatstack}, `[`{.hatstack}, `]`{.hatstack}, `]#`{.hatstack}) are the most important stack manipulation primitives.
+
 list–items
+:   A length-headed list has its length at the head of the stack (`.0`{.hatstack}) and then that many items following it on the stack.
+    This is the eaisest and fastest way to work with a list – it is direct, without any encoding – but working with more than one list at a time like this is much trickier and slower, and of course it cannot be saved into a variable or other structure without encoding first.
+
 set–members
+:   Any piece of data may be interpreted as a set, with members detected via the `@`{.hatstack} operators, and enumerated with the `unpack`{.hatstack} operator `#`{.hatstack}.
+    If a number is interpreted as a set, the set-members are the bits of the number that were set.
+    Otherwise, sets are constructed from a stack of members using the `{`{.hatstack} and `}`{.hatstack} operators.
+
 number
-map
-function
+:   A piece of data may be stored/interpreted as a natural number.
+    The reverse of above, a set is hereditarily converted to a number by setting a `1`{.hatstack} bit at each memberʼs value (as a natural number).
+    Large sets (of depth greater than 6) simply cannot be converted to a natural numeric, it would take too much space.
+    Any other notion of number needs to be encoded.
+
 pair–elements
+:   An ordered pair (a special encoding for tuples of 2 elements).
+    By convention, the element corresponding to the top of the stack is called “first” (`fst`{.hatstack}), the element below it on the stack is called “second” (`snd`{.hatstack}), even though this is reverse of source order.
+
+    There are several different encodings of pairs.
+    There is the Kuratowski encoding of ordered pairs, `{ {.0}, {.0, .1} }`{.hatstack}, which is taken as standard in formal set theory.
+    There is an encoding that is optimized for small numbers paired with larger values, that is used for encoding lists and tuples later.
+    And a slight modification of that, `{ { .0, 0 }, { {.1}, 1 } }`{.hatstack}, as a (mostly) minimal encoding for the standard ordered 2-pair.^[It could be minimized to `{ { .0, 0 }, { .1, 1 } }`{.hatstack}, but that requires a special case to decode, and even encode, if one wants to maintain the precise representation of the pair elements, to not conflate `0`{.hatstack} with `{}`{.hatstack}.]
+
+tuple–elements
+:   An encoding of ordered tuples (or lists) with an arbitrary number of elements.
+
+map
+:   A map is a set of pairs (with the standard encoding).
+    The `fst`{.hatstack} component is from the domain, and the `snd`{.hatstack} in the range.
+
+function
+
 
 ### Algebra
 
@@ -515,3 +548,7 @@ Monoids and semigroups all around.
 Semiring of the natural numbers, with monus.
 
 Distributive lattice (with bottom, not top) of hereditarily finite sets.
+
+The union of von Neumann numerals is their maximum, intersection their minimum: `.0 vonNeumann .1 vonNeumann ∪ = .0 .1 ∨ vonNeumann`{.hatstack} and `.0 vonNeumann .1 vonNeumann ∩ = .0 .1 ∧ vonNeumann`{.hatstack}.
+I imagine all reasonable encodings of numerals are strictly monotonic, preserving max and min.
+

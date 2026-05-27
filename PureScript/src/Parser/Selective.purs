@@ -674,7 +674,7 @@ instance strongControlFlow :: Functor f => Strong (ControlFlow f) where
   second (Sequencing snuggles) = unsnuggle snuggles \ab bc ->
     Sequencing $ snuggle (second ab) (second bc)
 
-instance costrongControlFlow :: Functor f => Choice (ControlFlow f) where
+instance choiceControlFlow :: Functor f => Choice (ControlFlow f) where
   left :: forall i j r. ControlFlow f j r -> ControlFlow f (Either j i) (Either r i)
   left (Action f) = Action (left <$> f)
   left (Pure f) = Pure (left f)
@@ -890,6 +890,56 @@ instance casingStar :: (Casing f) => Casing (Star f ctx) where
   caseTreeOn (Star fi) cases = Star \ctx ->
     caseTreeOn (fi ctx) (cases # hoistCaseTree \(Star f) -> f ctx)
 
+
+data Stages f a = Present a | Future (f (Stages f a))
+derive instance functorStages :: Functor f => Functor (Stages f)
+
+cue :: forall f a. Applicative f => Stages f a -> f (Stages f a)
+cue (Present value) = pure (Present value)
+cue (Future stage) = stage
+
+decue :: forall f a. Stages f a -> Either a (f (Stages f a))
+decue (Present value) = Left value
+decue (Future stage) = Right stage
+
+instance Applicative f => Casing (Stages f) where
+  -- If we know the value already, we can select the correct case
+  -- from the case tree directly
+  caseTreeOn (Present value) cases = applyCaseTree cases value
+  -- Otherwise we sequence the first layer of `f` effects from
+  -- the case tree and run `caseTreeOn` the results
+  caseTreeOn (Future scrutinee) cases = Future $
+    caseTreeOn <$> scrutinee <*> traverseCaseTree cue cases
+
+-- You can treat it like a free monad, but just use a free monad at that point
+-- monadStage :: forall f i r. Monad f => f (Stages f i) -> CaseTree i (Stages f) r -> f (Stages f r)
+-- monadStage scrutinee cases = staging scrutinee (applyCaseTree cases)
+--   where
+--   -- This is like `>>=` (bind)
+--   staging :: f (Stages f i) -> (i -> Stages f r) -> f (Stages f r)
+--   staging stage f = stage <#> case _ of
+--     Present i -> f i
+--     Future stage' -> Future (staging stage' f)
+
+-- Or you can try to mix them: let `caseTreeOn @f` choose the branch if it sees
+-- a `Return` (encoded as a `Left` through `decue`), otherwise run all of the
+-- branch effects to handle the `Future` in the next case
+selectiveStage :: forall f i r. Casing f => Applicative f => f (Stages f i) -> CaseTree i (Stages f) r -> f (Stages f r)
+selectiveStage scrutinee cases = caseTreeOn (scrutinee) $
+  twoCases decue (hoistCaseTree' cue cases) (OneCase futureCases)
+  where
+  -- Speculative execution, when the branch is not known
+  futureCases :: f (f (Stages f i) -> Stages f r)
+  futureCases =
+    -- Lift all of the staged effects `f` through the cases, using `apply @f`
+    mergeCaseTree (hoistCaseTree' cue cases)
+      -- Then push the remaining effects down through the stages
+      <#> staging
+  -- This is like `=<<` (bindFlipped)
+  staging :: (i -> Stages f r) -> f (Stages f i) -> Stages f r
+  staging f stage = Future $ stage <#> case _ of
+    Present i -> f i
+    Future stage' -> staging f stage'
 
 
 --------------------------------------------------------------------------------

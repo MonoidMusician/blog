@@ -173,7 +173,7 @@ stringParse m = parse m . map (join (,))
 -- trying to add to the existing matches
 --
 -- `try . try = try`
-try :: ParseMachine ix tok r -> ParseMachine ix tok r
+try :: forall ix tok r. ParseMachine ix tok r -> ParseMachine ix tok r
 try (ParseStep matchtrack mr) = ParseStep (extend $ compress matchtrack) mr where
   -- Extend with a fresh `MatchTrack`
   extend NoMatch = MatchTrack (WithCatchall (Coyoneda absurd Map.empty) Nothing) NoMatch
@@ -181,7 +181,7 @@ try (ParseStep matchtrack mr) = ParseStep (extend $ compress matchtrack) mr wher
     MatchTrack possibilities (extend more)
   -- Compress both stages into the first stage, so they trigger backtracking:
   -- further binds will go on the fresh second stage and not trigger backtracking
-  compress = fmap . fmap . fmap $ _pure . (`tryBind` id) -- `pure . tryJoin`
+  compress = fmap . fmap . fmap $ fmap (_pure @r) . (`tryBind` id) -- `fmap pure . tryJoin`
 
 -- The opposite of `try`: if it consumes one token, it fails hard instead of
 -- backtracking into the next alternative. (Could still be caught in higher
@@ -189,7 +189,7 @@ try (ParseStep matchtrack mr) = ParseStep (extend $ compress matchtrack) mr wher
 --
 -- They aren't exactly inverses: `commit . try . commit = commit`, since
 -- `commit` is a little more destructive: it undoes all `try`s
-commit :: ParseMachine ix tok r -> ParseMachine ix tok r
+commit :: forall ix tok r. ParseMachine ix tok r -> ParseMachine ix tok r
 commit (ParseStep matchtrack mr) = ParseStep (trim $ compress matchtrack) mr where
   -- Extend with a fresh `MatchTrack`
   trim possibilities | hasNoMatches possibilities = NoMatch
@@ -197,7 +197,7 @@ commit (ParseStep matchtrack mr) = ParseStep (trim $ compress matchtrack) mr whe
   trim NoMatch = NoMatch
   -- Compress both stages into the *second* stage, so they *do not* trigger
   -- backtracking
-  compress = fmap . fmap . fmap $ (`tryBind` id) . _pure -- `tryJoin . pure`
+  compress = fmap . fmap . fmap $ _pure @(ParseMachine ix tok r) . (`tryBind` id) -- `pure . tryJoin`
 
 -- Accepts a single kind of token and calls the continuation with its value
 token :: ix -> ParseMachine ix tok tok
@@ -257,6 +257,10 @@ instance Ord ix => Alternative (ParseMachine ix tok) where
 instance Ord ix => Applicative (ParseMachine ix tok) where
   pure = ParseStep NoMatch . Just
   mf <*> ma = mf >>= (<$> ma) -- this might need better sharing?
+instance (Ord ix, Semigroup r) => Semigroup (ParseMachine ix tok r) where
+  l <> r = (<>) <$> l <*> r
+instance (Ord ix, Monoid r) => Monoid (ParseMachine ix tok r) where
+  mempty = pure mempty
 
 -- `>>=` is interesting because it accumulates the tokens to expect before
 -- it runs (in the case of monadic parsing, this is generally interleaved
@@ -489,6 +493,18 @@ class Q c t where
 instance KnownChar c => Q (c :: Char) (StringParseMachine ()) where
   qq = void $ token $ charVal $ Proxy @c
 
+-- chars :: forall t u. Lexer Char Char t u -> [Maybe (Set Char)]
+-- chars (P.Lexer machine) = go $ P.accept machine
+--   where
+--   go :: forall r. P.ParseMatchTrack Char Char r -> [Maybe (Set Char)]
+--   go = \case
+--     P.MatchTrack (P.WithCatchall (P.Coyoneda _ m1) fallback) ms ->
+--       case fallback of
+--         Nothing -> [Just $ Map.keysSet m1] <> go ms
+--         Just fb -> [Just $ Map.keysSet m1, Nothing] <> do
+--           traceShowWith (const $ go . P.accept . fb <$> [ '0', 'f', ' ' ]) go ms
+--     P.NoMatch -> []
+
 --------------------------------------------------------------------------------
 -- EXAMPLES: JSON                                                             --
 --------------------------------------------------------------------------------
@@ -633,7 +649,6 @@ jsonNumber = readSource do
 jsonString :: StringParseMachine String
 jsonString = token '"' *> charList
   where
-  -- TODO: fix the fact that `token '"'` needs to be in front?
   charList = [] <$ token '"' <|> (:) <$> char <*> charList
   char = (token '\\' *> escape)
     <|> satisfies (not . isControl)

@@ -2,6 +2,7 @@ module Main where
 
 import Prelude
 
+import Airplane.Main as Airplane.Main
 import Data.Foldable (foldl)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
@@ -16,6 +17,7 @@ import Riverdragon.Main.Live as Riverdragon.Main.Live
 import Riverdragon.Roar.LaunchkeyMK4 as LaunchkeyMK4
 import Riverdragon.Roar.Live as Riverdragon.Roar.Live
 import Riverdragon.Test as Riverdragon.Test
+import Train.Main as Train.Main
 import Web.Event.EventTarget (addEventListener, eventListener, removeEventListener)
 import Web.HTML (window)
 import Web.HTML.Event.EventTypes (load)
@@ -49,6 +51,8 @@ widgets = foldl Object.union Object.empty
     , "Riverdragon.Main.Live" /\ Riverdragon.Main.Live.widget
     , "Riverdragon.Roar.Live" /\ Riverdragon.Roar.Live.widget
     , "Riverdragon.Test" /\ Riverdragon.Test.widget
+    , "Airplane" /\ Airplane.Main.widget
+    , "Traintle" /\ Train.Main.widget
     , "" /\ Widget.Datatypes.widget
     ]
   ]

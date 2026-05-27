@@ -1,0 +1,190 @@
+machCounter:: ({.} -> (PureMachine {.} Nat))
+machCounter := mintMachine [] (: Nat :)
+  (\i {.} => [ i [i] ])
+
+mintAccumulator:: %forall(m)(%constrain(Monoid m)(
+  {.} -> {
+    get = (Unit -> m)
+    put = (m -> Unit)
+    reset = (Unit -> m)
+  }
+))
+mintAccumulator: {.} => { get put reset }:
+  mintCell mempty => {. get modify swap .}
+
+  (\more => modify (!1 append #0 more)) => put
+  (!1 swap mempty !) => reset
+
+
+mintCleanup:: (({.} -> {.}) -> ({.} -> {.}))
+mintCleanup: cb# => runCb:
+  mintCell cb# => {. swap .}
+  (!1 {.} !) => nocb
+
+  (| {.} => {.}:
+    swap nocb => cb#
+    cb# {.} => {.}
+  |) => runCb
+
+mintCleanupRunning:: %forall(i)(
+  (i -> {.}) ->
+  {
+    cleanup = (i -> {.})
+    running = ({.} -> Bool)
+  }
+)
+mintCleanupRunning: cb# => { cleanup running }:
+  mintCell [cb#] (: Maybe ({.} -> {.}) :) => {. get swap .}
+
+  (| i => {.}:
+    swap [] => {{
+    | [];
+    | [cb#]:
+      cb# i => {.}
+    }}
+  |) => cleanup
+
+  (| {.} => isRunning:
+    get {.} => {{
+    | [_]:
+      "T" => isRunning
+    | []:
+      "F" => isRunning
+    }}
+  |) => running
+
+mintRolling:: ({.} -> (({.} -> {.}) -> {.}))
+mintRolling: {.} => swapAndRunCallback
+  mintCell (!1 {.} !) => {. swap .}
+
+  (| newCb => {.}:
+    swap newCb => oldCb
+    oldCb {.} => {.}
+  |) => swapAndRunCallback
+
+mintBreakerResettable:: %forall(t)(
+  (t -> {.}) ->
+  {
+    run=(t -> {.})
+    trip=({.} -> {.})
+    reset=({.} -> {.})
+    running=({.} -> Bool)
+  }
+)
+mintBreakerResettable: cb => { run trip reset running }:
+  mintCell "T" => needsToRun
+
+  (|
+  | t => {.}:
+    needsToRun.get {.} =>? "T"
+    cb t => {.}
+  | _ => {.};
+  |) => run
+
+  needsToRun.get => running
+  {{!1 needsToRun.set "F" => {.} !}} => trip
+  {{!1 needsToRun.set "T" => {.} !}} => reset
+
+mintBreaker:: %forall(t)(
+  (t -> {.}) ->
+  {
+    run=(t -> {.})
+    trip=({.} -> {.})
+    running=({.} -> Bool)
+  }
+)
+mintBreaker: cb# => { run trip running }:
+  mintCell [cb#] (: Maybe (t -> {.}) :) => {. set get .}
+
+  (| t => {.}:
+    get {.} => {{
+    | [];
+    | [cb#]:
+      cb# t => {.}
+    }}
+  |) => run
+
+  (| {.} => isRunning:
+    get {.} => {{
+    | [_]:
+      "T" => isRunning
+    | []:
+      "F" => isRunning
+    }}
+  |) => running
+
+  {{!1 set {.} => {.} !}} => trip
+
+mintSubscriptions:: %forall(o)(
+  {.} ->
+  {
+    register = (o -> ({.} -> {.}))
+    notify   = ((o -> {.}) -> {.})
+    destroy  = ((o -> {.}) -> {.})
+    size     = ({.} -> Nat)
+    running  = ({.} -> Bool)
+  }
+)
+mintSubscriptions: {.} => { register notify destroy size running }:
+  idGenerator {.} => freshId
+  mintArray [] => listeners
+  mintCleanupRunning
+    (| onEach => {.}:
+      listeners.reset => destroyed
+      traverse_ (\[_id o] => onEach o) destroyed => {.}
+    |) => { cleanup=destroy running }
+
+  (|
+  | o => cleanup:
+    running {.} =>? "T"
+    freshId {.} => id
+    listeners.push [id o] => {.}
+    mintCleanup ASDF => cleanup
+  | _ => (!1 {.} !);
+  |) => push
+
+  (| onEach => {.}:
+    listeners.get => current
+    traverse_ (\[_id o] => onEach o) current => {.}
+  |) => notify
+
+  listeners.size => size
+  cleanup => destroy
+
+mintThreshold:: (Nat -> ({.} -> {.}) -> ({.} -> {.}))
+mintThreshold: [] cb => (!1 {.} !):
+  cb {.} => {.}
+mintThreshold: n# cb# => countdown:
+  mintCell [n# cb#] (: [] | [Nat ({.} -> {.})] :) => status
+
+  (| {.} => {.}:
+    status.get => {{
+    | [];
+    | [[] cb#]:
+      status.set [] => {.}
+      cb# {.} => {.}
+    | [[n#] cb#]:
+      status.set [n# cb#] => {.}
+    }}
+  |)
+
+whileLoading: loader => result:
+  mintCell "T" => isLoading
+  loader isLoading.get => result
+  isLoading.set "F" => {.}
+
+gatherLoadingBurst: loader => result:
+  mintArray [] => bursts
+  loading
+    (| isLoading => result:
+      loader
+        (| value => handled:
+          isLoading {.} => {{
+          | "T":
+            bursts.push value => {.}
+            "T" => handled
+          | "F":
+            "F" => handled
+          }}
+        |) => result
+    |) => result

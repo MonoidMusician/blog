@@ -10,15 +10,6 @@ import json
 
 from util.auth import auth_header_name
 
-def canned(text: str, mime="text/plain", location=None):
-    ret = [
-        ("add_header", "Content-Type", mime),
-        ("return", 200, text) if len(text) else ("return", 204),
-    ]
-    if location is not None:
-        return Directive("location", location, ret)
-    return ret
-
 
 # Referer: Δ-44203
 friendly = """
@@ -214,7 +205,6 @@ with tempfile.NamedTemporaryFile(mode="wt") as f:
     ])
     f.write(config+"\n")
     f.flush()
-    # subprocess.run(["cat", f.name])
     subprocess.run(["nginx", "-t", "-c", f.name])
 
 

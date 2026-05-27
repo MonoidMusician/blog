@@ -10,18 +10,19 @@ import Data.Traversable (for)
 import Effect.Aff (Milliseconds(..))
 import Effect.Class (liftEffect)
 import Effect.Random (randomRange)
+import Math.Matrix (bounds2bounds1, mkBounds, ($.))
 import Riverdragon.Dragon.Bones (Dragon(..), (=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Components.Envelope (envelopeComponent)
 import Riverdragon.River (Lake, River, createRiverStore)
 import Riverdragon.River as River
 import Riverdragon.River.Beyond (delay)
-import Riverdragon.River.Streamline (Interval(..), linmap)
 import Riverdragon.Roar.Dimensions (aWeighting, loudnessCorrection, temperaments)
 import Riverdragon.Roar.Knob (Envelope, Knob(..), knobToAudio, planned, toKnob)
 import Riverdragon.Roar.Roarlette as YY
 import Riverdragon.Roar.Score (ScoreM, mtf, mtf_)
 import Riverdragon.Roar.Score as Y
+import Riverdragon.Roar.Sugar (Noise(..), toNode)
 import Riverdragon.Roar.Synth (installSynth, notesToNoises)
 import Riverdragon.Roar.Types (Roar, toRoars)
 import Riverdragon.Roar.Viz (oscilloscope, spectrogram)
@@ -37,7 +38,7 @@ type Env =
   }
 
 pitchGain :: Int -> Number
-pitchGain semitones = linmap (Interval 48.0 84.0) (Interval 1.0 0.1) $ Int.toNumber semitones
+pitchGain semitones = bounds2bounds1 (mkBounds 48.0 84.0) (mkBounds 1.0 0.1) $. Int.toNumber semitones
 
 oneVoice :: Env -> Int -> River Unit -> ScoreM
   { value :: Array
@@ -49,8 +50,8 @@ oneVoice :: Env -> Int -> River Unit -> ScoreM
 oneVoice { pinkEnv, sineEnv } semitones release = do
   -- Console.logShow semitones
   let volume = pitchGain semitones
-  -- pink <- toNode PinkNoise
-  -- pinkGain <- Y.gain pink { adsr: pinkEnv, volume: 0.2, release }
+  pink <- toNode PinkNoise
+  pinkGain <- Y.gain { adsr: pinkEnv, volume: 0.2, release } pink
   frequency <- mtf_ semitones -- this live updates if tuning or temperament changes
   sine <- Y.osc
     { detune: 0
@@ -61,7 +62,7 @@ oneVoice { pinkEnv, sineEnv } semitones release = do
   sineGain <- Y.gain gainKnob sine
   let leave = delay (100.0 # Milliseconds) release
   { ctx: _ctx } <- ask
-  pure { value: [{ audio: [ sineGain ], gain: gainKnob }], leave }
+  pure { value: [{ audio: [ sineGain, pinkGain ], gain: gainKnob }], leave }
 
 harpsynthorgVoiceV1 :: forall env. env -> Int -> River Unit -> ScoreM
   { value :: Array
@@ -72,8 +73,8 @@ harpsynthorgVoiceV1 :: forall env. env -> Int -> River Unit -> ScoreM
   }
 harpsynthorgVoiceV1 _env semitones release = do
   let
-    rangeScaled lo hi = linmap (Interval 20.0 83.0) (Interval lo hi) (Int.toNumber semitones)
-    rangeScaled' lo hi = linmap (Interval 36.0 83.0) (Interval lo hi) (Int.toNumber semitones)
+    rangeScaled  lo hi = bounds2bounds1 (mkBounds 20.0 83.0) (mkBounds lo hi) $. Int.toNumber semitones
+    rangeScaled' lo hi = bounds2bounds1 (mkBounds 36.0 83.0) (mkBounds lo hi) $. Int.toNumber semitones
     duration = rangeScaled' 6.0 3.5
   { ctx: _ctx } <- ask
   baseRamp <- knobToAudio _ctx $ toKnob
@@ -192,6 +193,6 @@ widgetHarpsynthorg _ = pure $ Egg do
     [ synth.playPause
     , synth.midi
     , D.div [ D.Self =:= \el -> mempty <$ sendScopeParent el ] mempty
-    -- , pinkEnvUi
-    -- , sineEnvUi
+    , pinkEnvUi
+    , sineEnvUi
     ]

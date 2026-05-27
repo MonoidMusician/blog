@@ -9,7 +9,7 @@ import Control.Monad.ResourceT (run)
 import Data.Array as A
 import Data.Array as Array
 import Data.Filterable (filter)
-import Data.Foldable (fold, traverse_)
+import Data.Foldable (fold, for_, traverse_)
 import Data.HeytingAlgebra (ff)
 import Data.Int as Int
 import Data.Lens (Prism', prism')
@@ -24,13 +24,14 @@ import Effect (Effect)
 import Effect.Aff (Aff, Milliseconds(..))
 import Effect.Class (liftEffect)
 import Idiolect (intercalateMap)
+import Math.Matrix (bounds2bounds1, mkBounds, ($.))
 import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones ((.$), (.$~~), (=:=), (>@), (~~<))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings as Wings
 import Riverdragon.River (Flowing, NotFlowing, Stream, createRiverStore, createStore, dam, mailboxRiver, makeLake, mapArray, mayMemoize, singleShot, stillRiver, unsafeRiver)
 import Riverdragon.River as River
-import Riverdragon.River.Beyond (KeyPhase(..), affToLake, delay, mkKeyEvent)
+import Riverdragon.River.Beyond (KeyPhase(..), affToLake, delay, interval, mkKeyEvent)
 import Riverdragon.River.Streamline as S
 import Riverdragon.Roar.Dimensions (aWeighting, temperaments)
 import Riverdragon.Roar.Knob (toKnob)
@@ -132,7 +133,7 @@ init lk = _.result <$> run "launchkey" do
     -- Relative encoders, pivot around 0x40 = 0
     liftEffect $ dawCmd [0xB6, 0x45, 0x01]
     -- Drum colors
-    -- finish.destructor =<< River.subscribe (interval (Milliseconds 1200.0)) \loop ->
+    -- River.subscribe (interval (Milliseconds 1200.0)) \loop ->
     --   for_ (Array.range 0 15) \idx -> do
     --     dawCmd $ drumColor idx (16 * mod loop 8 + idx)
 
@@ -256,9 +257,9 @@ mkDragonVoice = \{ pitch, temperament } -> do
         }
       let
         -- Scale a number over the range of the instrument
-        ranging from to = S.linmap
-          (S.Interval 20.0 83.0)
-          (S.Interval from to)
+        ranging from to = bounds2bounds1
+          (mkBounds 20.0 83.0)
+          (mkBounds from to) $.
           (Int.toNumber semitones)
         -- Build up a sound as a collection of pure sine tones
         waves =

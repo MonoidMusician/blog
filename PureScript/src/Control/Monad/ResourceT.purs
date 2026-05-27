@@ -4,6 +4,7 @@ import Prelude
 
 import Control.Alternative (class Alternative)
 import Control.Apply (lift2)
+import Control.Monad.Cell.Basics (class Cellular, _mintCell, liftCell)
 import Control.Monad.Cont (class MonadCont, callCC)
 import Control.Monad.Error.Class (class MonadError, class MonadThrow, catchError, throwError)
 import Control.Monad.Reader (class MonadAsk, class MonadReader, ask, local)
@@ -56,6 +57,14 @@ start_ name computation = do
 -- | Starts and waits for the resources to be ready.
 run :: forall m r. MonadAff m => String -> ResourceT m r -> m { result :: r, destroy :: Effect Unit, scope :: Scope }
 run name = start name >=> \{ result, wait, destroy, scope } -> { result, destroy, scope } <$ liftAff (Aff.joinFiber wait)
+
+-- | Start the asynchronous computation.
+launch :: forall r. String -> ResourceT Aff r -> Effect { result :: Fiber r, destroy :: Effect Unit, scope :: Scope }
+launch name computation = do
+  { result, destroy, scope } <- start name do
+    scope <- ResourceT pure
+    liftEffect $ Aff.launchAff $ _.result <$> scopedRun name scope computation
+  pure { result, destroy, scope }
 
 -- | Run in an existing scope.
 scopedStart :: forall m r. MonadEffect m => String -> Scope -> ResourceT m r -> m { result :: r, wait :: Fiber Unit, destroy :: Effect Unit }
@@ -296,3 +305,5 @@ instance MonadRec m => MonadRec (ResourceT m) where
   tailRecM k a = ResourceT \r -> tailRecM (k' r) a
     where
     k' r a' = case k a' of ResourceT f -> pure =<< f r
+instance Cellular m => Cellular (ResourceT m) where
+  _mintCell = _mintCell >>> lift >>> map (liftCell lift)

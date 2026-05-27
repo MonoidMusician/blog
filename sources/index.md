@@ -75,7 +75,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   >
   > <del>Most notably: automatic connection only works on Chromium-based browsers and only for [LAN]{t=} connections.</del>
   >
-  > [Chromium has changed and no longer allows the side channel](https://webrtc-review.googlesource.com/c/src/+/366562).
+  > [Chromium has changed and no longer allows the smol side channel](https://webrtc-review.googlesource.com/c/src/+/366562).
   > :::
   >
   > <details class="Warning">

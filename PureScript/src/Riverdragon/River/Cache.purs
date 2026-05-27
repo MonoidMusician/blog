@@ -72,7 +72,7 @@ lru defaultAllowance = do
 makeCached :: forall t. Cacheable t =>
   LRU t -> (Boolean -> Allocar Unit) -> Aff t -> Allocar (Aff (Allocar t))
 makeCached (LRU { register }) activeOrEjected acquire = do
-  demand <- Bed.refc
+  demand <- Bed.refcounting
   bump <- Bed.prealloc (pure unit :: Allocar Unit)
   obtaining <- Bed.prealloc false
   cached <- AVarE.empty :: Allocar (AVar.AVar (Either Aff.Error t))
@@ -84,7 +84,7 @@ makeCached (LRU { register }) activeOrEjected acquire = do
       r <- act
       liftEffect do
         demand.incr
-        settled <- Bed.cleanup demand.decr
+        settled <- Bed.cleanup do void demand.decr
         pure $ r <$ settled
 
     tryDelete :: Allocar Boolean

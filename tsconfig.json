@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "lib": ["esnext", "DOM"],
+    "target": "esnext",
+    "strict": true,
+    "strictNullChecks": true
+  }
+}

@@ -2,7 +2,8 @@ module Riverdragon.Roar.Synth where
 
 import Prelude
 
-import Control.Monad.ResourceM (class MonadResource, inSubScope, liftResourceM, selfDestruct, track, track_)
+import Control.Monad.ResourceM (class MonadResource, inSubScope, selfDestruct, track_)
+import Control.Plus (empty)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable (for_)
@@ -17,10 +18,10 @@ import Effect.Class.Console as Console
 import Riverdragon.Dragon (Dragon)
 import Riverdragon.Dragon.Bones ((=:=))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.River (Lake, River, Stream, createRiver, createRiverStore, stillRiver, (/?*\))
+import Riverdragon.River (Lake, River, Stream, createRiver, createRiverStore, mailboxRiver, stillRiver, store, whileJust, (/?*\))
 import Riverdragon.River as River
 import Riverdragon.River.Beyond (KeyPhase(..), fallingLeaves, keyEvents)
-import Riverdragon.Roar.Score (ScoreM, perform, scoreScope)
+import Riverdragon.Roar.Score (ScoreM, performM, scoreScope)
 import Riverdragon.Roar.Types (Roar)
 import Unsafe.Coerce (unsafeCoerce)
 import Web.Audio.Context (LatencyHint(..))
@@ -112,26 +113,20 @@ keymap =
   ]
 
 installSynth :: forall m. MonadResource m =>
-  (River { key :: Int, pressed :: Boolean } -> ScoreM (Lake (Array Roar))) ->
+  (River { key :: Int, pressed :: Boolean, velocity :: Maybe Int, aftertouch :: River Int } -> ScoreM (Lake (Array Roar))) ->
   m
     { playPause :: Dragon
     , midi :: Dragon
-    , noteStream :: River { key :: Int, pressed :: Boolean }
+    , noteStream :: River { key :: Int, pressed :: Boolean, velocity :: Maybe Int, aftertouch :: River Int }
     }
 installSynth synthVoices = do
-  { send: setPlaying, stream: isPlaying } <- createRiverStore Nothing
+  { send: setPlaying, stream: isPlaying } <- createRiverStore (Just true)
   { send: sendNote, stream: noteStream } <- createRiver
 
-  let
-    startSynth = do
-      track $ perform { latencyHint: Interactive, sampleRate: 48000 } \_ctx -> do
-        synthVoices noteStream
-
-  -- FIXME(?)
-  void do liftResourceM startSynth
-  River.subscribeM1 isPlaying if _
-    then void startSynth
-    else pure unit
+  -- (Re-)run `startSynth` when `true`, otherwise destroy the last one
+  River.reenableM1 isPlaying do
+    void $ performM { latencyHint: Interactive, sampleRate: 48000 } do
+      synthVoices noteStream
 
   -- Install inputs (keyboard and MIDI)
   inputs <- synthInputs sendNote
@@ -154,6 +149,8 @@ installSynth synthVoices = do
 synthInputs :: forall flow m. MonadResource m =>
   ( { key :: Int
     , pressed :: Boolean
+    , velocity :: Maybe Int
+    , aftertouch :: River Int
     } -> Effect Unit
   ) -> m
   { grabMIDI :: Effect Unit
@@ -173,11 +170,12 @@ synthInputs sendNote = do
     event | Array.elem event.targetType [ "body", "a", "button" ], Just note <- getNote event -> do
       event.preventDefault
       case event.phase of
-        KeyDown -> sendNote { key: note, pressed: true }
+        KeyDown -> sendNote { key: note, pressed: true, velocity: Nothing, aftertouch: empty }
         KeyRepeat -> pure unit
-        KeyUp -> sendNote { key: note, pressed: false }
+        KeyUp -> sendNote { key: note, pressed: false, velocity: Nothing, aftertouch: empty }
     _ -> pure unit
 
+  -- Handle requesting MIDI access and receiving events from a connected device
   midiAccess <- createRiverStore Nothing
   let
     grabMIDI = launchAff_ do
@@ -195,9 +193,24 @@ synthInputs sendNote = do
     for_ inputs \input -> do
       Console.log $ "Input " <> (MIDI.getInfo input).name
       track_ do MIDI.onmidimessage input midiMessages.send
-  River.subscribe midiMessages.stream case _ of
-    [0x90, note, velocity] -> sendNote { key: note, pressed: velocity > 0 }
-    [0x80, note, _velocity] -> sendNote { key: note, pressed: false }
+
+  -- Track aftertouch with a mailbox, so each message is addressed to
+  -- the right stream
+  { send: sendAftertouch, stream: aftertouchBundle } <- createRiver
+  let aftertouchFor = mailboxRiver aftertouchBundle
+  -- Parse each message
+  River.subscribeM midiMessages.stream case _ of
+    [0x90, note, velocity] -> do
+      -- Track aftertouch values until the note is released
+      { stream: aftertouch } <- store $ whileJust $ aftertouchFor note
+      let event = { key: note, pressed: velocity > 0, velocity: if velocity > 0 then Just velocity else Nothing, aftertouch }
+      liftEffect do sendNote event
+    [0x80, note, velocity] -> do
+      -- Release aftertouch and then the note
+      liftEffect do sendAftertouch { key: note, value: Nothing }
+      liftEffect do sendNote { key: note, pressed: false, velocity: if velocity > 0 then Just velocity else Nothing, aftertouch: empty }
+    [0xA0, note, pressure] -> do
+      liftEffect do sendAftertouch { key: note, value: Just pressure }
     _ -> pure unit
 
   pure

@@ -2,10 +2,13 @@ module Control.Monad.ResourceM where
 
 import Control.Monad.ResourceT
 
+import Control.Monad.Cell.Basics (class Cellular)
 import Control.Monad.Error.Class (class MonadError, catchError, throwError)
 import Control.Monad.Except (ExceptT, mapExceptT)
+import Control.Monad.Identity.Trans (IdentityT, mapIdentityT)
 import Control.Monad.MutStateT (MutStateT, mapMutStateT)
 import Control.Monad.Reader (ReaderT, mapReaderT)
+import Control.Monad.Rec.Class (class MonadRec)
 import Control.Monad.State (StateT, mapStateT)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (WriterT, mapWriterT)
@@ -15,14 +18,16 @@ import Effect (Effect)
 import Effect.Aff (Aff, joinFiber)
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (class MonadEffect, liftEffect)
-import Prelude (class Monoid, type (~>), Unit, map, pure, void, zero, (*>), (<#>), (<$), (<$>), (<*), (<<<), (<=<), (=<<), (>>=), (>>>))
+import Effect.Ref as Ref
+import Prelude (class Monoid, type (~>), Unit, bind, discard, join, map, pure, unit, void, zero, (*>), (<#>), (<$), (<$>), (<*), (<<<), (<=<), (=<<), (>>=), (>>>))
+import Uncurried.RWSET (RWSET, mapRWSET)
 
-class MonadEffect m <= MonadResource m where
+class (Cellular m, MonadEffect m) <= MonadResource m where
   selfScope :: m Scope
   -- Somewhat unsafe, e.g. with `mempty :: Scope`
   _inScope :: Scope -> m ~> m
 
-instance MonadEffect m => MonadResource (ResourceT m) where
+instance (Cellular m, MonadEffect m) => MonadResource (ResourceT m) where
   selfScope = ResourceT \scope -> pure scope
   _inScope scope (ResourceT f) = ResourceT \_ -> f scope
 
@@ -53,12 +58,20 @@ addWaiter :: forall m. MonadResource m => Rational -> Dir -> Aff Unit -> m Unit
 addWaiter lvl dir waiter = do
   _addWaiters <<< _mkWaiter lvl dir =<< liftEffect do _share waiter
 
+-- | An action to wait on before the resource is ready, at level zero and in parallel
 waitr :: forall m. MonadResource m => Aff Unit -> m Unit
 waitr = addWaiter zero Par
 
--- Function to run when everything in scope is really ready (level 100)
+-- | Function to run when everything in scope is really ready (level 100)
 whenReady :: forall m. MonadResource m => Effect Unit -> m Unit
 whenReady = addWaiter (fromInt 100) Seq <<< liftEffect
+
+-- | Add a destructor only if the action runs
+readyThenTeardown :: forall m. MonadResource m => Effect Unit -> Effect Unit -> m Unit
+readyThenTeardown init exit = do
+  shouldDestroy <- liftEffect do Ref.new (pure unit)
+  whenReady do init *> Ref.write exit shouldDestroy
+  destr do join (Ref.read shouldDestroy)
 
 -- | Wait for everything to be ready
 wait :: forall m. MonadResource m => MonadAff m => m Unit
@@ -93,9 +106,11 @@ with name mk cont = scoped name do
 noWait :: forall m. MonadResource m => m ~> m
 noWait act = selfScope >>= noWaitScope >>> \scope -> _inScope scope act
 
+-- | Track the creation of a resource that comes with an explicit destructor.
 trackM :: forall r m. MonadResource m => m { destroy :: Effect Unit | r } -> m { destroy :: Effect Unit | r }
 trackM m = m >>= \r -> r <$ destr r.destroy
 
+-- | This is most useful in `Effect`, which cannot track the destructors another way.
 track :: forall r m. MonadResource m => Effect { destroy :: Effect Unit | r } -> m { destroy :: Effect Unit | r }
 track = trackM <<< liftEffect
 
@@ -109,6 +124,10 @@ trackM_ = void <<< trackM <<< map { destroy: _ }
 
 track_ :: forall m. MonadResource m => Effect (Effect Unit) -> m Unit
 track_ = trackM_ <<< liftEffect
+
+-- | Record a subscribe and unsubscribe pair.
+unSub :: forall m. MonadResource m => Effect (Effect Unit) -> m Unit
+unSub = trackM_ <<< liftEffect
 
 trackA_ :: forall m. MonadAff m => MonadResource m => String -> Aff (Effect Unit) -> m Unit
 trackA_ name = void <<< trackA name <<< map { destroy: _ }
@@ -132,3 +151,9 @@ instance MonadResource m => MonadResource (ExceptT e m) where
 instance MonadResource m => MonadResource (MutStateT r m) where
   selfScope = lift selfScope
   _inScope scope = mapMutStateT (_inScope scope)
+instance (Monoid w, MonadResource m, MonadRec m) => MonadResource (RWSET r w s e m) where
+  selfScope = lift selfScope
+  _inScope scope = mapRWSET (_inScope scope)
+instance MonadResource m => MonadResource (IdentityT m) where
+  selfScope = lift selfScope
+  _inScope scope = mapIdentityT (_inScope scope)

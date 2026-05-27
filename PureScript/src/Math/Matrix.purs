@@ -3,13 +3,23 @@ module Math.Matrix where
 import Prelude
 
 import Control.Apply (lift2)
+import Data.Align (class Align, align)
+import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (bimap)
 import Data.Distributive (class Distributive, collect, collectDefault, distribute)
 import Data.Eq (class Eq1)
-import Data.Foldable (class Foldable, foldMap)
+import Data.Foldable (class Foldable, any, foldMap, foldl, foldr, sum)
+import Data.FoldableWithIndex (class FoldableWithIndex)
+import Data.Function (on)
+import Data.FunctorWithIndex (class FunctorWithIndex)
+import Data.Generic.Rep (class Generic)
+import Data.Int as Int
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Monoid (power)
 import Data.Monoid.Additive (Additive(..))
-import Data.Newtype (class Newtype, un)
+import Data.Newtype (class Newtype, un, unwrap)
 import Data.Number as Math
 import Data.Ord (class Ord1)
 import Data.Ord.Max (Max(..))
@@ -18,11 +28,23 @@ import Data.Pair (Pair(..))
 import Data.Profunctor (dimap)
 import Data.Semigroup.Foldable (class Foldable1, fold1)
 import Data.Semigroup.Traversable (class Traversable1)
-import Data.Traversable (class Traversable)
-import Data.Tuple (Tuple(..), snd)
+import Data.Show.Generic (genericShow)
+import Data.These (These(..), these)
+import Data.Traversable (class Traversable, traverse)
+import Data.TraversableWithIndex (class TraversableWithIndex)
+import Data.Tuple (Tuple(..), fst, snd)
+import Debug (spy, spyWith)
+import Idiolect (neighbors, sqre, theseop, (/|\), (<#>:))
+import Monoids.BoundsWith (BoundsWith(..), MaxWith(..), MinWith(..))
+import Parser.Optimized.Types (unsafeFromJust)
 import Safe.Coerce (coerce)
+import Unsafe.Coerce (unsafeCoerce)
 
--- x +<t>+ y
+type Degrees = Number
+type Radians = Number
+type Pixels = Number
+type Time = Number -- time 0.0 to 1.0 on a Bézier curve
+type Fraction = Number -- fraction from 0.0 to 1.0 on some scale
 
 -- | Groups are monoids with inverses such that `inv m <> m = mempty = m <> inv m`
 class Monoid m <= Group m where
@@ -34,9 +56,15 @@ rightInv :: forall m. Group m => m -> m -> m
 rightInv m1 m2 = m1 <> inv m2
 infixr 6 leftInv as -<>
 infixl 6 rightInv as <>-
+infixr 6 leftInv as -<>+
+infixl 6 rightInv as +<>-
 doubleInv :: forall m. Group m => m -> m -> m
 doubleInv m1 m2 = inv (m2 <> m1)
 infix 6 doubleInv as -<>-
+
+infixr 6 append as +<>
+infixl 6 append as <>+
+infix 6 append as +<>+
 
 gpower :: forall m. Group m => m -> Int -> m
 gpower _ 0 = mempty
@@ -73,14 +101,126 @@ sdiv v s = smul (recip s) v
 
 infixl 7 sdiv as /.
 
+
+-- x +<t>+ y
+affComb :: forall @s @v. SModule s v => Ring s => v -> s -> v -> v
+affComb x t y = x <> t .* (y <> (negate one) .* x)
+  -- (one - t) .* x <> t .* y
+
+interp :: forall @s @v. SModule s v => Ring s => v -> v -> (s -> v)
+interp = flip <<< affComb
+
+infixl 5 affComb as +<
+infixl 5 identity as >+
+infixl 5 interp as +<*>+
+
+interpS :: forall @s. Ring s => s -> s -> (s -> s)
+interpS x y = unwrap <<< interp (V1 x) (V1 y)
+
+affCombS :: forall @s. Ring s => s -> s -> s -> s
+affCombS x t y = unwrap $ affComb (V1 x) t (V1 y)
+
+infixl 5 affCombS as .+<
+infixl 5 identity as >+.
+
+interpsWith :: forall x y z s. (x -> y -> s -> z) -> Array x -> Array y -> s -> Array z
+interpsWith f xs ys t = Array.zipWith (\x y -> f x y t) xs ys
+
+multiinterpWith :: forall @x. (x -> x -> Number -> x) -> NonEmptyArray (Tuple Number x) -> Number -> x
+multiinterpWith f = NEA.sortWith fst >>> \points ->
+  let fallback = NEA.last points # snd in
+  case NEA.fromArray (pairs points) of
+    -- Just one item
+    Nothing -> \_ -> fallback
+    Just items -> \t ->
+      items
+      -- Find a pair in the right range
+      # NEA.findMap (inRange t)
+      -- Fall back to the last item
+      # fromMaybe fallback
+  where
+  inRange t (Pair (Tuple t0 x0) (Tuple t1 x1))
+    | t0 <= t && t <= t1 =
+      Just $ f x0 x1 $ uninterp t0 t1 t
+    -- Catch t before the items
+    | t <= t0 = Just x0
+  inRange _ _ = Nothing
+
+uninterp :: forall @s. Field s => s -> s -> s -> s
+uninterp t0 t1 t = (t - t0) / (t1 - t0)
+
+triinterpWith :: forall @v. (v -> v -> Number -> v) -> NonEmptyArray { t :: Number, r :: Number, p :: v } -> Number -> v
+triinterpWith i = NEA.sortWith _.t >>> \points ->
+  case NEA.toArray points of
+    [{ p }] -> const p
+    [{ p: p0 }, { p: p1 }] -> i p0 p1
+    pointz | bends <- spyWith "bends" (map _seeBend) $ mkBend <$> neighbors pointz, _ <- spyWith "straights" (pairsWith _seeStraight) bends ->
+      case _ of
+        t | Just r <- inBend t bends -> r
+        t | Just r <- onStraight t bends -> r
+        t | t <= (NEA.head points).t -> (NEA.head points).p
+        _ -> (NEA.last points).p
+  where
+  mkBend = case _ of
+    { prev: Just prev, here: here@{ r }, next: Just next }
+      | dt <- r * (min (here.t - prev.t) (next.t - here.t))
+      , t0 <- here.t - dt, t1 <- here.t + dt
+      , p0 <- i prev.p here.p $ uninterp prev.t here.t t0
+      , p1 <- i here.p next.p $ uninterp here.t next.t t1
+      , bend <- { dt, t0, t1, p0, p1 } ->
+      { prev: Just prev, here, next: Just next, bend: { dt, t0, t1, p0, p1 } }
+    { prev, here, next } -> { prev, here, next, bend: { dt: 0.0, t0: here.t, t1: here.t, p0: here.p, p1: here.p } }
+  _seeBend = \{ here: { p }, bend: { dt, t0, t1, p0, p1 } } -> Array.fold
+    let
+      ht = Array.fold [ "(", "t", "-", unsafeCoerce t0, ")", "/", "(", unsafeCoerce t1, "-", unsafeCoerce t0, ")" ]
+      x y z t = Array.fold [ unsafeCoerce y, "*", "(", "1", "-", unsafeCoerce t, ")", "+", unsafeCoerce z, "*", unsafeCoerce t ]
+    in
+    [ unsafeCoerce t0, " < t < ", unsafeCoerce t1, ": "
+    , x (unsafeCoerce $ "(" <> x p0 p ht <> ")") (unsafeCoerce $ "(" <> x p p1 ht <> ")") ht
+    ]
+  _seeStraight = \{ here: { p: p0, t: t0 }, bend: { t1: r0 } } { here: { p: p1, t: t1 }, bend: { t0: r1 } } -> Array.fold
+    let t = Array.fold [ "(", "t", "-", unsafeCoerce t0, ")", "/", "(", unsafeCoerce t1, "-", unsafeCoerce t0, ")" ] in
+    [ unsafeCoerce r0, " < t < ", unsafeCoerce r1, ": "
+    , unsafeCoerce p0, "*", "(", "1", "-", unsafeCoerce t, ")", "+", unsafeCoerce p1, "*", unsafeCoerce t
+    ]
+  inBend t = Array.findMap case _ of
+    { here, bend: { t0, t1, p0, p1 } }
+      | t0 < t && t < t1, ht <- uninterp t0 t1 t -> Just $
+        i (i p0 here.p ht) (i here.p p1 ht) ht
+    _ -> Nothing
+  onStraight t = Array.findMap case _ of
+    { prev: Just prev, here, bend }
+      | prev.t < t && t < bend.t0 -> Just $
+        i prev.p here.p $ uninterp prev.t here.t t
+    { here, next: Just next, bend }
+      | bend.t1 < t && t < next.t -> Just $
+        i here.p next.p $ uninterp here.t next.t t
+    _ -> Nothing
+
+triinterp :: forall @v. SModule Number v => NonEmptyArray { t :: Number, r :: Number, p :: v } -> Number -> v
+triinterp = triinterpWith interp
+
+frac :: Int -> Int -> Number
+frac n d = Int.toNumber n / Int.toNumber d
+
+pointsBetween :: Number -> Number -> Int -> Array Number
+pointsBetween p0 p1 n = Array.range 0 n <#> \i ->
+  interpS p0 p1 (frac i n)
+
+pointsBounds :: Bounds Number -> Int -> Array Number
+pointsBounds { min: Min bmin, max: Max bmax } = pointsBetween bmin bmax
+
 norm2 :: forall @f @s. Foldable f => Semiring s => f s -> s
 norm2 = un Additive <<< foldMap \s -> Additive (s * s)
 
 norm :: forall @f. Foldable f => f Number -> Number
 norm = Math.sqrt <<< norm2
 
-dot :: forall @f @s. Apply f => Foldable f => Semiring s => f s -> f s -> s
-dot l r = un Additive (foldMap Additive (lift2 (*) l r))
+normalize :: forall @f. Traversable f => f Number -> f Number
+normalize vec = vec <#> (_ / norm vec)
+
+dot :: forall @f @s. Align f => Foldable f => Semiring s => f s -> f s -> s
+dot l r = un Additive (foldMap Additive (align (these zero zero (*)) l r))
 
 infix 5 dot as .*.
 
@@ -106,6 +246,11 @@ class (Transforms t v) <= STransforms s t v | t -> v s where
   det :: t -> s
 
 infixr 2 tf as $*
+
+tfS :: forall @t @s. Transforms t (Vec1 s) => t -> s -> s
+tfS t s = unwrap (tf t (V1 s))
+infixr 2 tfS as $.
+
 infixr 3 tfC as <.
 infixr 3 tfCFlipped as .>
 tfCFlipped :: forall @t @v. Transforms t v => t -> t -> t
@@ -130,7 +275,7 @@ tfRCR t1 t2 = tfR (tfC t2 t1)
 tfRCRFlipped :: forall @t @v. Untransforms t v => t -> t -> t
 tfRCRFlipped = flip tfRCR
 
--- | Newtypes                                                                |--
+-- | Newtypes                                                               | --
 
 newtype NatModule m = NatModule m
 derive instance Newtype (NatModule m) _
@@ -196,7 +341,10 @@ instance (Functor f, Monoid (f v), Untransforms t v) => Untransforms (LTF f t) (
 instance (Functor f, Monoid (f v), STransforms s t v) => STransforms s (LTF f t) (f v) where
   det (LTF t) = det t
 
--- | Main vector/matrix/Bézier types                                         |--
+ltf :: forall @f @t @v. Functor f => Monoid (f v) => Transforms t v => t -> f v -> f v
+ltf = tf <<< LTF
+
+-- | Main vector/matrix/Bézier types                                        | --
 
 data Vec3 s = V3 s s s
 data Vec2 s = V2 s s
@@ -217,6 +365,14 @@ dims = V3 X Y Z :: Vec3 Dim
 dir :: forall @s. Semiring s => Dim -> Vec3 s
 dir xyz = dims <#> \d -> if d == xyz then one else zero
 
+without :: forall s. Dim -> Vec3 s -> Vec2 s
+without X (V3 _ y z) = V2 y z
+without Y (V3 x _ z) = V2 x z
+without Z (V3 x y _) = V2 x y
+
+withouts :: forall s. Vec3 s -> Vec3 (Vec2 s)
+withouts vs = dims <#> \d -> without d vs
+
 _X1 = V1 one :: forall @s. Semiring s => Vec1 s
 _X2 = V2 one zero :: forall @s. Semiring s => Vec2 s
 _Y2 = V2 zero one :: forall @s. Semiring s => Vec2 s
@@ -224,16 +380,43 @@ _X3 = V3 one zero zero :: forall @s. Semiring s => Vec3 s
 _Y3 = V3 zero one zero :: forall @s. Semiring s => Vec3 s
 _Z3 = V3 zero zero one :: forall @s. Semiring s => Vec3 s
 
+v1X = (\(V1 x) -> x) :: forall @s. Vec1 s -> s
+v2X = (\(V2 x _) -> x) :: forall @s. Vec2 s -> s
+v2Y = (\(V2 _ y) -> y) :: forall @s. Vec2 s -> s
+v3X = (\(V3 x _ _) -> x) :: forall @s. Vec3 s -> s
+v3Y = (\(V3 _ y _) -> y) :: forall @s. Vec3 s -> s
+v3Z = (\(V3 _ _ z) -> z) :: forall @s. Vec3 s -> s
+
 type V3 = Vec3 Number
 type V2 = Vec2 Number
 type V1 = Vec1 Number
 
+instance FunctorWithIndex Dim Vec3 where
+  mapWithIndex f (V3 x y z) = V3 (f X x) (f Y y) (f Z z)
+instance FoldableWithIndex Dim Vec3 where
+  foldrWithIndex f i (V3 x y z) = f X x $ f Y y $ f Z z $ i
+  foldlWithIndex f i (V3 x y z) = f X (f Y (f Z i z) y) x
+  foldMapWithIndex f (V3 x y z) = f X x <> f Y y <> f Z z
+instance TraversableWithIndex Dim Vec3 where
+  traverseWithIndex f (V3 x y z) = V3 <$> f X x <*> f Y y <*> f Z z
+
+instance FunctorWithIndex Unit Vec1 where
+  mapWithIndex f = map (f unit)
+instance FoldableWithIndex Unit Vec1 where
+  foldrWithIndex f = foldr (f unit)
+  foldlWithIndex f = foldl (f unit)
+  foldMapWithIndex f = foldMap (f unit)
+instance TraversableWithIndex Unit Vec1 where
+  traverseWithIndex f = traverse (f unit)
+
 -- | Linear transformations
 data Lin3 s = Lin3 s s s s s s s s s
 data Lin2 s = Lin2 s s s s
+data Lin1 s = Lin1 s
 -- | Affine transformations (linear transformation followed by translation)
 data Afn3 s = Afn3 s s s s s s s s s s s s
 data Afn2 s = Afn2 s s s s s s
+data Afn1 s = Afn1 s s
 
 -- | Cubic Bézier curve
 data Bez3 p = B3 p p p p
@@ -245,12 +428,16 @@ type Bez0 = Poly0
 
 type B33 = Bez3 V3
 type B32 = Bez3 V2
+type B31 = Bez3 V1
 type B23 = Bez2 V3
 type B22 = Bez2 V2
+type B21 = Bez2 V1
 type B13 = Bez1 V3
 type B12 = Bez1 V2
+type B11 = Bez1 V1
 type B03 = Bez0 V3
 type B02 = Bez0 V2
+type B01 = Bez0 V1
 
 -- | Quartic polynomial (over a vector field)
 data Poly4 c = Poly4 c c c c c
@@ -268,6 +455,39 @@ derive newtype instance Ring s => Ring (Poly0 s)
 derive newtype instance CommutativeRing s => CommutativeRing (Poly0 s)
 derive newtype instance EuclideanRing s => EuclideanRing (Poly0 s)
 derive newtype instance DivisionRing s => DivisionRing (Poly0 s)
+
+instance FunctorWithIndex Unit Poly0 where
+  mapWithIndex f = map (f unit)
+instance FoldableWithIndex Unit Poly0 where
+  foldrWithIndex f = foldr (f unit)
+  foldlWithIndex f = foldl (f unit)
+  foldMapWithIndex f = foldMap (f unit)
+instance TraversableWithIndex Unit Poly0 where
+  traverseWithIndex f = traverse (f unit)
+
+newtype PolyN c = PolyN (Array c)
+derive newtype instance Functor PolyN
+derive newtype instance Foldable PolyN
+derive newtype instance Traversable PolyN
+derive newtype instance FunctorWithIndex Int PolyN
+derive newtype instance FoldableWithIndex Int PolyN
+derive newtype instance TraversableWithIndex Int PolyN
+
+instance Semiring s => SModule s (PolyN s) where
+  smul x (PolyN ys) = PolyN ((x * _) <$> ys)
+
+instance Semiring s => Monoid (PolyN s) where mempty = zero
+instance Semiring s => Semigroup (PolyN s) where append = add
+
+instance Semiring s => Semiring (PolyN s) where
+  zero = PolyN []
+  one = PolyN [one]
+  add (PolyN xs) (PolyN ys) = PolyN $ align (theseop add) xs ys
+  mul (PolyN xs) ys = sum $ xs <#>: \i x -> smul x $ shift i ys
+    where shift i (PolyN cs) = PolyN $ power [zero] i <> cs
+instance Ring s => Ring (PolyN s) where
+  sub (PolyN xs) (PolyN ys) = PolyN $ align (theseop sub) xs ys
+instance CommutativeRing s => CommutativeRing (PolyN s)
 
 type PolyS4 s = Poly4 (Scalar s)
 type PolyS3 s = Poly3 (Scalar s)
@@ -300,15 +520,79 @@ type BBox1 s = Vec1 (Bounds s)
 type BBox2 s = Vec2 (Bounds s)
 type BBox3 s = Vec3 (Bounds s)
 
-mkBound :: forall s. s -> Bounds s
+mkBound :: forall @s. s -> Bounds s
 mkBound s = { min: Min s, max: Max s }
+
+mkBounds :: forall @s. s -> s -> Bounds s
+mkBounds ms mS = { min: Min ms, max: Max mS }
+
+unitBounds :: forall @s. Semiring s => Bounds s
+unitBounds = mkBounds zero one
+
+normBounds :: forall @s. Ring s => Bounds s
+normBounds = mkBounds (negate one) one
+
+justBound :: forall @s. s -> Maybe (Bounds s)
+justBound = Just <<< mkBound
+
+overBounds :: forall s s'. (s -> s') -> Bounds s -> Bounds s'
+overBounds f { min: Min s0, max: Max s1 } = { min: Min (f s0), max: Max (f s1) }
+
+-- corners :: forall f. Foldable1 f => f (Bounds s) -> NonEmptyArray (f Number)
+-- corners = ?help
+
+-- tfBounds :: forall t s. Transforms t s => t -> Bounds s -> Bounds s
+-- tfBounds t = overBounds (tf t)
+
+corners :: forall s. Vec2 (Bounds s) -> NonEmptyArray (Vec2 s)
+corners (V2 { min: Min mx, max: Max mX } { min: Min my, max: Max mY }) =
+  NEA.cons' (V2 mx my) [ V2 mx mY, V2 mX my, V2 mX mY ]
+
+tfBounds :: forall t s. Transforms t (Vec2 s) => Ord s => t -> Vec2 (Bounds s) -> Vec2 (Bounds s)
+tfBounds t = getBounds <<< map (tf t) <<< corners
 
 getBounds :: forall @f @g @s. Distributive f => Functor g => Foldable1 g => Ord s => g (f s) -> f (Bounds s)
 getBounds = collect (map mkBound) >>> map fold1
 
+inBounds :: forall @s. Ord s => Bounds s -> s -> Boolean
+inBounds { min: Min bmin, max: Max bmax } value = bmin <= value && value <= bmax
 
+disjointBounds :: forall @f @s. Distributive f => Apply f => Foldable f => Ord s => f (Bounds s) -> f (Bounds s) -> Boolean
+disjointBounds ls rs = (ls /|\ rs) # any
+  \(Tuple { min: Min lmin, max: Max lmax } { min: Min rmin, max: Max rmax }) ->
+    lmax < rmin || lmin > rmax
 
--- | Helper functions                                                        |--
+boundsWithout :: forall @meta @ord. BoundsWith ord meta -> Bounds ord
+boundsWithout (BoundsWith (MinWith bmin _) (MaxWith bmax _)) = { min: Min bmin, max: Max bmax }
+
+extent :: forall @s. Ring s => Bounds s -> s
+extent { min: Min bmin, max: Max bmax } = bmax - bmin
+
+extents :: forall @f @s. Functor f => Ring s => f (Bounds s) -> f s
+extents = map extent
+
+midpoint :: forall @s. Field s => Bounds s -> s
+midpoint { min: Min bmin, max: Max bmax } = (bmin + bmax) / (one + one)
+
+center :: forall @f @s. Functor f => Field s => f (Bounds s) -> f s
+center = map midpoint
+
+bounds2bez :: forall @s. Bounds s -> Bez1 s
+bounds2bez { min: Min bmin, max: Max bmax } = B1 bmin bmax
+
+padBounds :: forall @s. Ring s => s -> Bounds s -> Bounds s
+padBounds amt { min: Min bmin, max: Max bmax } = { min: Min (bmin - amt), max: Max (bmax + amt) }
+
+boundsNorm :: forall @s. Semiring s => Bounds s
+boundsNorm = { min: Min zero, max: Max one }
+
+clampBound :: forall @s. Ord s => Bounds s -> s -> s
+clampBound { min: Min bmin, max: Max bmax } = clamp bmin bmax
+
+clampBounds :: forall @f @s. Apply f => Ord s => f (Bounds s) -> f s -> f s
+clampBounds = lift2 clampBound
+
+-- | Helper functions                                                       | --
 
 mkAfn3 :: forall s. Tuple (Vec3 s) (Lin3 s) -> Afn3 s
 mkAfn3 (Tuple (V3 t1 t2 t3) (Lin3 c1 c2 c3 c4 c5 c6 c7 c8 c9)) =
@@ -333,6 +617,55 @@ mkLin2 :: forall s. Vec2 (Vec2 s) -> Lin2 s
 mkLin2 (V2 (V2 c1 c2) (V2 c3 c4)) = Lin2 c1 c2 c3 c4
 unLin2 :: forall s. Lin2 s -> Vec2 (Vec2 s)
 unLin2 (Lin2 c1 c2 c3 c4) = V2 (V2 c1 c2) (V2 c3 c4)
+
+scale :: forall @t @s @v. SModule s t => Transforms t v => s -> t
+scale s = s .* tfI
+
+translate2 :: forall @s. Semiring s => Vec2 s -> Afn2 s
+translate2 v = mkAfn2 (Tuple v tfI)
+
+lineangle :: V2 -> Radians
+lineangle (V2 x y) = Math.atan2 y x
+
+rotl2 :: Radians -> Lin2 Number
+rotl2 angle = Lin2 (Math.cos angle) (-Math.sin angle) (Math.sin angle) (Math.cos angle)
+
+rota2 :: Radians -> Afn2 Number
+rota2 = mkAfn2 <<< Tuple mempty <<< rotl2
+
+d2r = (Math.pi / 180.0) :: Number
+r2d = 180.0 / Math.pi :: Number
+
+radiansAround2 :: Radians -> Vec2 Number -> Afn2 Number
+radiansAround2 angle = translate2 >>> \t ->
+  (t <. rota2 angle) <^ t
+
+degreesAround2 :: Degrees -> Vec2 Number -> Afn2 Number
+degreesAround2 = (_ * d2r) >>> radiansAround2
+
+-- Transform one line to the other, while preserving aspect ratio
+-- (Rotating and scaling, no skewing)
+line2line2 :: B12 -> B12 -> Afn2 Number
+line2line2 (B1 p0 p1) (B1 q0 q1) =
+  let
+    unP = translate2 (inv p0)
+    toQ = translate2 q0
+    angle = lineangle (q1 <>- q0) - lineangle (p1 <>- p0)
+    rot = rota2 angle
+    ratio = norm (q1 <>- q0) / norm (p1 <>- p0)
+  in unP .> rot .> scale ratio .> toQ
+
+bounds2bounds1 :: Bounds Number -> Bounds Number -> Afn1 Number
+bounds2bounds1 { min: Min fmin, max: Max fmax } { min: Min tmin, max: Max tmax } =
+  let s = (tmax - tmin)/(fmax - fmin) in
+  Afn1 s (tmin - s * fmin)
+
+bounds2bounds2 :: BBox2 Number -> BBox2 Number -> Afn2 Number
+bounds2bounds2 (V2 fx fy) (V2 tx ty) =
+  let
+    Afn1 sx dx = bounds2bounds1 fx tx
+    Afn1 sy dy = bounds2bounds1 fy ty
+  in Afn2 sx zero zero sy dx dy
 
 submat3 :: forall s. Lin3 s -> Lin3 (Lin2 s)
 submat3 (Lin3 c1 c2 c3  c4 c5 c6  c7 c8 c9) = Lin3
@@ -361,37 +694,110 @@ cofactors3 t =
   let Lin3 c1 c2 c3  c4 c5 c6  c7 c8 c9 = det <$> submat3 t in
   Lin3 (c1) (-c2) (c3)  (-c4) (c5) (-c6)  (c7) (-c8) (c9)
 
--- | Monoid and module instances                                             |--
+
+class (Group i, Group o) <= Cross i o | i -> o where
+  cross :: i -> i -> o
+
+infix 7 cross as ×
+
+crossS :: forall @i @s. Cross i (Scalar s) => i -> i -> s
+crossS i j = unwrap (cross i j)
+
+instance Ring s => Cross (Vec2 s) (Vec1 s) where
+  cross (V2 lx ly) (V2 rx ry) = V1 (lx * ry - rx * ly)
+instance Ring s => Cross (Vec3 s) (Vec3 s) where
+  cross l r = dims <#> \d -> unwrap $
+    cross (without d l) (without d r)
+
+
+class (Align b, Align p) <= Bez2Poly b p | b -> p where
+  bez2poly :: forall @v. Group v => b v -> p v
+  poly2bez :: forall @v @s. Field s => SModule s v => p v -> b v
+
+bez2polyS :: forall @b @p @v. Bez2Poly b p => Ring v => b v -> p v
+bez2polyS = map unwrap <<< bez2poly <<< map V1
+
+poly2bezS :: forall @b @p @v. Bez2Poly b p => Field v => p v -> b v
+poly2bezS = map unwrap <<< poly2bez <<< map V1
+
+instance Bez2Poly Bez1 Poly1 where
+  bez2poly (B1 p0 p1) = Poly1 p0 (p0 -<> p1)
+  poly2bez (Poly1 c0 c1) = B1 c0 (c0 <> c1)
+instance Bez2Poly Bez2 Poly2 where
+  bez2poly (B2 p0 p1 p2) = Poly2 p0
+    (gmul 2 (p0 -<> p1))
+    (p0 <>- p1 <> p1 -<> p2)
+  poly2bez (Poly2 c0 c1 c2) = B2 c0 (halfOf (c0 <> c1)) (c0 <> c1 <> c2)
+    where halfOf = smul (one / (one + one))
+instance Bez2Poly Bez3 Poly3 where
+  bez2poly (B3 p0 p1 p2 p3) = Poly3
+    p0
+    (gmul 3 (p0 -<> p1))
+    (gmul 3 (p0 <>- p1 <> p1 -<> p2))
+    (p0 -<> gmul 3 p1 <> gmul 3 p2 -<> p3)
+  poly2bez (Poly3 c0 c1 c2 c3) = B3
+    c0
+    (c0 <> thirdOf c1)
+    (c0 <> mmul 2 (thirdOf c1) <> thirdOf c2)
+    (c0 <> c1 <> c2 <> c3)
+    where thirdOf = smul (one / (one + one + one))
+
+instance Bez2Poly Poly0 Poly0 where
+  bez2poly = identity
+  poly2bez = identity
+instance Bez2Poly Poly1 Poly1 where
+  bez2poly = identity
+  poly2bez = identity
+instance Bez2Poly Poly2 Poly2 where
+  bez2poly = identity
+  poly2bez = identity
+instance Bez2Poly Poly3 Poly3 where
+  bez2poly = identity
+  poly2bez = identity
+instance Bez2Poly Poly4 Poly4 where
+  bez2poly = identity
+  poly2bez = identity
+
+
+-- | Monoid and module instances                                            | --
 
 instance Semiring s => Semigroup (Vec3 s) where append = lift2 (+)
 instance Semiring s => Semigroup (Vec2 s) where append = lift2 (+)
 instance Semiring s => Semigroup (Vec1 s) where append = lift2 (+)
 instance Semiring s => Semigroup (Lin3 s) where append = lift2 (+)
 instance Semiring s => Semigroup (Lin2 s) where append = lift2 (+)
+instance Semiring s => Semigroup (Lin1 s) where append = lift2 (+)
 instance Semiring s => Semigroup (Afn3 s) where append = lift2 (+)
 instance Semiring s => Semigroup (Afn2 s) where append = lift2 (+)
+instance Semiring s => Semigroup (Afn1 s) where append = lift2 (+)
 instance Semiring s => Monoid (Vec3 s) where mempty = pure zero
 instance Semiring s => Monoid (Vec2 s) where mempty = pure zero
 instance Semiring s => Monoid (Vec1 s) where mempty = pure zero
 instance Semiring s => Monoid (Lin3 s) where mempty = pure zero
 instance Semiring s => Monoid (Lin2 s) where mempty = pure zero
+instance Semiring s => Monoid (Lin1 s) where mempty = pure zero
 instance Semiring s => Monoid (Afn3 s) where mempty = pure zero
 instance Semiring s => Monoid (Afn2 s) where mempty = pure zero
+instance Semiring s => Monoid (Afn1 s) where mempty = pure zero
 instance Ring s => Group (Vec3 s) where inv = map negate
 instance Ring s => Group (Vec2 s) where inv = map negate
 instance Ring s => Group (Vec1 s) where inv = map negate
 instance Ring s => Group (Lin3 s) where inv = map negate
 instance Ring s => Group (Lin2 s) where inv = map negate
+instance Ring s => Group (Lin1 s) where inv = map negate
 instance Ring s => Group (Afn3 s) where inv = map negate
 instance Ring s => Group (Afn2 s) where inv = map negate
+instance Ring s => Group (Afn1 s) where inv = map negate
 
 instance Semiring s => SModule s (Vec3 s) where smul s = map (mul s)
 instance Semiring s => SModule s (Vec2 s) where smul s = map (mul s)
 instance Semiring s => SModule s (Vec1 s) where smul s = map (mul s)
 instance Semiring s => SModule s (Lin3 s) where smul s = map (mul s)
 instance Semiring s => SModule s (Lin2 s) where smul s = map (mul s)
+instance Semiring s => SModule s (Lin1 s) where smul s = map (mul s)
 instance Semiring s => SModule s (Afn3 s) where smul s = map (mul s)
 instance Semiring s => SModule s (Afn2 s) where smul s = map (mul s)
+instance Semiring s => SModule s (Afn1 s) where smul s = map (mul s)
 
 instance Semigroup v => Semigroup (Bez3 v) where append = lift2 append
 instance Semigroup v => Semigroup (Bez2 v) where append = lift2 append
@@ -426,7 +832,7 @@ instance SModule s v => SModule s (Poly2 v) where smul s = map (smul s)
 instance SModule s v => SModule s (Poly1 v) where smul s = map (smul s)
 instance SModule s v => SModule s (Poly0 v) where smul s = map (smul s)
 
--- | Matrix algebra instances                                                |--
+-- | Matrix algebra instances                                               | --
 
 instance Semiring s => Transforms (Lin3 s) (Vec3 s) where
   tf (Lin3 c1 c2 c3 c4 c5 c6 c7 c8 c9) (V3 s1 s2 s3) = V3
@@ -475,7 +881,9 @@ instance Semiring s => Transforms (Afn3 s) (Vec3 s) where
     (b7 * c1 + b8 * c4 + b9 * c7)
     (b7 * c2 + b8 * c5 + b9 * c8)
     (b7 * c3 + b8 * c6 + b9 * c9)
-    (s1 + t1) (s2 + t2) (s3 + t3)
+    (s1 + u1) (s2 + u2) (s3 + u3)
+    where
+    V3 u1 u2 u3 = Lin3 b1 b2 b3 b4 b5 b6 b7 b8 b9 `tf` V3 t1 t2 t3
 instance Ring s => STransforms s (Afn3 s) (Vec3 s) where
   det = det <<< snd <<< unAfn3
 instance Field s => Untransforms (Afn3 s) (Vec3 s) where
@@ -501,6 +909,15 @@ instance Field s => Untransforms (Lin2 s) (Vec2 s) where
     (c4) (-c2)
     (-c3) (c1)
 
+instance Semiring s => Transforms (Lin1 s) (Vec1 s) where
+  tf (Lin1 c1) (V1 s1) = V1 (c1 * s1)
+  tfI = Lin1 one
+  tfC (Lin1 b1) (Lin1 c1) = Lin1 (b1 * c1)
+instance Ring s => STransforms s (Lin1 s) (Vec1 s) where
+  det (Lin1 c1) = c1
+instance Field s => Untransforms (Lin1 s) (Vec1 s) where
+  tfR (Lin1 c1) = Lin1 (recip c1)
+
 instance Semiring s => Transforms (Afn2 s) (Vec2 s) where
   tf (Afn2 c1 c2 c3 c4 t1 t2) (V2 s1 s2) = V2
     (t1 + c1 * s1 + c2 * s2)
@@ -514,58 +931,114 @@ instance Semiring s => Transforms (Afn2 s) (Vec2 s) where
     (b1 * c2 + b2 * c4)
     (b3 * c1 + b4 * c3)
     (b3 * c2 + b4 * c4)
-    (s1 + t1) (s2 + t2)
+    (s1 + u1) (s2 + u2)
+    where
+    V2 u1 u2 = Lin2 b1 b2 b3 b4 `tf` V2 t1 t2
 instance Ring s => STransforms s (Afn2 s) (Vec2 s) where
   det = det <<< snd <<< unAfn2
 instance Field s => Untransforms (Afn2 s) (Vec2 s) where
   tfR = dimap unAfn2 mkAfn2 \(Tuple v t) ->
     let s = tfR t in Tuple (inv (tf s v)) s
 
+instance Semiring s => Transforms (Afn1 s) (Vec1 s) where
+  tf (Afn1 c1 t1) (V1 s1) = V1 (t1 + c1 * s1)
+  tfI = Afn1 one zero
+  tfC (Afn1 b1 s1) (Afn1 c1 t1) = Afn1 (b1 * c1) (s1 + b1 * t1)
+instance Ring s => STransforms s (Afn1 s) (Vec1 s) where
+  det (Afn1 c1 _) = c1
+instance Field s => Untransforms (Afn1 s) (Vec1 s) where
+  tfR (Afn1 c1 t1) = Afn1 (recip c1) (negate $ recip c1 * t1)
+
 -- | Vector translation
 instance Semiring s => Transforms (Vec3 s) (Vec3 s) where
   tf = (<>)
   tfI = mempty
   tfC = (<>)
+instance Ring s => Untransforms (Vec3 s) (Vec3 s) where
+  tfR = inv
 -- | Vector translation
 instance Semiring s => Transforms (Vec2 s) (Vec2 s) where
   tf = (<>)
   tfI = mempty
   tfC = (<>)
+instance Ring s => Untransforms (Vec2 s) (Vec2 s) where
+  tfR = inv
 -- | Vector translation
 instance Semiring s => Transforms (Vec1 s) (Vec1 s) where
   tf = (<>)
   tfI = mempty
   tfC = (<>)
+instance Ring s => Untransforms (Vec1 s) (Vec1 s) where
+  tfR = inv
 
 
--- | Boring structural instances                                             |--
+-- | Boring structural instances                                            | --
 
-class Pairs t t' where
-  pairs :: forall v. t v -> t' (Pair v)
+class (Traversable t, Traversable t') <= Pairs t t' | t -> t' where
+  pairsWith :: forall v r. (v -> v -> r) -> t v -> t' r
+  extendL :: forall v. v -> t' v -> t v
+  extendR :: forall v. t' v -> v -> t v
+
+pairs :: forall @t @t' v. Pairs t t' => t v -> t' (Pair v)
+pairs = pairsWith Pair
+
+infixr 3 extendL as <:
+infixl 3 extendR as :>
 
 instance Pairs Bez3 Bez2 where
-  pairs (B3 p0 p1 p2 p3) = B2 (Pair p0 p1) (Pair p1 p2) (Pair p2 p3)
+  pairsWith pair (B3 p0 p1 p2 p3) = B2 (pair p0 p1) (pair p1 p2) (pair p2 p3)
+  extendL p0 (B2 p1 p2 p3) = B3 p0 p1 p2 p3
+  extendR (B2 p0 p1 p2) p3 = B3 p0 p1 p2 p3
 instance Pairs Bez2 Bez1 where
-  pairs (B2 p0 p1 p2) = B1 (Pair p0 p1) (Pair p1 p2)
+  pairsWith pair (B2 p0 p1 p2) = B1 (pair p0 p1) (pair p1 p2)
+  extendL p0 (B1 p1 p2) = B2 p0 p1 p2
+  extendR (B1 p0 p1) p2 = B2 p0 p1 p2
 instance Pairs Bez1 Bez0 where
-  pairs (B1 p0 p1) = Poly0 (Pair p0 p1)
+  pairsWith pair (B1 p0 p1) = Poly0 (pair p0 p1)
+  extendL p0 (Poly0 p1) = B1 p0 p1
+  extendR (Poly0 p0) p1 = B1 p0 p1
 
 instance Pairs Poly4 Poly3 where
-  pairs (Poly4 c0 c1 c2 c3 c4) = Poly3 (Pair c0 c1) (Pair c1 c2) (Pair c2 c3) (Pair c3 c4)
+  pairsWith pair (Poly4 c0 c1 c2 c3 c4) = Poly3 (pair c0 c1) (pair c1 c2) (pair c2 c3) (pair c3 c4)
+  extendL c0 (Poly3 c1 c2 c3 c4) = Poly4 c0 c1 c2 c3 c4
+  extendR (Poly3 c0 c1 c2 c3) c4 = Poly4 c0 c1 c2 c3 c4
 instance Pairs Poly3 Poly2 where
-  pairs (Poly3 c0 c1 c2 c3) = Poly2 (Pair c0 c1) (Pair c1 c2) (Pair c2 c3)
+  pairsWith pair (Poly3 c0 c1 c2 c3) = Poly2 (pair c0 c1) (pair c1 c2) (pair c2 c3)
+  extendL c0 (Poly2 c1 c2 c3) = Poly3 c0 c1 c2 c3
+  extendR (Poly2 c0 c1 c2) c3 = Poly3 c0 c1 c2 c3
 instance Pairs Poly2 Poly1 where
-  pairs (Poly2 c0 c1 c2) = Poly1 (Pair c0 c1) (Pair c1 c2)
+  pairsWith pair (Poly2 c0 c1 c2) = Poly1 (pair c0 c1) (pair c1 c2)
+  extendL p0 (Poly1 p1 p2) = Poly2 p0 p1 p2
+  extendR (Poly1 p0 p1) p2 = Poly2 p0 p1 p2
 instance Pairs Poly1 Poly0 where
-  pairs (Poly1 c0 c1) = Poly0 (Pair c0 c1)
+  pairsWith pair (Poly1 c0 c1) = Poly0 (pair c0 c1)
+  extendL p0 (Poly0 p1) = Poly1 p0 p1
+  extendR (Poly0 p0) p1 = Poly1 p0 p1
+
+instance Pairs Array Array where
+  pairsWith pair vs = Array.zipWith pair vs (Array.drop 1 vs)
+  extendL = Array.cons
+  extendR = Array.snoc
+instance Pairs NonEmptyArray Array where
+  pairsWith pair vs = Array.zipWith pair (NEA.toArray vs) (NEA.drop 1 vs)
+  extendL = NEA.cons'
+  extendR = NEA.snoc'
+instance Pairs PolyN PolyN where
+  pairsWith f = coerce (pairsWith @Array @Array f)
+  extendL :: forall v. v -> PolyN v -> PolyN v
+  extendL = coerce (extendL :: v -> Array v -> Array v)
+  extendR :: forall v. PolyN v -> v -> PolyN v
+  extendR = coerce (extendR :: Array v -> v -> Array v)
 
 derive instance Eq t => Eq (Vec3 t)
 derive instance Eq t => Eq (Vec2 t)
 derive instance Eq t => Eq (Vec1 t)
 derive instance Eq t => Eq (Lin3 t)
 derive instance Eq t => Eq (Lin2 t)
+derive instance Eq t => Eq (Lin1 t)
 derive instance Eq t => Eq (Afn3 t)
 derive instance Eq t => Eq (Afn2 t)
+derive instance Eq t => Eq (Afn1 t)
 derive instance Eq t => Eq (Bez3 t)
 derive instance Eq t => Eq (Bez2 t)
 derive instance Eq t => Eq (Bez1 t)
@@ -580,8 +1053,10 @@ derive instance Ord t => Ord (Vec2 t)
 derive instance Ord t => Ord (Vec1 t)
 derive instance Ord t => Ord (Lin3 t)
 derive instance Ord t => Ord (Lin2 t)
+derive instance Ord t => Ord (Lin1 t)
 derive instance Ord t => Ord (Afn3 t)
 derive instance Ord t => Ord (Afn2 t)
+derive instance Ord t => Ord (Afn1 t)
 derive instance Ord t => Ord (Bez3 t)
 derive instance Ord t => Ord (Bez2 t)
 derive instance Ord t => Ord (Bez1 t)
@@ -596,8 +1071,10 @@ derive instance Eq1 Vec2
 derive instance Eq1 Vec1
 derive instance Eq1 Lin3
 derive instance Eq1 Lin2
+derive instance Eq1 Lin1
 derive instance Eq1 Afn3
 derive instance Eq1 Afn2
+derive instance Eq1 Afn1
 derive instance Eq1 Bez3
 derive instance Eq1 Bez2
 derive instance Eq1 Bez1
@@ -612,8 +1089,10 @@ derive instance Ord1 Vec2
 derive instance Ord1 Vec1
 derive instance Ord1 Lin3
 derive instance Ord1 Lin2
+derive instance Ord1 Lin1
 derive instance Ord1 Afn3
 derive instance Ord1 Afn2
+derive instance Ord1 Afn1
 derive instance Ord1 Bez3
 derive instance Ord1 Bez2
 derive instance Ord1 Bez1
@@ -628,8 +1107,10 @@ derive instance Functor Vec2
 derive instance Functor Vec1
 derive instance Functor Lin3
 derive instance Functor Lin2
+derive instance Functor Lin1
 derive instance Functor Afn3
 derive instance Functor Afn2
+derive instance Functor Afn1
 derive instance Functor Bez3
 derive instance Functor Bez2
 derive instance Functor Bez1
@@ -644,8 +1125,10 @@ derive instance Foldable Vec2
 derive instance Foldable Vec1
 derive instance Foldable Lin3
 derive instance Foldable Lin2
+derive instance Foldable Lin1
 derive instance Foldable Afn3
 derive instance Foldable Afn2
+derive instance Foldable Afn1
 derive instance Foldable Bez3
 derive instance Foldable Bez2
 derive instance Foldable Bez1
@@ -660,8 +1143,10 @@ derive instance Traversable Vec2
 derive instance Traversable Vec1
 derive instance Traversable Lin3
 derive instance Traversable Lin2
+derive instance Traversable Lin1
 derive instance Traversable Afn3
 derive instance Traversable Afn2
+derive instance Traversable Afn1
 derive instance Traversable Bez3
 derive instance Traversable Bez2
 derive instance Traversable Bez1
@@ -676,8 +1161,10 @@ instance Monad Vec2
 instance Monad Vec1
 instance Monad Lin3
 instance Monad Lin2
+instance Monad Lin1
 instance Monad Afn3
 instance Monad Afn2
+instance Monad Afn1
 instance Monad Bez3
 instance Monad Bez2
 instance Monad Bez1
@@ -686,6 +1173,43 @@ instance Monad Poly3
 instance Monad Poly2
 instance Monad Poly1
 instance Monad Poly0
+
+derive instance Generic (Vec3 t) _
+derive instance Generic (Vec2 t) _
+derive instance Generic (Vec1 t) _
+derive instance Generic (Lin3 t) _
+derive instance Generic (Lin2 t) _
+derive instance Generic (Lin1 t) _
+derive instance Generic (Afn3 t) _
+derive instance Generic (Afn2 t) _
+derive instance Generic (Afn1 t) _
+derive instance Generic (Bez3 t) _
+derive instance Generic (Bez2 t) _
+derive instance Generic (Bez1 t) _
+derive instance Generic (Poly4 t) _
+derive instance Generic (Poly3 t) _
+derive instance Generic (Poly2 t) _
+derive instance Generic (Poly1 t) _
+derive instance Generic (Poly0 t) _
+
+instance Show t => Show (Vec3 t) where show = genericShow
+instance Show t => Show (Vec2 t) where show = genericShow
+instance Show t => Show (Vec1 t) where show = genericShow
+instance Show t => Show (Lin3 t) where show = genericShow
+instance Show t => Show (Lin2 t) where show = genericShow
+instance Show t => Show (Lin1 t) where show = genericShow
+instance Show t => Show (Afn3 t) where show = genericShow
+instance Show t => Show (Afn2 t) where show = genericShow
+instance Show t => Show (Afn1 t) where show = genericShow
+instance Show t => Show (Bez3 t) where show = genericShow
+instance Show t => Show (Bez2 t) where show = genericShow
+instance Show t => Show (Bez1 t) where show = genericShow
+instance Show t => Show (Poly4 t) where show = genericShow
+instance Show t => Show (Poly3 t) where show = genericShow
+instance Show t => Show (Poly2 t) where show = genericShow
+instance Show t => Show (Poly1 t) where show = genericShow
+instance Show t => Show (Poly0 t) where show = genericShow
+
 
 instance Foldable1 Vec3 where
   foldl1 f (V3 s1 s2 s3) = s1 `f` s2 `f` s3
@@ -707,6 +1231,10 @@ instance Foldable1 Lin2 where
   foldl1 f (Lin2 c1 c2 c3 c4) = c1 `f` c2 `f` c3 `f` c4
   foldr1 f (Lin2 c1 c2 c3 c4) = f c1 $ f c2 $ f c3 c4
   foldMap1 f (Lin2 c1 c2 c3 c4) = f c1 <> f c2 <> f c3 <> f c4
+instance Foldable1 Lin1 where
+  foldl1 _ (Lin1 c1) = c1
+  foldr1 _ (Lin1 c1) = c1
+  foldMap1 f (Lin1 c1) = f c1
 instance Foldable1 Afn3 where
   foldl1 f (Afn3 c1 c2 c3 c4 c5 c6 c7 c8 c9 t1 t2 t3) = c1 `f` c2 `f` c3 `f` c4 `f` c5 `f` c6 `f` c7 `f` c8 `f` c9 `f` t1 `f` t2 `f` t3
   foldr1 f (Afn3 c1 c2 c3 c4 c5 c6 c7 c8 c9 t1 t2 t3) = f c1 $ f c2 $ f c3 $ f c4 $ f c5 $ f c6 $ f c7 $ f c8 $ f c9 $ f t1 $ f t2 t3
@@ -715,6 +1243,10 @@ instance Foldable1 Afn2 where
   foldl1 f (Afn2 c1 c2 c3 c4 t1 t2) = c1 `f` c2 `f` c3 `f` c4 `f` t1 `f` t2
   foldr1 f (Afn2 c1 c2 c3 c4 t1 t2) = f c1 $ f c2 $ f c3 $ f c4 $ f t1 t2
   foldMap1 f (Afn2 c1 c2 c3 c4 t1 t2) = f c1 <> f c2 <> f c3 <> f c4 <> f t1 <> f t2
+instance Foldable1 Afn1 where
+  foldl1 f (Afn1 c1 t1) = f c1 t1
+  foldr1 f (Afn1 c1 t1) = f c1 t1
+  foldMap1 f (Afn1 c1 t1) = f c1 <> f t1
 instance Foldable1 Bez3 where
   foldl1 f (B3 p0 p1 p2 p3) = p0 `f` p1 `f` p2 `f` p3
   foldr1 f (B3 p0 p1 p2 p3) = f p0 $ f p1 $ f p2 p3
@@ -743,12 +1275,18 @@ instance Traversable1 Lin3 where
 instance Traversable1 Lin2 where
   traverse1 f (Lin2 c1 c2 c3 c4) = Lin2 <$> f c1 <*> f c2 <*> f c3 <*> f c4
   sequence1 (Lin2 c1 c2 c3 c4) = Lin2 <$> c1 <*> c2 <*> c3 <*> c4
+instance Traversable1 Lin1 where
+  traverse1 f (Lin1 c1) = Lin1 <$> f c1
+  sequence1 (Lin1 c1) = Lin1 <$> c1
 instance Traversable1 Afn3 where
   traverse1 f (Afn3 c1 c2 c3 c4 c5 c6 c7 c8 c9 t1 t2 t3) = Afn3 <$> f c1 <*> f c2 <*> f c3 <*> f c4 <*> f c5 <*> f c6 <*> f c7 <*> f c8 <*> f c9 <*> f t1 <*> f t2 <*> f t3
   sequence1 (Afn3 c1 c2 c3 c4 c5 c6 c7 c8 c9 t1 t2 t3) = Afn3 <$> c1 <*> c2 <*> c3 <*> c4 <*> c5 <*> c6 <*> c7 <*> c8 <*> c9 <*> t1 <*> t2 <*> t3
 instance Traversable1 Afn2 where
   traverse1 f (Afn2 c1 c2 c3 c4 t1 t2) = Afn2 <$> f c1 <*> f c2 <*> f c3 <*> f c4 <*> f t1 <*> f t2
   sequence1 (Afn2 c1 c2 c3 c4 t1 t2) = Afn2 <$> c1 <*> c2 <*> c3 <*> c4 <*> t1 <*> t2
+instance Traversable1 Afn1 where
+  traverse1 f (Afn1 c1 t1) = Afn1 <$> f c1 <*> f t1
+  sequence1 (Afn1 c1 t1) = Afn1 <$> c1 <*> t1
 instance Traversable1 Bez3 where
   traverse1 f (B3 p0 p1 p2 p3) = B3 <$> f p0 <*> f p1 <*> f p2 <*> f p3
   sequence1 (B3 p0 p1 p2 p3) = B3 <$> p0 <*> p1 <*> p2 <*> p3
@@ -793,6 +1331,10 @@ instance Distributive Lin2 where
     (g <#> \(Lin2 _ c _ _) -> c)
     (g <#> \(Lin2 _ _ c _) -> c)
     (g <#> \(Lin2 _ _ _ c) -> c)
+instance Distributive Lin1 where
+  collect = collectDefault
+  distribute g = Lin1
+    (g <#> \(Lin1 c) -> c)
 instance Distributive Afn3 where
   collect = collectDefault
   distribute g = Afn3
@@ -817,6 +1359,11 @@ instance Distributive Afn2 where
     (g <#> \(Afn2 _ _ _ c _ _) -> c)
     (g <#> \(Afn2 _ _ _ _ t _) -> t)
     (g <#> \(Afn2 _ _ _ _ _ t) -> t)
+instance Distributive Afn1 where
+  collect = collectDefault
+  distribute g = Afn1
+    (g <#> \(Afn1 c _) -> c)
+    (g <#> \(Afn1 _ t) -> t)
 instance Distributive Bez3 where
   collect = collectDefault
   distribute g = B3
@@ -875,10 +1422,14 @@ instance Apply Lin3 where
   apply (Lin3 f1 f2 f3 f4 f5 f6 f7 f8 f9) (Lin3 a1 a2 a3 a4 a5 a6 a7 a8 a9) = Lin3 (f1 a1) (f2 a2) (f3 a3) (f4 a4) (f5 a5) (f6 a6) (f7 a7) (f8 a8) (f9 a9)
 instance Apply Lin2 where
   apply (Lin2 f1 f2 f3 f4) (Lin2 a1 a2 a3 a4) = Lin2 (f1 a1) (f2 a2) (f3 a3) (f4 a4)
+instance Apply Lin1 where
+  apply (Lin1 f1) (Lin1 a1) = Lin1 (f1 a1)
 instance Apply Afn3 where
   apply (Afn3 f1 f2 f3 f4 f5 f6 f7 f8 f9 g1 g2 g3) (Afn3 a1 a2 a3 a4 a5 a6 a7 a8 a9 b1 b2 b3) = Afn3 (f1 a1) (f2 a2) (f3 a3) (f4 a4) (f5 a5) (f6 a6) (f7 a7) (f8 a8) (f9 a9) (g1 b1) (g2 b2) (g3 b3)
 instance Apply Afn2 where
   apply (Afn2 f1 f2 f3 f4 g1 g2) (Afn2 a1 a2 a3 a4 b1 b2) = Afn2 (f1 a1) (f2 a2) (f3 a3) (f4 a4) (g1 b1) (g2 b2)
+instance Apply Afn1 where
+  apply (Afn1 f1 f2) (Afn1 a1 a2) = Afn1 (f1 a1) (f2 a2)
 instance Apply Bez3 where
   apply (B3 f0 f1 f2 f3) (B3 a0 a1 a2 a3) = B3 (f0 a0) (f1 a1) (f2 a2) (f3 a3)
 instance Apply Bez2 where
@@ -905,10 +1456,14 @@ instance Applicative Lin3 where
   pure a = Lin3 a a a a a a a a a
 instance Applicative Lin2 where
   pure a = Lin2 a a a a
+instance Applicative Lin1 where
+  pure a = Lin1 a
 instance Applicative Afn3 where
   pure a = Afn3 a a a a a a a a a a a a
 instance Applicative Afn2 where
   pure a = Afn2 a a a a a a
+instance Applicative Afn1 where
+  pure a = Afn1 a a
 instance Applicative Bez3 where
   pure a = B3 a a a a
 instance Applicative Bez2 where
@@ -935,9 +1490,13 @@ instance Bind Lin3 where
   bind as f = distribute f <*> as
 instance Bind Lin2 where
   bind as f = distribute f <*> as
+instance Bind Lin1 where
+  bind as f = distribute f <*> as
 instance Bind Afn3 where
   bind as f = distribute f <*> as
 instance Bind Afn2 where
+  bind as f = distribute f <*> as
+instance Bind Afn1 where
   bind as f = distribute f <*> as
 instance Bind Bez3 where
   bind as f = distribute f <*> as
@@ -955,3 +1514,20 @@ instance Bind Poly1 where
   bind as f = distribute f <*> as
 instance Bind Poly0 where
   bind as f = distribute f <*> as
+instance Align Vec3 where align f = lift2 \x y -> f (Both x y)
+instance Align Vec2 where align f = lift2 \x y -> f (Both x y)
+instance Align Vec1 where align f = lift2 \x y -> f (Both x y)
+instance Align Lin3 where align f = lift2 \x y -> f (Both x y)
+instance Align Lin2 where align f = lift2 \x y -> f (Both x y)
+instance Align Lin1 where align f = lift2 \x y -> f (Both x y)
+instance Align Afn3 where align f = lift2 \x y -> f (Both x y)
+instance Align Afn2 where align f = lift2 \x y -> f (Both x y)
+instance Align Afn1 where align f = lift2 \x y -> f (Both x y)
+instance Align Bez3 where align f = lift2 \x y -> f (Both x y)
+instance Align Bez2 where align f = lift2 \x y -> f (Both x y)
+instance Align Bez1 where align f = lift2 \x y -> f (Both x y)
+instance Align Poly4 where align f = lift2 \x y -> f (Both x y)
+instance Align Poly3 where align f = lift2 \x y -> f (Both x y)
+instance Align Poly2 where align f = lift2 \x y -> f (Both x y)
+instance Align Poly1 where align f = lift2 \x y -> f (Both x y)
+instance Align Poly0 where align f = lift2 \x y -> f (Both x y)

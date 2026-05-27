@@ -1,4 +1,4 @@
-module Util (memoizeEq) where
+module Util (memoizeEq, memoizeRefEq) where
 
 import Prelude
 
@@ -10,6 +10,8 @@ import Data.Array.ST as STA
 import Data.Maybe (Maybe(..), isNothing)
 import Data.Tuple (Tuple(..))
 import Effect.Unsafe (unsafePerformEffect)
+import Safe.Coerce (coerce)
+import Unsafe.Reference (UnsafeRefEq(..))
 
 unsafeST :: forall a. ST.ST STG.Global a -> a
 unsafeST = unsafePerformEffect <<< STG.toEffect
@@ -36,3 +38,6 @@ memoizeEq f = unsafeST do
         void $ STA.push (Tuple a r) vs
         r <$ STR.modify (add 1) sz
       Just r -> pure r
+
+memoizeRefEq :: forall a b. (a -> b) -> (a -> b)
+memoizeRefEq = coerce (memoizeEq :: (UnsafeRefEq a -> b) -> (UnsafeRefEq a -> b))

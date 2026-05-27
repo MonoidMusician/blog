@@ -3,8 +3,8 @@ module Riverdragon.River.Beyond where
 import Prelude
 
 import Control.Alt ((<|>))
-import Control.Monad.ResourceM (class MonadResource, track)
-import Control.Monad.ResourceT (start)
+import Control.Monad.ResourceM (class MonadResource, _addWaiters, _inScope, addDestructor, selfScope, track)
+import Control.Monad.ResourceT (ResourceM, Scope(..), Waiters, _shareWaiters, mkSubscope, start)
 import Data.Array as Array
 import Data.DateTime.Instant (Instant)
 import Data.DateTime.Instant as Instant
@@ -27,9 +27,9 @@ import Effect.Now (now)
 import Effect.Timer (clearInterval, clearTimeout, setInterval, setTimeout)
 import Partial.Unsafe (unsafePartial)
 import Riverdragon.Dragon.Breath (microtask)
-import Riverdragon.River (Allocar, Lake, River, Stream, allStreams, dam, fixPrjBurst, foldStream, mailboxRiver, makeLake, makeLake', mapAl, oneStream, singleShot, statefulStream, subscribeIsh, unsafeCopyFlowing, withInstantiated, (<?*>), (>>~))
+import Riverdragon.River (Allocar, Lake, River, Stream, allStreams, dam, fixPrjBurst, foldStream, mailboxRiver, makeLake, makeLake', mapAl, oneStream, singleShot, statefulStream, subscribeUntil, unsafeCopyFlowing, withInstantiated, (<?*>), (>>~))
 import Riverdragon.River as River
-import Riverdragon.River.Bed (breaker, eventListener, freshId, ordMap, prealloc, pushArray, requestAnimationFrame)
+import Riverdragon.River.Bed (accumulator, breaker, eventListener, freshId, ordMap, prealloc, pushArray, refcounting, requestAnimationFrame)
 import Web.DOM.Element as Element
 import Web.Event.Event (EventType(..))
 import Web.Event.Event as Event
@@ -63,7 +63,7 @@ delayWith delaying stream =
             whenM (Map.isEmpty <$> inflight.read) do
               selfDestruct
         inflight.set id cancelIt
-    { destroy: unsub } <- start "delayWith" do subscribeIsh upstreamDestroyed stream receive
+    { destroy: unsub } <- start "delayWith" do subscribeUntil upstreamDestroyed stream receive
     pure { destroy: unsub <> inflight.traverse (const identity) }
 
 delay :: forall flow. Milliseconds -> Stream flow ~> Stream flow
@@ -126,8 +126,9 @@ mkBufferedDelayer delayFn = do
             drained.set true
             pending.reset >>= \items -> foreachE items \item -> do
               drainTime <- now
-              when (Instant.diff drainTime drainStart < drainTimeout) do
-                item
+              if (Instant.diff drainTime drainStart < drainTimeout)
+                then do item
+                else pending.push item
       state.set Idle
     animFrameBuffer :: forall flow. Stream flow ~> Stream flow
     animFrameBuffer = delayWith \cb0 -> do
@@ -197,11 +198,13 @@ dedupBy method = statefulStream Nothing <@> case _, _ of
     { state: Just next, emit: Just next }
 
 dedupOn :: forall flow a b. Eq b => (a -> b) -> Stream flow a -> Lake a
-dedupOn f = statefulStream Nothing <@> case _, _ of
-  Just last, next | f next == last ->
-    { state: Just (f next), emit: Nothing }
-  _, next ->
-    { state: Just (f next), emit: Just next }
+dedupOn f = statefulStream Nothing <@> \last next ->
+  let next' = f next in
+  { state: Just next'
+  , emit: case last of
+      Just last' | next' == last' -> Nothing
+      _ -> Just next
+  }
 
 dedup :: forall flow a. Eq a => Stream flow a -> Lake a
 dedup = dedupBy eq
@@ -396,3 +399,35 @@ devicePixelRatio = River.mayMemoize $ River.unsafeRiver $
   makeLake \cb -> void $ track do
     cb =<< _devicePixelRatio.now
     { destroy: _ } <$> _devicePixelRatio.subscribe cb
+
+instanced :: forall resource m. MonadResource m => m resource -> ResourceM (m resource)
+instanced createAndDestroy = do
+  status <- liftEffect do prealloc (Nothing :: Maybe { resource :: resource, waiters :: Waiters, destroy :: Effect Unit })
+  refc <- liftEffect do refcounting
+  parentScope <- selfScope
+  let
+    attach { resource, waiters, destroy } = do
+      liftEffect refc.incr
+      _addWaiters waiters
+      addDestructor do
+        liftEffect refc.decr >>= case _ of
+          0 -> liftEffect destroy
+          _ -> pure unit
+      pure resource
+  pure do
+    currentStatus <- liftEffect do status.get
+    case currentStatus of
+      Just resourceGotten -> do
+        attach resourceGotten
+      Nothing -> do
+        -- Create a custom scope off of the parent scope
+        recordWaiters <- liftEffect accumulator
+        customScope@(Scope { destroy }) <- mkSubscope "instanced" parentScope
+          <#> \(Scope scope) -> Scope scope { putWaiters = scope.putWaiters <> recordWaiters.put }
+        -- Run the creation below the parent scope
+        resource <- _inScope customScope do
+          createAndDestroy
+        waiters <- liftEffect do _shareWaiters =<< recordWaiters.reset
+        liftEffect do status.set (Just { resource, waiters, destroy })
+        -- Then make sure this client scope is attached to it too
+        attach { resource, waiters, destroy }

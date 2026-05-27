@@ -186,8 +186,12 @@ fn toAtomic(mut crumbs: word) -> word {
   return crumbs << 2*(1 - exp);
 }
 
+<<<<<<< HEAD
 #[derive(Clone, Copy, Debug)]
 #[derive_const(PartialEq, Eq, PartialOrd, Ord)]
+=======
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+>>>>>>> 3b031623c386295a9c9965a88ab1ed7795deec09
 struct idxbit(usize, u8);
 
 const fn idxbitlength(crumbstring: &[word], _known_words: word) -> idxbit {
@@ -208,7 +212,11 @@ const fn idxbitlength(crumbstring: &[word], _known_words: word) -> idxbit {
     if offset == 0 {
       // If not, we need to continue with the next word
       // and adjust the expected number of operands
+<<<<<<< HEAD
       exp -= deltaExpecting(crumbstring[i]) as i64;
+=======
+      exp = (exp as i64 - deltaExpecting(crumbstring[i]) as i64) as u64;
+>>>>>>> 3b031623c386295a9c9965a88ab1ed7795deec09
       i += 1;
       assert!(exp != 0);
       continue;
@@ -262,12 +270,16 @@ impl std::ops::Sub<usize> for idxbit {
 impl std::ops::Sub<idxbit> for idxbit {
   type Output = usize;
   fn sub(self, rhs: idxbit) -> Self::Output {
+<<<<<<< HEAD
     return (self.0 - rhs.0)*(word_size as usize) + self.1 as usize - rhs.1 as usize;
   }
 }
 impl std::ops::SubAssign<usize> for idxbit {
   fn sub_assign(&mut self, incr_bits: usize) {
     *self = *self - incr_bits
+=======
+    return (self.0 - rhs.0)*size_of::<word>() + (self.1 - rhs.1) as usize;
+>>>>>>> 3b031623c386295a9c9965a88ab1ed7795deec09
   }
 }
 impl Default for idxbit {
@@ -292,7 +304,7 @@ fn copy_from_unaligned(dst: &mut [word], src: &[word], offset: u8) {
   if src.is_empty() { return }
   assert!(dst.len() >= src.len(), "{} >= {} at {offset}", dst.len(), src.len());
   debug_assert!(offset < word_size);
-  if offset == 0 { return dst.copy_from_slice(src); }
+  if offset == 0 { return dst[..src.len()].copy_from_slice(src); }
   let mut iter = src.iter().enumerate();
   let mut last =
     if let Some((_, &w)) = iter.next() { w } else { return };
@@ -931,6 +943,7 @@ fn scan1op(crumbstring: &[word], input_at: idxbit, stop_at: idxbit) -> Option<(i
 }
 
 impl System {
+<<<<<<< HEAD
   fn new() -> System {
     System {
       input_at: idxbit(0,0),
@@ -942,8 +955,27 @@ impl System {
       // stack_top: usize,
       stack: vec![],
     }
+=======
+  fn new() -> Self {
+    return System {
+      input_at: idxbit(0, 0),
+      stop_at: idxbit(0, 0),
+      output_at: idxbit(0, 0),
+      input_words: vec![],
+      output_words: vec![],
+      work: 0,
+      fuel: !0,
+      stack_endstop: 0,
+      // stack_top: usize,
+      stack: vec![],
+    };
+>>>>>>> 3b031623c386295a9c9965a88ab1ed7795deec09
   }
   fn at(&self) -> usize { return self.stack.len() }
+  fn stack_push(&mut self, frame: StackFrame) {
+    goodop(&frame.to_eval);
+    self.stack.push(frame);
+  }
   fn scan1input(&mut self) -> Option<Operand> {
     let (input_at, op) = scan1op(&self.input_words.0.words[..], self.input_at, self.input_words.0.at)?;
     // println!("{op:?} from {input_at:?}: {}", &self.input_words.unparse()[(input_at - idxbit(0,0))/2..]);
@@ -952,6 +984,7 @@ impl System {
   }
   fn refill(&mut self) -> Option<StackFrame> {
     if self.at() > self.stack_endstop {
+      goodop(&self.stack[self.stack.len()-1].to_eval);
       return self.stack.pop();
     }
     debug_assert!(self.at() == self.stack_endstop);
@@ -993,7 +1026,7 @@ impl System {
           let at = self.at();
           self.stack[at - 1].was_evaling = linger(ptr);
         }
-        self.stack.push(StackFrame {
+        self.stack_push(StackFrame {
           to_eval: arg.clone(),
           was_evaling: Weak::new(),
         });
@@ -1033,19 +1066,25 @@ impl System {
     // assert!(self.stack_top < self.stack.len() - arity - 1);
     assert!(arity != 0);
     // self.stack_top += arity + 1;
+<<<<<<< HEAD
     // println!("arity: {arity}/{at:?}, stack size: {}, {:?}", self.stack.len(), crumbstring);
     self.stack.extend((1..=arity+1).map(|_| StackFrame::default()));
+=======
+    self.stack.extend((1..=arity+1).map(|_| default()));
+    println!("arity: {arity}, len: {}", self.stack.len());
+>>>>>>> 3b031623c386295a9c9965a88ab1ed7795deec09
     for stacked in 1..=arity+1 {
       let scanned = scan1op(&crumbstring.0.words[..], at, idxbit(crumbstring.len(),0)).unwrap();
       at = scanned.0;
       goodop(&scanned.1);
       let at = self.at();
+      println!("stacked: {stacked}, at: {}", at-stacked);
       self.stack[at - stacked] = scanned.1.into();
     }
     match self.stack.pop() {
       Some(StackFrame { to_eval: Immediate(crumb), .. }) =>
         SKI::from(crumb >> (word_size - 2)),
-      _ =>   { panic!("") }
+      _ => { panic!("") }
     }
   }
   fn save_whnf_on_stack(&mut self, crumb: SKI) {
@@ -1076,10 +1115,10 @@ impl System {
         // the head operand back to the stack
         if self.at() == self.stack_endstop {
           let Some(frame) = self.refill() else {
-            self.stack.push(crumb.into());
+            self.stack_push(crumb.into());
             return false;
           };
-          self.stack.push(frame);
+          self.stack_push(frame);
         }
 
         self.work += 1;
@@ -1088,37 +1127,38 @@ impl System {
       K => {
         // Get two arguments
         let Some(x) = self.refill().map(|x| x.to_eval) else {
-          self.stack.push(crumb.into());
+          self.stack_push(crumb.into());
           return false;
         };
         // TODO: tell `refill()` that it does not need to actually copy this operand?
         let Some(_) = self.refill() else {
-          self.stack.push(x.into());
-          self.stack.push(crumb.into());
+          self.stack_push(x.into());
+          self.stack_push(crumb.into());
           return false;
         };
         // Drop `y` and put `x` back onto the stack: `Kxy = x`
-        self.stack.push(x.into());
+        self.stack_push(x.into());
         self.work += 1;
         return true;
       },
       S => {
         // Get three arguments
         let Some(x) = self.refill().map(|x| x.to_eval) else {
-          self.stack.push(crumb.into());
+          self.stack_push(crumb.into());
           return false;
         };
         let Some(y) = self.refill().map(|y| y.to_eval) else {
-          self.stack.push(x.into());
-          self.stack.push(crumb.into());
+          self.stack_push(x.into());
+          self.stack_push(crumb.into());
           return false;
         };
         let Some(z) = self.refill().map(|z| z.to_eval) else {
-          self.stack.push(y.into());
-          self.stack.push(x.into());
-          self.stack.push(crumb.into());
+          self.stack_push(y.into());
+          self.stack_push(x.into());
+          self.stack_push(crumb.into());
           return false;
         };
+<<<<<<< HEAD
         if isK(&x) {
           drop(x); drop(y);
           self.stack.push(z.into());
@@ -1168,6 +1208,15 @@ impl System {
             self.work += 1;
           },
         }
+=======
+        // Promote a reducible immediate to a shared operand
+        let (z, z2) = z.dup();
+        let yz = apply(y, z2);
+        self.stack_push(yz.into());
+        self.stack_push(z.into());
+        self.stack_push(x.into());
+        self.work += 1;
+>>>>>>> 3b031623c386295a9c9965a88ab1ed7795deec09
         return true;
       }
     }
@@ -1194,7 +1243,7 @@ impl System {
         && !is_exclusive(ptr)
         && let Some(frame) = self.refill()
         {
-          self.stack.push(StackFrame {
+          self.stack_push(StackFrame {
             to_eval: frame.to_eval,
             was_evaling: linger(ptr),
           });
@@ -1210,7 +1259,7 @@ impl System {
     && !is_exclusive(ptr)
     && let Some(frame) = self.refill()
     {
-      self.stack.push(StackFrame {
+      self.stack_push(StackFrame {
         to_eval: frame.to_eval,
         was_evaling: linger(ptr),
       });
@@ -1236,7 +1285,7 @@ impl System {
     if self.fuel == 0 { return op }
     if !op.could_be_reducible() { return op }
     assert!(self.at() == self.stack_endstop);
-    self.stack.push(op.into());
+    self.stack_push(op.into());
     while self.fuel != 0 && self.step() {
       self.fuel -= 1;
     }
@@ -1262,18 +1311,52 @@ impl System {
   fn write_out(&mut self, mut op: Operand) {
     goodop(&op);
     loop {
+      if self.output_at.1 == 0 {
+        self.output_words.push(0);
+        assert!(self.output_at.0 + 1 == self.output_words.len());
+      }
       op = match op {
         Immediate(crumbs) => {
+<<<<<<< HEAD
           self.output_words.extend(&CrumbString::from(crumbs));
+=======
+          println!("Imm {:?}", self.output_at);
+          let len = reachesZero1(crumbs);
+          println!("{}+{} vs {}", self.output_at.0, self.output_at.1, self.output_words.len());
+          assert!(self.output_at.0 + 1 == self.output_words.len());
+          if (self.output_at + len as usize).0 != self.output_at.0 {
+            self.output_words.push(0);
+          }
+          copy_to_unaligned(&mut self.output_words[self.output_at.0..], &[crumbs], self.output_at.1, false);
+          self.output_at += len as usize;
+>>>>>>> 3b031623c386295a9c9965a88ab1ed7795deec09
           return;
         },
         Shared(ptr) => match look(&ptr).unwrap().deref() {
           Heap { crumbstring, .. } => {
+<<<<<<< HEAD
             self.output_words.extend(&crumbstring);
             return;
           },
           Synth { fun, arg, .. } => {
             self.output_words.write0crumb();
+=======
+            println!("Heap");
+            let len = idxbitlength(crumbstring, 0);
+            let mut going = (self.output_at + len).0 - self.output_at.0;
+            while going > 0 {
+              self.output_words.push(0);
+              going -= 1;
+            }
+            copy_to_unaligned(&mut self.output_words[self.output_at.0..], &crumbstring, self.output_at.1, false);
+            self.output_at += len;
+            return;
+          },
+          Synth { fun, arg, .. } => {
+            println!("Synth");
+            self.output_words[self.output_at.0] &= mask_hi(self.output_at.1);
+            self.output_at += 2;
+>>>>>>> 3b031623c386295a9c9965a88ab1ed7795deec09
             self.write_out(fun.clone());
             arg.clone()
           }
@@ -1284,8 +1367,23 @@ impl System {
   fn write_nf_from_whnf_stack(&mut self) { loop {
     let our_endstop = self.stack_endstop;
     assert!(self.at() > self.stack_endstop);
+    println!("here {:?}", self.output_at);
 
+<<<<<<< HEAD
     self.output_words.write0crumbs(self.at() - self.stack_endstop - 1);
+=======
+    if self.output_at.1 > 0 {
+      self.output_words[self.output_at.0] &= mask_hi(self.output_at.1);
+    } else {
+      self.output_words.push(0);
+    }
+    let start = self.output_at.0 + 1;
+    self.output_at += 2 * (self.at() - self.stack_endstop - 1);
+    for i in start..self.output_at.0 {
+      assert!(i == self.output_words.len());
+      self.output_words.push(0);
+    }
+>>>>>>> 3b031623c386295a9c9965a88ab1ed7795deec09
     let head = self.stack.pop().unwrap().to_eval;
     self.stack_endstop = self.at();
     self.write_out(head);
@@ -1322,6 +1420,7 @@ impl System {
 
     self.skip_leading_zeros();
 
+<<<<<<< HEAD
     // println!("0: {:#?}", self);
 
     if self.fuel == 0 {
@@ -1331,15 +1430,27 @@ impl System {
       }
       temp.reverse();
       self.stack.extend(temp);
+=======
+    {
+      let Some(frame) = self.refill() else {
+        return 0
+      };
+      self.stack_push(frame);
+>>>>>>> 3b031623c386295a9c9965a88ab1ed7795deec09
     }
     while self.fuel > 0 && self.step() {
       self.fuel -= 1;
     };
+    assert_eq!(self.input_at, self.stop_at);
 
+<<<<<<< HEAD
     // println!("f: {:#?}", self);
     for StackFrame { to_eval, .. } in &self.stack {
       goodop(to_eval);
     }
+=======
+    // self.output_words.extend(vec![0,0,0,0]);
+>>>>>>> 3b031623c386295a9c9965a88ab1ed7795deec09
     self.write_nf_from_whnf_stack();
     return fuel - self.fuel;
   }
@@ -1353,6 +1464,7 @@ impl System {
     let (used, ret) = self.eval_crumbstring(CrumbString::<false>::sugar(input), fuel);
     return (used, ret.unparse());
   }
+<<<<<<< HEAD
 }
 
 fn main() {
@@ -1498,4 +1610,101 @@ fn main() {
   } } }
 
   println!("{tests} passed");
+=======
+  fn eval_vec(&mut self, input: Vec<u64>) -> (Vec<u64>, usize) {
+    let len = idxbitlength(&input[..], 0);
+    println!("len: {len:?}");
+    let crumbs = (len - idxbit(0,0))/2;
+    self.input_words = input;
+    let output_crumbs = self.eval(crumbs);
+    return (self.output_words[..self.output_words.len()].to_vec(), output_crumbs);
+  }
+}
+
+fn main() {
+  fn print_crumbs((words, crumbs): (Vec<u64>, usize)) {
+    let mut i = 0;
+    while i < crumbs {
+      let word = words[i / word_crumbs as usize];
+      let crumb = 0x3 & (word >> (62 - 2*(i % word_crumbs as usize)));
+      print!("{}", crumb);
+      i += 1;
+    }
+    println!();
+  }
+  fn eval_str(input: &str) {
+    let mut parsed = Vec::new();
+    parsed.extend(vec![0,0,0,0]);
+    println!("{}:", input);
+    let mut i = 0;
+    for c in input.chars() {
+      match c {
+        '0' => { i += 1 },
+        'I' | '1' => {
+          if (i % word_crumbs as usize) > 0 {
+            parsed[i / word_crumbs as usize] |= 1 << (62 - 2*(i % word_crumbs as usize));
+          } else {
+            parsed.push(1);
+          }
+          i += 1;
+        },
+        'K' | '2' => {
+          if (i % word_crumbs as usize) > 0 {
+            parsed[i / word_crumbs as usize] |= 2 << (62 - 2*(i % word_crumbs as usize));
+          } else {
+            parsed.push(2);
+          }
+          i += 1;
+        },
+        'S' | '3' => {
+          if (i % word_crumbs as usize) > 0 {
+            parsed[i / word_crumbs as usize] |= 3 << (62 - 2*(i % word_crumbs as usize));
+          } else {
+            parsed.push(3);
+          }
+          i += 1;
+        },
+        _ => {},
+      }
+    }
+    println!("({})", parsed[0]);
+    print_crumbs((parsed.clone(), i));
+    let mut sys = System::new();
+    print_crumbs(sys.eval_vec(parsed));
+    println!("fuel used: {}", !0 - sys.fuel);
+  }
+  {
+    let mut sys = System::new();
+    let (words, crumbs) = sys.eval_vec(vec![1 << 62]);
+    println!("{} and {}", words.len(), crumbs);
+    print_crumbs((words, crumbs));
+  }; println!();
+  {
+    let mut sys = System::new();
+    let (words, crumbs) = sys.eval_vec(vec![5 << 58]);
+    println!("{} and {}", words.len(), crumbs);
+    print_crumbs((words, crumbs));
+  }; println!();
+  {
+    let mut sys = System::new();
+    let (words, crumbs) = sys.eval_vec(vec![9 << 58]);
+    println!("{} and {}", words.len(), crumbs);
+    print_crumbs((words, crumbs));
+  }; println!();
+  {
+    eval_str("011");
+  }; println!();
+  {
+    eval_str("021");
+  }; println!();
+  {
+    eval_str("00312");
+  }; println!();
+  {
+    eval_str("00212");
+  }; println!();
+  {
+    eval_str("00221");
+  }; println!();
+>>>>>>> 3b031623c386295a9c9965a88ab1ed7795deec09
 }
