@@ -6,19 +6,19 @@ export function nocb() {}
 export function consttrue() { return true }
 export function constfalse() { return false }
 
-export function freshId(): () => number {
+export function mintCounter(): () => number {
   let id = 0;
   return () => id++;
-}
+};
 
-export function cleanup<T>(...cbs: Cb<T>[]): Cb<T> {
+export function mintCleanup<T>(...cbs: Cb<T>[]): Cb<T> {
   return function(value: T) {
     const saved = cbs;
     cbs = [];
     for (const cb of saved) cb(value);
   };
-}
-export function cleanupRunning<T>(cb: Cb<T>) {
+};
+export function mintCleanupRunning<T>(cb: Cb<T>) {
   let running = true;
   return {
     cleanup: function(value: T) {
@@ -29,8 +29,8 @@ export function cleanupRunning<T>(cb: Cb<T>) {
     },
     running: () => running,
   };
-}
-export function rolling<T>(): (cb: Cb<T>, value: T) => void {
+};
+export function mintRolling<T>(): (cb: Cb<T>, value: T) => void {
   let past: Cb<T> = nocb;
   return function(cb: Cb<T>, value: T) {
     const saved = past;
@@ -44,9 +44,9 @@ export function rolling<T>(): (cb: Cb<T>, value: T) => void {
       past = cb;
     }
   };
-}
+};
 
-export function breakerResettable<T>(cb: Cb<T>) {
+export function mintBreakerResettable<T>(cb: Cb<T>) {
   let needsToRun = true;
   let me = {
     run: (value: T) => { if (needsToRun) cb(value); return me },
@@ -55,43 +55,49 @@ export function breakerResettable<T>(cb: Cb<T>) {
     running: () => needsToRun,
   };
   return me;
-}
-export function breaker<T>(cb: Cb<T>) {
+};
+export function mintBreaker<T>(cb: Cb<T>) {
   let me = {
     run: (value: T) => { cb(value); return me },
     trip: () => { cb = nocb; me.running = constfalse; return me },
     running: consttrue,
   };
   return me;
-}
-
-type Subscriptions<O> = {
-  push: (value: O) => Destr,
-  notify: (onValue: Cb<O>) => Subscriptions<O>,
-  destroy: (onDestroy: Cb<O>) => void,
-  size: () => number,
-  running: () => boolean,
 };
 
-export function subscriptions<O>(): Subscriptions<O> {
-  let ids = freshId();
+export type Subscriptions<O> = {
+  push(value: O): Destr,
+  notify(onValue: Cb<O>): Subscriptions<O>,
+  destroy(onDestroy: Cb<O>): void,
+  size(): number,
+  running(): boolean,
+};
+
+export function mintSubscriptions<O>(): Subscriptions<O> {
+  let ids = mintCounter();
   let listeners: { id: number, value: O }[] = [];
-  let { cleanup: destroy, running } = cleanupRunning((onDestroy: Cb<O>) => {
+  let { cleanup: destroy, running } = mintCleanupRunning((onDestroy: Cb<O>) => {
+    const errors = [];
     for (let i=0; i<listeners.length; i++)
-      onDestroy(listeners[i].value);
+      try { onDestroy(listeners[i].value) }
+      catch(e) { errors.push(e) }
+    if (errors.length) Promise.reject(new AggregateError(errors, "Error(s) during subscription cleanup"));
     listeners = [];
   });
   let me = {
     notify: (onValue: Cb<O>) => {
+      const errors = [];
       for (let i=0; i<listeners.length; i++)
-        onValue(listeners[i].value);
+        try { onValue(listeners[i].value) }
+        catch(e) { errors.push(e) }
+      if (errors.length) Promise.reject(new AggregateError(errors, "Error(s) during subscription callbacks"));
       return me;
     },
     push: (value: O) => {
       if (!running()) return nocb;
       let id = ids();
       listeners.push({ id, value });
-      return cleanup(() => {
+      return mintCleanup(() => {
         for (let i=0; i<listeners.length; i++) {
           if (listeners[i].id === id) {
             listeners.splice(i, 1);
@@ -105,12 +111,12 @@ export function subscriptions<O>(): Subscriptions<O> {
     running,
   };
   return me;
-}
+};
 
 // accumulator
 
 // Only run it on the nth time.
-export function threshold(n: number, cb: Cb): Cb {
+export function mintThreshold(n: number, cb: Cb): Cb {
   if (n < 1) { cb(); return nocb }
   let count = 0;
   return () => {
@@ -118,9 +124,9 @@ export function threshold(n: number, cb: Cb): Cb {
       cb(); cb = nocb;
     }
   };
-}
+};
 
-export function prealloc<A>(value: A): {
+export function mintCell<A>(value: A): {
   get: () => A,
   set: (value: A) => void,
   swap: (value: A) => A,
@@ -130,23 +136,54 @@ export function prealloc<A>(value: A): {
     set: next => { value = next },
     swap: next => { const prev = value; value = next; return prev }
   };
-}
+};
 
-export function loading<R>(load: (isLoading: () => boolean) => R): R {
+export function whileLoading<R>(load: (isLoading: () => boolean) => R): R {
   let isLoading = true;
   const r = load(() => isLoading);
   isLoading = false;
   return r;
-}
+};
 
-export function loadingBurst<A, R>(loader: (captureBurst: (value: A) => boolean) => ((burst: A[]) => R)): R {
+export function gatherLoadingBurst<A, R>(loader: (captureBurst: (value: A) => boolean) => ((burst: A[]) => R)): R {
   let bursts: A[] = [];
-  const r = loading(isLoading =>
+  const r = whileLoading(isLoading =>
     loader((value: A) => {
       if (isLoading()) { bursts.push(value); return true }
       else return false;
     })
   );
-  // FIXME GC
-  return r(bursts);
-}
+  return { result: r(bursts), sideEffect: bursts = [] }.result;
+};
+
+
+export type MintMap<K, V> = ReturnType<typeof mintMap<K, V>>;
+export function mintMap<K, V>(): {
+  get(k: K, df: () => V): V,
+  get(k: K, df?: () => V): V | undefined,
+  set(k: K, v: V | undefined): void,
+  reset(del?: (k: K, v: V) => void): void,
+  keys(): K[],
+};
+export function mintMap<K, V>() {
+  const storage = new Map<K, V>();
+  return {
+    get: (k: K, df?: () => V) => {
+      if (storage.has(k)) return storage.get(k);
+      if (df == undefined) return undefined;
+      const v = df();
+      storage.set(k, v);
+      return v;
+    },
+    set: (k: K, v: V | undefined) =>
+      v !== undefined ? storage.set(k, v) : storage.delete(k),
+    reset: (onEach?: (k: K, v: V) => void) => {
+      if (!onEach) return storage.clear();
+      const saved = storage.entries();
+      storage.clear();
+      for (const [k, v] of saved)
+        onEach(k, v);
+    },
+    keys: () => [...storage.keys()],
+  };
+};

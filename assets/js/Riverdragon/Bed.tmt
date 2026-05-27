@@ -2,14 +2,14 @@ machCounter:: ({.} -> (PureMachine {.} Nat))
 machCounter := mintMachine [] (: Nat :)
   (\i {.} => [ i [i] ])
 
-accumulator:: %forall(m)(%constrain(Monoid m)(
+mintAccumulator:: %forall(m)(%constrain(Monoid m)(
   {.} -> {
     get = (Unit -> m)
     put = (m -> Unit)
     reset = (Unit -> m)
   }
 ))
-accumulator: {.} => { get put reset }:
+mintAccumulator: {.} => { get put reset }:
   mintCell mempty => {. get modify swap .}
 
   (\more => modify (!1 append #0 more)) => put
@@ -151,10 +151,10 @@ mintSubscriptions: {.} => { register notify destroy size running }:
   listeners.size => size
   cleanup => destroy
 
-threshold:: (Nat -> ({.} -> {.}) -> ({.} -> {.}))
-threshold: [] cb => (!1 {.} !):
+mintThreshold:: (Nat -> ({.} -> {.}) -> ({.} -> {.}))
+mintThreshold: [] cb => (!1 {.} !):
   cb {.} => {.}
-threshold: n# cb# => countdown:
+mintThreshold: n# cb# => countdown:
   mintCell [n# cb#] (: [] | [Nat ({.} -> {.})] :) => status
 
   (| {.} => {.}:
@@ -168,12 +168,12 @@ threshold: n# cb# => countdown:
     }}
   |)
 
-loading: loader => result:
+whileLoading: loader => result:
   mintCell "T" => isLoading
   loader isLoading.get => result
   isLoading.set "F" => {.}
 
-loadingBurst: loader => result:
+gatherLoadingBurst: loader => result:
   mintArray [] => bursts
   loading
     (| isLoading => result:

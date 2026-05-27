@@ -82,6 +82,7 @@ var Lake = var River = var Stream = {
     var subs = Bed.subscriptions();
     return {
       send: func(value) {
+        if (beforeBroadcast != nil) beforeBroadcast(value);
         subs.notify(func(cbs) cbs.receive(value));
         subs.notify(func(cbs) cbs.commit(myId));
         ;;
@@ -230,16 +231,27 @@ var Lake = var River = var Stream = {
     })
   }),
 
-  latestStream: static(func(source, mkStream) Stream.makeLake(func(cb) {
-    source.subscribe(Resource.saveRevolvingScope(func(v)
-      mkStream(v).subscribe(cb)
-    ));
+  latestStream: static(func(source, mkStream) Stream.makeLake(func(cb, runDry) {
+    var noMore = runDry;
+    return source.subscribe(Resource.saveRevolvingScope(func(v) {
+      noMore = Bed.mintThreshold(2, runDry);
+      return mkStream(v).subscribe(cb, noMore)
+    }), func() noMore());
   })),
 
   allStreams: static(func(source, mkStream) Stream.makeLake(func(cb) {
+    var running = 0;
+    var activeStream = func() {
+      running += 1;
+      return func() {
+        running -= 1;
+        if (!running) runDry();
+        ;;
+      };
+    };
     source.subscribe(Resource.saveScope(func(v)
-      mkStream(v).subscribe(cb)
-    ));
+      mkStream(v).subscribe(cb, activeStream())
+    ), activeStream());
   })),
 };
 Stream.empty = Stream.bursting([]);

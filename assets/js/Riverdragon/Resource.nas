@@ -28,6 +28,7 @@ var mkSubscope = func(parent) {
     state.destructors = [];
     for (var i=size(destructors)-1; i>=0; i-=1)
       destructors[i]();
+    destroy = func(){};
     ;;
   };
   parent.addDestructor(destroy);
@@ -36,7 +37,7 @@ var mkSubscope = func(parent) {
     addDestructor: func(cb) {
       if (state.destroyed)
         die("Scope already destroyed");
-      append(destructors, cb);
+      append(state.destructors, cb);
       return cb;
     },
     destroyed: func() state.destroyed,

@@ -1,12 +1,12 @@
 const loaded = new WeakMap();
-export const _loadAudioWorkletNode = audioContext => url => name => onSuccess => onError => () => {
+export const _loadAudioWorkletNode = audioContext => urlOrSource => name => onSuccess => onError => () => {
   try {
     if (!loaded.has(audioContext)) loaded.set(audioContext, new Map());
-    const wait = loaded.get(audioContext).get(url) ??
+    const wait = loaded.get(audioContext).get(urlOrSource) ??
       audioContext.audioWorklet.addModule(
-        URL.canParse(url) ? url : URL.createObjectURL(new Blob([url], { type: "text/javascript" }))
+        URL.canParse(urlOrSource) ? urlOrSource : URL.createObjectURL(new Blob([urlOrSource], { type: "text/javascript" }))
       );
-    loaded.get(audioContext).set(url, wait);
+    loaded.get(audioContext).set(urlOrSource, wait);
     wait.then(() => {
       const mkNode = options => () => {
         const node = new AudioWorkletNode(audioContext, name, options);

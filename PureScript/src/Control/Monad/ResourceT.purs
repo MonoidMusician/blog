@@ -58,6 +58,14 @@ start_ name computation = do
 run :: forall m r. MonadAff m => String -> ResourceT m r -> m { result :: r, destroy :: Effect Unit, scope :: Scope }
 run name = start name >=> \{ result, wait, destroy, scope } -> { result, destroy, scope } <$ liftAff (Aff.joinFiber wait)
 
+-- | Start the asynchronous computation.
+launch :: forall r. String -> ResourceT Aff r -> Effect { result :: Fiber r, destroy :: Effect Unit, scope :: Scope }
+launch name computation = do
+  { result, destroy, scope } <- start name do
+    scope <- ResourceT pure
+    liftEffect $ Aff.launchAff $ _.result <$> scopedRun name scope computation
+  pure { result, destroy, scope }
+
 -- | Run in an existing scope.
 scopedStart :: forall m r. MonadEffect m => String -> Scope -> ResourceT m r -> m { result :: r, wait :: Fiber Unit, destroy :: Effect Unit }
 scopedStart name here@(Scope { wait: App wait, destroy, destroyed }) (ResourceT computation) = do

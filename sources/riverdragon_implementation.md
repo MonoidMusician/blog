@@ -47,6 +47,8 @@ River (event stream)         `Lake = Stream NotFlowing`{.ps}      `River = Strea
 Roar (audio graphs)          `Knob`{.ps} à la `AudioParam`{.js}   `Roar`{.ps}, output from an `AudioNode`{.js}
 
 GHC (Haskell runtime)        `IO`{.hs}                            `Async`{.hs}, of a running `IO`{.hs} action
+
+Python/JavaScript            (Async) generator function           (Async) iterable
 --------------------------------------------------------------------------------------------------------------
 
 <!-- Table: Comparing “not flowing” and “flowing” variants of various functors in PureScript (and Haskell). -->

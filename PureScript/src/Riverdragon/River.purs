@@ -94,7 +94,7 @@ module Riverdragon.River
   , subscribeM
   , subscribeM1
   , reenableM1
-  , subscribeIsh
+  , subscribeUntil
   , onDestroyed
   , endOfRoad
   , dam
@@ -147,6 +147,7 @@ import Prelude
 
 import Control.Alt (class Alt, (<|>))
 import Control.Apply (lift2)
+import Control.Monad.Cell.Basics (mintCell)
 import Control.Monad.ResourceM (class MonadResource, destr, inSubScope, selfDestructor, selfScope, track)
 import Control.Monad.ResourceT (ResourceM, oneSubScopeAtATime, scopedStart, scopedStart_, start, start_)
 import Control.Plus (class Plus, empty)
@@ -156,6 +157,7 @@ import Data.Compactable (compact, separateDefault)
 import Data.Filterable (class Compactable, class Filterable, filterDefault, filterMap, partitionDefaultFilterMap, partitionMapDefault)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Maybe (Maybe(..), isNothing, maybe)
+import Data.Monoid (power)
 import Data.Set as Set
 import Data.These (These(..))
 import Data.Traversable (class Foldable, foldMap, mapAccumL, traverse, traverse_)
@@ -505,6 +507,8 @@ makeLake' streamTemplate = Stream NotFlowing \cbs -> do
   id <- globalId
   loadingBurst \whenLoaded -> do
     unsubscribe <- map _.destroy $ start_ "makeLake'" $ streamTemplate cbs.destroyed do
+      -- Grab `a` for `burst :: Array a`, or if loading is done
+      -- then give it to the callback
       \a -> whenLoaded a do
         cbs.receive a
         cbs.commit id
@@ -521,7 +525,7 @@ makeLakeFFI f = makeLake \cb -> do
 -- | Burst events are applied before `subscribe` returns: you do not need to
 -- | handle them manually.
 subscribe :: forall flow a m. MonadResource m => Stream flow a -> (a -!> Unit) -> m Unit
-subscribe = subscribeIsh mempty
+subscribe = subscribeUntil mempty
 
 -- | Helper to run callbacks in the same scope as the subscribe is done in.
 subscribeM :: forall flow a m. MonadResource m => Stream flow a -> (a -> ResourceM Unit) -> m Unit
@@ -542,8 +546,8 @@ reenableM1 stream cb = do
   subscribeM1 stream (when <@> cb)
 
 -- | Subscribe with an additional callback for when the stream is destroyed.
-subscribeIsh :: forall flow a m. MonadResource m => Allocar Unit -> Stream flow a -> (a -!> Unit) -> m Unit
-subscribeIsh destroyed (Stream _ stream) receive = destr =<< liftEffect do
+subscribeUntil :: forall flow a m. MonadResource m => Allocar Unit -> Stream flow a -> (a -!> Unit) -> m Unit
+subscribeUntil destroyed (Stream _ stream) receive = destr =<< liftEffect do
   -- We delete the unsubscriber when the stream is destroyed, to avoid leaking
   -- resources from the closure of it.
   unsubscriber <- storeUnsubscriber
@@ -562,7 +566,7 @@ subscribeIsh destroyed (Stream _ stream) receive = destr =<< liftEffect do
   pure unsubscriber.unsub
 
 onDestroyed :: forall a m. MonadResource m => Effect Unit -> River a -> m Unit
-onDestroyed cb stream = void $ subscribeIsh cb stream mempty
+onDestroyed cb stream = void $ subscribeUntil cb stream mempty
 
 endOfRoad :: forall a. River a -> River Unit
 endOfRoad stream = unsafeCopyFlowing stream $ makeLake' \destroy cb ->
@@ -780,9 +784,9 @@ emitState :: forall state. state -> { state :: state, emit :: Maybe state }
 emitState state = { state, emit: Just state }
 
 -- | A stateful stream that can update its own state and emit values.
-statefulStream :: forall flow a b c. b -> Stream flow a -> (b -> a -> { state :: b, emit :: Maybe c }) -> Lake c
+statefulStream :: forall flow a b s. s -> Stream flow a -> (s -> a -> { state :: s, emit :: Maybe b }) -> Lake b
 statefulStream b0 (Stream t stream) folder = Stream t \cbs -> do
-  current <- prealloc b0
+  current <- mintCell b0
   upstream <- stream $ cbs { receive = _ } \a -> do
     { state: b, emit: c } <- folder <$> current.get <@> a
     current.set b
@@ -831,7 +835,8 @@ limitTo n (Stream flow setup) = Stream flow \cbs -> do
     , destroyed: destroyed
     }
   setUnsub sub.unsubscribe
-  pure sub
+  power incr (Array.length sub.burst)
+  pure sub { burst = Array.take n sub.burst }
 
 -- | Cut off the stream when it returns `Nothing`.
 whileJust :: forall flow a. Stream flow (Maybe a) -> Lake a
@@ -983,6 +988,7 @@ latestStreamM ::
   Lake b
 latestStreamM source mkStream = makeLake \cb -> do
   revolving <- selfScope >>= oneSubScopeAtATime "latestStreamM"
+  -- FIXME: runDry
   subscribe source \a -> do
     -- Unsubscribe first (by creating a new revolving scope) in case one of the
     -- next actions would have triggered the old stream to emit any more events
@@ -999,6 +1005,7 @@ allStreamsM ::
   (a -> ResourceM (Stream flowInner b)) ->
   Lake b
 allStreamsM source mkStream = makeLake \cb -> do
+  -- FIXME: runDry
   subscribeM source \a -> do
     stream <- mkStream a
     subscribe stream cb
@@ -1068,8 +1075,8 @@ fix' :: forall flow1 flow2 flow3 o i.
 fix' mkLoop = makeLake' \finished cb -> do
   { stream: feedback, send, destroy } <- createRiver
   { loopback, output } <- mkLoop feedback
-  subscribeIsh destroy loopback send
-  subscribeIsh (finished <> destroy) output cb
+  subscribeUntil destroy loopback send
+  subscribeUntil (finished <> destroy) output cb
 
 -- | This efficiently sorts “mail” values based on their key, so that upstream
 -- | only receives on listener and the downstream rivers only get pinged for
@@ -1096,7 +1103,7 @@ mailbox upstream = inSubScope "mailbox" do
     destroyed.set true
     void mailboxes.reset
   destroyer <- selfDestructor
-  subscribeIsh
+  subscribeUntil
     destroyer
     upstream
     \{ key, value } -> do
@@ -1113,6 +1120,7 @@ mailbox upstream = inSubScope "mailbox" do
         Just { stream } -> pure stream
         Nothing -> _.result <$> scopedStart "mailbox" scope do
           -- create a new river and record and return it
+          -- TODO: proxy with sources?
           downstream <- createRiver
           liftEffect do mailboxes.set selected downstream
           pure downstream.stream

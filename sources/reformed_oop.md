@@ -1,9 +1,9 @@
 ---
 title: OOP Without the Goop
-subtitle: No Objects, Just Closures in Records
+subtitle: No “Objects”, Just Closures in Records
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
-date: 2026/05/05
+date: 2026/05/05–2026/05/27
 ---
 
 [OOP]{t=} gets a lot of things wrong.
@@ -12,29 +12,29 @@ It is their behaviors, their interfaces, that are interesting.
 [Even lifecycle/RAII can be decoupled from an “object” and a “class”.](resource_acquisition.html)
 
 Iʼve been experimenting with a different approach that simply seems cleaner.
-Less noise, fewer inconsequential details to worry about^[no worrying about function vs method calls, when to use `this`{.purescript}, whether to use getters+setters, …], more flexibility.
+Less noise, fewer inconsequential details to worry about^[no worrying about function vs method calls, when to use `this`{.purescript}, whether to use getters+setters or mutate a plain member (no!) or use explicit get and set methods, …], more flexibility. More coherence.
 
 [OOP]{t=} sort of developed from the perspective of C turning into C++:
 it started with passing mutable struct pointers to individual global functions, and then C++ organized these “members” and “methods” into a class.
 The class also provided constructors and a destructor to manage the lifecycle of its data.^[Java took it further and said there is no function, only class, which was an ugly mistake.]
 
-Things were a bit different with JavaScript and Python, for example, but they still sort of ended up in the same place.
+Things were a bit different with Python and especially JavaScript, for example, but they still sort of ended up in the same place.
 
 While organization is nice, this is too much living under one roof.
 
 Remember how we used to do private members in JavaScript?
-Before JavaScript had `class`{.javascript} syntax and `#privateField`{.javascript}s, the constructor had to use its local scope to store private variables, and bind closures that can access them.
+Before JavaScript had `class`{.javascript} syntax and `#privateField`{.javascript}s, the constructor (a plain function! but called with `new`{.javascript}) had to use its local scope to store private variables, and bind closures that can access them.
 
 Why not push this to its limit?
 A constructor doesnʼt even need `this`{.javascript}, it can just return a record (Plain Old JavaScript Object) of closures linked together by their shared scope.
 
 In fact, this is what Iʼve been doing in PureScript.
 
-Since PureScript has row types (enabling anonymous records), I donʼt need to foreign import types for objects: I just declare their interface and import a single function that creates a new instance of that interface.
+Since PureScript has row types (enabling anonymous records), I donʼt need to foreign import types for foreign objects: I just declare their interface and import a single function that creates a new instance of that interface.
 
 While pure functional programming is a good fit for immutable data, I think this barebones-OOP style is an easier approach for mutable data, resources that change under effects.
 
-And it is multi-paradigm: it fits great in PureScript, probably is workable in Haskell without anonymous records, but it also works great in JavaScript, probably Python – who knows where it could lead, new languages perhaps?
+And it is multi-paradigm: it fits great in PureScript, probably is workable in Haskell without anonymous records, but it also works great in JavaScript, probably Python – who knows where it could lead, new languages perhaps?^[Yes please! But thatʼs not for this post.]
 
 
 ## Records of Closures
@@ -44,7 +44,7 @@ We still need some place to keep all the behaviors on an object together, and I 
 Before:
 
 ```purescript
-module Effect.Ref
+module Effect.Ref where
 
 -- Declare the foreign type
 -- (in PureScript there is nothing to import, per se)
@@ -65,7 +65,8 @@ example :: Effect Int
 example = do
   ref <- Ref.new 0
   -- You have to import the file
-  -- and remember where the object goes
+  -- and remember where the object goes:
+  -- the first or the last argument?
   Ref.write 1 ref
   Ref.read ref
   -- 1
@@ -128,7 +129,7 @@ type Cell m v =
 newtype Modify m v = Modify (forall r. (v -> Tuple v r) -> m { prev :: v, next :: v, info :: r })
 ```
 
-(`Modify`{.purescript} is wrapped because the impredicative type causes issues for typeclass deriving, among other things.)
+(`Modify`{.purescript} is wrapped because the impredicative type `forall r. …`{.purescript} causes issues for typeclass deriving, among other things.)
 
 ```purescript
 -- | Make a mutable cell, appropriate for the effect type (Ref or STRef)
@@ -158,6 +159,98 @@ infix 1 swapifyCell as <&~ -- (v -> v) -> m v
 ```
 
 PureScriptʼs row types make this seamless by enabling extensible records of operations `{ | ops }`{.purescript}.
+
+
+### Reactivity
+
+Itʼs really important that properties of the interface are exposed as reactive streams, so downstream consumers know when they are changing.
+Conversely, it is preferable to expose setter methods still, as opposed to consuming reactive streams.
+
+[Everything Should Be FRP Compatible!](frp_compatible.html)
+
+:::Warning
+Unfortunately, with current [API]{t=}s, it is not always possible to know when values are changing.
+Not enough events are exposed.
+
+An interface should still do its best to catch updates when possible (especially updates from the interface), and maybe provide a way to re-poll.
+This is the one time I think it is okay to break the rule that subscribers should not influence each other:
+if a new subscriber joins and the interface queries the property and realizes it has a stale value, it is okay to notify the other subscribers so they see the current value too.
+:::
+
+Letʼs think about a very simple interface, an I/O channel for any kind of data.
+
+```purescript
+type Interface i o =
+  { send :: i -> Effect Unit
+  , receive :: River o
+  }
+
+mintReactiveCell :: forall t. ResourceM (Interface t t)
+mintReactiveCell = do
+  { send, stream } <- createRiver
+  pure { send, receive: stream }
+```
+
+Arguably these interfaces could be designed to take streams instead of returning setter methods,
+
+```purescript
+mintSomething :: forall t.
+  { input :: Lake t } ->
+  ResourceM
+    { output :: River t }
+mintSomething = do
+  { send, stream } <- createRiver
+  subscribe input send
+  pure { output: stream }
+```
+
+(This is just a trivial example.)
+
+Generally I donʼt think this is the right approach, for some interrelated reasons:
+
+- Holding the output of `mintReactiveCell`{.purescript} should mean you have capability to interact with that interface.
+  It is good to keep both sides of the interface in the same record, pass it around as a coherent whole.
+- It is not difficult to convert between the styles if/when you need to.
+- It is uglier to insist that the input must be a stream when control might be changing hands.
+  Either you would need to merge those streams somehow, or use `createRiver`{.purescript} to expose the `send`{.purescript}-style interface anyways
+
+### General shape
+
+A record where each field can be:
+
+- A reference to the underlying foreign object, if necessary
+- Static, immutable information about the object
+- Setters/input ports, `input -> m Unit`{.purescript}
+- Methods, `arg1 -> arg2 -> ... -> m ret`{.purescript}
+- Plain getters `m output`{.purescript}
+- Events output `River event`{.purescript}
+- Reactive stores for mutable state: `{ stream :: River state, current :: m state }`{.purescript}^[not distinguished from event streams at the type level] (preferable to plain getters!)
+- Possibly some `Lake`{.purescript}s too (“descriptions of how to subscribe to something, starting at an instant in time”), even `ResourceM (River _)`{.purescript} if you want to have more active logic around who is viewing an interface ([e.g.]{t=} informing other subscribers when someone new joins in on the fun).
+  - Also useful to have specific interfaces that distinguish loopback events from external events: this is great when working with the DOM, you really donʼt need to or want to update the `.value`{.javascript} attribute of an `<input>`{.html} element in its `onchange`{.javascript} event, since that will clear state like selection and [[IME]{t=} composition](https://www.w3.org/TR/ime-api/#background).
+
+  - The maximalist version of this is
+
+    ```purescript
+    type Interface a =
+      { send :: a -> Effect Unit
+      , receive :: River a
+      , loopback :: River a
+      , mailbox :: a -> River Unit
+      , active :: a -> River Boolean
+      , current :: Effect (Maybe a)
+      , destroy :: Effect Unit
+      }
+    ```
+
+    Where different instantiations of the interface see the same events and updates, with the exception of which events are present on `.loopback`{.purescript} but filtered out of `.receive`{.purescript}.
+
+  - But even more elaborate schemes are sometimes necessary, like for negotiated properties, where the local interface can propose a value, stored as the requested value, while the actual value gets figured out via negotiation with a remote party.
+    This is commonly visible in [WebRTC]{t=} for example, though it honestly occurs at all levels of the network stack, usually in less visible ways.
+
+- Keyed data, [e.g.]{t=} `EventType -> River event`{.purescript} on an event target, or `Array (River Number)`{.purescript} to represent axes on a `GamePad`{.purescript}
+  - In particular, you may want to memoize this, keep the same source ID/synchrony between subscribers of the `River`{.purescript} and such.
+
+- Child objects, sub-resources organized this way
 
 
 
@@ -215,7 +308,7 @@ This is especially frustrating in both the small scale and large:
 - in individual loops, a mutable variable can represent all sorts of monoids ([`Max Number`{.purescript}](https://pursuit.purescript.org/packages/purescript-orders/6.0.0/docs/Data.Ord.Min#t:Min), [`Additive Int`{.purescript}](https://pursuit.purescript.org/packages/purescript-prelude/6.0.2/docs/Data.Monoid.Additive#t:Additive), [`Conj Boolean`{.purescript}](https://pursuit.purescript.org/packages/purescript-prelude/6.0.2/docs/Data.Monoid.Conj#t:Conj), and so many more), and it increases cognitive load trying to figure out what behavior it has
   - not every behavior is modeled by a monoid, but I think you will find that a lot are! and it is easier if the basic behavior is able to be described like this, and you just have to pay attention to the cases of exceptional behavior
 - invariants over the course of a whole program run or object lifetime are also difficult to track: you have to chase down their use sites, not the definition site
-
+- compilers miss out on opportunities for optimization
 
 ### Scopes
 
@@ -232,7 +325,8 @@ newtype Scope = Scope
   }
 ```
 
-My implementation also contains functions to wait for full initialization to complete, since this was convenienent for my WebAudio nodes.
+My implementation also contains functions to wait for full initialization to complete, since this was convenienent for my [WebAudio](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API) worklet nodes:
+they can instantiate a normal gain node synchronously, as a proxy for other nodes to subscribe to, while waiting for the worklet to load.
 
 ```purescript
 newtype Scope = Scope
@@ -247,7 +341,7 @@ derive newtype instance Monoid Scope
 derive newtype instance Semigroup Scope
 ```
 
-This forms a monoid, stating that the way to inherit from multiple scopes is simply to register your destructors with all of them.
+This forms a monoid, stating that the way to inherit from multiple scopes is simply to register your destructors and waiters with all of them.
 
 You could possibly envision scopes containing locks in multithreaded languages.
 But I am not sure how well that would work with a monoid structure…
@@ -346,22 +440,59 @@ Here it is implemented on top of JavaScript object mutability, but its interface
 Alright, there are some downsides to this approach.
 But I am not convinced that they are blockers, especially in a language like PureScript that makes it more ergonomic than the alternatives, and has the capacity to be optimizable (plus, JavaScript runtimes are impressively optimized already).
 
+#.  It still has the same downside of [OOP]{t=} that everything is object-centric, being methods *on* an object, and so on.^[Iʼve always complained that [why should things like addition and concatenation be methods on one object instead of the other?](oop.html), and I hope you also see why it is shortsighted that [OOP]{t=} forces that.]
+    But this is okay, I think that is reasonable when dealing with mutation/communication-centric things, as long as the rest of the language is not infected with object-centrism.
+    And it is nice that the closures can be projected out into plain functions, without having to worry about if method access produces the right `this`{.javascript} reference.^[Although this is something that Python got right.]
+
+#.  There is no explicit referential identity: you cannot test whether two `Cell`{.purescript}s are the same, because they are abstract interfaces now.
+    You may still have some use cases where you want explicit referential identity, but … I think those are rare and deserve to be special, not the default.
+
+    For the cases where you need it, you should expose the underlying OOP object still (that is, the object that is an instance of a class).
+
+#.  As a consequence, binary/n-ary relational methods do not work well.
+    Think `Element.addChild`{.javascript} in the JavaScript DOM, where objects need to have a relationship with others based on their inherent referential identity: `Element -> Element -> Effect Unit`{.purescript}.
+
+    Again, the record can at least expose the underlying object to work around this.
+
+    However, it is sometimes possible to redesign APIs so this is less necessary.
+    The Dragon part of Riverdragon (which is a reactive VDOM) exposes how to create a DOM tree without any interfaces like `Element.addChild`{.javascript}.
+
+#.  Dealing with different monads in the interface is probably annoying – lifting it to a different monad after creation, for example.
+    Sometimes you might just lift them individually at use.
+    For existing typed languages, anything you could do to make the lifting easier, probably makes the usage harder.
+
+    However, hopefully there are not too many monads floating around.
+    And it is really smart to stick to something isomorphic to `ReaderT _ Effect`{.purescript} / `ReaderT _ IO`{.haskell}, so you can apply the [`UnliftIO`{.haskell} pattern](https://hackage.haskell.org/package/unliftio-core-0.2.1.0/docs/Control-Monad-IO-Unlift.html#v:askRunInIO): save scope/context from an outer context to smuggle wherever effects need to be run.
+
+#.  Itʼs more difficult to ascribe contracts to the behavior of these objects, since they are basically duck typed now.
+    But again, I think it is a reasonable tradeoff here, and there are ways of being more explicit if you want to be.
+    Make extra members with the contract names you want?
+
+#.  It is difficult to let these interfaces be extensible.
+    The expression problem strikes again!
+
+#.  It probably makes optimization difficult, since everything is virtual, based on closures not methods.
+
+    - Counterpoint: you still often call concrete functions to create instances, `mintThingy`{.purescript}
+
 #.  It requires a sufficiently high level language to make sense of records and closures in the first place.
     Low-level FFI and bootstrapping may still require interfacing with the old style of classes-and-methods or pointers-and-procedures, leaving it to the high level language to wrap them in records-and-closures.
 
 #.  Additionally, it might be much harder to swing without garbage-collected languages, not sure on that.
 
-#.  It still has the same downside of [OOP]{t=} that everything is object-centric, being methods *on* an object, and so on.^[Iʼve always complained that [why should things like addition and concatenation be methods on one object instead of the other?](oop.html), and I hope you also see why it is shortsighted that [OOP]{t=} forces that.]
-    But this is okay, I think that is reasonable when dealing with mutation/communication-centric things.
-    And the closures can be projected out into plain functions, without having to worry about if method access produces the right `this`{.javascript} reference.
 
-#.  It probably makes optimization difficult, since everything is virtual, based on closures not methods.
+<!--
+## Upsides
 
-#.  There is no explicit referential identity: you cannot test whether two `Cell`{.purescript}s are the same because they are abstract interfaces.
-    You may still have some use cases where you want explicit referential identity, but … I think those are rare and deserve to be special, not the default.
+After all that talk of downsides, letʼs review why I like it
 
-#.  Itʼs more difficult to ascribe contracts to the behavior of these objects, since they are basically duck typed now.
-    But again, I think it is a reasonable tradeoff here, and there are ways of being more explicit if you want to be.
+#.  Plain functions and closures means that this kind of API is more portable: no need to worry about `this`{.javascript}, mutation is explicit and reactive updates are explicitly available.
+#.  It has a standard interface for reactive updates.
+#.  A way to keep track of destructors and task cancelation.
+    You don't have to remember to call 100 individual destructors, and you donʼt have to rely on the garbage collector to call it eventually.
+#.  It works great for PureScript, especially for FFI.
+-->
+
 
 
 
@@ -563,6 +694,100 @@ mintBreaker act = mintCell (Just act) <#> \cell ->
   , running: isJust <$> cell.get
   }
 ```
+
+### MIDI keyboard state
+
+Keeping track of the state of a MIDI note is not straightforward.
+There are four relevant events: note on and note off, plus polyphonic aftertouch or channel aftertouch for updates while the note is pressed.
+Some manufacturers use note on with velocity 0 to mean note off.
+
+There is no event to request a resync, so it is best to track the state in one place, instantiated as soon as possible, and divvy out interfaces to the note events from there.
+That is, Rivers, and a __lot__ of them.
+
+I like to package note events into an interface `River<MIDINoteLive>`{.typescript} that captures on and off events directly, but includes a stream `.aftertouch: River<number>`{.typescript} that represents aftertouch for that specific press: the event stops when the note is released, emits no more events.
+(For note off events, it is just an empty stream.)
+
+This is the most useful form when you want to handle notes in a synthesizer, but it is nontrivial to obtain from the raw MIDI events.
+
+This code makes extensive use of `River.mailbox()`{.typescript} to ensure that specific listeners are activated, at the cost of making them into individual events, losing atomicness from the underlying event source.^[Because they get their own source ID, so they have different `.commit(id)`{.typescript} events.]
+
+```typescript
+export type MIDINote = {
+  channel: number, // 0–15
+  key: number, // 0–127, 21=A0 through G9=127
+};
+export type MIDIChannel = {
+  channel: number,
+  key?: undefined,
+};
+
+export type MIDINoteEvent =
+  | { type: "velocity", pressed: boolean, velocity: number, event?: MIDIMessageEvent } // 0 implies off
+  | { type: "aftertouch", aftertouch: number, event?: MIDIMessageEvent };
+export type MIDINoteState = {
+  pressed: boolean, // <= (velocity > 0)
+  velocity: number, // 0-127
+  aftertouch: number | undefined,
+  timeStamp?: number,
+  event?: MIDIMessageEvent,
+};
+export type MIDINoteUpdate = { event: MIDINoteEvent, state: MIDINoteState };
+
+// A live view of this note event (press or release) until its next release
+export type MIDINoteLive = {
+  pressed: boolean, // <= (velocity > 0)
+  velocity: number, // 0-127
+  timeStamp?: number,
+  event?: MIDIMessageEvent,
+  release: River<MIDINoteLive>, // empty if pressed == false, limit 1
+  aftertouch: River<number>, // empty if pressed == false, ends when released
+};
+
+// Keep track of all the notes that are currently playing on the MIDIInput,
+// so they do not get dropped for lack of subscribers. Provide convenient
+// (and efficient?) ways to slice the events by channel and by note.
+export type MIDINoteMap = {
+  // Update the state, returning the state if it makes sense
+  // (off events if it was on, and aftertouch only while it is on)
+  send(note: MIDINote, event: MIDINoteEvent, DOMevent?: MIDIMessageEvent): MIDINoteState | undefined,
+  // Merely parse an event (pure function)
+  fromWire(data: number[] | Uint8Array | null | undefined):
+    { note: MIDINote | MIDIChannel, event: MIDINoteEvent } | undefined,
+  // Parse a message event and update the state
+  parse(DOMevent: MIDIMessageEvent):
+    MIDINoteState | undefined,
+
+  // All events, for all channels and all notes
+  allEvents: River<MIDINote & MIDINoteUpdate>,
+  // All updates for a specific note
+  noteEvents(note: MIDINote): River<MIDINoteUpdate>,
+  // On and off events for a specific note
+  presses(note: MIDINote): River<MIDINoteState>,
+  // Aftertouch for a specific note
+  aftertouch(note: MIDINote): River<number | undefined>,
+
+  // A live view of each note: on and off events
+  allNotes: River<MIDINote & MIDINoteUpdate & { live: River<MIDINoteLive> }>,
+  liveNote(note: MIDINote): River<MIDINoteLive>,
+  currentAftertouch(note: MIDINote): River<number>,
+
+  selectChannel(channel?: number): {
+    // All events, for all notes on this channel
+    allEvents: River<MIDINote & MIDINoteUpdate>,
+    noteEvents(key: number): River<MIDINoteUpdate>,
+    presses(key: number): River<MIDINoteState>,
+    aftertouch(key: number): River<number | undefined>,
+
+    allNotes: River<MIDINote & MIDINoteUpdate & { live: River<MIDINoteLive> }>,
+    liveNote(key: number): River<MIDINoteLive>,
+    currentAftertouch(key: number): River<number>,
+  },
+
+  disconnect(): void,
+  reconnect(): void,
+};
+```
+
 
 
 

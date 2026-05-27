@@ -51,7 +51,7 @@ Here are the steps for basic connection establishment:
     var rtc = new RTCPeerConnection(options);
 
     // As the host, we create a data channel immediately, so it is in the offer
-    var dc = rtc.createDataChannel('init', { reliable: true });
+    var dc = rtc.createDataChannel('init', { ordered: true });
     ```
 
 #. Host creates an offer with all available candidates

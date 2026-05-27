@@ -17,7 +17,7 @@ import Effect.Console as Console
 import Effect.Uncurried (EffectFn3, mkEffectFn3, runEffectFn3)
 import Idiolect ((>==))
 import Riverdragon.Dragon.Breath (removeSelf, setAttributeNS, unsafeSetProperty)
-import Riverdragon.River (Lake, Stream, bursting, subscribe, subscribeIsh)
+import Riverdragon.River (Lake, Stream, bursting, subscribe, subscribeUntil)
 import Riverdragon.River.Bed (Allocar, accumulator, eventListener, freshId, ordMap, prealloc, pushArray, rolling, unsafeAllocate)
 import Riverdragon.River.Beyond (mkAnimFrameBuffer)
 import Safe.Coerce (coerce)
@@ -242,7 +242,7 @@ renderDragonIn = mkEffectFn3 \mgr insert -> case _ of
     unsubPrev <- rolling
     let inactive = for_ bookmarks (Comment.toNode >>> removeSelf)
     { destroy: unsubscribe } <- start "renderDragonIn Replacing" $
-      subscribeIsh inactive (mgr.renderThread revolving) \newValue -> do
+      subscribeUntil inactive (mgr.renderThread revolving) \newValue -> do
         unsubPrev mempty
         unsubPrev <<< _.destroy =<< runEffectFn3 renderDragonIn mgr insert' newValue
     pure $ fromBookmarks bookmarks do
@@ -254,7 +254,7 @@ renderDragonIn = mkEffectFn3 \mgr insert -> case _ of
     unsubAll <- accumulator
     let inactive = for_ bookmarks (Comment.toNode >>> removeSelf)
     { destroy: unsubscribe } <- start "renderDragonIn Appending" $
-      subscribeIsh inactive (mgr.renderThread items) \newChild -> do
+      subscribeUntil inactive (mgr.renderThread items) \newChild -> do
         unsubAll.put <<< _.destroy =<< runEffectFn3 renderDragonIn mgr insert' newChild
     pure $ fromBookmarks bookmarks do
       unsubscribe

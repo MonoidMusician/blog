@@ -27,7 +27,7 @@ import Effect.Now (now)
 import Effect.Timer (clearInterval, clearTimeout, setInterval, setTimeout)
 import Partial.Unsafe (unsafePartial)
 import Riverdragon.Dragon.Breath (microtask)
-import Riverdragon.River (Allocar, Lake, River, Stream, allStreams, dam, fixPrjBurst, foldStream, mailboxRiver, makeLake, makeLake', mapAl, oneStream, singleShot, statefulStream, subscribeIsh, unsafeCopyFlowing, withInstantiated, (<?*>), (>>~))
+import Riverdragon.River (Allocar, Lake, River, Stream, allStreams, dam, fixPrjBurst, foldStream, mailboxRiver, makeLake, makeLake', mapAl, oneStream, singleShot, statefulStream, subscribeUntil, unsafeCopyFlowing, withInstantiated, (<?*>), (>>~))
 import Riverdragon.River as River
 import Riverdragon.River.Bed (accumulator, breaker, eventListener, freshId, ordMap, prealloc, pushArray, refcounting, requestAnimationFrame)
 import Web.DOM.Element as Element
@@ -63,7 +63,7 @@ delayWith delaying stream =
             whenM (Map.isEmpty <$> inflight.read) do
               selfDestruct
         inflight.set id cancelIt
-    { destroy: unsub } <- start "delayWith" do subscribeIsh upstreamDestroyed stream receive
+    { destroy: unsub } <- start "delayWith" do subscribeUntil upstreamDestroyed stream receive
     pure { destroy: unsub <> inflight.traverse (const identity) }
 
 delay :: forall flow. Milliseconds -> Stream flow ~> Stream flow
@@ -126,8 +126,9 @@ mkBufferedDelayer delayFn = do
             drained.set true
             pending.reset >>= \items -> foreachE items \item -> do
               drainTime <- now
-              when (Instant.diff drainTime drainStart < drainTimeout) do
-                item
+              if (Instant.diff drainTime drainStart < drainTimeout)
+                then do item
+                else pending.push item
       state.set Idle
     animFrameBuffer :: forall flow. Stream flow ~> Stream flow
     animFrameBuffer = delayWith \cb0 -> do
