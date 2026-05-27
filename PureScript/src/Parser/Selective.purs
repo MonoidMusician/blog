@@ -5,6 +5,7 @@ import Prelude hiding (zero, one, ap)
 import Control.Apply (lift2, lift3)
 import Control.Monad.Except (ExceptT(..))
 import Control.Monad.Maybe.Trans (MaybeT(..))
+import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.Writer (WriterT(..))
 import Control.Plus (class Plus, empty, (<|>))
 import Data.Array (foldr)
@@ -827,6 +828,10 @@ instance casingWriterT :: (Semigroup w, Casing f) => Casing (WriterT w f) where
   caseTreeOn (WriterT p) cases = WriterT $ caseTreeOn p $
     (\(Tuple (Tuple w2 r) w1) -> Tuple r (w1 <> w2)) <$> do
       firstCaseTree $ hoistCaseTree' (map swap <<< unwrap) cases
+
+instance casingReaderT :: (Semigroup w, Casing f) => Casing (ReaderT w f) where
+  caseTreeOn (ReaderT p) cases = ReaderT \r -> caseTreeOn (p r) $
+    hoistCaseTree (\(ReaderT branch) -> branch r) cases
 
 -- | Use `partitionMap`, `<*>`, and `<|>` to derive `Casing` for idempotent effects.
 caseTreeOnPlus :: forall f i r. Apply f => Filterable f => Plus f => f i -> CaseTree i f r -> f r

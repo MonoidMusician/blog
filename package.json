@@ -11,11 +11,11 @@
   "author": "Verity Scheel (monoidmusician)",
   "license": "ISC",
   "dependencies": {
-    "canvas": "^3.1.1",
+    "canvas": "^3.2.3",
     "esbuild": "^0.14.49",
     "katex": "^0.16.11",
+    "node-gyp": "^12.2.0",
     "parse5": "^7.0.0",
-    "purescript": "^0.15.15",
     "spago": "^0.93.40"
   },
   "devDependencies": {

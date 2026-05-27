@@ -20,7 +20,7 @@ Instead of following their approach of defining poset models and morphisms betwe
 A poset solver is going to be an object that accepts constraints of the form: \(v_1 \le v_2\), \(v_1 < v_2\), or \(v_1 = v_2\).
 
 We need this solver to be *online* in a sense: we will constantly be adding constraints, and at most we may add a couple constraints before stopping to ask if it is still consistent, so we may as well check consistency every step.
-This is because we need to know that the universe levels are consistent before evaluation is guaranteed to terminate, and typechecking is interleaved with typechecking in dependent type theories.
+This is because we need to know that the universe levels are consistent before evaluation is guaranteed to terminate, and evaluation is interleaved with typechecking in dependent type theories.
 
 In Haskell terms, weʼre looking for a `Solver`{.haskell} type that supports `relate`{.haskell}:
 
@@ -37,14 +37,17 @@ The only extra relations that hold in that finitely generated poset are the ones
 
 ### Posets
 
-A poset is an algebraic/logical structure with just a couple simple laws:
+A poset is an algebraic/logical structure with just a couple simple laws^[the variables are universally quantified, “for all \(v_1\), \(v_2\), and \(v_3\), ...” and so on, as is tradition]:
 
 - Transitivity: if \(v_1 \le v_2\) and \(v_2 \le v_3\), then \(v_1 \le v_3\).
 - Reflexivity: \(v \le v\).
 - Antisymmetry: if \(v_2 \le v_1\) and \(v_1 \le v_2\), then \(v_1 = v_2\).
 
 Importantly, elements do not have to be comparable in the poset, unlike a total order.
+Some elements will simply be uncomparable.
 I guess this is commonly(?) denoted \(v_1 \parallel v_2\), though it often goes without notation.
+
+In the incremental model, uncomparable elements are not *yet* comparable: they may always be made comparable by inserting either \(v_1 \le v_2\) or \(v_1 \ge v_2\).
 
 The strict order \(v_1 < v_2\) stands for the conjunction of the weak order \(v_1 \le v_2\) and an apartness relation \(v_1 \ne v_2\).
 
@@ -58,7 +61,9 @@ If they are all weak inequalities, one merely learns that all of the variables i
 
 The most important cases of posets are often semilattices and lattices.
 
-Least upper bound and greatest lower bound.
+Semilattices come in two flavors, join semilattices and meet semilattices, where a lattice is both flavors of semilattice at once: both join and meet.
+
+Least upper bound (join) and greatest lower bound (meet).
 
 ## Theory and Solution
 

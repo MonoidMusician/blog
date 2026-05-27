@@ -22,6 +22,7 @@ pkgs.mkShell rec {
     giflib
     libuuid
     libGL
+    pkg-config # ??
 
     watchexec
 
