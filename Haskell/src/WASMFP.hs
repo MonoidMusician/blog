@@ -54,6 +54,7 @@ import System.Exit (ExitCode(ExitSuccess))
 import qualified Debug.Trace as Dbg
 import qualified Data.ByteString as ByteString
 import qualified Data.ByteString.UTF8 as ByteString.UTF8
+import GHC.Compact (compact)
 
 execWASM :: Text -> IO Text
 execWASM fullModule = do
@@ -64,6 +65,8 @@ execWASM fullModule = do
     error "Running WASM module failed"
   pure $ T.pack result
 
+-- Generate a function to show a type.
+-- Falls back to displaying the typename.
 showT :: STyp -> Expr
 showT t = mkShowFun case t of
   S TBool -> byCases
@@ -166,6 +169,10 @@ main = do
     dropExpr $ EApp stdprint [ETxt "test me hellow wowlrd\n"]
     pure ()
   -- T.putStrLn fullModule
+  !thingy <- compact $
+    SU32
+    -- EVar SU32 "idx"
+    -- EApp stdprint [EIndex mempty (EArray texts $ ETxt . (<> "\n") <$> T.words "test me hellow wowlrd") (EVar SU32 "idx")]
   T.writeFile "/tmp/test.wat" fullModule
   T.putStrLn =<< execWASM fullModule
   T.putStrLn =<< execWASM =<< genWAT do
@@ -271,6 +278,7 @@ pattern Coerce :: Coercible outer inner => inner -> outer
 pattern Coerce c <- (coerce -> c) where
   Coerce c = coerce c
 
+-- A binding: currently a name or an underscore.
 data Bind
   = Bind Name
   | Discard
@@ -278,20 +286,25 @@ data Bind
   deriving anyclass (NFData)
 instance IsString Bind where fromString = Bind . fromString
 
+-- A name (could be interned).
 newtype Name = Name Text
   deriving newtype (Eq, Ord, Show, NFData, IsString)
   deriving stock (Generic, Data)
 
+-- Unnamed
 unn :: Name
 unn = Name mempty
 
+-- Numbers, as a lazy list, just for caching
 _nums :: [Text]
 _nums = T.pack . show <$> enumFrom @Int 0
 
 _intNames :: [Name]
 _intNames = coerce _nums
 
+-- The AST for expressions
 data Expr
+  -- Literals
   = EF64 !Double
   | EF32 !Float
   | EU64 !Word64
@@ -300,22 +313,36 @@ data Expr
   | ES32 !Int32
   | ETxt !Text
 
+  -- Error, with its result type and severity in Effect
   | EError STyp Effect !Text
 
+  -- A named constructor with named fields in order of evaluation
   | ECons STyp !Name ![(Name, Expr)]
+  -- A case construct: scrutinize the left expression of the given type,
+  -- handle each case (binding the fields to variables for the expression)
+  -- and a fallback case, which can be an error
   | ECase STyp Expr STyp (Map Name (Map Name Bind, Expr), Expr)
+  -- An array literal
   | EArray STyp [Expr]
+  -- Fill an array by giving its length and a function for each index
   | EArrayFill STyp Expr Expr
+  -- Get the length of an array
   | ELength Expr
+  -- Unsafe index into an array
   | EIndex Effect Expr Expr
 
+  -- A let expression: multiple names to bind in order (not recursive let)
   | ELet [(Expr, Bind)] Expr
+  -- A variable reference
   | EVar STyp !Name
+  -- An n-ary lambda expression
   | EFun STyp [Bind] Expr
+  -- Function application (n-ary)
   | EApp Expr [Expr]
 
+  -- Foreign code
   | EForeign ForeignSemantics
-  deriving stock (Generic, Show)
+  deriving stock (Generic, Show, Eq, Ord)
   deriving anyclass (NFData)
 
 _genConst :: Show t => Text -> t -> WASMC
@@ -346,6 +373,8 @@ instance ConstExpr Text where
   constExpr = ETxt
   genConst _ = undefined
 
+-- Each expression is intrinsically typed, and furthermore, it should not
+-- require great computation to get its type.
 infer :: Expr -> STyp
 infer = \case
   EF64 _ -> SF64
@@ -376,6 +405,7 @@ infer = \case
     _ -> error "Not a function type"
   EForeign sem -> semTyp sem
 
+-- Fully typecheck an expression
 check :: Expr -> ReaderT (Map Name STyp) (Either Text) ()
 check = \case
   EF64 _ -> pure ()
@@ -460,6 +490,7 @@ check = \case
   identical _ _ = lift $ Right ()
   expect ty expr = identical ty =<< inferCheck expr
 
+-- A pure evaluator for an expression.
 eval :: Expr -> Map Name Expr -> Expr
 eval = \case
   e@(EF64 _) -> pure e
@@ -548,6 +579,8 @@ gatherBinders f = Map.fromList . mapMaybe (mkBinder . f) . toList
   mkBinder (value, Bind name) = Just (name, value)
   mkBinder _ = Nothing
 
+-- An existential that means that synthesizeable types are extendable by the
+-- Haskell library user. `spec` must implement `Typeable` and so on.
 data STyp = forall spec. SynthType spec => STyp !spec
 
 instance Eq STyp where
@@ -563,44 +596,53 @@ instance NFData STyp where
 instance Show STyp where
   show (STyp spec) = show spec
 
+-- Unpack the existential, if it is the expected `spec` type.
 pattern S :: SynthType spec => SynthType spec => spec -> STyp
 pattern S spec <- STyp (Typeable.cast -> Just (spec :: spec)) where
   S spec = STyp spec
 
+-- Coerce integers
 pattern I :: (Integral b, Integral a) => (Integral a) => b -> a
 pattern I i <- (fromIntegral -> i) where
   I i = fromIntegral i
 
+-- ADTs as a synthesizable data type
 newtype TDat = TDat (Map Name [(Name, STyp)])
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
+-- Functions as a synthesizable data type
 data TFun = TFun [STyp] STyp
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
 pattern SFun :: [STyp] -> STyp -> STyp
 pattern SFun is o = S (TFun is o)
+-- Arrays
 newtype TArr = TArr STyp
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
 pattern SArr :: STyp -> STyp
 pattern SArr t = S (TArr t)
+-- Primitive types
 data TPrm = TPrm Sgn WTyp
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
 pattern SPrm :: Sgn -> WTyp -> STyp
 pattern SPrm sgn typ = S (TPrm sgn typ)
+-- Text type
 data TTxt = TTxt
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
 pattern STxt :: STyp
 pattern STxt = S TTxt
 
+-- WASM reader context
 data WASMR = WASMR
   { scope :: Map WTyp [Int]
   -- ^ the indices of each local in scope of the specified type
   , lexical :: Map Name WASMC
   -- ^ WASM indices of each local in scope in the surface language
   }
+-- WASM state context
 data WASMS = WASMS
   { funcs :: GenIdx (Maybe Name) ((([WTyp], [WTyp]), WASMC), WASMC)
   -- ^ function bodies generated so far
@@ -623,16 +665,21 @@ data WASMS = WASMS
 
   -- TODO: memory and tables, imports and exports
   }
+-- WASM writer context: code for the current function
 type WASMW = WASMC
+-- The WASM monad
 newtype WASMM t = WASM (RWST WASMR WASMW WASMS IO t)
   deriving newtype (Functor, Applicative, Monad, MonadReader WASMR, MonadState WASMS)
 type WASM = WASMM ()
 type WASMMC = WASMM WASMC
 
+-- A helper for generating types, functions, et cetera, into a linear index
+-- in a way so they are deduplicated.
 data GenIdx meta val = GenIdx
   !(Map val (Int, meta))
   ![(val, meta)] -- reverse order
 
+-- Put a new item into the index
 gen :: forall meta val. Ord val => (meta ~ Maybe Name) => GenIdx meta val -> val -> meta -> (GenIdx meta val, Int, meta)
 gen g@(GenIdx validx stack) val newMeta =
   case Map.lookup val validx of
@@ -646,9 +693,13 @@ gen g@(GenIdx validx stack) val newMeta =
 newGenIdx :: forall meta val. GenIdx meta val
 newGenIdx = GenIdx Map.empty []
 
+-- Return the list of items generated, in order
 genned :: forall meta val. GenIdx meta val -> [(val, meta)]
 genned (GenIdx _ stack) = List.reverse stack
 
+
+-- An AST for WASM code. Well, not really. It is just a slightly abstracted
+-- textual representation
 data WASMC
   = INSTR Text
   | SEXP Text [WASMC]
@@ -674,6 +725,7 @@ instance IsString WASMC where
 instance Show WASMC where
   show = T.unpack . genWASMC
 
+-- Convert it into text
 genWASMC :: WASMC -> Text
 genWASMC = genWASMC' True
 
@@ -693,6 +745,7 @@ genWASMC' includeComments = PPT.renderStrict . PP.layoutPretty PP.defaultLayoutO
   go (COMMENT content) | includeComments = [_t $ "(; " <> content <> " ;)"]
   go (COMMENT _) = []
 
+-- Check if a WASMC is empty
 contentless :: WASMC -> Bool
 contentless (CONCAT items) = all contentless items
 contentless (INSTR t) = t == ""
@@ -744,6 +797,7 @@ data GenFunc = GenFunc
 genFuncs :: forall f. Traversable f => f (GenFunc, WASMC -> f WASMC -> WASM) -> WASMM (f WASMC)
 genFuncs funcs = undefined
 
+-- Generate a WASM function definition
 genFunc :: Maybe Name -> ([WTyp], [WTyp]) -> [Bind] -> WASM -> WASMMC
 genFunc name (inputs, outputs) lexical definition = do
   genT <- CONCAT <$>
@@ -834,6 +888,7 @@ genCTyp name = \case
   genMut (Mut ty) = QUAL "mut" <$> genWTyp ty
   genMut (Imm ty) = QUAL "field" <$> genWTyp ty
 
+-- Generate a whole WASM module
 genModule :: WASM -> WASMM WASMC
 genModule codeForMain = do
   _ <- genFunc (Just "fd_write") ([], []) [] mempty
@@ -940,6 +995,7 @@ withVar name (wtyp -> ty) cont = do
         scope' = Map.alter (Just . (idx :) . fromMaybe []) ty scope
     in ((scope', maybe (wasmIdx idx) wasmID name), modul { locals = g })
   local (const $ here { scope = scope' }) $ cont var
+-- | This variable is visible to expressions.
 withLexVar :: SynthType styp => Maybe Name -> styp -> ((Expr, WASMC) -> WASMM r) -> WASMM r
 withLexVar name styp cont = do
   here@(WASMR { scope, lexical }) <- ask
@@ -983,6 +1039,9 @@ flow _name inputsOutputs cont = do
     wrapBlock "block" [ idxO, blockType ] do
       cont (idxI, idxO)
 
+data WithFallback f t = f t :?? t
+  deriving (Functor, Foldable, Traversable, Eq, Ord)
+
 brTable ::
   ([STyp], [STyp]) ->
   Traversable f => Foldable g =>
@@ -1009,6 +1068,9 @@ brTable inputsOutputs requested intro createBranch = do
         sexp "br" [ break ]
       pure result
 
+
+
+
 data ExactUsage which = NoUsage | NoHint | ExactUsage which
   deriving (Eq, Ord, Generic, NFData)
 
@@ -1020,14 +1082,20 @@ instance SynthType spec => Semigroup (ExactUsage spec) where
   ExactUsage u1 <> ExactUsage u2 | u1 == u2 = ExactUsage u1
   _ <> _ = NoHint
 
-type Usable usage = (Eq usage, Monoid usage, NFData usage, Typeable usage)
+-- Nice properties for existentially hidden data
+type Existentiable hidden = (Typeable hidden, NFData hidden, Ord hidden, Show hidden)
 
-class (Ord spec, Typeable spec, NFData spec, Show spec, Usable (UsageHint spec)) => SynthType spec where
+type Usable usage = (Existentiable usage, Monoid usage)
+
+-- A synthesizable type that specifies exactly how it is codegenned.
+class (Existentiable spec, Usable (UsageHint spec)) => SynthType spec where
   type family UsageHint spec :: Type
   type instance UsageHint spec = ()
 
+  -- The raw WASM type it compiles to
   wtyp :: spec -> WTyp
 
+  -- How to compile it, if it is a data type
   isDataType :: spec -> Maybe TDat
   isDataType _ = Nothing
   mkconstr :: spec -> Map Name (Map Name (Expr, WASM) -> WASM)
@@ -1035,6 +1103,7 @@ class (Ord spec, Typeable spec, NFData spec, Show spec, Usable (UsageHint spec))
   unconstr :: spec -> WTyp -> (Map Name (Map Name WASM -> WASM), WASM {- fallback -}) -> WASM
   unconstr _ = error "Not a constructor"
 
+  -- How to compile it, if it is an array-like type
   isArrayType :: spec -> Maybe TArr
   isArrayType _ = Nothing
   arraylit :: spec -> [(Expr, WASM)] -> WASM
@@ -1058,6 +1127,22 @@ instance Eq SomeUsageHint where
   NoneHint == NoneHint = True
   NoUsageAtAll == NoUsageAtAll = True
   _ == _ = False
+instance Ord SomeUsageHint where
+  SomeUsageHint _ u0 `compare` SomeUsageHint _ u2
+    | Just u1 <- Typeable.cast u0 = u1 `compare` u2
+    | otherwise = Typeable.typeOf u0 `compare` Typeable.typeOf u2
+  NoneHint `compare` NoneHint = EQ
+  NoUsageAtAll `compare` NoUsageAtAll = EQ
+
+  SomeUsageHint _ _ `compare` _ = LT
+  _ `compare` SomeUsageHint _ _ = GT
+  NoneHint `compare` NoUsageAtAll = LT
+  NoUsageAtAll `compare` NoneHint = GT
+
+instance Show SomeUsageHint where
+  show (SomeUsageHint _ u) = show u
+  show NoneHint = "NoneHint"
+  show NoUsageAtAll = "NoUsageAtAll"
 
 instance Monoid SomeUsageHint where
   mempty = NoUsageAtAll
@@ -1090,6 +1175,8 @@ applySome :: Word -> TFun -> TFun
 applySome (I arity) (TFun inputs output) | arity <= length inputs =
   TFun (drop arity inputs) output
 applySome _ _ = error "Arity too large"
+
+-- Raw WASM type hierarchy
 
 data Mut t = Mut t {- mutable -} | Imm t {- immutable -}
   deriving stock (Eq, Ord, Show, Data, Generic, Functor, Foldable, Traversable)
@@ -1127,6 +1214,7 @@ data CTyp
   deriving stock (Eq, Ord, Show, Data, Generic)
   deriving anyclass (NFData)
 
+-- The specification for HCls with regard to HTyp
 matches :: HCls -> HTyp -> Bool
 matches HAny = const True
 matches HNone = const False
@@ -1158,11 +1246,13 @@ matches HExtern = \case
   _ -> False
 matches HNoExtern = not . matches HExtern
 
+-- The unpacking type: extend i8, i16 -> i32
 unpack :: WTyp -> WTyp
 unpack WI8 = WI32
 unpack WI16 = WI32
 unpack t = t
 
+-- The STyp for primitive integer types, including sign information
 pattern SF64, SF32, SU64, SU32, SS64, SS32, SU31, SS31 :: STyp
 pattern SF64 = S (TPrm Sgn WF64)
 pattern SF32 = S (TPrm Sgn WF32)
@@ -1243,15 +1333,14 @@ instance SynthType TTxt where
     sexp "array.get_u" [ ty ]
 
 
+-- An enum synthesizable type, represented as an i31 for tags
 newtype TEnum = TEnum [Name]
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
 
+-- Special case: void type, no constructors
 pattern TVoid :: TEnum
 pattern TVoid = TEnum []
-
-data WithFallback f t = f t :?? t
-  deriving (Functor, Foldable, Traversable, Eq, Ord)
 
 instance SynthType TEnum where
   wtyp (TEnum _) = wtyp SU31
@@ -1268,7 +1357,7 @@ instance SynthType TEnum where
       do pure . \(labels :?? oops) -> fmap fst <$> (names <&> flip Map.lookup labels) :?? Just oops
       do ((False, ()) <$)
 
-
+-- A struct with named fields in datatype representation order
 data TStruct = TStruct Name [(Name, STyp)]
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
@@ -1313,6 +1402,7 @@ eField t which = case infer t of
       (Map.singleton name (Map.singleton which (Bind which), EVar fieldT which), undefined)
   _ -> error "Not a struct"
 
+-- A tuple is a special struct, with fst and snd fields
 pattern TTuple :: STyp -> STyp -> TStruct
 pattern TTuple x y = TStruct "Tuple" [("fst", x), ("snd", y)]
 
@@ -1477,6 +1567,17 @@ instance SynthType TBitarray where
       tell "i64.shr_u"
 
 
+data FunctionPattern = forall pat. Functional pat => FunctionPattern pat
+
+pattern FunPat :: Functional pat => Functional pat => pat -> FunctionPattern
+pattern FunPat pat <- FunctionPattern (Typeable.cast -> Just (pat :: pat)) where
+  FunPat pat = FunctionPattern pat
+
+class Existentiable pat => Functional pat where
+
+  codegen :: pat -> WASM
+
+-- Another existential type, for foreign semantics
 data ForeignSemantics = forall sem. Semantics sem => ForeignSemantics sem
 
 pattern Sem :: Semantics sem => Semantics sem => sem -> ForeignSemantics
@@ -1489,7 +1590,7 @@ pattern ESem sem = EForeign (Sem sem)
 pattern (:$$:) :: () => Semantics sem => sem -> [Expr] -> Expr
 pattern sem :$$: args = EApp (EForeign (ForeignSemantics sem)) args
 
-class (Ord sem, NFData sem, Show sem, Typeable sem) => Semantics sem where
+class Existentiable sem => Semantics sem where
   semTyp :: sem -> STyp
   semCode :: sem -> WASM
   semEval :: sem -> [Expr] -> Map Name Expr -> Maybe Expr
@@ -1529,10 +1630,11 @@ instance Semigroup Effect where
   Benign <> Benign = Benign
 instance Monoid Effect where mempty = Pure
 
--- Dupable; Dupable under duress
--- Dropable
--- Reorderable
--- Interpretable
+-- A description of side effects that code may have
+  -- Dupable; Dupable under duress
+  -- Dropable
+  -- Reorderable
+  -- Interpretable
 data Effects = Effects
   { efForeign :: Effect
   -- ^ Foreign Benign means that it is implemented using foreigns but can be
@@ -1670,6 +1772,8 @@ anyForeign p = coerce . visit' \case
 
 
 
+-- Inject a single sample into a monoid, useful for seeing through layers,
+-- sharing samples across multiple metrics (like min and max), and so on.
 class Semigroup m => Sample s m where
   sample :: s -> m
 

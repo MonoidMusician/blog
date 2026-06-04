@@ -1,6 +1,6 @@
-import { Cb, Destr, Maybe, mintCounter, mintCleanup, mintThreshold } from "./Bed";
-import * as Bed from "./Bed";
-import * as Resource from "./Resource";
+import { Cb, Destr, Maybe, mintCounter, mintCleanup, mintThreshold } from "./Bed.js";
+import * as Bed from "./Bed.js";
+import * as Resource from "./Resource.js";
 
 export type Id = number;
 
@@ -82,7 +82,7 @@ export class Stream<T, flow extends Flowing = Flowing> implements AsyncIterator<
   async nextValue(): Promise<T> {
     const got = await this.next();
     if (!got.done) return got.value;
-    return await Promise.any([]);
+    return await new Promise(()=>{});
   }
   [Symbol.asyncIterator]() {
     if (this.flowing) return this;
@@ -504,6 +504,15 @@ export class Stream<T, flow extends Flowing = Flowing> implements AsyncIterator<
       },
     });
   }
+  drop(n: number): Lake<T> {
+    // TODO: static burst
+    return Stream.makeLake((emit, runDry) => {
+      return this.subscribe(value => {
+        if (n > 0) n -= 1;
+        else emit(value);
+      }, runDry);
+    });
+  }
   takeWhile(fn: (value: T) => boolean): Lake<T> {
     // TODO: static burst
     return Stream.makeLake((emit, runDry) => {
@@ -527,6 +536,12 @@ export class Stream<T, flow extends Flowing = Flowing> implements AsyncIterator<
       }),
       flowing: this.flowing,
     });
+  }
+  startWith<extra = never>(...events: (T | extra)[]): Stream<T | extra, flow> {
+    return Stream.oneStream<T | extra, flow>([
+      Stream.bursting(events),
+      this,
+    ]);
   }
 
   statefulStream<S, R>(start: S, accum: (state: S, value: T) => { state: S, emit: R[] }): Lake<R> {

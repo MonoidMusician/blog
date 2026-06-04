@@ -81,6 +81,7 @@ executable blog
         criterion-measurement >=0.2.3.0 && <0.2.4,
         data-ordlist >=0.4.7.0 && <0.5,
         deepseq >=1.5.1.0 && <1.6,
+        ghc-compact >=0.1.0.0,
         hashable >=1.5.1 && <1.6,
         hashtables >=1.4.2 && <1.5,
         lens >=5.3.4 && <5.4,

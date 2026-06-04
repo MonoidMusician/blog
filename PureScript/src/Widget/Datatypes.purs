@@ -268,6 +268,7 @@ abbreviations = Map.fromFoldable
   , "Unicode" /\ Jargon "Universal character set" FormatParen "fancy characters"
   , "HoTT" /\ Acronym "Homotopy Type Theory"
   , "Haskell" /\ Described "Pure & lazy functional programming, native codegen"
+  , "GHC" /\ Acronym "Glasgow Haskell Compiler"
   , "PureScript" /\ Described "Strict & pure functional programming, JavaScript codegen"
   , "Dhall" /\ Described "Pure typed functional config language"
   , "UI" /\ Acronym "User Interface"

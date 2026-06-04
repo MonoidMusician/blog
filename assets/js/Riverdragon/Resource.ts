@@ -8,7 +8,7 @@
 // It does not really work well with asynchronous programming (promises and
 // callbacks), but see `Resource.saveScope` and `Resource.then`.
 
-import { mintCleanup } from "./Bed";
+import { mintCleanup } from "./Bed.js";
 
 // Scope keeps track of three categories: destructors, waiters, and extras.
 export type Scope = {
@@ -98,7 +98,7 @@ export const noScope: Scope = {
   addDestructor: ()=>{},
   destroy: ()=>{},
   destroyed: ()=>false,
-  waitDestroyed: Promise.any([]),
+  waitDestroyed: new Promise(()=>{}),
   addWaiters: ()=>{},
   wait: () => Promise.resolve(),
   extras: new Map(),
@@ -309,6 +309,15 @@ export const tryAddDestructor = (cb: ()=>void) => {
   cb = mintCleanup<void>(cb);
   getScope()?.addDestructor(cb);
   return cb;
+};
+// A destructor that uses a weak ref, so it does not run if
+// the resource has already been garbage collected
+export const tryWeakDestructor = <R extends WeakKey>(resource: R, destroy: (resource: R) => void) => {
+  const ref = new WeakRef(resource);
+  return tryAddDestructor(() => {
+    const resource = ref.deref();
+    if (resource !== undefined) destroy(resource);
+  });
 };
 // Save the function to add a destructor
 export const getAddDestructor = () => getScope()!.addDestructor;

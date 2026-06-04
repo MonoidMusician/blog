@@ -1,7 +1,7 @@
-import * as Bed from "./Bed";
-import * as Resource from "./Resource";
-import { Flowing, Lake, River, Stream } from "./Riverdragon";
-import { DOM, MaybePromise, Network, repollable, Timer } from "./APIs";
+import * as Bed from "../Bed.js";
+import * as Resource from "../Resource.js";
+import { Flowing, Lake, River, Stream } from "../Riverdragon.js";
+import { DOM, MaybePromise, Network, repollable, Timer } from "../APIs.js";
 
 ////////////////////////////////////////////////////////////////////////////////
 // WebRTC (and WebTransport?) (communication with peers or servers)

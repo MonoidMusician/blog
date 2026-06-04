@@ -102,9 +102,9 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-import * as Bed from "./Bed";
-import * as Resource from "./Resource";
-import { Flowing, Lake, River, Stream, StreamBurstBehavior } from "./Riverdragon";
+import * as Bed from "./Bed.js";
+import * as Resource from "./Resource.js";
+import { Flowing, Lake, River, Stream, StreamBurstBehavior } from "./Riverdragon.js";
 
 export const unreachable = (_why: never) => {
   throw new Error("Unreachable case");
@@ -113,20 +113,20 @@ export const unreachable = (_why: never) => {
 export type MaybePromise<T> = T | Promise<T>;
 
 // Lazy initialiation: run the function only once, the first time it is called.
-export const _lazy = <R>(mk: () => R): (() => R) => {
+export const _lazy = <R>(mk: () => R): ((force?: boolean) => R) => {
   let inited = false;
   let value: R;
   mk = Resource.saveScope(mk);
-  return () => {
-    if (!inited) value = mk();
+  return (force?: boolean) => {
+    if (force || !inited) value = mk();
     return value;
   };
 };
-export const _lazyKeyed = <K, V>(mk: (key: K) => V): (key: K) => V => {
+export const _lazyKeyed = <K, V>(mk: (key: K) => V): (key: K, force?: boolean) => V => {
   const inited = new Map<K, V>();
   mk = Resource.saveScope(mk);
-  return key => {
-    if (!inited.has(key)) inited.set(key, mk(key));
+  return (key, force) => {
+    if (force || !inited.has(key)) inited.set(key, mk(key));
     return inited.get(key)!;
   };
 };
@@ -188,7 +188,7 @@ export const repollableSpecifiers: Set<string | symbol> = new Set();
 ////////////////////////////////////////////////////////////////////////////////
 export namespace Timer {
   // API for callbacks that run once
-  export function _once<Tok>(register: (cb: ()=>void) => Tok, unregister?: (tok: Tok) => void) {
+  export function _once<Tok>(register: (cb: () => void) => Tok, unregister?: (tok: Tok) => void) {
     const callback = (yes: Bed.Cb, no?: Bed.Destr): Bed.Destr => {
       const token: Tok = register(() => {
         yes();
@@ -223,7 +223,7 @@ export namespace Timer {
   };
 
   // API for callbacks that loop
-  export function _loop<Tok>(register: (cb: ()=>void) => Tok, unregister?: (tok: Tok) => void, simulate?: boolean) {
+  export function _loop<Tok>(register: (cb: () => void) => Tok, unregister?: (tok: Tok) => void, simulate?: boolean) {
     const callback = (yes: Bed.Cb, no?: Bed.Destr): Bed.Destr => {
       let run: Bed.Cb | undefined = () => {
         yes();
@@ -257,7 +257,7 @@ export namespace Timer {
   export const microtask = _once(queueMicrotask);
 
   // setImmediate/clearImmediate
-  export const immediate = _once(setImmediate, clearImmediate);
+  // export const immediate = _once(setImmediate, clearImmediate);
 
   // setTimeout/clearTimeout
   export const timeout = (ms?: number) => _once(cb => setTimeout(cb, ms), clearTimeout);
@@ -405,7 +405,7 @@ export namespace DOM {
       stream.send(ev);
       destroy();
     };
-    options = { ...(options??{}), once: true };
+    options = { ...(options ?? {}), once: true };
     target.addEventListener(type, listener, options);
     const destroy = Bed.mintCleanup<void>(() => {
       target.removeEventListener(type, listener, options);
@@ -431,19 +431,20 @@ export namespace DOM {
   // This has much better typing behavior, if you know what the
   // event mapping type for the class is
   export function listenTo<
-    EventMap extends Record<string, any>,
+    EventMap extends Record<string, any>
+    = GlobalEventHandlersEventMap,
     T extends HasEventListener<keyof EventMap & string, EventMap[string]>
-      = HasEventListener<keyof EventMap & string, EventMap[string]>
+    = HasEventListener<keyof EventMap & string, EventMap[string]>
   >(target: T): {
     listener: <K extends keyof EventMap & string>
       (type: K, options?: AddEventListenerOptions) =>
-        River<EventMap[K]>,
+      River<EventMap[K]>,
     mintListener: <K extends keyof EventMap & string>
       (type: K, options?: AddEventListenerOptions) =>
-        { stream: River<EventMap[K]>, destroy: Bed.Destr, next: () => Promise<EventMap[K]> },
+      { stream: River<EventMap[K]>, destroy: Bed.Destr, next: () => Promise<EventMap[K]> },
     mintListener1: <K extends keyof EventMap & string>
       (type: K, options?: AddEventListenerOptions) =>
-        { stream: River<EventMap[K]>, destroy: Bed.Destr, promise: Promise<EventMap[K]> },
+      { stream: River<EventMap[K]>, destroy: Bed.Destr, promise: Promise<EventMap[K]> },
   } {
     type Opts = AddEventListenerOptions;
     return {
@@ -451,20 +452,43 @@ export namespace DOM {
         <K extends keyof EventMap & string>(type: K, options?: Opts) =>
           listener<T, keyof EventMap & string, EventMap[string]>
             (target, type, options) as River<EventMap[K]>,
-        mintListener:
+      mintListener:
         <K extends keyof EventMap & string>(type: K, options?: Opts) =>
           mintListener<T, keyof EventMap & string, EventMap[string]>
             (target, type, options) as
-              { stream: River<EventMap[K]>, destroy: Bed.Destr, next: () => Promise<EventMap[K]> },
+          { stream: River<EventMap[K]>, destroy: Bed.Destr, next: () => Promise<EventMap[K]> },
       mintListener1:
         <K extends keyof EventMap & string>(type: K, options?: Opts) =>
           mintListener1<T, keyof EventMap & string, EventMap[string]>
             (target, type, options) as
-              { stream: River<EventMap[K]>, destroy: Bed.Destr, promise: Promise<EventMap[K]> },
+          { stream: River<EventMap[K]>, destroy: Bed.Destr, promise: Promise<EventMap[K]> },
     };
   };
 
-  export const windowEvents = listenTo<WindowEventMap, Window>(window);
+  export const windowEvents = _lazy(() => listenTo<WindowEventMap, Window>(window));
+  export const documentEvents = _lazy(() => listenTo<DocumentEventMap, Document>(window.document));
+  export const rootEvents = _lazy(() => listenTo<GlobalEventHandlersEventMap, Element>(window.document.documentElement));
+  export const bodyEvents = _lazy(() => listenTo<HTMLElementEventMap, HTMLElement>(window.document.body));
+
+  // export function eventCycle
+
+  // A pair of events to toggle a state, with a method to check it at the start
+  export function eventToggle<
+    EventMap extends Record<string, any>
+    = GlobalEventHandlersEventMap,
+    T extends HasEventListener<keyof EventMap & string, EventMap[string]>
+    = HasEventListener<keyof EventMap & string, EventMap[string]>
+  >(target: T, check: () => boolean, on: keyof EventMap & string, off: keyof EventMap & string, options?: AddEventListenerOptions) {
+    return Stream.oneStream([
+      Stream.poke(undefined).map(check),
+      DOM.listener<T, keyof EventMap & string, Event>(
+        target, on, options
+      ).map(() => false),
+      DOM.listener<T, keyof EventMap & string, Event>(
+        target, off, options
+      ).map(() => true),
+    ]);
+  };
 
 
   // `DOMContentLoaded` unless `document.readyState === 'complete'` already
@@ -515,6 +539,31 @@ export namespace DOM {
       return mintListener1(window, "load");
     }
   };
+
+  // Track focus on or within a specific element, using the focus/blur events,
+  // or the focusin/focusout events, and querying `document.activeElement`
+  export function focus(target: Element, where: "on" | "within" = "on"): River<boolean> {
+    const check = where === "within"
+      ? () => target.contains(window.document.activeElement)
+      : () => window.document.activeElement === target;
+    return eventToggle<GlobalEventHandlersEventMap, Element>(
+      target, check,
+      where === "within" ? "focusout" : "blur",
+      where === "within" ? "focusin" : "focus",
+      { passive: true }
+    );
+  };
+
+  // Track hover on a specific element, using mouse or pointer enter and leave
+  // events, and the `target.matches(":hover")` CSS query
+  export function hover(target: Element, type: "mouse" | "pointer" = "pointer"): River<boolean> {
+    return eventToggle<GlobalEventHandlersEventMap, Element>(
+      target, () => target.matches(":hover"),
+      type + "enter" as "mouseenter" | "pointerenter",
+      type + "leave" as "mouseleave" | "pointerleave",
+      { passive: true }
+    );
+  };
 } // namespace DOM
 
 
@@ -527,13 +576,25 @@ export namespace DOM {
 export namespace Input {
   // Global state of mouse, touch events, keyboard, modifiers. This is loaded
   // only when requested by `API.DOM.globals()`, so it may miss events if not
-  // requested immediately.
+  // requested immediately, and even then...
   export type Globals = ReturnType<typeof mkGlobals>;
   export type ModifierKeys = {
     altKey: boolean,
     ctrlKey: boolean,
     metaKey: boolean,
     shiftKey: boolean,
+    other: {
+      altGraph: boolean,
+      capsLock: boolean,
+      fn: boolean,
+      fnLock: boolean,
+      hyper: boolean,
+      numLock: boolean,
+      scrollLock: boolean,
+      super: boolean,
+      symbol: boolean,
+      symbolLock: boolean,
+    },
   };
   let _globals: Globals | null = null;
   export function globals(): Globals {
@@ -549,35 +610,101 @@ export namespace Input {
         "mouseout", "mouseover", "mouseup",
       ] as const;
       for (const mouseEvent of mouseEvents)
-        DOM.windowEvents.mintListener(mouseEvent).stream.subscribe(mouse.send);
+        DOM.windowEvents().mintListener(mouseEvent, { passive: true }).stream.subscribe(mouse.send);
+      // TODO: wheel event, correlate with scroll?
 
       const touch = Stream.createRiverStore<TouchEvent>();
       const touchEvents = [
         "touchcancel", "touchend", "touchmove", "touchstart",
       ] as const;
       for (const touchEvent of touchEvents)
-        DOM.windowEvents.mintListener(touchEvent).stream.subscribe(touch.send);
+        DOM.windowEvents().mintListener(touchEvent, { passive: true }).stream.subscribe(touch.send);
+
+      const pointer = Stream.createRiverStore<PointerEvent>();
+      const pointerEvents = [
+        "pointercancel", "pointerdown", "pointerenter", "pointerleave",
+        "pointermove", "pointerout", "pointerover", "pointerup",
+        // "pointerrawupdate"
+      ] as const;
+      for (const pointerEvent of pointerEvents)
+        DOM.windowEvents().mintListener(pointerEvent, { passive: true }).stream.subscribe(pointer.send);
+      const pointerEventType = pointer.stream.map(ev => ({ key: ev.pointerType, value: ev })).mailbox();
 
       const keyboard = Stream.createRiverStore<KeyboardEvent>();
+      // Map of KeyboardEvent.code to KeyboardEvent.key, at time of keydown
+      const knownKeys = new Map<string, string>();
+      const isComposing = Stream.createStore(false);
       const keyboardEvents = [
         "keydown", "keypress", "keyup",
       ] as const;
       for (const keyboardEvent of keyboardEvents)
-        DOM.windowEvents.mintListener(keyboardEvent).stream.subscribe(keyboard.send);
+        DOM.windowEvents().mintListener(keyboardEvent, { passive: true }).stream.subscribe(ev => {
+          if (ev.isComposing !== isComposing.current())
+            isComposing.send(ev.isComposing);
+          if (ev.type === "keydown")
+            knownKeys.set(ev.code, ev.key);
+          else if (ev.type === "keyup")
+            knownKeys.delete(ev.code);
+          keyboard.send(ev);
+        });
+      // Track composition state
+      DOM.windowEvents().mintListener("compositionstart", { passive: true })
+        .stream.subscribe(() => isComposing.send(true));
+      DOM.windowEvents().mintListener("compositionend", { passive: true })
+        .stream.subscribe(() => isComposing.send(false));
+      // Browser/OS-shortcuts, like Alt+Tab, would leave dangling keys.
+      // This is probably the best we can do.
+      DOM.windowEvents().mintListener("blur", { passive: true })
+        .stream.subscribe(() => knownKeys.clear());
 
       const modifiers = Stream.createRiverStore<ModifierKeys>();
 
-      Stream.oneStream<ModifierKeys>([
+      const currentModifiers: (ev: UIEvent) => ModifierKeys["other"] | undefined = ev => {
+        if (ev instanceof KeyboardEvent)
+          return {
+            altGraph: ev.getModifierState("AltGraph"),
+            capsLock: ev.getModifierState("CapsLock"),
+            fn: ev.getModifierState("Fn"),
+            fnLock: ev.getModifierState("FnLock"),
+            hyper: ev.getModifierState("Hyper"),
+            numLock: ev.getModifierState("NumLock"),
+            scrollLock: ev.getModifierState("ScrollLock"),
+            super: ev.getModifierState("Super"),
+            symbol: ev.getModifierState("Symbol"),
+            symbolLock: ev.getModifierState("SymbolLock"),
+          };
+      };
+      const noModifiers: ModifierKeys["other"] = {
+        altGraph: false,
+        capsLock: false,
+        fn: false,
+        fnLock: false,
+        hyper: false,
+        numLock: false,
+        scrollLock: false,
+        super: false,
+        symbol: false,
+        symbolLock: false,
+      };
+      Stream.oneStream<MouseEvent | TouchEvent | KeyboardEvent>([
         mouse.stream, touch.stream, keyboard.stream
       ]).subscribe(ev => {
         let was = modifiers.current();
+        let mods = currentModifiers(ev) ?? was?.other;
         if (
           !was
           || was.altKey !== ev.altKey
           || was.ctrlKey !== ev.ctrlKey
           || was.metaKey !== ev.metaKey
           || was.shiftKey !== ev.shiftKey
-        ) modifiers.send(ev);
+          || (was.other !== mods && !_jsonEq(was.other, mods))
+        ) modifiers.send({
+          altKey: ev.altKey,
+          ctrlKey: ev.ctrlKey,
+          metaKey: ev.metaKey,
+          shiftKey: ev.shiftKey,
+          other: mods ?? noModifiers
+        });
       });
 
       return {
@@ -585,14 +712,24 @@ export namespace Input {
         mouse: {
           stream: mouse.stream,
           current: mouse.current,
+          buttons: mouse.stream.map(ev => ev.buttons).dedup().unsafeRiver(),
         },
         touch: {
           stream: touch.stream,
           current: touch.current,
+          touches: touch.stream.map(ev => Array.from(ev.touches)).memoize(),
+        },
+        pointer: {
+          stream: pointer.stream,
+          current: pointer.current,
+          byType: (type: "mouse" | "pen" | "touch" | "" | string) =>
+            pointerEventType(type),
         },
         keyboard: {
           stream: keyboard.stream,
           current: keyboard.current,
+          knownKeys,
+          isComposing: isComposing.stream,
         },
         modifiers: {
           stream: modifiers.stream,
@@ -613,12 +750,12 @@ export namespace Input {
       // `.getGamepads()` updates *after* the events are processed
       // so we simulate the updates ourselves before they happen
       // (at least it is idempotent...)
-      DOM.windowEvents.listener("gamepadconnected").map(ev => {
+      DOM.windowEvents().listener("gamepadconnected").map(ev => {
         return Object.assign([...window.navigator.getGamepads()], { [ev.gamepad.index]: ev.gamepad });
       }),
-      DOM.windowEvents.listener("gamepaddisconnected").map(ev => {
+      DOM.windowEvents().listener("gamepaddisconnected").map(ev => {
         const after = Object.assign([...window.navigator.getGamepads()], { [ev.gamepad.index]: null });
-        if (after[after.length-1] === null) after.pop();
+        if (after[after.length - 1] === null) after.pop();
         return after;
       }),
     ]).memoize();
@@ -674,7 +811,7 @@ export namespace MIDI {
     return window.navigator.requestMIDIAccess(options)
       .then(Resource.saveScope((access: MIDIAccess) => {
         const updates = DOM.listener<MIDIAccess, "statechange", MIDIConnectionEvent>(access, "statechange");
-        const andUpdates = Stream.oneStream<any>([ repollable("midi"), updates ]);
+        const andUpdates = Stream.oneStream<any>([repollable("midi"), updates]);
 
         const eqKeys = <V>(last: Map<string, V>, next: Map<string, V>) =>
           last.size === next.size && _jsonEq<string[]>([...last.keys()], [...next.keys()]);
@@ -697,7 +834,7 @@ export namespace MIDI {
 
   export function MIDIPort(port: MIDIPort) {
     const updates = DOM.listener<MIDIPort, "statechange", MIDIConnectionEvent>(port, "statechange");
-    const andUpdates = Stream.oneStream<any>([ repollable("midi"), updates ]);
+    const andUpdates = Stream.oneStream<any>([repollable("midi"), updates]);
 
     return {
       port: port,
@@ -763,7 +900,7 @@ export namespace MIDI {
     pressed: boolean, // <= (velocity > 0)
     velocity: number, // 0-127
     aftertouch: number | undefined,
-    timeStamp?: number,
+    timestamp?: number,
     event?: MIDIMessageEvent,
   };
   export type MIDINoteUpdate = { event: MIDINoteEvent, state: MIDINoteState };
@@ -772,7 +909,7 @@ export namespace MIDI {
   export type MIDINoteLive = {
     pressed: boolean, // <= (velocity > 0)
     velocity: number, // 0-127
-    timeStamp?: number,
+    timestamp?: number,
     event?: MIDIMessageEvent,
     release: River<MIDINoteLive>, // empty if pressed == false, limit 1
     aftertouch: River<number>, // empty if pressed == false, ends when released
@@ -785,8 +922,7 @@ export namespace MIDI {
     // (off events if it was on, and aftertouch only while it is on)
     send(note: MIDINote, event: MIDINoteEvent, DOMevent?: MIDIMessageEvent): MIDINoteState | undefined,
     // Merely parse an event (pure function)
-    fromWire(data: number[] | Uint8Array | null | undefined):
-      { note: MIDINote | MIDIChannel, event: MIDINoteEvent } | undefined,
+    fromWire(data: number[] | Uint8Array | null | undefined): { note: MIDINote | MIDIChannel, event: MIDINoteEvent } | undefined,
     // Parse a message event and update the state
     parse(DOMevent: MIDIMessageEvent):
       MIDINoteState | undefined,
@@ -832,7 +968,7 @@ export namespace MIDI {
           storage.get(note.channel, Bed.mintMap).get(note.key),
         set: (note: MIDINote, state: T | undefined) =>
           storage.get(note.channel, Bed.mintMap).set(note.key, state),
-        reset: Resource.tryAddDestructor(() => storage.reset((_, v) => v.reset())),
+        reset: Resource.tryWeakDestructor(storage, storage => storage.reset((_, v) => v.reset())),
       };
     };
     const noteState = channelNoteMap<MIDINoteState>();
@@ -845,7 +981,7 @@ export namespace MIDI {
       stream: River<T>,
     };
     const getValue = <T>(get: () => T | undefined): StreamBurstBehavior<T> => {
-      return [{ static: [], dynamic: () => { const v=get(); return v!==undefined?[v]:[] } }];
+      return [{ static: [], dynamic: () => { const v = get(); return v !== undefined ? [v] : [] } }];
     };
 
     const mailboxes = {
@@ -908,7 +1044,7 @@ export namespace MIDI {
         state = { ...state, aftertouch: event.aftertouch, event: DOMevent };
       } else return;
 
-      state.timeStamp = state.event?.timeStamp;
+      state.timestamp = state.event?.timeStamp;
 
       noteState.set(note, state.pressed ? state : undefined);
       updates.send({ key: note, value: { event, state } });
@@ -935,7 +1071,7 @@ export namespace MIDI {
           for (const key of noteState.storage.get(channel)?.keys() ?? [])
             send({ channel, key }, { type: "velocity", pressed: false, velocity: 0 });
       },
-      reconnect: () => {},
+      reconnect: () => { },
 
       // Streams
       allEvents,
@@ -966,7 +1102,7 @@ export namespace MIDI {
     iface.connected.filter(c => !c).subscribe(noteMap.disconnect);
 
     const getValue = <T>(get: () => T | undefined): StreamBurstBehavior<T> => {
-      return [{ static: [], dynamic: () => { const v=get(); return v!==undefined?[v]:[] } }];
+      return [{ static: [], dynamic: () => { const v = get(); return v !== undefined ? [v] : [] } }];
     };
 
     const pitchBendValues = new Map<number, number>();
@@ -1073,8 +1209,8 @@ export namespace Network {
     statusCode: number;
     statusText: string;
     headers: (name: string) => string | null,
-      // The MIME type from the Content-Type header
-      mime: string | null;
+    // The MIME type from the Content-Type header
+    mime: string | null;
     res: Response;
   } & dat;
 
@@ -1118,12 +1254,14 @@ export namespace Network {
                 status: "success",
               };
             } else {
-              return Promise.resolve<FetchSettled>({ status: "failed", error: {
-                statusCode: res.status, statusText: res.statusText,
-                res: res,
-              } });
+              return Promise.resolve<FetchSettled>({
+                status: "failed", error: {
+                  statusCode: res.status, statusText: res.statusText,
+                  res: res,
+                }
+              });
             }
-          } catch(error) {
+          } catch (error) {
             return { status: "failed", error: error as FetchError };
           }
         });
@@ -1246,7 +1384,7 @@ export namespace Network {
 
   // An `EventSource` is an ancient API for streaming from server to client,
   // more commonly called server-sent events (SSE) outside of this API
-  export function eventSource(url: string | URL, options: EventSourceInit) {
+  export function eventSource(url: string | URL, options?: EventSourceInit) {
     const source = new EventSource(url, options);
 
     Resource.addDestructor(() => source.close());
@@ -1322,7 +1460,7 @@ export namespace Storage {
       const globalId = mkId();
       const crossdeletion = Stream.createRiver<null>();
       crossdelete = crossdeletion.stream;
-      DOM.windowEvents.listener("storage").subscribe((ev: StorageEvent) => {
+      DOM.windowEvents().listener("storage").subscribe((ev: StorageEvent) => {
         if (ev.storageArea !== storage) return;
         if (ev.key)
           crosstalk.send({ key: ev.key, value: { id: globalId, value: ev.newValue } });
@@ -1384,7 +1522,7 @@ export namespace Audio {
   export const ctx = Resource.classProvider(AudioContext);
 
   // The interface to a worklet, with types for input and output recommended.
-  export type CreatedWorklet<I=any, O=any> = {
+  export type CreatedWorklet<I = any, O = any> = {
     node: AudioNode,
     send: (message: I) => void,
     receive: River<O>,
@@ -1411,15 +1549,15 @@ export namespace Audio {
     const wait: Promise<void> | true =
       // Get an existing promise, or true if it was fully loaded
       loaded.get(audioContext)!.get(urlOrSource) ??
-        // Otherwise ask the audio context to load it
-        audioContext.audioWorklet.addModule(
-          URL.canParse(urlOrSource) ? urlOrSource :
-            // Make source code into a blob URL
-            (blob = URL.createObjectURL(new Blob([urlOrSource], { type: "text/javascript" })))
-        ).then(() => {
-          loaded.get(audioContext)!.set(urlOrSource, true)
-          if (blob) URL.revokeObjectURL(blob);
-        });
+      // Otherwise ask the audio context to load it
+      audioContext.audioWorklet.addModule(
+        URL.canParse(urlOrSource) ? urlOrSource :
+          // Make source code into a blob URL
+          (blob = URL.createObjectURL(new Blob([urlOrSource], { type: "text/javascript" })))
+      ).then(() => {
+        loaded.get(audioContext)!.set(urlOrSource, true)
+        if (blob) URL.revokeObjectURL(blob);
+      });
     // Set it for others to use
     loaded.get(audioContext)!.set(urlOrSource, wait);
     // Avoid the microtask delay for loaded worklets
@@ -1595,7 +1733,7 @@ export namespace Codecs {
         process: processor.decode
           ? processor.decode.bind(processor)
           : processor.encode.bind(processor)
-          ,
+        ,
         close: () => processor.close(),
       };
     };
@@ -1624,7 +1762,7 @@ export namespace Codecs {
     // one from scratch
     const refresh = () => {
       if (!frame) return; // we just refreshed it
-      try { transcoder?.close(); } catch(e) { console.warn(e) }
+      try { transcoder?.close(); } catch (e) { console.warn(e) }
       transcoder = mkprocessor(config, onoutput, onerror);
     };
     // This is always our `output` callback for each transcoder
@@ -1654,7 +1792,7 @@ export namespace Codecs {
       // Process all the callbacks: only the first one gets a real error,
       // because the error came from it, while the rest get error `undefined`.
       for (const cb of burned) {
-        try { cb(undefined, error); } catch {}
+        try { cb(undefined, error); } catch { }
         error = undefined;
       }
 
@@ -1685,7 +1823,7 @@ export namespace Codecs {
       try {
         transcoder.process(data);
         if (!keepOpen) data.close?.();
-      } catch(err) {
+      } catch (err) {
         reject(err);
       }
     });
@@ -1768,9 +1906,7 @@ export namespace Workers {
 
   // One `Stream` will be in control of the `send` interface at a time,
   // and can be revoked individually or collectively.
-  export function mintController<T>(send: (value: T) => void):
-    { control: (controller: Stream<T>) => Bed.Destr, destroy: Bed.Destr }
-  {
+  export function mintController<T>(send: (value: T) => void): { control: (controller: Stream<T>) => Bed.Destr, destroy: Bed.Destr } {
     const scope = Resource.subScope();
     return {
       control: Resource.saveRevolvingScope(controller => {
@@ -1868,8 +2004,8 @@ export namespace Workers {
       ],
       close: () => {
         // FIXME?
-        try { channel.port1.close(); } catch {}
-        try { channel.port2.close(); } catch {}
+        try { channel.port1.close(); } catch { }
+        try { channel.port2.close(); } catch { }
       },
     };
   };
@@ -1881,10 +2017,57 @@ export namespace Workers {
   // honestly, `navigator.locks.request` is pretty straightforward already
   export function Lock<T>(name: string, options: LockOptions, work: (lock: Lock | null) => MaybePromise<T>): Promise<T> {
     const scopeSignal = mintAbortSignal();
-    options = { ...options, signal: options.signal ? AbortSignal.any([ options.signal, scopeSignal ]) : scopeSignal };
-    return window.navigator.locks.request(name, options, work);
+    options = { ...options, signal: options.signal ? AbortSignal.any([options.signal, scopeSignal]) : scopeSignal };
+    return Promise.resolve(window.navigator.locks.request(name, options, work));
   };
 } // namespace Workers
+
+
+
+// I'm not sure that Document vs Window vs Navigator is always a coherent
+// distinction, but might as well keep it for familiarity, so things are
+// easier to find from standard references.
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+export namespace Window {
+  export const devicePixelRatio = {
+    current: () => window.devicePixelRatio,
+    stream: Stream.makeLake<number>(emit => {
+      let active = true;
+      let rolling = () => {};
+      const untilNext = (cb: Bed.Cb<any>) => {
+        const mediaQueried = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+        mediaQueried.addEventListener('change', cb);
+        rolling = () => mediaQueried.removeEventListener('change', cb);
+      };
+      const onChange = () => {
+        rolling();
+        if (!active) return;
+        emit(window.devicePixelRatio);
+        untilNext(onChange);
+      }
+      untilNext(onChange);
+      return () => { active = false; rolling() };
+    }).memoize(),
+  };
+} // namespace Window
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+export namespace Document {
+  export const fullscreenElement = {
+    request: (target: Element, options?: FullscreenOptions) =>
+      target.requestFullscreen(options),
+    errors: DOM.documentEvents().listener("fullscreenerror"),
+    stream: Stream.oneStream([
+      Stream.poke(undefined),
+      DOM.documentEvents().listener("fullscreenchange")
+    ]).map(() => window.document.fullscreenElement).memoize(),
+  };
+} // namespace Document
 
 
 
@@ -1905,8 +2088,6 @@ export namespace Navigator {
     request: async () => {
       const lock = await Resource.then(window.navigator.wakeLock.request());
 
-      const destroy = Resource.tryAddDestructor(lock.release.bind(lock));
-
       // Clean up stale weak refs
       for (const other of [..._WakeLocks])
         if (!other.deref()) _WakeLocks.delete(other);
@@ -1915,6 +2096,8 @@ export namespace Navigator {
       const weakref = new WeakRef(lock);
       _WakeLocks.add(weakref);
       lock.addEventListener("release", () => _WakeLocks.delete(weakref));
+
+      const destroy = Resource.tryAddDestructor(() => weakref.deref()?.release());
 
       // Return the destructor: no need for `WakeLockSentinel` interface
       return destroy as Bed.Destr;
@@ -1956,3 +2139,224 @@ export namespace Navigator {
   // setPositionState (media playback position)
   // userActivation
 } // namespace Navigator
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+export namespace DOM.Observer {
+  export function mutationObserver(startObserving?: Array<{ target: Node, options?: MutationObserverInit }>) {
+    const events = Stream.createRiver<MutationRecord[]>();
+    const observer = new MutationObserver(events.send);
+
+    let observing = new Set<{
+      target: WeakRef<Node>,
+      options: MutationObserverInit | undefined
+    }>();
+
+    const observers = {
+      current: () => [...observing].flatMap(entry => {
+        const target = entry.target.deref();
+        if (target) return [{ target, options: entry.options }];
+        observing.delete(entry);
+        return [];
+      }),
+      register: (target: Node, options?: MutationObserverInit) => {
+        const entry = { target: new WeakRef(target), options };
+        observing.add(entry);
+        observer.observe(target, options);
+        return Resource.tryAddDestructor(() => {
+          observing.delete(entry);
+          observers.reinit();
+        });
+      },
+      reinit: () => {
+        const buffered = observer.takeRecords();
+        if (buffered.length) events.send(buffered);
+        observer.disconnect();
+        for (const { target, options } of observers.current())
+          observer.observe(target, options);
+      },
+      clear: (suppress = false) => {
+        const buffered = observer.takeRecords();
+        if (!suppress && buffered.length) events.send(buffered);
+        observer.disconnect();
+        observing = new Set();
+      },
+    };
+
+    if (startObserving)
+      for (const entry of startObserving)
+        observers.register(entry.target, entry.options);
+
+    return {
+      aggregated: events.stream,
+      stream: events.stream.mapArray(many => many),
+      drain: (suppress = false) => {
+        const buffered = observer.takeRecords();
+        if (!suppress && buffered.length) events.send(buffered);
+        return buffered;
+      },
+      observers,
+      destroy: Resource.tryAddDestructor(() => {
+        observer.disconnect();
+        observing = new Set();
+      }),
+    };
+  };
+
+  export function textContent(target: Node): River<string | null> {
+    const observer = mutationObserver();
+    observer.observers.register(target, {
+      subtree: true,
+      characterData: true,
+    });
+    return observer.aggregated
+      .startWith(undefined).dynamic()
+      .map(() => target.textContent);
+  };
+
+  export function directAttributes(target: Element, select?: string[] | undefined):
+    River<Map<string, { prev: string | null, next: string | null }>> {
+    const observer = mutationObserver();
+    observer.observers.register(target, {
+      subtree: false,
+      attributes: true,
+      attributeFilter: select,
+      attributeOldValue: true,
+    });
+    return observer.aggregated.map(updates => {
+      const changes = new Map<string, { prev: string | null, next: string | null }>();
+      for (const update of updates) {
+        const attr = update.attributeName;
+        if (attr === null || update.target !== target || changes.has(attr)) continue;
+        changes.set(attr, { prev: update.oldValue, next: target.getAttribute(attr) });
+      }
+      return changes;
+    });
+  };
+
+  export function attribute(target: Element, name: string): River<string | null> {
+    const observer = mutationObserver();
+    observer.observers.register(target, {
+      attributes: true, attributeFilter: [name],
+    });
+    return observer.stream
+      .startWith(undefined).dynamic()
+      .map(() => target.getAttribute(name));
+  };
+
+
+
+  export function intersection(options: IntersectionObserverInit, startObserving?: Element[]) {
+    const events = Stream.createRiver<IntersectionObserverEntry[]>();
+    const observer = new IntersectionObserver(events.send, options);
+
+    const observers = {
+      register: (target: Element) => {
+        observer.observe(target);
+        const retained = new WeakRef(target);
+        return Resource.tryAddDestructor(() => {
+          const target = retained.deref();
+          if (target) observer.unobserve(target);
+        });
+      },
+      clear: (suppress = false) => {
+        const buffered = observer.takeRecords();
+        if (!suppress && buffered.length) events.send(buffered);
+        observer.disconnect();
+      },
+    };
+
+    if (startObserving)
+      for (const target of startObserving)
+        observers.register(target);
+
+    return {
+      aggregated: events.stream,
+      stream: events.stream.mapArray(many => many),
+      observer,
+      observers,
+      destroy: Resource.tryAddDestructor(() => observer.disconnect()),
+    };
+  };
+} // namespace DOM.Observer
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+export namespace DOM.VDOM {
+  export function setAttribute(target: Element, name: string, value: LiveAttr) {
+    if (typeof value === "string" || typeof value === "number") {
+      target.setAttribute(name, String(value));
+    } else if (value === null) {
+      target.removeAttribute(name);
+    } else {
+      value.subscribe(v => setAttribute(target, name, v));
+    }
+  };
+
+  export function $text(values: Stream<string | number>) {
+    const node = window.document.createTextNode("");
+    values.subscribe(text => node.nodeValue = String(text));
+    return node;
+  };
+
+  export type LiveAttr = string | number | null | Stream<LiveAttr>;
+  export type LiveAttrs = Record<string, LiveAttr>;
+  export type Child = string | number | null | undefined | Node | Array<Child>;
+
+  export function $HTML(
+    type: string,
+    attrs?: LiveAttrs,
+    ...children: Child[]
+  ): HTMLElement {
+    const node = window.document.createElement(type);
+    for (const [k, v] of Object.entries(attrs ?? {}))
+      setAttribute(node, k, v);
+    for (const child of children.flatMap(liveChild))
+      node.appendChild(child);
+    return node;
+  };
+  export function $SVG(
+    type: string,
+    attrs?: LiveAttrs,
+    ...children: Child[]
+  ): SVGElement {
+    const node = window.document.createElementNS(NS.SVG, type);
+    for (const [k, v] of Object.entries(attrs ?? {}))
+      setAttribute(node, k, v);
+    for (const child of children.flatMap(liveChild))
+      node.appendChild(child);
+    return node;
+  };
+
+  export function liveChild(child: Child): Node[] {
+    if (child === null || child === undefined) return [];
+    if (typeof child === 'string' || typeof child === 'number')
+      return [$text(Stream.pure(child))];
+    if (child instanceof Node) return [child];
+    return child.flatMap(liveChild);
+  };
+
+  export const NS = {
+    SVG: "http://www.w3.org/2000/svg",
+    XHTML: "http://www.w3.org/1999/xhtml",
+    HTML: "http://www.w3.org/1999/xhtml",
+    XLink: "http://www.w3.org/1999/xlink",
+    XML: "http://www.w3.org/XML/1998/namespace",
+    XMLNS: "http://www.w3.org/2000/xmlns/",
+  } as const;
+} // namespace DOM.VDOM
+
+
+
+// To add:
+// - touch events (WIP)
+// - mouse drag (+ drag n drop API?)
+// - pointer events, pointer capture
+// - scroll position (scroll snap?)
+// - text cursor
+
+// Research
+// - https://patrickhlauke.github.io/touch/
+// - https://kenneth.io/post/detecting-multi-touch-trackpad-gestures-in-javascript

@@ -5,8 +5,7 @@ pkgs.mkShell rec {
 
   nativeBuildInputs = with pkgs.buildPackages; [
     nodejs purescript pandoc lilypond
-    (haskellPackages.ghcWithPackages (pkgs: with pkgs; [ cabal-install ]))
-    # (haskell.packages.ghc948.ghcWithPackages (pkgs: with pkgs; [ cabal-install ]))
+    (haskell.packages.ghc984.ghcWithPackages (pkgs: with pkgs; [ cabal-install haskell-language-server ]))
 
     woff2
 

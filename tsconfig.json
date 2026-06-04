@@ -2,7 +2,9 @@
   "compilerOptions": {
     "lib": ["esnext", "DOM"],
     "target": "esnext",
+    "module": "esnext",
     "strict": true,
     "strictNullChecks": true
-  }
+  },
+  "include": ["assets/js/Riverdragon/*.ts", "assets/js/Riverdragon/APIs/RTC.ts"]
 }

@@ -480,9 +480,9 @@ conflicts (States states) =
       guard (not decisionUnique sr)
 
 
-data CST r tok
+data CST rule tok
   = Leaf tok
-  | Branch r (Array (CST r tok))
+  | Branch rule (Array (CST rule tok))
 derive instance eqCST :: (Eq r, Eq tok) => Eq (CST r tok)
 derive instance functorCST :: Functor (CST r)
 derive instance bifunctorCST :: Bifunctor CST
