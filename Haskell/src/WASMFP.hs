@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveAnyClass, DerivingStrategies, DerivingVia, OverloadedStrings #-}
+{-# LANGUAGE DeriveAnyClass, DerivingStrategies, DerivingVia, OverloadedStrings, DefaultSignatures #-}
 {- HLINT ignore "Avoid lambda using `infix`" -}
 {- HLINT ignore "Use record patterns" -}
 {- HLINT ignore "Use const" -}
@@ -23,7 +23,7 @@ import qualified Data.Typeable as Typeable
 import Control.Monad.RWS.CPS (RWST, MonadState (state), MonadWriter (tell, listen, pass), modify', censor, gets, runRWST, MonadTrans (lift))
 import Data.Functor ((<&>))
 import qualified Data.Text.Internal.StrictBuilder as Builder
-import Data.Foldable (traverse_, for_, Foldable (toList), foldrM, asum)
+import Data.Foldable (traverse_, for_, Foldable (toList), foldrM, fold, foldMap, asum)
 import qualified Data.ByteString.Builder as ByteString.Builder
 import GHC.Base (Semigroup(sconcat), NonEmpty((:|)), coerce, Coercible, Alternative (many), (<|>), empty, Type, Void)
 import Data.Foldable1 (Foldable1 (foldMap1))
@@ -266,6 +266,7 @@ ff <@> a = (\f -> f a) <$> ff
 listup :: forall k v. Eq k => k -> [(k, v)] -> Maybe v
 listup k = fmap snd . List.find ((== k) . fst)
 
+-- A really useful pattern synonym! why have i not seen it before?
 pattern Coerce :: Coercible outer inner => inner -> outer
 pattern Coerce c <- (coerce -> c) where
   Coerce c = coerce c
@@ -1572,8 +1573,8 @@ instance Monoid Effects where
     , efDebug = mempty
     , efOrdering = mempty
     }
-deriving via Effects instance Semigroup (CaseAware Effects)
-deriving via Effects instance Monoid (CaseAware Effects)
+deriving via Effects instance Semigroup (Sequence Effects)
+deriving via Effects instance Monoid (Sequence Effects)
 
 
 data ForeignCall = ForeignCall STyp Effects Name
@@ -1691,21 +1692,35 @@ instance Sample Bool All where sample = coerce
 
 -- | Newtype specifically for *sequential* combining, since disjunctive
 -- combining is the natural one to specify.
-newtype CaseAware m = CaseAware m
+newtype Sequence m = Sequence m
   deriving newtype (Eq, Ord, NFData)
-pattern CaseAwore :: CaseAware m -> m
-pattern CaseAwore c = Coerce c
+pattern Branch :: Sequence m -> m
+pattern Branch c = Coerce c
 
-type AcrossCases m = (Monoid m, Monoid (CaseAware m))
+type StaticAnalysis m = (Monoid m, Monoid (Sequence m))
 
-(~~) :: forall m. Monoid m => CaseAware m -> CaseAware m -> CaseAware m
-m1 ~~ m2 = CaseAware (CaseAwore m1 <> CaseAwore m2)
+class (Semigroup m, Semigroup (Sequence m)) => StaticAnalysis1 m where
+  -- Should be idempotent and commute with `(<>) @m`
+  withPureBranch :: m -> m
+  default withPureBranch :: StaticAnalysis m => m -> m
+  withPureBranch = (<>) (Branch mempty)
 
-(->-) :: forall m. Monoid (CaseAware m) => m -> m -> m
-m1 ->- m2 = CaseAwore (CaseAware m1 <> CaseAware m2)
 
-summarizeCases :: forall f m. Foldable f => Monoid m => f (CaseAware m) -> CaseAware m
-summarizeCases = CaseAware . foldMap CaseAwore
+(~~) :: forall m. Semigroup m => Sequence m -> Sequence m -> Sequence m
+m1 ~~ m2 = Sequence (Branch m1 <> Branch m2)
+
+(->-) :: forall m. Semigroup (Sequence m) => m -> m -> m
+m1 ->- m2 = Branch (Sequence m1 <> Sequence m2)
+
+analyzeBranches :: forall f m. Foldable f => StaticAnalysis m => f m -> m
+analyzeBranches = fold @f @m
+
+analyzeSequence :: forall f m. Foldable f => StaticAnalysis m => f m -> m
+analyzeSequence = Branch . foldMap Sequence
+
+summarizeCases :: forall f m. Foldable f => Monoid m => f (Sequence m) -> Sequence m
+summarizeCases = Sequence . foldMap Branch
+
 
 -- | Has no case-aware behavior.
 newtype Simple m = Simple m
@@ -1713,64 +1728,136 @@ newtype Simple m = Simple m
 
 deriving newtype instance Semigroup m => Semigroup (Simple m)
 deriving newtype instance Monoid m => Monoid (Simple m)
-deriving newtype instance Semigroup m => Semigroup (CaseAware (Simple m))
-deriving newtype instance Monoid m => Monoid (CaseAware (Simple m))
+deriving newtype instance Semigroup m => Semigroup (Sequence (Simple m))
+deriving newtype instance Monoid m => Monoid (Sequence (Simple m))
 
-instance Semigroup (CaseAware m) => Semigroup (CaseAware (Maybe m)) where
-  (<>) = coerce ((<>) @(Maybe (CaseAware m)))
-instance Semigroup (CaseAware m) => Monoid (CaseAware (Maybe m)) where
-  mempty = coerce (mempty @(Maybe (CaseAware m)))
+instance Semigroup (Sequence m) => Semigroup (Sequence (Maybe m)) where
+  (<>) = coerce ((<>) @(Maybe (Sequence m)))
+instance Semigroup (Sequence m) => Monoid (Sequence (Maybe m)) where
+  mempty = coerce (mempty @(Maybe (Sequence m)))
 
-deriving newtype instance Semigroup (CaseAware ())
-deriving newtype instance Monoid (CaseAware ())
+deriving newtype instance Semigroup (Sequence ())
+deriving newtype instance Monoid (Sequence ())
 -- Tropical semirings, like `Bounds o`
-deriving via (Sum o) instance Num o => Semigroup (CaseAware (Max o))
-deriving via (Sum o) instance Num o => Semigroup (CaseAware (Min o))
+deriving via (Sum o) instance Num o => Semigroup (Sequence (Max o))
+deriving via (Sum o) instance Num o => Semigroup (Sequence (Min o))
 -- `All`: Definitely happens in a course of control flow: all branches,
 -- any instruction along them
-deriving via Any instance Semigroup (CaseAware All)
-deriving via Any instance Monoid (CaseAware All)
+deriving via Any instance Semigroup (Sequence All)
+deriving via Any instance Monoid (Sequence All)
 -- `Any`: Could happen somewhere in a course of control flow (not `deriving via All`!)
-deriving via Any instance Semigroup (CaseAware Any)
-deriving via Any instance Monoid (CaseAware Any)
+deriving via Any instance Semigroup (Sequence Any)
+deriving via Any instance Monoid (Sequence Any)
 
--- Intersection vs union, e.g. for tracking what constructor a value is supposed
--- to be through control flow (based on consumers)
-instance Ord o => Semigroup (CaseAware (Set o)) where
+-- | Let the default `Set` be `OverSet`, with unions everywhere
+deriving via Set o instance Ord o => Semigroup (Sequence (Set o))
+deriving via Set o instance Ord o => Monoid (Sequence (Set o))
+
+-- | For under-approximation of requirements,
+-- | sequencing is union and branching is intersection.
+newtype UnderSet o = UnderSet (Set o)
+  deriving stock (Eq, Ord, Generic, Show)
+  deriving anyclass (NFData)
+
+instance Ord o => Semigroup (UnderSet o) where
   (<>) = coerce (Set.intersection @o)
+deriving via Set o instance Ord o => Semigroup (Sequence (UnderSet o))
+deriving via Set o instance Ord o => Monoid (Sequence (UnderSet o))
+
+-- | Sequencing and branching are both union, for
+-- | over-approximation/tallying what occurs.
+newtype OverSet o = OverSet (Set o)
+  deriving stock (Eq, Ord, Generic, Show)
+  deriving anyclass (NFData)
+  deriving newtype (Semigroup, Monoid)
+
+deriving newtype instance Ord o => Semigroup (Sequence (OverSet o))
+deriving newtype instance Ord o => Monoid (Sequence (OverSet o))
+
+-- | The converse of `UnderSet`, for agreement under sequencing.
+-- | Maybe useful for tracking what constructors a value may have,
+-- | for example.
+newtype AgreeSet s = AgreeSet (Set s)
+  deriving stock (Eq, Ord, Generic, Show)
+  deriving anyclass (NFData)
+  deriving newtype (Semigroup, Monoid)
+
+instance Ord o => Semigroup (Sequence (AgreeSet o)) where
+  (<>) = coerce (Set.intersection @o)
+
+
 -- Union, but with both operations inside. For tabulating information, e.g.
 -- by variable.
-instance (Ord k, Semigroup (CaseAware v)) => Semigroup (CaseAware (MonoidalMap k v)) where
-  (<>) = coerce (MonoidalMap.unionWith ((<>) @(CaseAware v)))
+instance (Ord k, Semigroup (Sequence v)) => Semigroup (Sequence (MonoidalMap k v)) where
+  (<>) = coerce (MonoidalMap.unionWith ((<>) @(Sequence v)))
 
--- After an error, analysis does not apply.
+
+
+-- After an error, analysis does not apply (unreachable control flow).
 data Flowy m = EndsInDisaster m | CanEndCleanly m | EndsCleanly m
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
-instance Monoid m => Monoid (Flowy m) where mempty = EndsCleanly mempty
-instance Semigroup m => Semigroup (Flowy m) where
+
+instance Monoid (Sequence m) => Monoid (Sequence (Flowy m)) where
+  mempty = Sequence (EndsCleanly (Branch mempty))
+instance Semigroup (Sequence m) => Semigroup (Sequence (Flowy m)) where
   -- Cut off analysis after a guaranteed error
-  EndsInDisaster m <> _ = EndsInDisaster m
+  Sequence (EndsInDisaster m) <> _ = Sequence (EndsInDisaster m)
   -- Still ends in error
-  (flowed -> m1) <> EndsInDisaster m2 = EndsInDisaster $ m1 <> m2
-  -- Ends clearly
+  Sequence (flowed -> m1) <> Sequence (EndsInDisaster m2) = coerce (EndsInDisaster @m) $ m1 ->- m2
+  -- Ends cleanly
+  Sequence (EndsCleanly m1) <> Sequence (EndsCleanly m2) = coerce (EndsCleanly @m) $ m1 ->- m2
+  -- Mixed cases
+  Sequence (flowed -> m1) <> Sequence (flowed -> m2) = coerce (CanEndCleanly @m) $ m1 ->- m2
+instance Semigroup m => Semigroup (Flowy m) where
+  -- All branches end in disaster still
+  EndsInDisaster m1 <> EndsInDisaster m2 = EndsInDisaster $ m1 <> m2
+  -- All branches end cleanly still
   EndsCleanly m1 <> EndsCleanly m2 = EndsCleanly $ m1 <> m2
   -- Mixed cases
   (flowed -> m1) <> (flowed -> m2) = CanEndCleanly $ m1 <> m2
-instance Semigroup (CaseAware m) => Semigroup (CaseAware (Flowy m)) where
-  -- All branches end in disaster still
-  CaseAware (EndsInDisaster m1) <> CaseAware (EndsInDisaster m2) = coerce (EndsInDisaster @m) (CaseAware m1 <> CaseAware m2)
-  -- All branched end cleanly still
-  CaseAware (EndsCleanly m1) <> CaseAware (EndsCleanly m2) = coerce (EndsCleanly @m) (CaseAware m1 <> CaseAware m2)
-  -- Mixed cases
-  CaseAware (flowed -> m1) <> CaseAware (flowed -> m2) = coerce (CanEndCleanly @m) (CaseAware m1 <> CaseAware m2)
 instance Sample s m => Sample s (Flowy m) where
   sample = EndsCleanly . sample
+
+instance StaticAnalysis1 m => StaticAnalysis1 (Flowy m) where
+  withPureBranch (flowed -> m) = CanEndCleanly (withPureBranch m)
 
 flowed :: Flowy m -> m
 flowed (EndsInDisaster m) = m
 flowed (CanEndCleanly m) = m
 flowed (EndsCleanly m) = m
+
+-- Add identities
+data MaybeAnalysis m = PureAnalysis | AbsurdAnalysis | SomeAnalysis (Flowy m)
+  deriving stock (Eq, Ord, Generic, Show)
+  deriving anyclass (NFData)
+
+instance StaticAnalysis1 m => Semigroup (MaybeAnalysis m) where
+  AbsurdAnalysis <> m = m
+  m <> AbsurdAnalysis = m
+  PureAnalysis <> PureAnalysis = PureAnalysis
+  SomeAnalysis m <> PureAnalysis = SomeAnalysis (withPureBranch m)
+  PureAnalysis <> SomeAnalysis m = SomeAnalysis (withPureBranch m)
+  SomeAnalysis m1 <> SomeAnalysis m2 = SomeAnalysis (m1 <> m2)
+instance StaticAnalysis1 m => Monoid (MaybeAnalysis m) where
+  mempty = AbsurdAnalysis
+
+instance Semigroup (Sequence m) => Monoid (Sequence (MaybeAnalysis m)) where
+  mempty = Sequence PureAnalysis
+instance Semigroup (Sequence m) => Semigroup (Sequence (MaybeAnalysis m)) where
+  Sequence PureAnalysis <> m = m
+  m <> Sequence PureAnalysis = m
+  Sequence AbsurdAnalysis <> _ = Sequence AbsurdAnalysis
+  Sequence (SomeAnalysis (flowed -> m)) <> Sequence AbsurdAnalysis =
+    Sequence (SomeAnalysis (EndsInDisaster m))
+  Sequence (SomeAnalysis m1) <> Sequence (SomeAnalysis m2) = Sequence (SomeAnalysis (m1 ->- m2))
+
+unMaybeAnalysis :: forall m. StaticAnalysis m => MaybeAnalysis m -> m
+unMaybeAnalysis (SomeAnalysis m) = flowed m
+unMaybeAnalysis PureAnalysis = analyzeSequence []
+unMaybeAnalysis AbsurdAnalysis = analyzeBranches []
+
+
 
 -- Maintain bounds for a summable value (e.g. occurrences).
 data Bounds o = Bounds { bndMin :: !o, bndMax :: !o }
@@ -1780,9 +1867,9 @@ bound :: o -> Bounds o
 bound = join Bounds
 instance Ord o => Semigroup (Bounds o) where
   Bounds minL maxL <> Bounds minR maxR = Bounds (min minL minR) (max maxL maxR)
-instance Num o => Semigroup (CaseAware (Bounds o)) where
-  CaseAware (Bounds minL maxL) <> CaseAware (Bounds minR maxR) =
-    CaseAware $ Bounds (minL + minR) (maxL + maxR)
+instance Num o => Semigroup (Sequence (Bounds o)) where
+  Sequence (Bounds minL maxL) <> Sequence (Bounds minR maxR) =
+    Sequence $ Bounds (minL + minR) (maxL + maxR)
 instance Ord o => Sample o (Bounds o) where
   sample = bound
 
@@ -1792,10 +1879,10 @@ data Proportion n = Proportion { pWith :: !n, pWithout :: !n }
   deriving anyclass (NFData)
 instance Num n => Semigroup (Proportion n) where
   Proportion wiL woL <> Proportion wiR woR = Proportion (wiL + wiR) (woL + woR)
-instance Num n => Semigroup (CaseAware (Proportion n)) where
+instance Num n => Semigroup (Sequence (Proportion n)) where
   -- This assumes that cases are independent
-  CaseAware (Proportion sL1 sL2) <> CaseAware (Proportion sR1 sR2) =
-    CaseAware $ Proportion (sL * sR - s2) s2
+  Sequence (Proportion sL1 sL2) <> Sequence (Proportion sR1 sR2) =
+    Sequence $ Proportion (sL * sR - s2) s2
     where
     s2 = sL2 * sR2
     sR = sR1 + sR2
@@ -1806,7 +1893,7 @@ instance Num n => Semigroup (CaseAware (Proportion n)) where
 -- This automatically handles control flow (cutting off analysis after errors)
 -- and empty cases (via `Maybe`).
 newtype Demand = Demand (Flowy (Maybe (Bounds Int, Proportion Int)))
-  deriving newtype (Eq, Ord, Semigroup, Monoid, NFData)
+  deriving newtype (Eq, Ord, Semigroup, NFData)
 pattern Demanded :: Demand -> Flowy (Maybe (Bounds Int, Proportion Int))
 pattern Demanded dd = Coerce dd
 
@@ -1831,25 +1918,25 @@ ddAlways = (== 0) . pWithout . ddProportion
 ddNever :: Demand -> Bool
 ddNever = (== 0) . pWith . ddProportion
 
-acrossCases :: forall m. AcrossCases m => (Expr -> m) -> Expr -> m
+acrossCases :: forall m. StaticAnalysis m => (Expr -> m) -> Expr -> m
 acrossCases f = acrossCases' (Append . f)
 
--- Uses `Monoid (CaseAware m)` for sequencing and `Monoid m` for summing
+-- Uses `Monoid (Sequence m)` for sequencing and `Monoid m` for summing
 -- case branches.
-acrossCases' :: forall m. AcrossCases m => (Expr -> Visit m) -> Expr -> m
-acrossCases' f = CaseAwore . visit' \case
-  EError _ _ _ -> ShortCircuit (CaseAware mempty)
+acrossCases' :: forall m. StaticAnalysis m => (Expr -> Visit m) -> Expr -> m
+acrossCases' f = Branch . visit' \case
+  EError _ _ _ -> ShortCircuit (Sequence mempty)
   expr@(ECase _ scrutinee _ (cases, fallback)) ->
     let
-      go = CaseAware . acrossCases' f
+      go = Sequence . acrossCases' f
       children = go scrutinee <> do
-        -- Sum across the case branches (with `Monoid m` instead of `Monoid (CaseAware m)`)
+        -- Sum across the case branches (with `Monoid m` instead of `Monoid (Sequence m)`)
         summarizeCases (Map.elems (go . snd <$> cases)) ~~ go fallback
-    in ShortCircuit case coerce (f expr) :: Visit (CaseAware m) of
+    in ShortCircuit case coerce (f expr) :: Visit (Sequence m) of
       ShortCircuit m -> m
       Append m -> m <> children
       Continue mm -> mm children
-  expr -> coerce (f expr) :: Visit (CaseAware m)
+  expr -> coerce (f expr) :: Visit (Sequence m)
 
 
 

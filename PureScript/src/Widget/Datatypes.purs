@@ -273,6 +273,7 @@ abbreviations = Map.fromFoldable
   , "UI" /\ Acronym "User Interface"
   , "UX" /\ Acronym "User Experience"
   , "JSON" /\ Acronym "JavaScript Object Notation"
+  , "CBOR" /\ Acronym "Concise Binary Object Representation"
   , "DAG" /\ Acronym "Directed Acyclic Graph"
   , "WHNF" /\ Acronym "Weak Head Normal Form"
   , "NF" /\ Acronym "Normal Form"

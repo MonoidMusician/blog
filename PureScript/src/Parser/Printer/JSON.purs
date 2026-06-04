@@ -240,7 +240,7 @@ errorPar (ErrorPar e1) e2 = ErrorPar (Array.snoc e1 e2)
 errorPar e1 (ErrorPar e2) = ErrorPar (Array.cons e1 e2)
 errorPar e1 e2 = ErrorPar [e1, e2]
 
--- | CPSified applicative validation, with extra context for errors.
+-- | Applicative validation, with extra context for errors.
 data VI i e a = VE (i -> ErrorTree e) | VA a
 derive instance Functor (VI i e)
 derive instance Bifunctor (VI i)

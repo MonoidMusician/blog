@@ -68,18 +68,27 @@ type Opts = Set String
 type RatPrec = Prec (Tuple Rational Associativity)
 
 newtype PrinterParser i o = PrinterParser
-  { allOpts :: Opts
-  , printer :: PrinterMade i
-  , prec :: RatPrec
-  , parser :: ParserMade o
+  { allOpts :: Opts -- All options used in the printer/parser, for displaying in a UI
+  , printer :: PrinterMade i -- The pretty-printer half of it
+  , prec :: RatPrec -- The current precedence (if it is known)
+  , parser :: ParserMade o -- The concrete printer and the parser
   }
 
+-- A pretty-printer, from an abstract type to a document layout
 type PrinterMade i =
+  -- Parenthesize the output for precedence, or do whatever is necessary
+  -- (passed as reader context down from the parent)
   (O.Doc Ann -> O.Doc Ann) ->
+  -- The abstract input type, to invent syntax for
   i ->
+  -- The precedence from the parent, if necessary
   Maybe (Tuple Rational Associativity) ->
+  -- Formatting options requested by the user, e.g. “prefer unicode”
   Opts ->
+  -- The pretty printer document, with whitespace handling and extra annotations
+  -- (when two WSDocs are juxtaposed, they may insert whitespace)
   WSDoc Ann
+
 type ParserMade o = WithBoundaryF InnerParser o
 newtype Parsed o = Parsed
   { usedOpts :: Lazy Opts
