@@ -108,6 +108,16 @@ Keeping things from leaking with functional-style JavaScript is tricky…
 The other interesting part of a streamʼs lifecycle is the startup burst: synchronous events emitted while a subscription is first being set up.
 This needs to be handled explicitly in many places in the implementation, but because it is synchronous, it doesnʼt necessitate any overarching coordination between streams or other resources and doesnʼt leak out of the API.
 
+### Custodians in Racket
+
+Racket implements Custodians, which can guard execution and resources, like OS processes, but within a single Racket process.
+Files, sockets, threads – even active allocations, for OOM killing.
+(That is integrated with the GC.)
+
+https://docs.racket-lang.org/reference/eval-model.html#(part._custodian-model)
+
+https://www-old.cs.utah.edu/plt/publications/ismm04-wf.pdf
+
 ## Implementation
 
 ### Inspirations

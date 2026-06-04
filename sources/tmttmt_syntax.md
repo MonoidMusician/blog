@@ -368,6 +368,41 @@ build-options-with-monad: { X=X Y=Y args=args } => options:
 }}}
 ```
 
+
+```tmTTmt
+## First we try it cached
+compileFile: [source target] => cachedResult:
+  ## Make sure the output exists
+  exists target =>? "True"
+  ## Get the cached result, if it exists
+  ? getCachedFor target => cached
+  ## Extract the timestamp and hash
+  cached => { timestamp hash result=cachedResult }
+  getTimestamp source =>? {{
+  ## If it matches exactly, great
+  | timestamp;
+  ## Otherwise we check the hash
+  | _:
+    ## Again, require it to match
+    ## (nonlinear pattern match)
+    hashFile source => hash
+  }}
+  ## ^ if any question mark fails, it falls through to the next block:
+## Otherwise we need to actually compile it from scratch
+compileFile: [source target] => freshResult:
+  readFile source => { contents hash timestamp }
+  parse contents => syntax
+  compile syntax => freshResult
+  ## Make the output available
+  writeOutput target freshResult => []
+  ## And write the cache
+  writeCachedFor target
+    { timestamp hash result=freshResult }
+  => []
+```
+
+
+
 ## Dynamic
 
 ### Keywords

@@ -795,7 +795,7 @@ export type MIDINoteMap = {
 
 I think what I have outlined here is a much simpler approach that cuts to the heart of what we need from interfaces to objects and mutability.
 
-It doesnʼt need to be done in functional languages or with monads, it works well in JavaScript with plain effectful functions!^[Even `Scope`{t=} works, using the usual tricks for local monads via a global variable, plus some care around closures/callbacks/asynchrony. like, stream callbacks ought to run in the scope that the stream was created in, not whatever happened to trigger the event.]
+It doesnʼt need to be done in functional languages or with monads, it works well in JavaScript with plain effectful functions!^[Even `Scope`{.purescript} works, using the usual tricks for local monads via a global variable, plus some care around closures/callbacks/asynchrony. like, stream callbacks ought to run in the scope that the stream was created in, not whatever happened to trigger the event.]
 
 Iʼve been using this to develop [Riverdragon](riverdragon_implementation.html), my take on [FRP]{t=}.^[Riverdragon needs surprisingly few object behaviors for its helpers: about 10.]
 Iʼve even been using it to port Riverdragon from PureScript to other languages: I think [everything should be compatible with FRP](https://tech.lgbt/@monoidmusician/116449166586150538) and I wanna use Riverdragon everywhere.

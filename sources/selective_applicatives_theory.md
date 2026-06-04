@@ -34,17 +34,34 @@ One of the main obstacles is that there is no “state transformer functor” fo
   That is, we can pop the input state `s`{.haskell} out as its own argument to the function, since `Kleisli`{.haskell} arrows have that structure of exposing the input directly.
 - However, there is no way to do this for applicatives: `StateArrow`{.haskell} works great, `f ((s, i) -> (s, o))`{.haskell} is exactly what we want, it is an applicative arrow that carries state `s`{.haskell} around, but there is no way to express this as a functor transforming `f`{.haskell}: it would need to look at the arrow wrapped inside `f`{.haskell}.^[I believe this is because this is not a closed category?]
 
+## Pluralism
+
 So, if we want to work on the theory in full generality, and incorporate things like state monads, we will want to work with arrows instead of functors.^[I believe that state monads are the main piece that is left out by considering functors instead of arrows.]
 
 But this comes at a cost: arrows have worse syntax, you have to work with them point-free.
 The benefit of working with selective applicative functors was that we just had to consider `case`{.haskell} structure as its own thing, but otherwise they were just applicative functors `f o`{.haskell} which we already had applicative `do`{.haskell}/`ado`{.purescript} notation for.
 
-So I think a reasonable middle ground is that we should work with arrows that we can lower to applicative arrows, that is, equipped with a natural isomorphism `forall i o. p i o <-> f (g i -> h o)`{.haskell}, for functors `f`{.haskell}, `g`{.haskell}, and `h`{.haskell} determined by `p`{.haskell}.
+<details class="Details">
+<summary>Compromise</summary>
+One possible middle ground is that we could work with arrows that we can lower to applicative arrows, that is, equipped with a natural isomorphism `forall i o. p i o <-> f (g i -> h o)`{.haskell}, for functors `f`{.haskell}, `g`{.haskell}, and `h`{.haskell} determined by `p`{.haskell}.
 The `g`{.haskell} and `h`{.haskell} functors here serve the purpose of tracking the additional state variables that come along for the ride.
 (We will want some conditions on these: `g`{.haskell} probably wants to be comonadic or at least copointed, maybe `h`{.haskell} wants to be monadic; they need to be compatible in some way; they should lift over `CaseTree`{.haskell}, like `(s,)`{.haskell} already does: `CaseTreeP p i o -> CaseTreeF f (g i) (h o)`{.haskell}; and they will want to commute with the functors from transformers.)
 
 Normally, when `g ~ Id`{.haskell}, we saw that the function disappears: `f (() -> h o) ≈ f (h o)`{.haskell} due to strength of the functor.
 So when there is no state involved, we can work with a familiar functor interface again.
+</details>
+
+
+:::Key_Idea
+The takeaway is that we ought to develop a standard library with support for both styles.
+Functors (monads and applicatives and selectives) when they are convenient, of course, and arrows (of corresponding types) for when we need their precision and for handling the branches of control flow specifically.
+We cannot give up on abstraction just because one form is less convenient, less standard.
+We will look for more nuanced control flow on *both* sides.
+:::
+
+However, with that said, we will need to focus on arrows more than functors.
+The standard library of functors is pretty well developed already, and the existing theory of arrows needs some tweaks to be workable for our purpose.
+
 
 ## Composition
 
@@ -53,25 +70,32 @@ How can we expect selective applicative functors / control flow arrows to compos
 It turns out that they compose somewhat like monads, but a little bit like applicatives too.
 
 - You can take the `Product`{.haskell} of two selective applicative functors or control flow arrows, in the sense of `data ProductF f g x = ProductF (f x) (g x)`{.haskell} or `data ProductP p q i o = ProductP (p i o) (q i o)`{.haskell}, where the branches operate independently.
+  This already works for monads and applicatives but often isnʼt the type of composition you want.
 - This does not work for the the `Day`{.haskell} convolution, unfortunately.
-  But you can take the `Day`{.haskell} convolution of applicative arrows, and take the `Product`{.haskell} with that, or `Compose (Day ...) ...`{.haskell}.
+  But you can take the `Day`{.haskell} convolution of applicatives/applicative arrows, and use that applicative as a rigid selective.^[Rigid means it comes from an applicative functor, and does not support selective effects.]
 - You can compose an applicative functor `f`{.haskell} on the outside: `(Applicative f, Casing g) => Casing (Compose f g)`{.haskell} or `StaticArrow f p i o = f (p i o)`{.haskell}.
   This in general demotes it to “raw control flow”, unless the applicative functor is particularly well behaved, like `Maybe`{.haskell} for example (which is idempotent and even commutative, so it preserves all of the laws).
 - You can compose certain functors on the inside: `Tuple`{.haskell} like `WriterT`{.haskell}, `Maybe`{.haskell} like `MaybeT`{.haskell}, `Either`{.haskell} like `ExceptT`{.haskell}.
 - I am not sure about lists!
   First of all, `ListT`{.haskell} is not even implementable without `ArrowTraversing`{.haskell}: it cannot generate infinite case branches to handle arbitrary sized lists.
-  And `ListT`{.haskell} is not well behaved; is there an equivalent of `LogicT`{.haskell} to apply to arrows?
+  And `ListT`{.haskell} is not well behaved; is there an equivalent of [`LogicT`{.haskell}](https://hackage-content.haskell.org/package/logict-0.8.2.0/docs/Control-Monad-Logic.html#t:LogicT) to apply to arrows?
 - A state transformer requires using arrows instead of functors.
   Without that, you need to do manual threading of the state, which gets annoying and gets in the way of other abstractions!
 - Various [constant functors](#monoids) work well: near-semirings (or even just monoids, for “raw control flow”); lattices and semilattices (many static analyses that compilers use take this form!), including sets, both as lattices (where branches are joined using intersection) and as semilattices (where branches are joined using unions, just like sequencing).^[This is the generalization of `Over`{.haskell}- and `Under`{.haskell}-approximation from the original paper on selective applicative functors. Note how we can now capture the fact that two branches request the same resource, for example, and thus include it in the tally.]
 
 Finally, these are just guides to how things may compose, examples to demonstrate what is possible at a minimum.
-The real joy of selective applicative functors is that there is a lot of creativity in how these layers of structure may interact: .
+The real joy of selective applicative functors is that there is a lot of creativity in how these layers of structure may interact:
+some parts may be rigid and act all the time, others may be selectively run based on control flow.
+Lots of types of information brought together to synthesize a more complete picture.
 
-## Arrows
+And one can invent new selective applicatives from whole cloth, not really related to other constructs.
 
-Our goal is to have all of our familiar programming niceties, but now in the land of arrows, for more precise representation of control flow, without making it too onerous to use.
-It shouldnʼt require writing all code point-free!
+## Nuanced Control Flow
+
+Our goal is to have all of our familiar programming niceties, but now in the land of selectives and arrows, for more precise representation of control flow, without making it too onerous to use.
+Arrows are a powerful tool for this, but it shouldnʼt require writing all code point-free!
+
+### Arrows
 
 What is the existing state of the art for arrows?
 
@@ -81,13 +105,14 @@ I think arrows have suffered from the difficulties of their syntax – no one wa
 Itʼs not that arrows have no applications – on the contrary, they should be widely useful.
 But besides “oh you can use Kleisli arrows to do monads but with worse syntax”, and maybe a few things like FRP (which doesnʼt really need arrows either tbh, it works fine with functors), there hasnʼt been a real need for arrows.
 The fact that applicatives can be used to build arrows is not something Iʼve even seen advertised before, tbh.
+Arrows seem to follow the applicative/selective/monadic distiction like functors.
 
 However, there is the [arrows](https://hackage.haskell.org/package/arrows-0.4.4.2) package, which provides transformers and MTL-style typeclasses.
 This is a good source of batteries to get started with.
 
 Besides the monad-style transformers (Reader, Writer, State, Error), the other notable transformer is [`newtype StaticArrow f p i o = StaticArrow (f (p i o))`{.haskell}](https://hackage.haskell.org/package/arrows-0.4.4.2/docs/Control-Arrow-Transformer-Static.html), which provides exactly what we want for applicative arrows (change of enriching category).
 
-Also of interest is `ArrowChoice`{.haskell}: the combinators `(+++) :: p u x -> p v y -> p (u \/ v) (x \/ y)`{.haskell} and `(|||) :: p u o -> p v o -> p (u \/ v) o`{.haskell} *would* encode exclusive determined choice, but `left :: p i o -> p (i \/ c) (o \/ c)`{.haskell} and `right :: p i o -> p (c \/ i) (c \/ o)`{.haskell} do *not*.^[And it is not clear to me if the laws require them to agree… they seem to imply that `(|||)`{.haskell} should only influence efficiency, not behavior?]
+Also of interest is [`ArrowChoice`{.haskell}](https://hackage-content.haskell.org/package/base-4.22.0.0/docs/Control-Arrow.html#t:ArrowChoice): the combinators `(+++) :: p u x -> p v y -> p (u \/ v) (x \/ y)`{.haskell} and `(|||) :: p u o -> p v o -> p (u \/ v) o`{.haskell} *would* encode exclusive determined choice, but `left :: p i o -> p (i \/ c) (o \/ c)`{.haskell} and `right :: p i o -> p (c \/ i) (c \/ o)`{.haskell} do *not*.^[And it is not clear to me if the laws require them to agree… they seem to imply that `(|||)`{.haskell} should only influence efficiency, not behavior?]
 
 (Additionally, `left`{.haskell} and `right`{.haskell} do not really make sense without `Category`{.haskell}, and for my other purposes – namely, bidirectional codecs – I do want a combinator that works on profunctors without `Category`{.haskell}.)
 
@@ -95,7 +120,7 @@ So … I think the situation is salvalgeable.
 We should make our own combinators, types, and typeclasses, but it is worth taking inspiration from there.
 
 :::{.Details box-name="Aside"}
-Ironically, `ArrowApply`{.haskell} is the typeclass that expresses that an arrow is monadic, it is not related to `Applicative`{.haskell} at all.
+Ironically, [`ArrowApply`{.haskell}](https://hackage-content.haskell.org/package/base-4.22.0.0/docs/Control-Arrow.html#t:ArrowApply) is the typeclass that expresses that an arrow is monadic, it is not related to `Applicative`{.haskell} at all.
 :::
 
 ### Control Flow Arrows
@@ -109,7 +134,7 @@ We have exclusive determined choice:
 
 `(+++) :: p u x -> p v y -> p (u \/ v) (x \/ y)`{.haskell}
 
-We have a free structure, arrow-style now (where `p`{.haskell} should be a strong profunctor already):
+We have a free structure, arrow-style now (where `p`{.haskell} needs to be a strong profunctor already):
 
 ```haskell
 data ControlFlowP p i o where
@@ -124,7 +149,10 @@ data ControlFlowP p i o where
     ControlFlowP p i o
 ```
 
+### Concrete Arrows
+
 And to make the syntax more palatable, we might ask that it can be lowered into something more familiar.
+We should not rely on this, but it is nice to have sometimes.
 
 ```haskell
 class
@@ -168,7 +196,7 @@ class
     raiseN :: f (gi -> ho) -> p i o
 ```
 
-### Traversing Arrows
+### Traversing
 
 We can traverse over some functors already:
 
@@ -198,7 +226,10 @@ So we can introduce a typeclass to add this capability:
 -- The intention is that `t` is `Traversable`, though
 -- some implementations may not need that constraint.
 class ArrowTraversing t p where
-  traverseP :: forall i o. p i o -> p (t i) (t o)
+  traverseP :: forall i o. LoopName -> p i o -> p (t i) (t o)
+
+class Selective f => TraverseFlow f where
+  traverseF :: LoopName -> forall i o. f (t i) -> ControlFlowF f i o -> f (t o)
 ```
 
 For `Klesli m`{.haskell}, this is clear: it is literally just the normal `traverse`{.haskell} (although interestingly the `Monad m`{.haskell} constraint required for `Category (Kleisli m)`{.haskell} is not required for `traverse`{.haskell}, just `Applicative m`{.haskell}).
@@ -234,7 +265,7 @@ traversePMaybeMaybeMaybe mimo = Just \case
 ```
 :::
 
-### Looping Arrows
+### Looping
 
 Ironically these are a little easier to think about than traversing arrows.
 
@@ -245,10 +276,14 @@ Instead, letʼs try something in the style of [`MonadRec`{.purescript}](https://
 
 ```haskell
 class Profunctor p => ArrowWhile p where
-  doWhileP :: String -> p i (Either r i) -> p i r
-```
+  doWhileP :: LoopName -> forall i r. p i (Either r i) -> p i r
 
-<!-- doWhileF :: ControlFlowF f i (Either r i) -> f i -> f r -->
+class Monad m => MonadRec m where
+  tailRecM :: LoopName -> forall i r. (i -> m (Either r i)) -> i -> m r
+
+class Selective f => WhileF f where
+  doWhileF :: LoopName -> forall i r. f i -> ControlFlowF f i (Either r i) -> f r
+```
 
 Now you know the effects of `p`{.haskell} happen one or more times, so again, having idempotence of effects is nice, or having a Kleisli arrow is also sufficient.
 
@@ -260,7 +295,10 @@ The output then uses the named nonterminal that has been incorporated into the g
 
 ```haskell
 class (Profunctor p, ArrowWhile p) => ArrowFixedPoint p where
-  leastFixedPointP :: String -> (p i r -> p i r) -> p i r
+  leastFixedPointP :: LoopName -> forall i r. (p i r -> p i r) -> p i r
+
+class (Functor f, WhileF f) => FixedPointF f where
+  leastFixedPointF :: LoopName -> forall r. (f r -> f r) -> f r
 ```
 
 (I like giving my fixed points names, so that you can print out a grammar for the parser, for example!)
@@ -276,15 +314,15 @@ When you hear “least fixed point”, you should instantly think “semilattice
 That is the kind of structure we need to make this work for applicative arrows and not just monads.
 Yet another sign that having semilattice structure is important for control flow when we can have it.
 
-### Multi-Staged Arrows
+### Multi-Staged Functors and Arrows
 
 For mixed static analysis, like `Haxl`{.haskell}.
 
 ```haskell
 class Applicative f => MultiStage f where
-  twoStages :: f (f r) -> f r
+  twoStages :: forall r. f (f r) -> f r
 class Profunctor p => MultiStageP p where
-  twoStagesP :: p i (p i r) -> p i r
+  twoStagesP :: forall i r. p i (p i r) -> p i r
 
 nextStage :: forall f r. MultiStage f => f r -> f r
 nextStage = twoStages . pure
@@ -304,6 +342,12 @@ This, for instance, could be used to delay the effects of an argument to `select
 :::Note
 The argument that `Haxl`{.haskell} is a monad relies on the fact that data fetch effects should be unobservable.
 
+I understand the practicalities of making this argument, to make substantial progress in an existing codebase and ecosystem.
+
+But I also believe we ought to investigate abstractions that bring these details to the forefront.
+Because it is not just about benign effects, effects we can sweep under the rug.
+It is also about details we care about: static analysis, control flow, program planning.
+Letʼs expose them to the light of day.
 :::
 
 ```haskell
@@ -312,13 +356,18 @@ data Result a = Done a | Blocked BlockedRequests (Haxl a) deriving Functor
 newtype Haxl a = Haxl { runHaxl :: IO (Result a) } deriving Functor
 ```
 
+:::Warning
+(This is the `Haxl`{.haskell} from the paper, much simplified from the concurrent implementation in the library.)
+:::
+
 It is such a common pattern, great for static analysis.
+Letʼs abstract it a bit more:
 
 ```haskell
 data RequestRespond w r m a = RR w (r -> m a)
 instance (Monoid w, Applicative m) => Applicative (RequestRespond w r m)
 
--- The same data type as a free monad
+-- This is the same carrier type as a free monad, but with different semantics!
 data Stages f a = Present a | Future (f (Stages f a))
 
 instance Applicative f => Selective (Stages f) where
@@ -345,130 +394,406 @@ For my [staged, token-gathering parse machine](https://gist.github.com/MonoidMus
 Incidentally that parser type is already a monad, but it is a similar idea to what dedicated selective applicatives might want to do.
 
 
+## Monoids for Static Analysis
 
-## Monoids
+This is its own article, (Monoids for Static Analysis)[monoids_static_analsis.html], addressing the non-functor part of the picture.
 
-Before we dive into monoids for static analysis (that is, the non-functor part of the picture), I want to emphasize that the strength of selective applicative functors/arrows is that not only do you get static analysis for a computation overall, but because it can be interleaved with the functor/arrow structure, it lets you refine that static analysis *as the computation runs*.
+The monoids for static analysis are important not just for static analysis, either ahead of time or interleaved with execution.
+But their structure also reveals possibilities for the functors, patterns of code and control flow.
 
-For example, for the `Haxl`{.haskell} functor, the computation of the set of blocking requests is interleaved with actually running those requests, so when a particular branch is selected based on known information, it actually knows what requests to use.
 
-Weʼll make our own typeclass for static analysis, since it doesnʼt quite fit into existing typeclasses, and it is much nicer to compose analyses as types than as functors.
+## Syntax
 
-```haskell
-class StaticAnalysis m where
-  analyzeSequence :: [m] -> m
-  analyzeBranches :: [m] -> m
+Letʼs think about syntax for selective applicative computations.
 
--- | Product of analyses
-instance (StaticAnalysis m, StaticAnalysis w) => StaticAnalysis (m, w)
+### Parsers
 
--- | A constant functor, for `Casing`
-newtype AnalyzeBy m t = Analysis m
+I think the most compelling is for parsers.
+Not parser combinators, but parser grammars – Yacc-, Bison-, [Happy](https://haskell-happy.readthedocs.io/en/latest/introduction.html)-, [Menhir](https://cambium.inria.fr/~fpottier/menhir/)-style parsers.
 
-instance StaticAnalysis m => Casing (AnalyzeBy m) where ...
+Basically these parsers annotate a BNF grammar so each nonterminal comes with a type, and each production has a value in the host language.
 
--- | Or we can bolt it onto an existing `Casing` functor
--- | (this is isomorphic to `ProductF (AnalyzeBy m)`).
-newtype WithAnalysis m f t = WithAnalysis m (f t)
+For example, we can recognize a digit and return its value in the host language.
+Then we can stitch those digits together to parse a decimal natural number.
+This is an applicative-style parser.
 
-instance (StaticAnalysis m, Casing f) => Casing (AnalyzeBy m) where ...
+```parser
+digit :: Parser Natural
+digit ::=
+  | "0" { 0 }
+  | "1" { 1 }
+  | "2" { 2 }
+  | "3" { 3 }
+  | "4" { 4 }
+  | "5" { 5 }
+  | "6" { 6 }
+  | "7" { 7 }
+  | "8" { 8 }
+  | "9" { 9 }
+
+natural :: Parser Natural
+natural ::=
+  | d <- digit
+    { d }
+  | v <- natural; d <- digit
+    { 10*v + d }
 ```
 
-You *can* do static analysis with any old monoid, having the sequencing and branching structures be the same – that is what the paucity of laws for “raw control flow” allows.
-But letʼs talk about more interesting, better-behaved analyses.
+In PureScript `ado`{.purescript} notation, this translates to the following:
 
-One of the best ways to tabulate information is with sets.
-For Haxl, this would be the set of dependencies to fetch.
-Another example would be the set of nonterminals used in a parser combinator expression.
+```purescript
+digit :: Parser Natural
+digit = empty
+  <|> 0 <$ match "0"
+  <|> 1 <$ match "1"
+  <|> 2 <$ match "2"
+  <|> 3 <$ match "3"
+  <|> 4 <$ match "4"
+  <|> 5 <$ match "5"
+  <|> 6 <$ match "6"
+  <|> 7 <$ match "7"
+  <|> 8 <$ match "8"
+  <|> 9 <$ match "9"
 
-We can use sets in two ways: as a lattice, where sequencing is union and branching is intersection, or as a semilattice, where both operations are union.
-
-For `UnderSet s`{.haskell}, we need a constructor for the empty intersection \(x \cap \top = x\), which will function as an absorptive element \(\top \cup x = \top\) to follow the near-semiring law `0 * x = 0`{.haskell}.^[Technically we could use `BoundedEnum s`{.haskell}, but that is less efficient.]
-
-However the lattice structure isnʼt quite right: the commutativity of the lattice would force `x * 0 = 0`{.haskell}, or \(x \cup \top = \top\), but we do not want to discard requirements *before* absurdity, only after absurdity.
-So we use a non-commutative multiplication where `x * 0 = x`{.haskell} instead.
-However, *this* is in conflict with the multiplicative identity `y = 1 * y`{.haskell}, since ` 0 = 1 * 0 = 1`{.haskell} then.
-So we need a new multiplicative identity, to denote totally pure computations (directly lifted from functions), as opposed to computations with no dependencies (but possibly other effects).
-
-At this point we might as well pull the identities out into their own structure, which will normalize the control flow before it reaches two semigroups for sequencing and branching.
-However there is one last choice that the implementation cannot make, which is what happens when one or more branches of control flow are pure.
-For `OverSet`{.haskell}, `withPureBranch`{.haskell} is just the identity function, but for `UnderSet`{.haskell}, it needs to produce `Set.empty`{.haskell} to indicate a computation with no requirements (no guaranteed dependencies) but that may be impure nontheless.
-
-```haskell
-class StaticAnalysis1 m where
-  analyzeSequence1 :: NonEmpty m -> m
-  analyzeBranches1 :: NonEmpty m -> m
-  -- Should be idempotent and commute with `analyzeBranches1`
-  withPureBranch :: m -> m
-
-data MaybeAnalysis m
-  = SomeAnalysis m
-  | PureAnalysis
-  | AbsurdAnalysis
-
-instance StaticAnalysis1 m => StaticAnalysis (MaybeAnalysis m) where
-  analyzeSequence =
-    -- Absurd computations also cancel everything beyond them
-    takeWhile notAbsurd >>>
-    -- Pure computations do not matter; extract the wrapped analysis
-    mapMaybe nonPure >>>
-    \case
-      -- It ended up being wholly pure
-      [] -> PureAnalysis
-      -- Defer to the wrapped analysis
-      (a : as) -> SomeAnalysis (analyzeSequence1 (a :| as))
-    where
-    notAbsurd AbsurdAnalysis = False
-    notAbsurd _ = True
-
-    nonPure (SomeAnalysis m) = Just m
-    nonPure _ = Nothing
-
-  analyzeBranches =
-    -- We need to know if we have at least one pure branch
-    partition notPure >>>
-    -- But we can filter out all of the absurd branches
-    lmap (mapMaybe nonAbsurd) >>>
-    \case
-      -- No non-absurd branches at all
-      -- 0 + 0 = 0
-      ([], []) -> AbsurdAnalysis
-      -- Only pure and absurd branches
-      -- 1 + 0 = 1 + 1 = 0 + 1 = 1
-      ([], _) -> PureAnalysis
-      (a : as, []) -> SomeAnalysis (analyzeBranches1 (a :| as))
-      -- At least one pure branch
-      -- 1 + x + 1 = 1 + x
-      (a : as, _) -> SomeAnalysis (withPureBranch (analyzeBranches1 (a :| as)))
-    where
-    notPure PureAnalysis = False
-    notPure _ = True
-
-    nonAbsurd (SomeAnalysis m) = Just m
-    nonAbsurd _ = Nothing
-
-unMaybeAnalysis :: forall m. StaticAnalysis m => MaybeAnalysis m -> m
-unMaybeAnalysis (SomeAnalysis m) = m
-unMaybeAnalysis PureAnalysis = analyzeSequence []
-unMaybeAnalysis AbsurdAnalysis = analyzeBranches []
+natural :: Parser Natural
+natural = rec \natural ->
+  let
+    singleDigit = ado
+      d <- digit
+      in d
+    moreDigits = ado
+      v <- natural
+      d <- digit
+      in 10*v + d
+  in singleDigit <|> moreDigits
+-- desugars to
+natural = rec \natural ->
+  let
+    singleDigit = (\d -> d) <$> digit
+    moreDigits =
+      pure (\v d -> 10*v + d)
+      <*> natural
+      <*> digit
+  in singleDigit <|> moreDigits
 ```
 
-Now we can get to the sets.
+What does selective control flow add?
+Pattern matching, including guards!
+This is related to the fact that selective control flow relates to selective rejection in parsers.
 
-```haskell
--- | For under-approximation of requirements,
--- | sequencing is union and branching is intersection.
-newtype UnderSet s = UnderSet (Set s)
+```parser
+prime :: Parser Natural
+prime ::=
+  | v <- natural
+    -- Reject any `v` that is not prime
+    { True <- isPrime v }
+    { v }
 
-instance Ord s => StaticAnalysis1 (UnderSet s) where
-  analyzeSequence1 = coerce Set.unions
-  analyzeBranches1 = coerce Set.intersections
+-- Assume this is a full string parser
+-- that handle escaping and stuff
+-- (heck, it could even evaluate
+-- contexprs or such)
+string :: Parser String
 
--- | Sequencing and branching are both union, for
--- | over-approximation/tallying what occurs.
-newtype OverSet s = OverSet (Set s)
+data Prefixed
+  = Digit Natural
+  | Natural Natural
+  | Prime Natural
 
-instance Ord s => StaticAnalysis (OverSet s) where
-  analyzeSequence = coerce Set.unions
-  analyzeBranches = coerce Set.unions
+prefixed :: Parser Prefixed
+prefixed ::=
+  | "digit" <- string; ":";
+    d <- digit
+    { Digit d }
+  | "natural" <- string; ":";
+    v <- natural
+    { Natural v }
+  | "prime" <- string; ":";
+    p <- prime
+    { Prime p }
+  -- any other value is a soft parse error
+  -- as it could be handled elsewhere
 ```
+
+```purescript
+prime :: Parser Natural
+prime = filter (\v -> isPrime v) natural
+
+string :: Parser String
+
+data Prefixed
+  = Digit Natural
+  | Natural Natural
+  | Prime Natural
+
+prefixed :: Parser Prefixed
+prefixed =
+  let
+    parsePrefix :: Parser (Branches3 String String String)
+    parsePrefix =
+      -- discard matches that are not in one of the
+      -- three branches
+      filterMap identity ado
+        s <- string
+        in case s of
+          "digit" -> Just (Branch1of3 s)
+          "natural" -> Just (Branch2of3 s)
+          "prime" -> Just (Branch3of3 s)
+          _ -> Nothing
+  in branch3 (parsePrefix <* match ":")
+    (Digit <$> digit)
+    (Natural <$> natural)
+    (Prime <$> prime)
+```
+
+Detecting the pattern matching on `string` in the combinator enables turning it into a selective case branch.
+Using the result of the `string` parser to directly inform which branch to take up front, instead of trying them one by one and backtracking.
+(For this example it does not make much difference, of course.)
+
+For length-prefixed data it is a little more complicated.
+We could use a `while`{.parser} loop to encode it.
+
+```parser
+numbers :: Parser (Array Natural)
+numbers ::=
+  length <- natural; ":";
+  n := { 0 };
+  items := { [] };
+  while { n < length }:
+    item <- natural
+    n := { n + 1 }
+    items := { [...items, item] }
+  end;
+  { items }
+```
+```purescript
+type LoopState =
+  { length :: Natural
+  , n :: Natural
+  , items :: Array Natural
+  }
+
+numbers :: Parser (Array Natural)
+numbers =
+  let
+    init :: Parser LoopState
+    init :: ado
+      length <- natural
+      match ":"
+      in { length, n: 0, items: [] }
+    whichBranch :: LoopState -> Either (Array Natural) LoopState
+    whichBranch state@{ n, length }
+      | n < length = Right state
+      | otherwise = Left state.items
+    parseMore :: Parser (LoopState -> LoopState)
+    parseMore = ado
+      item <- natural
+      in \state@{ n, items } ->
+        -- Update the state
+        state { n = n + 1, items = Array.snoc items item }
+  in doWhileF init
+    (ControlFlow whichBranch (Action parseMore) (Pure identity))
+```
+
+Or we could be a little more cheeky and do it as a traversal.
+(This is probably the better choice.)
+
+```parser
+numbers :: Parser (Array Natural)
+numbers ::=
+  length <- natural; ":";
+  items <- for _ of { replicate length () }:
+    item <- natural
+    { item }
+  end;
+  { items }
+```
+```purescript
+numbers :: Parser (Array Natural)
+numbers =
+  traverseF
+    ado
+      length <- natural
+      match ":"
+      in replicate length unit
+    natural
+```
+
+Both of these will parse lists like `3: 0 1 2`, `7: 9 23 43 1 52 44 95`, `1: 1`.
+Maybe you want to guard it to be nonzero, use `0;` for the empty list:
+
+```parser
+numbers :: Parser (Array Natural)
+numbers ::=
+  | 0 <- natural; ";" { [] }
+  | length <- natural; ":";
+    -- Still need to guard that length is nonzero here
+    { True <- length > 0 };
+    items <- for _ of { replicate length () }:
+      item <- natural
+      { item }
+    end;
+    { items }
+```
+
+
+
+```xml {.skylighting}
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ```{.xml .skylighting}``` -->
+<!-- https://docs.kde.org/stable5/en/kate/katepart/highlight.html -->
+<language name="parser" casesensitive="1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="language.xsd">
+  <highlighting>
+    <contexts>
+      <context name="Root" attribute="Normal Text" lineEndContext="#stay">
+        <RegExpr attribute="Keyword" context="#stay" String="data|while|end|for|of|%[-a-zA-Z_][-a-zA-Z0-9_]*"/>
+        <RegExpr attribute="Variable" context="#stay" String="\$[-a-zA-Z_][-a-zA-Z0-9_]*"/>
+        <RegExpr attribute="Annotation" context="#stay" String="@[-a-zA-Z_][-a-zA-Z0-9_]*:?"/>
+        <RegExpr attribute="Keyword" context="#stay" String="\s:\s|-&gt;|Π|Σ"/>
+        <RegExpr attribute="Meta" context="#stay" String="…|&lt;[^][(){}&lt;&gt;]+&gt;"/>
+        <IncludeRules context="FindOperators"/>
+        <IncludeRules context="FindComments"/>
+        <IncludeRules context="FindStrings"/>
+        <RegExpr attribute="Data Type" context="#stay" String="[A-Z][-a-zA-Z0-9_]*"/>
+      </context>
+
+      <context name="FindOperators" attribute="Normal Text" lineEndContext="#stay">
+        <RegExpr attribute="Operator" context="#stay" String="::|::=|&lt;-|;|\||="/>
+      </context>
+
+      <context name="FindComments" attribute="Comment">
+        <StringDetect attribute="Comment" context="LineComment" String="--"/>
+      </context>
+
+      <context name="LineComment" attribute="Comment" lineEndContext="#pop">
+      </context>
+      <context name="BlockComment" attribute="Comment" lineEndContext="#stay">
+        <StringDetect attribute="Comment" context="BlockComment" String="{#"/>
+        <StringDetect attribute="Comment" context="ParenComment" String="(#"/>
+        <StringDetect attribute="Comment" context="#pop" String="#}"/>
+      </context>
+      <context name="ParenComment" attribute="Comment" lineEndContext="#stay">
+        <StringDetect attribute="Comment" context="BlockComment" String="{#"/>
+        <StringDetect attribute="Comment" context="ParenComment" String="(#"/>
+        <StringDetect attribute="Comment" context="#pop" String="#)"/>
+      </context>
+
+      <!-- FindStrings looks for single and double quoted strings -->
+      <context name="FindStrings" attribute="Normal Text" lineEndContext="#stay">
+        <DetectChar context="StringSQ" attribute="String SingleQ" char="'"/>
+        <DetectChar context="StringDQ" attribute="String DoubleQ" char="&quot;"/>
+      </context>
+
+      <!-- StringSQ consumes anything till ' -->
+      <context name="StringSQ" attribute="String SingleQ" lineEndContext="#stay">
+        <!--no line continuation here-->
+        <Detect2Chars attribute="Escape" char="\" char1="'"/>
+        <Detect2Chars attribute="Escape" char="\" char1="\"/>
+        <DetectChar attribute="String SingleQ" context="#pop" char="'"/>
+      </context>
+
+      <!-- StringDQ consumes anything till ", substitutes vars and expressions -->
+      <context name="StringDQ" attribute="String DoubleQ" lineEndContext="#stay">
+        <LineContinue attribute="Escape"/>
+        <Detect2Chars attribute="Escape" char="\" char1="&quot;"/>
+        <Detect2Chars attribute="Escape" char="\" char1="$"/>
+        <Detect2Chars attribute="Escape" char="\" char1="\"/>
+        <DetectChar attribute="String DoubleQ" context="#pop" char="&quot;"/>
+      </context>
+    </contexts>
+
+    <itemDatas>
+      <itemData name="Normal Text"    defStyleNum="dsNormal"/>
+      <itemData name="Keychar"        defStyleNum="dsSpecialChar"/>
+      <itemData name="Variable"       defStyleNum="dsVariable"/>
+      <itemData name="Operator"       defStyleNum="dsOperator"/>
+      <itemData name="Builtin"        defStyleNum="dsBuiltIn"/>
+      <itemData name="Index"          defStyleNum="dsAttribute"/>
+      <itemData name="Import"         defStyleNum="dsImport"/>
+      <itemData name="Function"       defStyleNum="dsFunction"/>
+      <itemData name="Data Type"      defStyleNum="dsDataType"/>
+      <itemData name="Keyword"        defStyleNum="dsKeyword"/>
+      <itemData name="Annotation"     defStyleNum="dsAnnotation"/>
+
+      <itemData name="String SingleQ" defStyleNum="dsString"/>
+      <itemData name="String DoubleQ" defStyleNum="dsString"/>
+      <itemData name="Escape"         defStyleNum="dsSpecialChar"/>
+      <itemData name="Meta"           defStyleNum="dsPreprocessor"/>
+
+      <itemData name="Regular Expression" defStyleNum="dsSpecialString" spellChecking="false"/>
+
+      <itemData name="Comment"        defStyleNum="dsComment"/>
+
+      <itemData name="Error"          defStyleNum="dsError"/>
+    </itemDatas>
+  </highlighting>
+</language>
+
+```
+
+
+### Haskelllikes
+
+For functional programming languages, we donʼt have the phasing distinction of parse grammars versus host language.
+Instead, the staging is represented by scoping, like for `ado`{.purescript} syntax in PureScript.
+
+```purescript
+prefixed = ado
+  s <- string
+  case s of
+    "digit" -> ado
+      d <- digit
+      in Digit d
+    "natural" -> ado
+      v <- natural
+      in Natural v
+    "prime" -> ado
+      p <- prime
+      in Prime p
+```
+
+`case ... of ... -> ado ... in ...`{.purescript}
+
+Variables are bound on the left side of `<-`{.purescript} (in `ado`{.purescript}) and the left side of `->`{.purescript} (in `case`{.purescript}) as well.
+Actions are on the right side of `<-`{.purescript}.
+
+The `ado`{.purescript} in the `case`{.purescript} statement(!) (not an expression) is just a syntactic reminder that it is still in a case combinators.
+
+Already-bound variables are available in certain syntactic positions:
+- the final `in`{.purescript}, which defines the return value, just like plain `ado`{.purescript} syyntax
+- the scrutinee of the `case`{.purescript} statement (the expression whose value is inspected in the case branch matches)
+- `let`{.purescript} statements in an `ado`{.purescript} block
+- conditional guards in pattern matches, for selective rejection
+
+Note that desugaring this is far from easy.
+The compiler essentially needs to commit to an evaluation scheme for the pattern matches and encode it in the combinators.
+
+### tmTTmt
+
+That syntax is … alright.
+It could work.
+
+But I prefer the much different syntax I use in [tmTTmt](tmttmt_syntax.html).
+It is losely inspired by horizontal bar notation.
+
+Aside from the output `output`{.tmTTmt} being declared at the top(!) of the function,
+the statement syntax follows the flow of the data better.^[Yes, it gets the value of `output`{.tmTTmt} from whichever branch was run: that variable leaks back into the outer scope.]
+
+```tmTTmt
+prefixed => output:
+  string => {{
+  | "digit":
+    digit => d
+    ["Digit" d] => output
+  | "natural":
+    natural => v
+    ["Natural" v] => output
+  | "prime":
+    natural => p
+    isPrime p =>? "True"
+    ["Prime" p] => output
+  }}
+```
+
+Now, this is not explicit like `ado`{.purescript}.
+But like Haskell `do`{.purescript} notation with the [`ApplicativeDo`](https://ghc.gitlab.haskell.org/ghc/doc/users_guide/exts/applicative_do.html) extension, it is possible to detect scoping to compile to the more restrictive Applicative (and Selective) combinators when possible.
