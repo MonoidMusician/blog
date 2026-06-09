@@ -259,6 +259,7 @@ abbreviations = Map.fromFoldable
   , "FRP" /\ Acronym "Functional Reactive Programming"
   , "FP" /\ Acronym "Functional Programming"
   , "OOP" /\ Acronym "Object-Oriented Programming"
+  , "OS" /\ Acronym "Operating System"
   , "LR(1)" /\ Jargon "LtR, Rightmost Deriv., lookahead 1 token" FormatParen "Automaton parser to handle left-recursion"
   , "DOM" /\ Jargon "Document Object Model" FormatComma "represents HTML at runtime"
   , "VDOM" /\ Jargon "Virtual DOM" FormatComma "abstract DOM to render to real DOM"

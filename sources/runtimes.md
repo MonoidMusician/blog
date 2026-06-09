@@ -1,4 +1,26 @@
-Every^[citation needed] language is Turing-complete, but this is a list of the things you can do that arenʼt about computing numbers or reading and writing bytes: the capabilities of different runtime systems for languages.
+What is a runtime?
+
+For a lot of programming needs, data/objects in a programming language can be treated as mathematical objects.
+What distinguishes mathematical/logical objects is that they are deterministic^[Arguably [choice operators](https://en.wikipedia.org/wiki/Choice_function) are a source of nondeterminism in mathematical logic, but it is different than programming languages.], immutable, eternal, time-invariant: they exist without reference to time, without referential identity, without reference to anything but their logical relationships to each other.
+They just exist (in theory) and they will never change – which means you do not need to keep track of time, sequencing, concurrency, any of those things.
+
+Not all _programming_ objects will behave like this, but it is a useful perspective to take.
+It is the functional programming perspective.
+
+A runtime, then, is what you add to this conception to produce a runnable, usable, interactive, rich programming language.
+
+A runtime is responsible for implementing programming language semantics (whether they are specified elsewhere or just by implementation and convention), for managing memory (through a garbage collector ([GC]{t=}) or reference counting or some combination).
+
+A runtime also includes:
+
+- external APIs you can hook into (often communicating with the [OS]{t=} or with other runtimes or programs on the same runtime)
+- observable details like referential identity and exceptions that do not correspond to pure functions and may not even be guaranteed
+- concurrency, be it a single-threaded event loop or access to processor-level multithreading (usually mediated by the [OS]{t=})
+- performance guarantees and oddities^[Everyone complains about laziness in Haskell being tricky to reason about, but I think this is true about runtime performance of all runtimes: Erlang has its own details that you have to get to know when you run into issues or need greater performance. Programming languages are complex and none are free from surprises and deep dark lore.]
+
+These are the interesting bits!
+
+Every^[citation needed] language is Turing-complete, but this is a list of the things you can do that arenʼt about computing numbers or reading and writing bytes: the capabilities of different runtime systems for different languages.
 
 ## Runtimes
 
@@ -12,6 +34,7 @@ Every^[citation needed] language is Turing-complete, but this is a list of the t
   - Not all builtin modules are supported, though: https://github.com/nodejs/node/blob/main/lib/internal/main/mksnapshot.js
 - Different execution contexts: main browser context, main Node.js context, worker threads (web workers, service workers, audio worklets, [etc.]{t=}), startup snapshot, ...
 - [`WeakMap`{.js}](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakMap), [`WeakSet`{.js}](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakSet), [`FinalizationRegistry`{.js}](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/FinalizationRegistry): https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Memory_management#data_structures_aiding_memory_management
+- [WASM]{t=}, a low-level runtime integrated into the high-level JavaScript runtime!
 
 ### Haskell GHC
 
@@ -22,7 +45,7 @@ Every^[citation needed] language is Turing-complete, but this is a list of the t
 - Weak Refs
 - Mutability vs immutability is also integrated into the GC
 - Stable pointers, static pointers, pinned memory, [etc.]{t=}
-- [STM](https://hackage.haskell.org/package/stm), [`MVar`](https://hackage.haskell.org/package/base-4.21.0.0/docs/Control-Concurrent-MVar.html), `ST`
+- [Software Transactional Memory (STM)](https://hackage.haskell.org/package/stm) for concurrency, [`MVar`](https://hackage.haskell.org/package/base-4.21.0.0/docs/Control-Concurrent-MVar.html), `ST`
 - SIMD (now available without LLVM codegen)
 
 ### Erlang BEAM/OTP

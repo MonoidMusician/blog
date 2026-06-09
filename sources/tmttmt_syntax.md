@@ -298,14 +298,15 @@ any_balanced_syntax (< any_balanced_comment) =
 ## Examples
 
 ```tmttmt
-## unifying variable
+{# unifying variable #}
 normalize: ["if" cond "then" result "else" result] => result;
-## desugars to:
+{# desugars to: #}
 normalize: ["if" cond "then" result#1 "else" result#2] => result#0:
   ?eq result#1 result#2 => result#0
-  ## ^ this question mark means that `eq` itself can fail
+  (# ^ this question mark means that `eq` itself can fail
   ## but it only falls through to the next case of `normalize`,
   ## it does not fail the whole function
+  #)
 
 build-options:: { X=Boolean Y=("built-in" | ["provided" $$]) args=*$ } -> *$
 build-options: { X=X Y=Y args=args } => options##:
@@ -370,32 +371,33 @@ build-options-with-monad: { X=X Y=Y args=args } => options:
 
 
 ```tmTTmt
-## First we try it cached
+{# First we try it cached #}
 compileFile: [source target] => cachedResult:
-  ## Make sure the output exists
+  {# Make sure the output exists #}
   exists target =>? "True"
-  ## Get the cached result, if it exists
+  {# Get the cached result, if it exists #}
   ? getCachedFor target => cached
-  ## Extract the timestamp and hash
+  {# Extract the timestamp and hash #}
   cached => { timestamp hash result=cachedResult }
   getTimestamp source =>? {{
-  ## If it matches exactly, great
+  {# If it matches exactly, great #}
   | timestamp;
-  ## Otherwise we check the hash
+  {# Otherwise we check the hash #}
   | _:
-    ## Again, require it to match
+    {# Again, require it to match
     ## (nonlinear pattern match)
+    #}
     hashFile source => hash
   }}
   ## ^ if any question mark fails, it falls through to the next block:
-## Otherwise we need to actually compile it from scratch
+{# Otherwise we need to actually compile it from scratch #}
 compileFile: [source target] => freshResult:
   readFile source => { contents hash timestamp }
   parse contents => syntax
   compile syntax => freshResult
-  ## Make the output available
+  {# Make the output available #}
   writeOutput target freshResult => []
-  ## And write the cache
+  {# And write the cache #}
   writeCachedFor target
     { timestamp hash result=freshResult }
   => []

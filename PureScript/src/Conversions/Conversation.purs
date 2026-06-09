@@ -21,11 +21,24 @@ import Effect.Aff (Aff)
 import Effect.Aff as Aff
 import Parser.Comb.Comber (choices)
 
+-- The basic idea of this language is that it is a little like `jq`, but it
+-- supports pattern matching in addition. Namely, like `jq`, every expression is
+-- a function that takes the current focus (JSON value that is being inspected).
+-- But it also supports pattern matching on JSON structure and even writing
+-- parser combinators that manipulate output by matching on strings too.
+-- And it supports HTML and maybe other output formats too.
+--
+-- So while `{ … }` and `[ … ]` and `"…"` still construct output structure,
+-- their converses `{| … |}`, `[| … |]`, and `` `…` `` construct input matchers.
+-- Importantly, string input matches (with backticks) are constructed as parsers
+-- which means that they intelligently distribute their input, the dual of how
+-- outputs concatenate between expressions.
+
 -- X Y :: BinOp (i -> Monoid)
 -- X / Y :: BinOp (i -> Maybe o)
 -- "a${b}c${d}e" :: String -> o -| b, d :: String -> o
 -- json: :: String -> Maybe Json
--- num: :: (String, Json) -> Maybe Number
+-- num: :: (String | Json) -> Maybe Number
 -- .key :: Json -> Maybe Json
 -- .[dynkey] :: Json -> Maybe Json -| dynkey :: Scalar
 -- `x${y}z${u}v` :: i -> String -| y, u :: i -> String
@@ -54,7 +67,7 @@ JSON:
     --   `:string` is an assertion
     --   `:text` will render JSON, etc.
 
-    -- Store
+    -- Store globally/mutably (not lexically scoped)
     let @["recipe", .uid] := .name;
 
     -- This line only is used if both are present

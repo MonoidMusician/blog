@@ -491,10 +491,10 @@ sourceCST :: forall r tok. CST r tok -> Array tok
 sourceCST (Leaf tok) = pure tok
 sourceCST (Branch _ children) = children >>= sourceCST
 
-data ICST air r tok
+data ICST air rule tok
   = ILeaf tok
   | IAir air
-  | IBranch r (Array (ICST air r tok))
+  | IBranch rule (Array (ICST air rule tok))
 derive instance eqICST :: (Eq air, Eq r, Eq tok) => Eq (ICST air r tok)
 derive instance functorICST :: Functor (ICST air r)
 derive instance bifunctorICST :: Bifunctor (ICST air)

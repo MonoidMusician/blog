@@ -396,7 +396,7 @@ Incidentally that parser type is already a monad, but it is a similar idea to wh
 
 ## Monoids for Static Analysis
 
-This is its own article, (Monoids for Static Analysis)[monoids_static_analsis.html], addressing the non-functor part of the picture.
+This is its own article, [Monoids for Static Analysis](monoids_static_analysis.html), addressing the non-functor part of the picture.
 
 The monoids for static analysis are important not just for static analysis, either ahead of time or interleaved with execution.
 But their structure also reveals possibilities for the functors, patterns of code and control flow.
