@@ -1,4 +1,7 @@
-{-# LANGUAGE DeriveAnyClass, DerivingStrategies, DerivingVia, OverloadedStrings, DefaultSignatures #-}
+{-# LANGUAGE DeriveAnyClass, DerivingVia, OverloadedStrings, DefaultSignatures, ImpredicativeTypes #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
+{- HLINT ignore "Redundant bracket" -}
+{- HLINT ignore "Replace case with maybe" -}
 {- HLINT ignore "Avoid lambda using `infix`" -}
 {- HLINT ignore "Use record patterns" -}
 {- HLINT ignore "Use const" -}
@@ -18,14 +21,14 @@ import GHC.Generics (Generic)
 import qualified Data.Text as T
 import Control.Monad.Reader.Class (MonadReader(ask, local))
 import Witherable (Filterable(mapMaybe, filter))
-import Control.Monad (when, unless, void, join, zipWithM_)
+import Control.Monad (when, unless, void, join, zipWithM_, (<=<))
 import qualified Data.Typeable as Typeable
-import Control.Monad.RWS.CPS (RWST, MonadState (state), MonadWriter (tell, listen, pass), modify', censor, gets, runRWST, MonadTrans (lift))
+import Control.Monad.RWS.CPS (RWST, MonadState (state), MonadWriter (tell, listen, pass), modify', censor, gets, runRWST, MonadTrans (lift), MonadIO ())
 import Data.Functor ((<&>))
 import qualified Data.Text.Internal.StrictBuilder as Builder
 import Data.Foldable (traverse_, for_, Foldable (toList), foldrM, fold, foldMap, asum)
 import qualified Data.ByteString.Builder as ByteString.Builder
-import GHC.Base (Semigroup(sconcat), NonEmpty((:|)), coerce, Coercible, Alternative (many), (<|>), empty, Type, Void)
+import GHC.Base (Semigroup(sconcat), NonEmpty((:|)), coerce, Coercible, Alternative (many), (<|>), empty, Type)
 import Data.Foldable1 (Foldable1 (foldMap1))
 import Data.String (IsString (fromString))
 import Data.Function (on, (&))
@@ -54,7 +57,11 @@ import System.Exit (ExitCode(ExitSuccess))
 import qualified Debug.Trace as Dbg
 import qualified Data.ByteString as ByteString
 import qualified Data.ByteString.UTF8 as ByteString.UTF8
-import GHC.Compact (compact)
+import Data.Either (fromRight)
+import Data.Functor.Identity (Identity (runIdentity))
+import Control.Monad.State.Strict (evalState)
+import qualified Data.List.NonEmpty as NEL
+import GHC.Stack (HasCallStack)
 
 execWASM :: Text -> IO Text
 execWASM fullModule = do
@@ -80,6 +87,25 @@ showT t = mkShowFun case t of
   vvalue = EVar t "value"
   byCases = ECase t vvalue STxt . (, fallback) . Map.fromList
   fallback = ETxt $ "<" <> T.show t <> ">"
+
+newtype CShow = CShow STyp
+  deriving stock (Eq, Ord, Generic, Show)
+  deriving anyclass (NFData)
+
+instance ToWASM CShow
+instance ToExpr CShow where
+  toExpr (CShow t) = mkShowFun case t of
+    S TBool -> byCases
+      [ ("True", (Map.empty, ETxt "True"))
+      , ("False", (Map.empty, ETxt "False"))
+      ]
+    S TTxt -> vvalue
+    _ -> fallback
+    where
+    mkShowFun = EFun (SFun [t] STxt) [Bind "value"]
+    vvalue = EVar t "value"
+    byCases = ECase t vvalue STxt . (, fallback) . Map.fromList
+    fallback = ETxt $ "<" <> T.show t <> ">"
 
 main :: IO ()
 main = do
@@ -169,10 +195,6 @@ main = do
     dropExpr $ EApp stdprint [ETxt "test me hellow wowlrd\n"]
     pure ()
   -- T.putStrLn fullModule
-  !thingy <- compact $
-    SU32
-    -- EVar SU32 "idx"
-    -- EApp stdprint [EIndex mempty (EArray texts $ ETxt . (<> "\n") <$> T.words "test me hellow wowlrd") (EVar SU32 "idx")]
   T.writeFile "/tmp/test.wat" fullModule
   T.putStrLn =<< execWASM fullModule
   T.putStrLn =<< execWASM =<< genWAT do
@@ -184,6 +206,21 @@ main = do
     genExpr showBool
     genExpr stdprintln
     tell "drop"
+  let
+    recTest = do
+      let below = Just (RRef "list")
+      _ <- genTypeGroup $ Map.fromList
+        [ ("list", plainTyp $ WS [])
+        , ("nil", SubTyp False below $ WS [])
+        , ("cons", SubTyp False below $ WS [Mut WI64, Mut $ WR Nul $ HRTyp $ RRef "list"])
+        ]
+      _ <- regCTyp (Just "closure") baseClosureC
+      _ <- genWTyp $ wtyp $ TClo
+        (Just (HCTyp (WS [Mut WI64])))
+        (Just (HCTyp (WF [WI64] [WI64])))
+      pure ()
+  T.putStrLn =<< genWAT recTest
+  -- T.putStrLn =<< execWASM =<< genWAT recTest
   pure ()
 
 genExpr :: Expr -> WASM
@@ -198,22 +235,22 @@ genExpr = \case
     ty <- genType (Just "Text") (STyp TTxt)
     let bin = ByteString.UTF8.fromString (T.unpack v)
     let n = ByteString.length bin
-    i <- gets (Map.lookup bin . binlits) >>= \case
-      Nothing -> do
+    i <- fastSlow
+      do gets (Map.lookup bin . binlits)
+      do
         (i, segment) <- gets rodata
         modify' \modul -> modul
           { rodata = (i + n, segment <> ByteString.Builder.byteString bin)
           , binlits = Map.insert bin i (binlits modul)
           }
         pure i
-      Just i -> pure i
     sexp "array.new_data" [ ty, "$.rodata", genConst (I i :: Word32), genConst (I n :: Word32) ]
   EError _ _ msg -> tell $ "unreachable" <> COMMENT msg
 
   ELet binds e -> foldr doBind (genExpr e) binds
   EVar _ name -> do
     lexScope <- ask <&> lexical
-    sexp "local.get" [ lexScope Map.! name ## coerce name ]
+    sexp "local.get" [ lexScope ! name ## coerce name ]
 
   EFun t binds body -> do
     (inputs, output) <- case t of
@@ -226,7 +263,7 @@ genExpr = \case
     genExpr fun
 
   ECons t name fields -> do
-    (mkconstr t Map.! name) ((,) <*> genExpr <$> Map.fromList fields)
+    (mkconstr t ! name) ((,) <*> genExpr <$> Map.fromList fields)
   ECase t scrutinee o (cases, fallback) -> do
     genExpr scrutinee
     desc <- case isDataType t of
@@ -251,11 +288,11 @@ genExpr = \case
   bindCase :: TDat -> Name -> (Map Name Bind, Expr) -> Map Name WASM -> WASM
   bindCase (TDat desc) caseName (requested, body) available = do
     let
-      fieldTypes = Map.fromList $ desc Map.! caseName :: Map Name STyp
+      fieldTypes = Map.fromList $ desc ! caseName :: Map Name STyp
       bindField (_, Discard) inner = inner
       bindField (fieldName, Bind name) inner = do
-        withLexVar (Just name) (fieldTypes Map.! fieldName) \(_, vbound) -> do
-          available Map.! fieldName
+        withLexVar (Just name) (fieldTypes ! fieldName) \(_, vbound) -> do
+          available ! fieldName
           sexp "local.set" [ vbound ## coerce name ]
           inner
     foldr bindField (genExpr body) (Map.toList requested)
@@ -269,6 +306,11 @@ ff <@> a = (\f -> f a) <$> ff
 
 (\|/) :: Alternative f => f a -> f b -> f (Either a b)
 (\|/) = \l r -> Left <$> l <|> Right <$> r
+
+(!) :: Ord k => Map k v -> HasCallStack => k -> v
+kvs ! k = case Map.lookup k kvs of
+  Nothing -> error "Missing key"
+  Just v -> v
 
 listup :: forall k v. Eq k => k -> [(k, v)] -> Maybe v
 listup k = fmap snd . List.find ((== k) . fst)
@@ -579,7 +621,7 @@ gatherBinders f = Map.fromList . mapMaybe (mkBinder . f) . toList
   mkBinder (value, Bind name) = Just (name, value)
   mkBinder _ = Nothing
 
--- An existential that means that synthesizeable types are extendable by the
+-- An existential that means that synthetic types are extendable by the
 -- Haskell library user. `spec` must implement `Typeable` and so on.
 data STyp = forall spec. SynthType spec => STyp !spec
 
@@ -606,16 +648,22 @@ pattern I :: (Integral b, Integral a) => (Integral a) => b -> a
 pattern I i <- (fromIntegral -> i) where
   I i = fromIntegral i
 
--- ADTs as a synthesizable data type
+-- ADTs as a synthetic data type
 newtype TDat = TDat (Map Name [(Name, STyp)])
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
--- Functions as a synthesizable data type
+-- Plain functions as a synthetic data type (not closures)
 data TFun = TFun [STyp] STyp
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
 pattern SFun :: [STyp] -> STyp -> STyp
 pattern SFun is o = S (TFun is o)
+-- Closures
+data TClo = TClo (Maybe HTyp) (Maybe HTyp)
+  deriving stock (Eq, Ord, Generic, Show)
+  deriving anyclass (NFData)
+pattern SClo :: Maybe HTyp -> Maybe HTyp -> STyp
+pattern SClo dat fun = S (TClo dat fun)
 -- Arrays
 newtype TArr = TArr STyp
   deriving stock (Eq, Ord, Generic, Show)
@@ -628,12 +676,18 @@ data TPrm = TPrm Sgn WTyp
   deriving anyclass (NFData)
 pattern SPrm :: Sgn -> WTyp -> STyp
 pattern SPrm sgn typ = S (TPrm sgn typ)
--- Text type
+-- Text type (byte array, UTF-8 assumed)
 data TTxt = TTxt
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
 pattern STxt :: STyp
 pattern STxt = S TTxt
+-- IOList/IOData type (text or array of IOData)
+data TIOL = TIOL
+  deriving stock (Eq, Ord, Generic, Show)
+  deriving anyclass (NFData)
+-- pattern SIOL :: STyp
+-- pattern SIOL = S TIOL
 
 -- WASM reader context
 data WASMR = WASMR
@@ -644,10 +698,12 @@ data WASMR = WASMR
   }
 -- WASM state context
 data WASMS = WASMS
-  { funcs :: GenIdx (Maybe Name) ((([WTyp], [WTyp]), WASMC), WASMC)
+  { funcs :: GenIdx (Maybe Name, WASMC, WASMC) (([WTyp], [WTyp]), SomeWASM)
   -- ^ function bodies generated so far
-  , types :: GenIdx (Maybe Name) WASMC
-  -- ^ types generated so far
+  , types :: GenIdx (Maybe Name, Map Name SubTyp) WASMC
+  -- ^ composite types generated so far (struct, array, func)
+  , typeGroups :: GenIdx (Map Name WASMC) (Map Name SubTyp)
+  -- ^ recursive type groups generated so far, with their internal naming
   , locals :: GenIdx (Maybe Name) ((WTyp, WASMC), Int)
   -- ^ locals by type and de Bruijn level
   , freshBlock :: Int
@@ -669,7 +725,7 @@ data WASMS = WASMS
 type WASMW = WASMC
 -- The WASM monad
 newtype WASMM t = WASM (RWST WASMR WASMW WASMS IO t)
-  deriving newtype (Functor, Applicative, Monad, MonadReader WASMR, MonadState WASMS)
+  deriving newtype (Functor, Applicative, Monad, MonadReader WASMR, MonadState WASMS, MonadIO)
 type WASM = WASMM ()
 type WASMMC = WASMM WASMC
 
@@ -680,7 +736,7 @@ data GenIdx meta val = GenIdx
   ![(val, meta)] -- reverse order
 
 -- Put a new item into the index
-gen :: forall meta val. Ord val => (meta ~ Maybe Name) => GenIdx meta val -> val -> meta -> (GenIdx meta val, Int, meta)
+gen :: forall meta val. Ord val => GenIdx meta val -> val -> meta -> (GenIdx meta val, Int, meta)
 gen g@(GenIdx validx stack) val newMeta =
   case Map.lookup val validx of
     Just (idx, oldMeta) -> (g, idx, oldMeta)
@@ -689,6 +745,90 @@ gen g@(GenIdx validx stack) val newMeta =
         idx = Map.size validx
         g' = GenIdx (Map.insert val (idx, newMeta) validx) ((val, newMeta) : stack)
       in (g', idx, newMeta)
+
+isGenned :: forall meta val. Ord val => GenIdx meta val -> val -> Maybe (Int, meta)
+isGenned (GenIdx validx _) val = Map.lookup val validx
+
+reserve :: forall meta val. Ord val => GenIdx meta val ->
+  val -> meta -> (GenIdx meta val, Int, meta -> GenIdx meta val -> GenIdx meta val)
+reserve g@(GenIdx validx stack) val placeholder =
+  case Map.lookup val validx of
+    Just (idx, _) -> (g, idx, \_ _ -> g)
+    Nothing ->
+      let
+        idx = Map.size validx
+        g' = GenIdx (Map.insert val (idx, placeholder) validx) ((val, placeholder) : stack)
+      in (g', idx, _fulfillAt val idx)
+
+_fulfillAt :: Ord val => val -> Int -> meta -> GenIdx meta val -> GenIdx meta val
+_fulfillAt val idx newMeta (GenIdx validx' stack') =
+  let (l, r) = List.break ((== val) . fst) stack'
+  in GenIdx (Map.insert val (idx, newMeta) validx') (l <> ((val, newMeta) : List.drop 1 r))
+
+reserveNMaybe ::
+  forall m t each ret meta val.
+    Ord val =>
+    Traversable t =>
+    Applicative m =>
+  GenIdx meta val ->
+  t each ->
+  (each -> m (val, Int -> t (val, Int) -> (meta, (meta -> GenIdx meta val -> GenIdx meta val) -> ret))) ->
+  m (GenIdx meta val, t ((val, Int, meta), ret))
+reserveNMaybe (GenIdx validx stack) each fn =
+  traverse fn each <&> \first ->
+    let
+      scanned :: [(val, Maybe Int)]
+      scanned = toList $ first <&> \(val, _) ->
+        (val, fst <$> Map.lookup val validx)
+      extant = Map.fromList $ scanned & mapMaybe
+        \(val, item) -> (val,) <$> item
+      missing = List.nub $ fst <$>
+        filter ((== Nothing) . snd) scanned
+      providing = Map.fromList $ zip missing [0..] <&>
+        \(val, offset) -> (val, Map.size validx + offset)
+      indexes :: Map val Int
+      indexes = Map.union extant providing
+      filled :: t (val, Int)
+      filled = first <&> \(val, _) -> (val, indexes ! val)
+      yay :: t ((val, Int, meta), ret)
+      yay = first <&> \(val, pending) ->
+        let
+          idx = indexes ! val
+          (meta, willFulfill) = pending idx filled
+        in ((val, idx, meta),)
+          if idx < Map.size validx
+            then willFulfill \_ g' -> g'
+            else willFulfill (_fulfillAt val idx)
+      placeholders :: [(val, (Int, meta))]
+      placeholders = toList yay <&>
+        \((val, idx, meta), _) -> (val, (idx, meta))
+      validx' = Map.union (Map.fromList placeholders) validx
+      stack' = reverse (fmap snd <$> placeholders) <> stack
+    in (GenIdx validx' stack', yay)
+
+reserveNForSure ::
+  forall t each collected ret meta val.
+    Ord val =>
+    Traversable t =>
+  GenIdx meta val ->
+  t each ->
+  (t (each, Int) -> collected) ->
+  (each -> Int -> collected -> (val, meta, (meta -> GenIdx meta val -> GenIdx meta val) -> ret)) ->
+  (GenIdx meta val, t ((val, (Int, meta)), ret), collected)
+reserveNForSure (GenIdx validx stack) each collect prelim =
+  let
+    numbered = Map.size validx & evalState do
+      for each \e -> state \c -> ((e, c), c+1)
+    collected = collect numbered
+    adding :: t ((val, (Int, meta)), ret)
+    adding = numbered <&> \(e, idx) ->
+      let (val, meta, willFulfill) = prelim e idx collected
+      in ((val, (idx, meta)), willFulfill (_fulfillAt val idx))
+    placeholders = fst <$> toList adding
+    validx' = Map.union (Map.fromList placeholders) validx
+    stack' = reverse (fmap snd <$> placeholders) <> stack
+  in (GenIdx validx' stack', adding, collected)
+
 
 newGenIdx :: forall meta val. GenIdx meta val
 newGenIdx = GenIdx Map.empty []
@@ -701,11 +841,12 @@ genned (GenIdx _ stack) = List.reverse stack
 -- An AST for WASM code. Well, not really. It is just a slightly abstracted
 -- textual representation
 data WASMC
-  = INSTR Text
-  | SEXP Text [WASMC]
-  | QUAL Text WASMC
-  | CONCAT [WASMC]
-  | PARENS [WASMC]
+  = INSTR !Text
+  | SEXP !Text ![WASMC]
+  | QUAL !Text WASMC
+  | CONCAT ![WASMC]
+  | GROUP ![WASMC]
+  | PARENS ![WASMC]
   | COMMENT Text
   deriving (Generic, NFData)
 instance Semigroup WASMC where
@@ -741,6 +882,9 @@ genWASMC' includeComments = PPT.renderStrict . PP.layoutPretty PP.defaultLayoutO
   go (SEXP c items) = go (PARENS (INSTR c : items))
   go (QUAL c item) = go (SEXP c [item])
   go (CONCAT items) = go =<< items
+  go (GROUP items) = case go =<< items of
+    [] -> mempty
+    components -> [PP.group (PP.sep components)]
   go (PARENS c) = [_c '(' <> PP.nest 2 (PP.sep (inner =<< c)) <> _c ')']
   go (COMMENT content) | includeComments = [_t $ "(; " <> content <> " ;)"]
   go (COMMENT _) = []
@@ -789,17 +933,96 @@ wasmLen idx = INSTR $ T.show idx
 wasmStr :: Text -> WASMC
 wasmStr contents = INSTR $ "\"" <> contents <> "\"" -- FIXME!
 
-data GenFunc = GenFunc
-  (Maybe Name)
-  ([WTyp], [WTyp])
-  [Bind]
 
-genFuncs :: forall f. Traversable f => f (GenFunc, WASMC -> f WASMC -> WASM) -> WASMM (f WASMC)
-genFuncs funcs = undefined
 
--- Generate a WASM function definition
+class ToExpr code where
+  toExpr :: code -> Expr
+instance ToExpr Expr where toExpr = id
+data SomeExpr = forall code. (Existentiable code, ToExpr code) => SomeExpr code
+instance NFData SomeExpr where rnf (SomeExpr c) = rnf c
+instance Show SomeExpr where show (SomeExpr c) = show c
+instance Eq SomeExpr where
+  (SomeExpr c0) == (SomeExpr c2)
+    | Just c1 <- Typeable.cast c2 = c0 == c1
+    | otherwise = False
+instance Ord SomeExpr where
+  SomeExpr c0 `compare` SomeExpr c2
+    | Just c1 <- Typeable.cast c0 = c1 `compare` c2
+    | otherwise = Typeable.typeOf c0 `compare` Typeable.typeOf c2
+instance ToExpr SomeExpr where
+  toExpr (SomeExpr c) = toExpr c
+instance ToWASM SomeExpr
+
+class ToWASM code where
+  toWASM :: code -> WASM
+  default toWASM :: ToExpr code => code -> WASM
+  toWASM = genExpr . toExpr
+instance ToWASM WASMC where toWASM = tell
+
+-- A type for a static token representing some WASM, which does not mind being
+-- deduplicated (having its WASMC output copied directly). Includes the
+-- WASMC type but not WASM.
+--
+-- Currently used for function definitions, to enable recursive functions to be
+-- generated nicely (by deduplicating their `SomeWASM` handles, not their
+-- actual code).
+data SomeWASM = forall code. (Existentiable code, ToWASM code) => SomeWASM code
+instance NFData SomeWASM where rnf (SomeWASM c) = rnf c
+instance Show SomeWASM where show (SomeWASM c) = show c
+instance Eq SomeWASM where
+  (SomeWASM c0) == (SomeWASM c2)
+    | Just c1 <- Typeable.cast c2 = c0 == c1
+    | otherwise = False
+instance Ord SomeWASM where
+  SomeWASM c0 `compare` SomeWASM c2
+    | Just c1 <- Typeable.cast c0 = c1 `compare` c2
+    | otherwise = Typeable.typeOf c0 `compare` Typeable.typeOf c2
+instance ToWASM SomeWASM where
+  toWASM (SomeWASM c) = toWASM c
+
+data FuncDef def = FuncDef
+  { fdName :: Maybe Name
+  , fdInputs :: [WTyp]
+  , fdOutputs :: [WTyp]
+  , fdLexical :: [Bind]
+  , fdDefinition :: def
+  }
+
+funcDef :: FuncDef WASM -> WASMMC
+funcDef (FuncDef name inputs outputs lexical definition) =
+  genFunc name (inputs, outputs) lexical definition
+
 genFunc :: Maybe Name -> ([WTyp], [WTyp]) -> [Bind] -> WASM -> WASMMC
-genFunc name (inputs, outputs) lexical definition = do
+genFunc name tys lexical =
+  genFunc' name tys lexical . Left
+
+-- Generate a WASM function definition. Returns code to invoke it
+genFunc' :: Maybe Name -> ([WTyp], [WTyp]) -> [Bind] -> Either WASM SomeWASM -> WASMMC
+genFunc' name (inputs, outputs) lexical definition = do
+  gennedFunctions <- gets funcs
+  let
+    doIt = genFuncInner (inputs, outputs) lexical definition
+    makeReference idx name' = maybe (wasmIdx idx) wasmID name'
+  case definition of
+    Right keyful ->
+      let
+        genKey = ((inputs, outputs), keyful)
+      in case isGenned gennedFunctions genKey of
+        Just (idx, (name', _, _)) -> pure (makeReference idx name')
+        Nothing -> do
+          let (genning, idx, fulfill) = reserve gennedFunctions genKey (name, undefined, undefined)
+          modify' \modul -> modul { funcs = genning }
+          (genT, body, _) <- doIt
+          makeReference idx name <$ modify' \modul ->
+            modul { funcs = funcs modul & fulfill (name, genT, body) }
+    Left _ -> do
+      (genT, body, wasDefined) <- doIt
+      state \modul ->
+        let (g, idx, (name', _, _)) = gen (funcs modul) ((inputs, outputs), wasDefined) (name, genT, body)
+        in (makeReference idx name', modul { funcs = g })
+
+genFuncInner :: ([WTyp], [WTyp]) -> [Bind] -> Either WASM SomeWASM -> WASMM (WASMC, WASMC, SomeWASM)
+genFuncInner (inputs, outputs) lexical definition = do
   genT <- CONCAT <$>
     (fmap (QUAL "param")  <$> traverse genWTyp inputs) <>
     (fmap (QUAL "result") <$> traverse genWTyp outputs)
@@ -815,40 +1038,53 @@ genFunc name (inputs, outputs) lexical definition = do
   restore <- gets \(WASMS { locals, freshBlock }) ->
     modify' \modul -> modul { locals = locals, freshBlock = freshBlock }
   modify' \modul -> modul { locals = fst parameters, freshBlock = 0 }
+  let
+    willDefine :: WASM
+    willDefine = either id toWASM definition
   -- Extract the code for the body of the function
   code <- outputOf $
     -- Reserve the parameters in scope
     local (\here -> here { scope = snd parameters, lexical = gatherBinders id $ zip (wasmIdx <$> [0..]) lexical }) $
     -- Run the code for the definition
-    definition
+    willDefine
+  let
+    wasDefined :: SomeWASM
+    wasDefined = fromRight (SomeWASM code) definition
   -- Make definitions for the locals that were generated
   functionLocals <- gets \(WASMS { locals }) ->
     foldMap makeLocal (List.drop (List.length $ genned $ fst parameters) (genned locals))
   let body = functionLocals <> code
   -- Restore the quasi-reader state
   restore
-  state \modul ->
-    let (g, idx, name') = gen (funcs modul) (((inputs, outputs), genT), body) name
-    in (maybe (wasmIdx idx) wasmID name', modul { funcs = g })
+  pure (genT, body, wasDefined)
 
 outputOf :: forall w m. MonadWriter w m => m () -> m w
 outputOf = censor mempty . fmap snd . listen
 
-genType :: SynthType styp => Maybe Name -> styp -> WASMMC
+genType :: SynthType styp => HasCallStack => Maybe Name -> styp -> WASMMC
 genType name = getWTyp name . wtyp
 
-getWTyp :: Maybe Name -> WTyp -> WASMMC
-getWTyp name (WR _ heapType) = getHTyp name heapType
+getWTyp :: HasCallStack => Maybe Name -> WTyp -> WASMMC
+getWTyp name (WR _ heapType) = genHTyp name heapType
 getWTyp _ _ = error "Not a reference type"
 
-storeType :: Maybe Name -> WASMC -> WASMMC
-storeType name code =
+registerType :: Maybe Name -> WASMC -> WASMMC
+registerType name code =
   state \modul ->
-    let (g, idx, _) = gen (types modul) code name
-    in (wasmIdx idx, modul { types = g })
+    let
+      (g, idx, (mname, _)) = gen (types modul) code (name, Map.empty)
+      info = case mname of
+        Just reg | Just alias <- name, alias /= reg ->
+          COMMENT (coerce reg <> " as " <> coerce alias)
+        Just reg -> COMMENT (coerce reg)
+        _ -> mempty
+    in (GROUP [ wasmIdx idx, info ], modul { types = g })
 
-genWTyp :: WTyp -> WASMMC
-genWTyp = \case
+genWTyp :: HasCallStack => WTyp -> WASMMC
+genWTyp = genWTypWith (genHTyp Nothing)
+
+genWTypWith :: HasCallStack => Applicative m => (HTyp -> m WASMC) -> WTyp -> m WASMC
+genWTypWith genHTyp = \case
   WF64  -> pure "f64"
   WF32  -> pure "f32"
   WI64  -> pure "i64"
@@ -856,13 +1092,16 @@ genWTyp = \case
   WI16  -> pure "i16"
   WI8   -> pure "i8"
   WV128 -> pure "v128"
-  WR nul heapType -> SEXP "ref" <$> sequence
+  WR nul heapType -> SEXP "ref" <$> sequenceA
     [ pure if nul == Nul then "null" else mempty
-    , getHTyp Nothing heapType
+    , genHTyp heapType
     ]
 
-getHTyp :: Maybe Name -> HTyp -> WASMMC
-getHTyp name = \case
+genHTyp :: HasCallStack => Maybe Name -> HTyp -> WASMMC
+genHTyp name = genHTypWith (regRTyp name Map.empty)
+
+genHTypWith :: HasCallStack => Applicative m => (RTyp -> m WASMC) -> HTyp -> m WASMC
+genHTypWith regRTyp = \case
   HI31 -> pure "i31"
   HCls HAny      -> pure "any"
   HCls HEq       -> pure "eq"
@@ -873,20 +1112,215 @@ getHTyp name = \case
   HCls HNoFunc   -> pure "nofunc"
   HCls HExtern   -> pure "extern"
   HCls HNoExtern -> pure "noextern"
-  HTyp ty -> genWTyp ty
-  CTyp ty -> genCTyp name ty
+  HRTyp ty -> regRTyp ty
 
-genCTyp :: Maybe Name -> CTyp -> WASMMC
-genCTyp name = \case
-  WS fields -> storeType name . SEXP "struct" =<< traverse genField fields
-  WA itemT -> storeType name . SEXP "array"  =<< traverse genMut   [itemT]
-  WF inputs outputs -> storeType name . SEXP "func" =<<
-    (fmap (QUAL "param")  <$> traverse genWTyp inputs) <>
+toposort :: forall k. Ord k => NFData k => Map k (Set k) -> [k]
+toposort = force . join . reverse . go [] where
+  go :: [[k]] -> Map k (Set k) -> [[k]]
+  go acc entries =
+    let (sel, remaining) = Map.partition Set.null entries
+    in if Map.null sel then acc else
+      go (Map.keys sel : acc) (remaining <&> (Set.\\ Map.keysSet sel))
+
+data TypTrav m = TypTrav
+  { overWTyp :: WTyp -> m WTyp
+  , overCTyp :: CTyp -> m CTyp
+  , overRTyp :: RTyp -> m RTyp
+  , overHTyp :: HTyp -> m HTyp
+  , overSubTyp :: SubTyp -> m SubTyp
+  }
+
+promoteFromGroup :: forall m. Applicative m => Map Name SubTyp -> TypTrav m
+promoteFromGroup group = promo where
+  promo = TypTrav
+    { overWTyp = \case
+        WR nul ht ->
+          WR nul <$> overHTyp promo ht
+        wt -> pure wt
+    , overCTyp = \case
+        WS wts -> WS <$> traverse (traverse (overWTyp promo)) wts
+        WA wt -> WA <$> traverse (overWTyp promo) wt
+        WF is os -> WF
+          <$> traverse (overWTyp promo) is
+          <*> traverse (overWTyp promo) os
+    , overRTyp = \case
+        RRef name -> pure $ RTyp name group
+        c@(RTyp _ _) -> pure c
+        CTyp ct -> CTyp <$> overCTyp promo ct
+    , overHTyp = \case
+        HRTyp rt -> HRTyp <$> overRTyp promo rt
+        ht -> pure ht
+    , overSubTyp = \(SubTyp f b i) ->
+        SubTyp f
+        <$> traverse (overRTyp promo) b
+        <*> overCTyp promo i
+    }
+
+preloadInGroup :: Map Name SubTyp -> RTyp -> WASMM (Maybe (Set RTyp))
+preloadInGroup group =
+  \case
+    RRef _ -> pure $ Just Set.empty
+    RTyp _ each
+      | each == group -> pure $ Just Set.empty
+      | otherwise -> error "Mutual recursion?"
+    CTyp t -> preCTyp t
+  where
+  preMut :: Mut WTyp -> WASMM (Maybe (Set RTyp))
+  preMut (Mut t) = preWTyp t
+  preMut (Imm t) = preWTyp t
+  preRTyp :: RTyp -> WASMM (Maybe (Set RTyp))
+  preRTyp = \case
+    RRef _ -> pure $ Just Set.empty
+    RTyp _ each
+      | each == group -> pure $ Just Set.empty
+      | otherwise -> error "Mutual recursion?"
+    CTyp t -> do
+      -- If this type had a recursive reference,
+      -- include it in the recursive group itself
+      accumulated <- preCTyp t
+      case accumulated of
+        Nothing -> Nothing <$ regRTyp Nothing Map.empty (CTyp t)
+        Just acc -> pure $ Just $ Set.insert (CTyp t) acc
+  preCTyp :: CTyp -> WASMM (Maybe (Set RTyp))
+  preCTyp = \case
+    WS ts -> foldMap preMut ts
+    WA t -> preMut t
+    WF i o -> foldMap preWTyp (i <> o)
+  preWTyp :: WTyp -> WASMM (Maybe (Set RTyp))
+  preWTyp = \case
+    WR _ t -> preHTyp t
+    _ -> mempty
+  preHTyp :: HTyp -> WASMM (Maybe (Set RTyp))
+  preHTyp = \case
+    HRTyp ty -> preRTyp ty
+    _ -> mempty
+
+materializeInGroup :: HasCallStack => Map WASMC Int -> Map Name SubTyp -> Map RTyp Int -> SubTyp -> WASMC
+materializeInGroup previousTypes original allocated =
+  force . matSubTyp
+  where
+  matSubTyp = runIdentity . genSubTypWith
+    (pure . wasmIdx . getRTyp) (pure . matCTyp)
+  matCTyp :: CTyp -> WASMC
+  matCTyp = runIdentity . genCTypWith (pure . matWTyp)
+  matWTyp :: WTyp -> WASMC
+  matWTyp = runIdentity . genWTypWith (pure . matHTyp)
+  matHTyp :: HTyp -> WASMC
+  matHTyp = runIdentity . genHTypWith (pure . wasmIdx . getRTyp)
+  getRTyp :: RTyp -> Int
+  -- Either the RTyp is allocated
+  getRTyp (RRef name) = allocated ! RRef name
+  getRTyp (RTyp name each) | each == original =
+    allocated ! RRef name
+  getRTyp t | Just r <- allocated Map.!? t = r
+  -- Or it is already generated
+  -- (and does not reference this rec group)
+  getRTyp t = previousTypes ! matSubTyp
+    case t of
+      RTyp name each -> each ! name
+      CTyp c -> plainTyp c
+
+plainTyp :: CTyp -> SubTyp
+plainTyp = SubTyp False Nothing
+
+admix :: Map Name SubTyp -> Set RTyp -> Map RTyp SubTyp
+admix orig added = force $
+  Map.mapKeys RRef orig `Map.union`
+  Map.fromSet awa added
+  where
+  awa :: RTyp -> SubTyp
+  awa (CTyp t) = plainTyp t
+  awa (RRef name) = orig ! name
+  awa (RTyp name group) = group ! name
+
+sortGroup :: Map Name SubTyp -> Map RTyp SubTyp -> [(RTyp, SubTyp)]
+sortGroup group wholeGroup =
+  fmap (\k -> (k, wholeGroup ! k)) $
+    toposort $ foldMap dep . stExtends <$> wholeGroup
+  where
+  promote = runIdentity . overCTyp (promoteFromGroup group)
+  byTyp :: Map RTyp (Maybe Name)
+  byTyp = Map.fromList $ Map.toList wholeGroup <&> \case
+    -- FIXME: is CTyp Promote the right thing?
+    (RRef name, sub) -> (CTyp $ promote $ stIs sub, Just name)
+    (rt, _) -> (rt, Nothing)
+  dep :: RTyp -> Set RTyp
+  dep (RRef name) = Set.singleton (RRef name)
+  dep (RTyp name each) | each == group = Set.singleton (RRef name)
+  dep t = case Map.lookup t byTyp of
+    Nothing -> Set.empty
+    Just Nothing -> Set.singleton t
+    Just (Just name) -> Set.singleton (RRef name)
+
+type ExpandedGroup = Map RTyp SubTyp
+
+genTypeGroup :: HasCallStack => Map Name SubTyp -> WASMM (Map Name WASMC)
+genTypeGroup group = fastSlow
+  do gets $ fmap snd . flip isGenned group . typeGroups
+  do
+    let promote = runIdentity . overCTyp (promoteFromGroup group)
+    added <- group & foldMap
+      (foldMap (foldMap (preloadInGroup group) .) [ stExtends, Just . CTyp . stIs ])
+    let mixed = admix group (fromMaybe Set.empty added)
+    let sorted = sortGroup group mixed
+    GenIdx previousTypes _ <- gets types
+    traversed <- state \modul ->
+      let
+        (g, traversed, _coll) = reserveNForSure
+          (types modul) sorted
+          (Map.fromList . fmap \((key, _), idx) -> (key, idx))
+          \(desc, sub) _here collected ->
+            let
+              codeForSubTyp = materializeInGroup (fst <$> previousTypes) group collected
+              name = case desc of
+                RRef n -> Just n
+                _ -> Nothing
+            in (codeForSubTyp sub, (name, group), \_ -> ())
+      in (traversed, modul { types = g })
+    pure $ Map.fromList $ traversed & mapMaybe \case
+      ((v, (_, (Just name, _))), ()) -> Just (name, v)
+      _ -> Nothing
+
+regSubTyp :: Maybe Name -> Map Name SubTyp -> SubTyp -> WASMMC
+regSubTyp name group = registerType name <=< genSubTyp group
+
+genSubTyp :: Map Name SubTyp -> SubTyp -> WASMMC
+genSubTyp group = genSubTypWith (regRTyp Nothing group) (genCTypWith genWTyp)
+
+genSubTypWith :: forall m. Applicative m => (RTyp -> m WASMC) -> (CTyp -> m WASMC) -> SubTyp -> m WASMC
+genSubTypWith regRTyp genCTyp (SubTyp final below inner) =
+  SEXP "sub" <$> sequenceA
+    [ pure if final then "final" else mempty
+    , below & maybe (pure mempty) regRTyp
+    , genCTyp inner
+    ]
+
+regRTyp :: Maybe Name -> Map Name SubTyp -> RTyp -> WASMMC
+regRTyp name group = \case
+  CTyp t -> regSubTyp name group $ plainTyp t
+  RTyp which group' -> regSubTyp (prefer which) group' (group' ! which)
+  RRef which -> regSubTyp (prefer which) group (group ! which)
+  where
+  prefer (Name (T.unpack -> '_' : _)) = name
+  prefer which = Just which
+
+regCTyp :: Maybe Name -> CTyp -> WASMMC
+regCTyp name = regSubTyp name Map.empty . plainTyp
+
+genCTyp :: CTyp -> WASMM WASMC
+genCTyp = genCTypWith genWTyp
+
+genCTypWith :: forall m. Applicative m => (WTyp -> m WASMC) -> CTyp -> m WASMC
+genCTypWith genWTyp = \case
+  WS fields -> SEXP "struct" <$> traverse genField fields
+  WA itemT -> SEXP "array" <$> traverse genMut [itemT]
+  WF inputs outputs -> SEXP "func" <$> liftA2 (<>)
+    (fmap (QUAL "param")  <$> traverse genWTyp inputs)
     (fmap (QUAL "result") <$> traverse genWTyp outputs)
   where
   genField ty = QUAL "field" <$> genMut ty
   genMut (Mut ty) = QUAL "mut" <$> genWTyp ty
-  genMut (Imm ty) = QUAL "field" <$> genWTyp ty
+  genMut (Imm ty) = genWTyp ty
 
 -- Generate a whole WASM module
 genModule :: WASM -> WASMM WASMC
@@ -934,11 +1368,15 @@ genModule codeForMain = do
         ]
       , Map.toList globals <&> \(name, ((_, ty), code)) ->
           SEXP "global" [ wasmID name, ty, code ]
-      , genned funcs <&> \(((_, ty), code), name) ->
+      , genned funcs <&> \(_, (name, ty, code)) ->
           if name == Just "fd_write" then mempty else
           SEXP "func" [ foldMap wasmID name, CONCAT [ SEXP "export" [ wasmStr "main" ] | name == Just "main" ], ty, code ]
-      , genned types <&> \(code, name) ->
-          SEXP "type" [ foldMap wasmID name, code ]
+      , let
+          maybeRec f xs@(x :| _) | Map.null (snd (snd x)) = foldMap f xs
+          maybeRec f xs =  SEXP "rec" $ f <$> toList xs
+        in NEL.groupWith (snd.snd) (genned types) <&> maybeRec
+          \(code, (name, _)) ->
+            SEXP "type" [ foldMap wasmID name, code ]
       , [ genData ".data" rwdata ]
       , [ genData ".rodata" rodata ]
       ]
@@ -966,22 +1404,39 @@ genWAT codeForMain = runWASM (genModule codeForMain)
 
 runWASM :: WASMM a -> IO (a, WASMS, WASMW)
 runWASM (WASM runIt) = runRWST runIt
-    WASMR
-    { scope = Map.empty
-    , lexical = Map.empty
-    }
-    WASMS
-    { funcs = newGenIdx
-    , types = newGenIdx
-    , locals = newGenIdx
-    , freshBlock = 0
-    , globals = Map.empty
-    , initCode = mempty
-    , rwdata = (0, mempty)
-    , rodata = (0, mempty)
-    , binlits = Map.empty
-    }
+  WASMR
+  { scope = Map.empty
+  , lexical = Map.empty
+  }
+  WASMS
+  { funcs = newGenIdx
+  , types = newGenIdx
+  , typeGroups = newGenIdx
+  , locals = newGenIdx
+  , freshBlock = 0
+  , globals = Map.empty
+  , initCode = mempty
+  , rwdata = (0, mempty)
+  , rodata = (0, mempty)
+  , binlits = Map.empty
+  }
+captureWASM :: WASMM (WASMM r -> IO r)
+captureWASM = do
+  r <- ask
+  s <- gets id
+  let
+    runner :: forall r. WASMM r -> IO r
+    runner (WASM runIt) =
+      runRWST runIt r s
+        <&> \(a, _, _) -> a
+  pure runner
 
+fastSlow :: forall m r. Monad m => m (Maybe r) -> m r -> m r
+fastSlow fastPath slowPath = do
+  firstTry <- fastPath
+  case firstTry of
+    Just r -> pure r
+    Nothing -> slowPath
 
 
 -- | Get a variable that is valid for the duration of the continuation.
@@ -1087,7 +1542,7 @@ type Existentiable hidden = (Typeable hidden, NFData hidden, Ord hidden, Show hi
 
 type Usable usage = (Existentiable usage, Monoid usage)
 
--- A synthesizable type that specifies exactly how it is codegenned.
+-- A synthetic type that specifies exactly how it is codegenned.
 class (Existentiable spec, Usable (UsageHint spec)) => SynthType spec where
   type family UsageHint spec :: Type
   type instance UsageHint spec = ()
@@ -1116,7 +1571,7 @@ class (Existentiable spec, Usable (UsageHint spec)) => SynthType spec where
   arrayindex _ = error "Not an array"
 
 data SomeUsageHint
-  = forall spec. SynthType spec => SomeUsageHint (Proxy spec) (UsageHint spec)
+  = forall spec. SynthType spec => SomeUsageHint !(Proxy spec) !(UsageHint spec)
   | NoneHint
   | NoUsageAtAll
 
@@ -1178,7 +1633,7 @@ applySome _ _ = error "Arity too large"
 
 -- Raw WASM type hierarchy
 
-data Mut t = Mut t {- mutable -} | Imm t {- immutable -}
+data Mut t = Mut !t {- mutable -} | Imm !t {- immutable -}
   deriving stock (Eq, Ord, Show, Data, Generic, Functor, Foldable, Traversable)
   deriving anyclass (NFData)
 data Sgn = Sgn {- signed -} | Uns {- unsigned -}
@@ -1192,59 +1647,83 @@ data WTyp -- WASM stack types
   | WI64 | WI32
   | WI16 | WI8 -- packed
   | WV128
-  | WR Nul HTyp
+  | WR !Nul !HTyp
+  deriving stock (Eq, Ord, Show, Data, Generic)
+  deriving anyclass (NFData)
+data SubTyp = SubTyp -- recursive subtypes
+  { stFinal :: !Bool
+  , stExtends :: !(Maybe RTyp)
+  , stIs :: !CTyp -- should not be recursive, hmm
+  }
   deriving stock (Eq, Ord, Show, Data, Generic)
   deriving anyclass (NFData)
 data HTyp -- Heap types
-  = HCls HCls -- Abstract classified reference types
-  | HTyp WTyp -- Stack types
-  | CTyp CTyp -- Compound types
+  = HCls !HCls -- Abstract classified reference types
+  | HRTyp !RTyp -- Compound types
   | HI31 -- i31
   deriving stock (Eq, Ord, Show, Data, Generic)
   deriving anyclass (NFData)
+pattern HCTyp :: CTyp -> HTyp
+pattern HCTyp t = HRTyp (CTyp t)
 -- Heap type classifiers
 data HCls = HAny | HEq | HStruct | HArray | HNone | HFunc | HNoFunc | HExtern | HNoExtern
   deriving stock (Eq, Ord, Show, Data, Generic)
   deriving anyclass (NFData)
 -- Compound types (for type declarations)
 data CTyp
-  = WS [Mut WTyp]
-  | WA (Mut WTyp)
-  | WF [WTyp] [WTyp]
+  = WS ![Mut WTyp]
+  | WA !(Mut WTyp)
+  | WF ![WTyp] ![WTyp]
+  deriving stock (Eq, Ord, Show, Data, Generic)
+  deriving anyclass (NFData)
+
+data RTyp
+  = RTyp !Name !(Map Name SubTyp) -- Recursive subtypes
+  | RRef !Name -- Recursive references
+  | CTyp !CTyp
   deriving stock (Eq, Ord, Show, Data, Generic)
   deriving anyclass (NFData)
 
 -- The specification for HCls with regard to HTyp
-matches :: HCls -> HTyp -> Bool
-matches HAny = const True
-matches HNone = const False
-matches HEq = \case
-  CTyp (WF _ _) -> False
-  HTyp (WR _ _) -> False
-  HTyp _ -> True
-  CTyp _ -> True
+-- inside a recursive type group
+matches :: Map Name SubTyp -> HCls -> HTyp -> Bool
+matches _ HAny = const True
+matches _ HNone = const False
+matches g HEq = \case
+  HRTyp (RTyp i ts) -> matches ts HEq (HCTyp $ stIs $ ts ! i)
+  HRTyp (RRef i) -> matches g HEq (HCTyp $ stIs $ g ! i)
+  HRTyp (CTyp (WF _ _)) -> False
+  HRTyp (CTyp _) -> True
   HCls HEq -> True
   HCls HStruct -> True
   HCls HArray -> True
   HCls _ -> False
   HI31 -> True
-matches HStruct = \case
+matches g HStruct = \case
+  HRTyp (RTyp i ts) -> matches ts HStruct (HCTyp $ stIs $ ts ! i)
+  HRTyp (RRef i) -> matches g HStruct (HCTyp $ stIs $ g ! i)
   HCls HStruct -> True
-  CTyp (WS _) -> True
+  HRTyp (CTyp (WS _)) -> True
   _ -> False
-matches HArray = \case
+matches g HArray = \case
+  HRTyp (RTyp i ts) -> matches ts HArray (HCTyp $ stIs $ ts ! i)
+  HRTyp (RRef i) -> matches g HArray (HCTyp $ stIs $ g ! i)
   HCls HArray -> True
-  CTyp (WA _) -> True
+  HRTyp (CTyp (WA _)) -> True
   _ -> False
-matches HFunc = \case
+matches g HFunc = \case
+  HRTyp (RTyp i ts) -> matches ts HFunc (HCTyp $ stIs $ ts ! i)
+  HRTyp (RRef i) -> matches g HFunc (HCTyp $ stIs $ g ! i)
   HCls HFunc -> True
-  CTyp (WF _ _) -> True
+  HRTyp (CTyp (WF _ _)) -> True
   _ -> False
-matches HNoFunc = not . matches HFunc
-matches HExtern = \case
+matches g HNoFunc = not . matches g HFunc
+matches g HExtern = \case
+  HRTyp (RTyp i ts) -> matches ts HExtern (HCTyp $ stIs $ ts ! i)
+  HRTyp (RRef i) -> matches g HExtern (HCTyp $ stIs $ g ! i)
   HCls HExtern -> True
   _ -> False
-matches HNoExtern = not . matches HExtern
+matches g HNoExtern = not . matches g HExtern
 
 -- The unpacking type: extend i8, i16 -> i32
 unpack :: WTyp -> WTyp
@@ -1267,9 +1746,34 @@ instance SynthType TDat where
   wtyp (TDat _) = undefined
   isDataType = Just
 instance SynthType TFun where
-  wtyp (TFun inputs output) = WR Non $ CTyp $ WF (wtyp <$> inputs) [wtyp output]
+  wtyp (TFun inputs output) = WR Non $ HCTyp $ WF (wtyp <$> inputs) [wtyp output]
+
+{-# NOINLINE baseClosureC #-}
+baseClosureC :: CTyp
+baseClosureC = WS
+  -- boxed partial application
+  [ Imm $ WR Non $ HCTyp $ WF [WR Nul (HCls HAny)] [WR Nul (HCls HAny)]
+  -- unboxed partial application
+  , Imm $ WR Nul (HCls HFunc)
+  -- closure data
+  , Imm $ WR Nul (HCls HAny)
+  ]
+
+{-# NOINLINE baseClosureH #-}
+baseClosureH :: RTyp
+baseClosureH = RTyp "closure" $ Map.singleton "closure" $
+  SubTyp False Nothing baseClosureC
+
+instance SynthType TClo where
+  wtyp (TClo Nothing Nothing) = WR Non $ HRTyp baseClosureH
+  wtyp (TClo clo fun) = WR Non $ HRTyp $ RTyp "_someclosure" $ Map.singleton "_someclosure" $
+    SubTyp False (Just baseClosureH) $ WS
+      [ Imm $ WR Non $ HCTyp $ WF [WR Nul (HCls HAny)] [WR Nul (HCls HAny)]
+      , Imm $ WR Nul $ fromMaybe (HCls HFunc) fun
+      , Imm $ WR Nul $ fromMaybe (HCls HAny) clo
+      ]
 instance SynthType TArr where
-  wtyp (TArr t) = WR Non $ CTyp $ WA (Mut (wtyp t))
+  wtyp (TArr t) = WR Non $ HCTyp $ WA (Mut (wtyp t))
   isArrayType = Just
   arraylit t items = do
     ty <- genType Nothing t
@@ -1321,7 +1825,7 @@ instance SynthType TArr where
 instance SynthType TPrm where
   wtyp (TPrm _ t) = t
 instance SynthType TTxt where
-  wtyp TTxt = WR Non $ CTyp $ WA (Mut WI8)
+  wtyp TTxt = WR Non $ HCTyp $ WA (Mut WI8)
   isArrayType TTxt = Just (TArr (S (TPrm Uns WI8)))
   arraylength TTxt (_, expr) = do
     expr
@@ -1331,9 +1835,11 @@ instance SynthType TTxt where
     arr
     idx
     sexp "array.get_u" [ ty ]
+-- instance SynthType TIOL where
+--   wtyp TIOL = 
 
 
--- An enum synthesizable type, represented as an i31 for tags
+-- An enum synthetic type, represented as an i31 for tags
 newtype TEnum = TEnum [Name]
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
@@ -1363,12 +1869,12 @@ data TStruct = TStruct Name [(Name, STyp)]
   deriving anyclass (NFData)
 
 instance SynthType TStruct where
-  wtyp (TStruct _ fields) = WR Non $ CTyp $ WS (Mut . wtyp . snd <$> fields)
+  wtyp (TStruct _ fields) = WR Non $ HCTyp $ WS (Mut . wtyp . snd <$> fields)
   isDataType (TStruct recName fields) = Just $ TDat $
     Map.singleton recName fields
   mkconstr self@(TStruct recName fields) = Map.singleton recName \fieldValues -> do
     comment "create struct:"
-    for_ fields \(name, _) -> snd $ fieldValues Map.! name
+    for_ fields \(name, _) -> snd $ fieldValues ! name
     ty <- genType (Just recName) self
     sexp "struct.new" [ ty ## coerce recName ]
   unconstr self@(TStruct recName fields) _ (cases, fallback) =
@@ -1397,7 +1903,7 @@ fieldGetters self@(TStruct recName fields) =
 eField :: Expr -> Name -> Expr
 eField t which = case infer t of
   S (TStruct name fields) ->
-    let fieldT = (Map.fromList fields Map.! which) in
+    let fieldT = (Map.fromList fields ! which) in
     ECase (infer t) t fieldT
       (Map.singleton name (Map.singleton which (Bind which), EVar fieldT which), undefined)
   _ -> error "Not a struct"
@@ -1549,14 +2055,14 @@ instance SynthType TBitarray where
   --       sexp "local.get" [ varr ]
   arraylength _t (_, expr) = do
     expr
-    fieldGetters bitarrayBacker Map.! "bitlen"
+    fieldGetters bitarrayBacker ! "bitlen"
   arrayindex t (_, arr) (_, idx) = do
     ty <- genType Nothing t
     arr
     withVar (Just "idx") SU32 \vidx -> do
       idx
       sexp "local.set" [ vidx ]
-      fieldGetters bitarrayBacker Map.! "words"
+      fieldGetters bitarrayBacker ! "words"
       sexp "local.get" [ vidx ]
       sexp "i32.const" [ "64" ]
       tell "i32.div_u"
@@ -1566,16 +2072,6 @@ instance SynthType TBitarray where
       tell "i32.rem_u"
       tell "i64.shr_u"
 
-
-data FunctionPattern = forall pat. Functional pat => FunctionPattern pat
-
-pattern FunPat :: Functional pat => Functional pat => pat -> FunctionPattern
-pattern FunPat pat <- FunctionPattern (Typeable.cast -> Just (pat :: pat)) where
-  FunPat pat = FunctionPattern pat
-
-class Existentiable pat => Functional pat where
-
-  codegen :: pat -> WASM
 
 -- Another existential type, for foreign semantics
 data ForeignSemantics = forall sem. Semantics sem => ForeignSemantics sem
@@ -1587,8 +2083,8 @@ pattern Sem sem <- ForeignSemantics (Typeable.cast -> Just (sem :: sem)) where
 pattern ESem :: Semantics sem => Semantics sem => sem -> Expr
 pattern ESem sem = EForeign (Sem sem)
 
-pattern (:$$:) :: () => Semantics sem => sem -> [Expr] -> Expr
-pattern sem :$$: args = EApp (EForeign (ForeignSemantics sem)) args
+pattern (:$$:) :: Semantics sem => Semantics sem => sem -> [Expr] -> Expr
+pattern sem :$$: args = EApp (ESem sem) args
 
 class Existentiable sem => Semantics sem where
   semTyp :: sem -> STyp
@@ -2238,7 +2734,7 @@ parseAtom = (asum . fmap P.try)
                 zipWith (\(name, _) (_, r) -> (name, r)) unnamedFields (filter ((== Nothing) . fst) parsedFields)
               fields = sequence filledIn ctx
             in ECons structT constructorName $ constructor <&>
-              \(fieldName, fieldT) -> (fieldName, applyType fieldT $ fields Map.! fieldName)
+              \(fieldName, fieldT) -> (fieldName, applyType fieldT $ fields ! fieldName)
   , tNAME <&> \name ctx ->
       case Map.lookup name ctx of
         Just ty -> Insensitive $ EVar ty name
