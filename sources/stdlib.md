@@ -92,7 +92,13 @@ Transformers: `ReaderT`, `WriterT`, `StateT`, `ExceptT`, `LogicT`
 Mostly their MTL classes express that there are morphisms `m ~> ExceptT r m`, `ExceptT r m ~> m`.
 But you do want the procedural style sometimes (`logThis`, `connectDb`, etc.).
 
-`MonadBracket`/`MonadMask`
+`MonadBracket`/[`MonadMask`](https://hackage.haskell.org/package/safe-exceptions-0.1.7.4/docs/Control-Exception-Safe.html#t:MonadMask)
+
+> A class for monads which provide for the ability to account for all possible exit points from a computation, and to mask asynchronous exceptions. Continuation-based monads are invalid instances of this class.
+
+[`CheckpointMonad`](https://hackage.haskell.org/package/hoopl-3.10.2.2/docs/Compiler-Hoopl.html#t:CheckpointMonad)/rollback (records writes to revert them, but only while scoped... could bracket, have explicit drop, and/or use weak refs maybe?)
+
+`IO`/`ST`/`Effect` plus niceties: resource management, [early exit](https://oleg.fi/gists/posts/2024-03-17-st-with-early-exit.html), rollback...
 
 ## Other than Functor
 
@@ -124,6 +130,7 @@ Monoidal tensors (identities, associativities). Adjunctions. Strength.
 - `Show`, `Debug`, `Pretty`, `ToTeX`, `ToString`, `Interpolate`, etc.
 - `Index`, [`At`](https://pursuit.purescript.org/packages/purescript-profunctor-lenses/8.0.0/docs/Data.Lens.At)
 - bidirectional binary and JSON serialization codecs
+- `Default` and `IsDefault`, for default maps (functions of finite support)?
 
 # Conversions/Coercions
 

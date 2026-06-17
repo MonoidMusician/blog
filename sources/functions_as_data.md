@@ -4,6 +4,7 @@ subtitle: "Extensible Defunctionalization with Typeclasses.\n\nOr, Functions in 
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
 date: 2026/06/04
+todo: sytc/vtable, recursion, mint
 ---
 
 What does pure data mean? and how the heck do we stick functions in there?

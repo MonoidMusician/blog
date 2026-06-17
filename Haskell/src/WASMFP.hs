@@ -5,6 +5,51 @@
 {- HLINT ignore "Avoid lambda using `infix`" -}
 {- HLINT ignore "Use record patterns" -}
 {- HLINT ignore "Use const" -}
+
+-- This is a small experiment in generating WASM from a functional language. The
+-- goal is to experiment with the Haskell side of this, making sure everything
+-- is extensible. Focusing mostly on how isomorphic types can be compiled
+-- in various ways, and what kind of optimizations can come from the functional
+-- layer (not how the WASM backend itself can be optimized). The theory is that
+-- a lot of work has been done on optimizing low level details in the appropriate
+-- runtimes and JITs, but the biggest wins are often from optimizing the high
+-- level stuff first, especially where types and effects are known.
+--
+-- The goal is to have extensible user types (with their own codegen),
+-- extensible code (embedding foreign code and typeclass-like generated code),
+-- and extensible analyses. See https://blog.veritates.love/functions_as_data.html
+--
+-- The main ingredients are:
+--
+-- - WASM backend:
+--   - A declarative model of WASM GC types
+--   - A simple "AST" for WASM (*sparkling text*, with parentheses and spaces)
+--   - A monad to assemble WASM, generating functions and types as needed
+-- - A functional front-end:
+--   - a really simple AST for expressions
+--   - custom types, STyp/SynthType, that control their own codegen
+--   - intrinsic types and strict type checking
+--   - a basic parser
+-- - Eventually: static analysis and optimizations
+--
+-- Interesting optimizations:
+-- - Fusing traversals and accumulation, like map/reduce fusion, but where you
+--   keep the intermediate list too?
+--   - In general, I think there is room for a standard library to have a
+--     handful of general purpose fused align-map-reduce-with-key operations and
+--     derive more specialized implementations from that
+-- - Optimized data types for the desired operations
+--   - string/list builders
+--   - transparently memoizing information like list size
+-- - Imperative-like code:
+--   - Using mutable variables instead of distantly threaded state
+--   - Using control flow instead of repeated case analysis
+--   - Generate code like hand-written imperative loops!
+--   - Depends on effect analysis to pull off
+-- - More standard analyses
+--   - Unpacking on the stack where possible, ignoring unused fields
+--   - Functions vs closures
+-- - Out of scope: laziness and strictness analysis
 module WASMFP where
 
 import Prelude hiding (unwords, break, filter, lex)
@@ -23,7 +68,7 @@ import Control.Monad.Reader.Class (MonadReader(ask, local))
 import Witherable (Filterable(mapMaybe, filter))
 import Control.Monad (when, unless, void, join, zipWithM_, (<=<))
 import qualified Data.Typeable as Typeable
-import Control.Monad.RWS.CPS (RWST, MonadState (state), MonadWriter (tell, listen, pass), modify', censor, gets, runRWST, MonadTrans (lift), MonadIO ())
+import Control.Monad.RWS.CPS (RWST, MonadState (state), MonadWriter (tell, listen, pass), modify', censor, gets, runRWST, MonadTrans (lift), MonadIO (liftIO))
 import Data.Functor ((<&>))
 import qualified Data.Text.Internal.StrictBuilder as Builder
 import Data.Foldable (traverse_, for_, Foldable (toList), foldrM, fold, foldMap, asum)
@@ -62,7 +107,10 @@ import Data.Functor.Identity (Identity (runIdentity))
 import Control.Monad.State.Strict (evalState)
 import qualified Data.List.NonEmpty as NEL
 import GHC.Stack (HasCallStack)
+import Control.Applicative.Backwards (Backwards(Backwards, forwards))
 
+-- Invoke wasmtime (from $PATH) with the given WASM source, with a main()
+-- function. Prints the source on error.
 execWASM :: Text -> IO Text
 execWASM fullModule = do
   (Cmd.Exit status, Cmd.Stdout result) <- Cmd.command [ Cmd.Stdin (T.unpack fullModule) ] "wasmtime"
@@ -92,6 +140,9 @@ newtype CShow = CShow STyp
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
 
+pattern SemShow :: STyp -> ForeignSemantics
+pattern SemShow t = Sem (CShow t)
+
 instance ToWASM CShow
 instance ToExpr CShow where
   toExpr (CShow t) = mkShowFun case t of
@@ -106,7 +157,15 @@ instance ToExpr CShow where
     vvalue = EVar t "value"
     byCases = ECase t vvalue STxt . (, fallback) . Map.fromList
     fallback = ETxt $ "<" <> T.show t <> ">"
+instance ToFuncDef CShow where
+  toFuncDef (CShow t) = FuncDef Nothing [wtyp t] [wtyp TIOData] []
+    (toWASM (CShow t))
+instance Semantics CShow where
+  semTyp (CShow t) = SFun [t] (SIOData)
+  semCode (CShow t) = funcCall (CShow t)
 
+
+-- Some basic tests for this module.
 main :: IO ()
 main = do
   let
@@ -193,6 +252,8 @@ main = do
     dropExpr $ EArrayFill (SArr SU32) (EU32 4) $ EFun (SFun [SU32] SU32) [Bind "idx"] $
       EApp stdprint [EIndex mempty (EArray texts $ ETxt . (<> "\n") <$> T.words "test me hellow wowlrd") (EVar SU32 "idx")]
     dropExpr $ EApp stdprint [ETxt "test me hellow wowlrd\n"]
+    censor mempty $ funcDef IOByteLength
+    censor mempty $ funcDef IOFlatten
     pure ()
   -- T.putStrLn fullModule
   T.writeFile "/tmp/test.wat" fullModule
@@ -209,7 +270,7 @@ main = do
   let
     recTest = do
       let below = Just (RRef "list")
-      _ <- genTypeGroup $ Map.fromList
+      _ <- regTypeGroup $ Map.fromList
         [ ("list", plainTyp $ WS [])
         , ("nil", SubTyp False below $ WS [])
         , ("cons", SubTyp False below $ WS [Mut WI64, Mut $ WR Nul $ HRTyp $ RRef "list"])
@@ -223,6 +284,10 @@ main = do
   -- T.putStrLn =<< execWASM =<< genWAT recTest
   pure ()
 
+-- Translate from the expression type to WASM code (written into the writer
+-- monad, of course with all dependencies being written into the environment).
+-- The syntax is really basic, but ADTs and arrays have type-directed codegen,
+-- so they can have any behavior as given by typeclass implementations.
 genExpr :: Expr -> WASM
 genExpr = \case
   EF64 v -> tell $ genConst v
@@ -269,7 +334,7 @@ genExpr = \case
     desc <- case isDataType t of
       Nothing -> error "Not a data type"
       Just d -> pure d
-    unconstr t (wtyp o) (Map.mapWithKey (bindCase desc) cases, genExpr fallback)
+    unconstr t [wtyp o] (Map.mapWithKey (bindCase desc) cases, genExpr fallback)
 
   EArray t items -> arraylit t ((,) <*> genExpr <$> items)
   EArrayFill t len getter -> arrayfill t (len, genExpr len) (getter, genExpr getter)
@@ -285,10 +350,11 @@ genExpr = \case
       genExpr expr
       sexp "local.set" [ var ## coerce name ]
       inner
-  bindCase :: TDat -> Name -> (Map Name Bind, Expr) -> Map Name WASM -> WASM
-  bindCase (TDat desc) caseName (requested, body) available = do
+  bindCase :: Map Name [(Name, STyp)] -> Name -> (Map Name Bind, Expr) -> Map Name WASM -> WASM
+  bindCase desc caseName (requested, body) available = do
     let
-      fieldTypes = Map.fromList $ desc ! caseName :: Map Name STyp
+      fieldTypes :: Map Name STyp
+      fieldTypes = Map.fromList $ desc ! caseName
       bindField (_, Discard) inner = inner
       bindField (fieldName, Bind name) inner = do
         withLexVar (Just name) (fieldTypes ! fieldName) \(_, vbound) -> do
@@ -297,6 +363,10 @@ genExpr = \case
           inner
     foldr bindField (genExpr body) (Map.toList requested)
 
+
+--------------------------------------------------------------------------------
+-- Miscellaneous helpers/background
+--------------------------------------------------------------------------------
 
 (<@>) :: Functor f => f (a -> b) -> a -> f b
 ff <@> a = (\f -> f a) <$> ff
@@ -312,15 +382,45 @@ kvs ! k = case Map.lookup k kvs of
   Nothing -> error "Missing key"
   Just v -> v
 
+-- Lookup for associative lists
 listup :: forall k v. Eq k => k -> [(k, v)] -> Maybe v
 listup k = fmap snd . List.find ((== k) . fst)
+
+-- Grab the output of a monadic action *instead* of writing it
+outputOf :: forall w m. MonadWriter w m => m () -> m w
+outputOf = censor mempty . fmap snd . listen
+
+-- Try the fast path first then the slow path
+fastSlow :: forall m r. Monad m => m (Maybe r) -> m r -> m r
+fastSlow fastPath slowPath = do
+  firstTry <- fastPath
+  case firstTry of
+    Just r -> pure r
+    Nothing -> slowPath
+
 
 -- A really useful pattern synonym! why have i not seen it before?
 pattern Coerce :: Coercible outer inner => inner -> outer
 pattern Coerce c <- (coerce -> c) where
   Coerce c = coerce c
 
--- A binding: currently a name or an underscore.
+-- Also useful: coerce integral types
+pattern I :: (Integral b, Integral a) => (Integral a) => b -> a
+pattern I i <- (fromIntegral -> i) where
+  I i = fromIntegral i
+
+-- Datatype for places where something can be recursive or not
+data Recursive rec non = Recurse rec | Direct non
+  deriving stock (Eq, Ord, Show, Data, Generic, Functor, Foldable, Traversable)
+  deriving anyclass (NFData)
+
+recurses :: forall rec non. (rec -> non) -> Recursive rec non -> non
+recurses f (Recurse r) = f r
+recurses _ (Direct r) = r
+
+
+
+-- A binding (for pattern matching): currently a name or an underscore.
 data Bind
   = Bind Name
   | Discard
@@ -344,6 +444,13 @@ _nums = T.pack . show <$> enumFrom @Int 0
 _intNames :: [Name]
 _intNames = coerce _nums
 
+
+
+--------------------------------------------------------------------------------
+-- The functional programming language side of things
+--------------------------------------------------------------------------------
+
+
 -- The AST for expressions
 data Expr
   -- Literals
@@ -366,7 +473,7 @@ data Expr
   | ECase STyp Expr STyp (Map Name (Map Name Bind, Expr), Expr)
   -- An array literal
   | EArray STyp [Expr]
-  -- Fill an array by giving its length and a function for each index
+  -- Fill an array by giving its length and a function called for each index
   | EArrayFill STyp Expr Expr
   -- Get the length of an array
   | ELength Expr
@@ -461,7 +568,7 @@ check = \case
   ECons t name (Map.fromList -> provided) -> do
     spec <- case isDataType t of
       Nothing -> throwError "Not a data type"
-      Just (TDat spec) -> pure spec
+      Just spec -> pure spec
     expected <- case Map.lookup name spec of
       Nothing -> throwError "Constructor not named in the data type"
       Just expected -> pure expected
@@ -474,7 +581,7 @@ check = \case
     expect t e
     spec <- case isDataType t of
       Nothing -> throwError "Not a data type"
-      Just (TDat spec) -> pure spec
+      Just spec -> pure spec
     for_ (Map.intersectionWith (,) spec cases) \(Map.fromList -> given, (binds, body)) -> do
       bounds <- for (Map.mapWithKey (,) binds) \(name, bind) ->
         case (Map.lookup name given, bind) of
@@ -643,22 +750,28 @@ pattern S :: SynthType spec => SynthType spec => spec -> STyp
 pattern S spec <- STyp (Typeable.cast -> Just (spec :: spec)) where
   S spec = STyp spec
 
--- Coerce integers
-pattern I :: (Integral b, Integral a) => (Integral a) => b -> a
-pattern I i <- (fromIntegral -> i) where
-  I i = fromIntegral i
-
--- ADTs as a synthetic data type
-newtype TDat = TDat (Map Name [(Name, STyp)])
+-- ADTs as a synthetic data type: many constructors with many fields each.
+-- Each field can either be directly recursive (not mutually recursive), or an
+-- external type. Substitute the recursion with `unrollTDat`.
+newtype TDat = TDat (Map Name [(Name, Recursive () STyp)])
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
+pattern SDat :: Map Name [(Name, Recursive () STyp)] -> STyp
+pattern SDat constructors = S (TDat constructors)
+-- Mutually recursive types
+data TMutDat = TMutDat Name (Map Name (Map Name [(Name, Recursive Name STyp)]))
+  deriving stock (Eq, Ord, Generic, Show)
+  deriving anyclass (NFData)
+pattern SMutDat :: Name -> Map Name (Map Name [(Name, Recursive Name STyp)]) -> STyp
+pattern SMutDat which group = S (TMutDat which group)
 -- Plain functions as a synthetic data type (not closures)
 data TFun = TFun [STyp] STyp
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
 pattern SFun :: [STyp] -> STyp -> STyp
 pattern SFun is o = S (TFun is o)
--- Closures
+-- Data type underlying closures, with a closure type (containing the data)
+-- and a dedicated (unboxed) function type.
 data TClo = TClo (Maybe HTyp) (Maybe HTyp)
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
@@ -683,11 +796,21 @@ data TTxt = TTxt
 pattern STxt :: STyp
 pattern STxt = S TTxt
 -- IOList/IOData type (text or array of IOData)
-data TIOL = TIOL
+data TIOL = TIOList | TIOData | TIOText
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
--- pattern SIOL :: STyp
--- pattern SIOL = S TIOL
+pattern SIOList :: STyp
+pattern SIOList = S TIOList
+pattern SIOData :: STyp
+pattern SIOData = S TIOData
+pattern SIOText :: STyp
+pattern SIOText = S TIOText
+
+
+--------------------------------------------------------------------------------
+-- The WASMM monad for generating a WASM file
+--------------------------------------------------------------------------------
+
 
 -- WASM reader context
 data WASMR = WASMR
@@ -709,7 +832,7 @@ data WASMS = WASMS
   , freshBlock :: Int
   -- ^ Fresh number for block names
   , globals :: Map Name ((WTyp, WASMC), WASMC)
-  -- ^ global variables by type and initializer
+  -- ^ global variables by type and initializer (FIXME)
   , initCode :: WASMC
   -- ^ init function
   , rwdata :: (Int, ByteString.Builder.Builder)
@@ -721,19 +844,25 @@ data WASMS = WASMS
 
   -- TODO: memory and tables, imports and exports
   }
--- WASM writer context: code for the current function
+-- WASM writer context: code for the current function/initializer
 type WASMW = WASMC
 -- The WASM monad
 newtype WASMM t = WASM (RWST WASMR WASMW WASMS IO t)
   deriving newtype (Functor, Applicative, Monad, MonadReader WASMR, MonadState WASMS, MonadIO)
+-- Writes WASM code
 type WASM = WASMM ()
+-- Returns WASM code
 type WASMMC = WASMM WASMC
 
+
 -- A helper for generating types, functions, et cetera, into a linear index
--- in a way so they are deduplicated.
+-- in a way so they are deduplicated. The idea is that they are deduplicated
+-- by value, with its position in the index and metadata from the first
+-- usage.
 data GenIdx meta val = GenIdx
   !(Map val (Int, meta))
   ![(val, meta)] -- reverse order
+
 
 -- Put a new item into the index
 gen :: forall meta val. Ord val => GenIdx meta val -> val -> meta -> (GenIdx meta val, Int, meta)
@@ -746,9 +875,12 @@ gen g@(GenIdx validx stack) val newMeta =
         g' = GenIdx (Map.insert val (idx, newMeta) validx) ((val, newMeta) : stack)
       in (g', idx, newMeta)
 
+-- Look up an item in the index
 isGenned :: forall meta val. Ord val => GenIdx meta val -> val -> Maybe (Int, meta)
 isGenned (GenIdx validx _) val = Map.lookup val validx
 
+-- Reserve a place in the index (with speculative metadata) and fulfill it later
+-- with accurate metadata
 reserve :: forall meta val. Ord val => GenIdx meta val ->
   val -> meta -> (GenIdx meta val, Int, meta -> GenIdx meta val -> GenIdx meta val)
 reserve g@(GenIdx validx stack) val placeholder =
@@ -760,52 +892,14 @@ reserve g@(GenIdx validx stack) val placeholder =
         g' = GenIdx (Map.insert val (idx, placeholder) validx) ((val, placeholder) : stack)
       in (g', idx, _fulfillAt val idx)
 
+-- Helper for replacing an entry
 _fulfillAt :: Ord val => val -> Int -> meta -> GenIdx meta val -> GenIdx meta val
 _fulfillAt val idx newMeta (GenIdx validx' stack') =
   let (l, r) = List.break ((== val) . fst) stack'
   in GenIdx (Map.insert val (idx, newMeta) validx') (l <> ((val, newMeta) : List.drop 1 r))
 
-reserveNMaybe ::
-  forall m t each ret meta val.
-    Ord val =>
-    Traversable t =>
-    Applicative m =>
-  GenIdx meta val ->
-  t each ->
-  (each -> m (val, Int -> t (val, Int) -> (meta, (meta -> GenIdx meta val -> GenIdx meta val) -> ret))) ->
-  m (GenIdx meta val, t ((val, Int, meta), ret))
-reserveNMaybe (GenIdx validx stack) each fn =
-  traverse fn each <&> \first ->
-    let
-      scanned :: [(val, Maybe Int)]
-      scanned = toList $ first <&> \(val, _) ->
-        (val, fst <$> Map.lookup val validx)
-      extant = Map.fromList $ scanned & mapMaybe
-        \(val, item) -> (val,) <$> item
-      missing = List.nub $ fst <$>
-        filter ((== Nothing) . snd) scanned
-      providing = Map.fromList $ zip missing [0..] <&>
-        \(val, offset) -> (val, Map.size validx + offset)
-      indexes :: Map val Int
-      indexes = Map.union extant providing
-      filled :: t (val, Int)
-      filled = first <&> \(val, _) -> (val, indexes ! val)
-      yay :: t ((val, Int, meta), ret)
-      yay = first <&> \(val, pending) ->
-        let
-          idx = indexes ! val
-          (meta, willFulfill) = pending idx filled
-        in ((val, idx, meta),)
-          if idx < Map.size validx
-            then willFulfill \_ g' -> g'
-            else willFulfill (_fulfillAt val idx)
-      placeholders :: [(val, (Int, meta))]
-      placeholders = toList yay <&>
-        \((val, idx, meta), _) -> (val, (idx, meta))
-      validx' = Map.union (Map.fromList placeholders) validx
-      stack' = reverse (fmap snd <$> placeholders) <> stack
-    in (GenIdx validx' stack', yay)
-
+-- Reserve multiple items for sure, without checking whether those values
+-- exist already in the index. For dealing with mutual recursion, basically.
 reserveNForSure ::
   forall t each collected ret meta val.
     Ord val =>
@@ -987,10 +1081,31 @@ data FuncDef def = FuncDef
   , fdLexical :: [Bind]
   , fdDefinition :: def
   }
+  deriving stock (Eq, Ord, Functor, Foldable, Traversable)
 
-funcDef :: FuncDef WASM -> WASMMC
-funcDef (FuncDef name inputs outputs lexical definition) =
-  genFunc name (inputs, outputs) lexical definition
+class ToFuncDef def where
+  toFuncDef :: def -> FuncDef WASM
+
+-- Generate the body as WASM
+newtype FuncBody def = FuncBody def
+  deriving stock (Show, Generic, Data, Functor, Foldable, Traversable)
+  deriving newtype (Eq, Ord, NFData)
+instance ToFuncDef def => ToWASM (FuncBody def) where
+  toWASM (FuncBody def) = fdDefinition (toFuncDef def)
+
+-- Call the function
+newtype FuncCall def = FuncCall def
+  deriving stock (Show, Generic, Data, Functor, Foldable, Traversable)
+  deriving newtype (Eq, Ord, NFData)
+
+
+funcDef :: (ToFuncDef def, Existentiable def) => def -> WASMMC
+funcDef def = case toFuncDef def of
+  FuncDef name inputs outputs lexical _definition ->
+    genFunc' name (inputs, outputs) lexical (Right (SomeWASM (FuncBody def)))
+
+funcCall :: (ToFuncDef def, Existentiable def) => def -> WASM
+funcCall def = sexp "call" =<< sequence [ funcDef def ]
 
 genFunc :: Maybe Name -> ([WTyp], [WTyp]) -> [Bind] -> WASM -> WASMMC
 genFunc name tys lexical =
@@ -1058,9 +1173,6 @@ genFuncInner (inputs, outputs) lexical definition = do
   restore
   pure (genT, body, wasDefined)
 
-outputOf :: forall w m. MonadWriter w m => m () -> m w
-outputOf = censor mempty . fmap snd . listen
-
 genType :: SynthType styp => HasCallStack => Maybe Name -> styp -> WASMMC
 genType name = getWTyp name . wtyp
 
@@ -1114,14 +1226,16 @@ genHTypWith regRTyp = \case
   HCls HNoExtern -> pure "noextern"
   HRTyp ty -> regRTyp ty
 
+-- Toposort in 5 lines of code
 toposort :: forall k. Ord k => NFData k => Map k (Set k) -> [k]
-toposort = force . join . reverse . go [] where
+toposort = join . reverse . go [] where
   go :: [[k]] -> Map k (Set k) -> [[k]]
   go acc entries =
     let (sel, remaining) = Map.partition Set.null entries
     in if Map.null sel then acc else
       go (Map.keys sel : acc) (remaining <&> (Set.\\ Map.keysSet sel))
 
+-- Traverse the various Haskell types of WASM types
 data TypTrav m = TypTrav
   { overWTyp :: WTyp -> m WTyp
   , overCTyp :: CTyp -> m CTyp
@@ -1130,6 +1244,7 @@ data TypTrav m = TypTrav
   , overSubTyp :: SubTyp -> m SubTyp
   }
 
+-- Handle `RRef name` with `RTyp name group`
 promoteFromGroup :: forall m. Applicative m => Map Name SubTyp -> TypTrav m
 promoteFromGroup group = promo where
   promo = TypTrav
@@ -1156,6 +1271,10 @@ promoteFromGroup group = promo where
         <*> overCTyp promo i
     }
 
+-- We need to preload every external type, so we can allocate the recursive type
+-- group without anything shifting around, and find the other types that we need
+-- to include in the recursive group (e.g. intermediate structs and such that
+-- reference once or more types from the recursive group).
 preloadInGroup :: Map Name SubTyp -> RTyp -> WASMM (Maybe (Set RTyp))
 preloadInGroup group =
   \case
@@ -1195,6 +1314,8 @@ preloadInGroup group =
     HRTyp ty -> preRTyp ty
     _ -> mempty
 
+-- After preloading and allocating the indices for each type in the group, we can
+-- materialize a type directly to WASMC now, with no side effects.
 materializeInGroup :: HasCallStack => Map WASMC Int -> Map Name SubTyp -> Map RTyp Int -> SubTyp -> WASMC
 materializeInGroup previousTypes original allocated =
   force . matSubTyp
@@ -1220,6 +1341,7 @@ materializeInGroup previousTypes original allocated =
       RTyp name each -> each ! name
       CTyp c -> plainTyp c
 
+-- Promote a composite type to a subtype, which is what gets registered
 plainTyp :: CTyp -> SubTyp
 plainTyp = SubTyp False Nothing
 
@@ -1233,6 +1355,9 @@ admix orig added = force $
   awa (RRef name) = orig ! name
   awa (RTyp name group) = group ! name
 
+-- A group needs to be initialized in order of subtyping. The order does not
+-- matter for references, though: any type can reference any other type in the
+-- group. But subtyping needs to be a DAG, which is enforced by source order.
 sortGroup :: Map Name SubTyp -> Map RTyp SubTyp -> [(RTyp, SubTyp)]
 sortGroup group wholeGroup =
   fmap (\k -> (k, wholeGroup ! k)) $
@@ -1252,10 +1377,10 @@ sortGroup group wholeGroup =
     Just Nothing -> Set.singleton t
     Just (Just name) -> Set.singleton (RRef name)
 
-type ExpandedGroup = Map RTyp SubTyp
-
-genTypeGroup :: HasCallStack => Map Name SubTyp -> WASMM (Map Name WASMC)
-genTypeGroup group = fastSlow
+-- Register a recursive type group at once, returning the map of each type
+-- to its WASM index.
+regTypeGroup :: HasCallStack => Map Name SubTyp -> WASMM (Map Name WASMC)
+regTypeGroup group = fastSlow
   do gets $ fmap snd . flip isGenned group . typeGroups
   do
     let promote = runIdentity . overCTyp (promoteFromGroup group)
@@ -1281,9 +1406,11 @@ genTypeGroup group = fastSlow
       ((v, (_, (Just name, _))), ()) -> Just (name, v)
       _ -> Nothing
 
+-- Register a subtype on its own, returning its registered WASM index
 regSubTyp :: Maybe Name -> Map Name SubTyp -> SubTyp -> WASMMC
 regSubTyp name group = registerType name <=< genSubTyp group
 
+-- Generate the WASM code describing a subtype
 genSubTyp :: Map Name SubTyp -> SubTyp -> WASMMC
 genSubTyp group = genSubTypWith (regRTyp Nothing group) (genCTypWith genWTyp)
 
@@ -1295,6 +1422,7 @@ genSubTypWith regRTyp genCTyp (SubTyp final below inner) =
     , genCTyp inner
     ]
 
+-- Register a recursive type, returning its registered WASM index
 regRTyp :: Maybe Name -> Map Name SubTyp -> RTyp -> WASMMC
 regRTyp name group = \case
   CTyp t -> regSubTyp name group $ plainTyp t
@@ -1304,9 +1432,11 @@ regRTyp name group = \case
   prefer (Name (T.unpack -> '_' : _)) = name
   prefer which = Just which
 
+-- Register a composite type, via plainTyp
 regCTyp :: Maybe Name -> CTyp -> WASMMC
 regCTyp name = regSubTyp name Map.empty . plainTyp
 
+-- Generate the WASM code describing a composite type
 genCTyp :: CTyp -> WASMM WASMC
 genCTyp = genCTypWith genWTyp
 
@@ -1332,7 +1462,7 @@ genModule codeForMain = do
         getIdx = sexp "local.get" [ vidx ]
         getLen = genExpr $ ELength (EVar STxt "text")
       sexp "local.set" [ vidx, genConst @Word32 0 ]
-      flow Nothing (mempty :: ([STyp], [STyp])) \(continue, break) -> do
+      flow Nothing mempty \(continue, break) -> do
         getIdx
         getLen
         tell "i32.ge_u"
@@ -1368,15 +1498,15 @@ genModule codeForMain = do
         ]
       , Map.toList globals <&> \(name, ((_, ty), code)) ->
           SEXP "global" [ wasmID name, ty, code ]
-      , genned funcs <&> \(_, (name, ty, code)) ->
-          if name == Just "fd_write" then mempty else
-          SEXP "func" [ foldMap wasmID name, CONCAT [ SEXP "export" [ wasmStr "main" ] | name == Just "main" ], ty, code ]
       , let
           maybeRec f xs@(x :| _) | Map.null (snd (snd x)) = foldMap f xs
           maybeRec f xs =  SEXP "rec" $ f <$> toList xs
         in NEL.groupWith (snd.snd) (genned types) <&> maybeRec
           \(code, (name, _)) ->
             SEXP "type" [ foldMap wasmID name, code ]
+      , genned funcs <&> \(_, (name, ty, code)) ->
+          if name == Just "fd_write" then mempty else
+          SEXP "func" [ foldMap wasmID name, CONCAT [ SEXP "export" [ wasmStr "main" ] | name == Just "main" ], ty, code ]
       , [ genData ".data" rwdata ]
       , [ genData ".rodata" rodata ]
       ]
@@ -1398,10 +1528,12 @@ genModule codeForMain = do
             <> Builder.fromChar (digit (byte .&. 0xF))
   quotes contents = Builder.fromChar '"' <> contents <> Builder.fromChar '"'
 
+-- Generate a WASM module into text
 genWAT :: WASM -> IO Text
 genWAT codeForMain = runWASM (genModule codeForMain)
   <&> \(moduleCode, _, _) -> genWASMC moduleCode
 
+-- Run the WASM monad
 runWASM :: WASMM a -> IO (a, WASMS, WASMW)
 runWASM (WASM runIt) = runRWST runIt
   WASMR
@@ -1420,6 +1552,7 @@ runWASM (WASM runIt) = runRWST runIt
   , rodata = (0, mempty)
   , binlits = Map.empty
   }
+-- Locally run WASM
 captureWASM :: WASMM (WASMM r -> IO r)
 captureWASM = do
   r <- ask
@@ -1430,13 +1563,6 @@ captureWASM = do
       runRWST runIt r s
         <&> \(a, _, _) -> a
   pure runner
-
-fastSlow :: forall m r. Monad m => m (Maybe r) -> m r -> m r
-fastSlow fastPath slowPath = do
-  firstTry <- fastPath
-  case firstTry of
-    Just r -> pure r
-    Nothing -> slowPath
 
 
 -- | Get a variable that is valid for the duration of the continuation.
@@ -1465,7 +1591,12 @@ withLexVar name styp cont = do
     in ((scope', lexical', (maybe undefined (EVar (S styp)) name, maybe (wasmIdx idx) wasmID name)), modul { locals = g })
   local (const $ here { scope = scope', lexical = lexical' }) $ cont var
 
-mkBlockType :: SynthType stypI => SynthType stypO => ([stypI], [stypO]) -> WASMMC
+
+-- Generate the type for a block (parameters and results). The difference
+-- between parameters and results describes the change in the stack. Everything
+-- not described in parameters remains on the stack, it just is not visible to
+-- the code in the block.
+mkBlockType :: ([STyp], [STyp]) -> WASMMC
 mkBlockType (inputs, outputs) =
   (quals "param"  <$> traverse (genWTyp . wtyp) inputs) <>
   (quals "result" <$> traverse (genWTyp . wtyp) outputs)
@@ -1473,6 +1604,7 @@ mkBlockType (inputs, outputs) =
   quals _ [] = mempty
   quals name contents = SEXP name contents
 
+-- Get the next block ID
 incrementBlock :: WASMMC
 incrementBlock = do
   i <- state \modul ->
@@ -1480,26 +1612,28 @@ incrementBlock = do
   pure $ wasmID $ _intNames !! i
 
 
+data WithFallback f t = f t :?? t
+  deriving (Functor, Foldable, Traversable, Eq, Ord)
+
 wrapBlock :: Text -> [WASMC] -> WASMM a -> WASMM a
 wrapBlock instr args = censor $
   SEXP instr . \code -> args <> [code]
 
-flow :: SynthType stypI => SynthType stypO => Maybe Name -> ([stypI], [stypO]) -> ((WASMC, WASMC) -> WASMM r) -> WASMM r
+-- Control flow: provide backwards and forwards branching labels at once
+-- (loop and block, respectively).
+flow :: Maybe Name -> ([STyp], [STyp]) -> ((WASMC, WASMC) -> WASMM r) -> WASMM r
 flow _name inputsOutputs cont = do
   blockType <- mkBlockType inputsOutputs
-  let
   idxI <- incrementBlock
   wrapBlock "loop" [ idxI, blockType ] do
     idxO <- incrementBlock
     wrapBlock "block" [ idxO, blockType ] do
       cont (idxI, idxO)
 
-data WithFallback f t = f t :?? t
-  deriving (Functor, Foldable, Traversable, Eq, Ord)
-
+-- Generate a branch table.
 brTable ::
-  ([STyp], [STyp]) ->
   Traversable f => Foldable g =>
+  ([STyp], [STyp]) ->
   -- Branches
   f branch ->
   -- Intro
@@ -1510,28 +1644,84 @@ brTable ::
 brTable inputsOutputs requested intro createBranch = do
   blockType <- mkBlockType inputsOutputs
   flow Nothing inputsOutputs \(_, break) -> do
-    branches <- for requested \branchData -> do
+    branches <- forwards $ for requested \branchData -> Backwards do
       label <- incrementBlock
-      sexp "block" [ label, blockType ]
       pure (label, branchData)
+    forwards $ for_ branches \(label, _) -> Backwards do
+      tell $ GROUP [ "block", label, blockType ]
     labelAssignments <- intro branches
     sexp "br_table" $ fromMaybe break <$> toList labelAssignments
     for branches \(label, branchData) -> do
-      sexp "end" [ label ]
+      tell $ GROUP [ "end", label ]
       (shouldFallthrough, result) <- createBranch branchData
       unless shouldFallthrough do
         sexp "br" [ break ]
       pure result
 
+-- Generate a series of branches for a case block.
+brSequence ::
+  Traversable f =>
+  ([STyp], [STyp]) ->
+  f ((WASMC, WASMC) -> WASMM (Bool, r)) ->
+  WASMM r -> -- fallback
+  WASMM (WithFallback f r)
+brSequence inputsOutputs cases fallback = do
+  blockType <- mkBlockType inputsOutputs
+  break <- incrementBlock
+  wrapBlock "block" [ break, blockType ] do
+    brSequenceInner inputsOutputs cases fallback break
+
+brSequenceInner ::
+  Traversable f =>
+  ([STyp], [STyp]) ->
+  f ((WASMC, WASMC) -> WASMM (Bool, r)) ->
+  WASMM r -> -- fallback
+  WASMC -> -- break label
+  WASMM (WithFallback f r)
+brSequenceInner inputsOutputs cases fallback break = do
+  blockType <- mkBlockType inputsOutputs
+  branches <- for cases \branchData -> do
+    label <- incrementBlock
+    pure (label, branchData)
+  forwards $ for_ branches \(label, _) -> Backwards do
+    tell $ GROUP [ "block", label, blockType ]
+  main <- for branches \(label, branchData) -> do
+    (shouldFallthrough, result) <- branchData (label, break)
+    unless shouldFallthrough do
+      sexp "br" [ break ]
+    tell $ GROUP [ "end", label ]
+    pure result
+  (main :??) <$> fallback
+
+-- Generate a series of casts. The source type is the last of the parameters
+-- stack and must be a ref, along with the type for each branch.
+brCasts ::
+  Traversable f =>
+  ([STyp], [STyp]) ->
+  f (WASMM (WTyp {- must be a ref -}, r)) ->
+  WASMM r ->
+  WASMM (WithFallback f r)
+brCasts inputsOutputs cases fallback = do
+  input <- genWTyp $ wtyp $ List.last (fst inputsOutputs)
+  blockType <- mkBlockType inputsOutputs
+  break <- incrementBlock
+  wrapBlock "block" [ break, blockType ] do
+    brSequenceInner (inputsOutputs <> ([], [List.last (fst inputsOutputs)]))
+      ( cases <&> \item (continue, _) ->
+          retroactively do
+            (ty, r) <- item
+            ty' <- genWTyp ty
+            pure ((False, r), SEXP "br_on_cast_fail" [ continue, input, ty' ])
+      ) fallback break
 
 
-
-data ExactUsage which = NoUsage | NoHint | ExactUsage which
+data ExactUsage usage = NoUsage | NoHint | ExactUsage usage
   deriving (Eq, Ord, Generic, NFData)
 
-instance SynthType spec => Monoid (ExactUsage spec) where
+instance Eq usage => Monoid (ExactUsage usage) where
+  mempty :: Eq usage => ExactUsage usage
   mempty = NoUsage
-instance SynthType spec => Semigroup (ExactUsage spec) where
+instance Eq usage => Semigroup (ExactUsage usage) where
   NoUsage <> u = u
   u <> NoUsage = u
   ExactUsage u1 <> ExactUsage u2 | u1 == u2 = ExactUsage u1
@@ -1551,11 +1741,11 @@ class (Existentiable spec, Usable (UsageHint spec)) => SynthType spec where
   wtyp :: spec -> WTyp
 
   -- How to compile it, if it is a data type
-  isDataType :: spec -> Maybe TDat
+  isDataType :: spec -> Maybe (Map Name [(Name, STyp)])
   isDataType _ = Nothing
   mkconstr :: spec -> Map Name (Map Name (Expr, WASM) -> WASM)
   mkconstr _ = error "Not a constructor"
-  unconstr :: spec -> WTyp -> (Map Name (Map Name WASM -> WASM), WASM {- fallback -}) -> WASM
+  unconstr :: spec -> [WTyp] -> (Map Name (Map Name WASM -> WASM), WASM {- fallback -}) -> WASM
   unconstr _ = error "Not a constructor"
 
   -- How to compile it, if it is an array-like type
@@ -1631,7 +1821,14 @@ applySome (I arity) (TFun inputs output) | arity <= length inputs =
   TFun (drop arity inputs) output
 applySome _ _ = error "Arity too large"
 
--- Raw WASM type hierarchy
+
+--------------------------------------------------------------------------------
+-- A declarative model for WASM types, so that they can be created from anywhere
+-- and inserted into the module on demand, with appropriate references.
+--
+-- The main difficulty is recursive type groups and subtypes.
+--------------------------------------------------------------------------------
+
 
 data Mut t = Mut !t {- mutable -} | Imm !t {- immutable -}
   deriving stock (Eq, Ord, Show, Data, Generic, Functor, Foldable, Traversable)
@@ -1642,25 +1839,25 @@ data Sgn = Sgn {- signed -} | Uns {- unsigned -}
 data Nul = Nul {- nullable -} | Non {- nonnullable -}
   deriving stock (Eq, Ord, Show, Data, Generic)
   deriving anyclass (NFData)
-data WTyp -- WASM stack types
-  = WF64 | WF32
-  | WI64 | WI32
-  | WI16 | WI8 -- packed
-  | WV128
-  | WR !Nul !HTyp
+-- Basic WASM types that live on the stack, plus packed types that are unpacked
+-- into i32 on the stack.
+data WTyp
+  = WF64 | WF32   -- Floats f64/f32
+  | WI64 | WI32   -- Integers i64/i32
+  | WI16 | WI8    -- Packed integers for structs/arrays
+  | WV128         -- Vector register v128
+  | WR !Nul !HTyp -- Reference to a garbage-collected heap type
   deriving stock (Eq, Ord, Show, Data, Generic)
   deriving anyclass (NFData)
-data SubTyp = SubTyp -- recursive subtypes
-  { stFinal :: !Bool
-  , stExtends :: !(Maybe RTyp)
-  , stIs :: !CTyp -- should not be recursive, hmm
-  }
-  deriving stock (Eq, Ord, Show, Data, Generic)
-  deriving anyclass (NFData)
+-- Heap types, the target of references. This includes composite types
+-- (structs, arrays, and functions) and their recursive and subtyped forms, plus
+-- the means to classify them (any struct, any array, any function, etc.), and
+-- the i31 type which is left for implementations to use as an immediate, not
+-- actually heap allocated.
 data HTyp -- Heap types
   = HCls !HCls -- Abstract classified reference types
-  | HRTyp !RTyp -- Compound types
-  | HI31 -- i31
+  | HRTyp !RTyp -- Composite types
+  | HI31 -- Special i31
   deriving stock (Eq, Ord, Show, Data, Generic)
   deriving anyclass (NFData)
 pattern HCTyp :: CTyp -> HTyp
@@ -1669,20 +1866,39 @@ pattern HCTyp t = HRTyp (CTyp t)
 data HCls = HAny | HEq | HStruct | HArray | HNone | HFunc | HNoFunc | HExtern | HNoExtern
   deriving stock (Eq, Ord, Show, Data, Generic)
   deriving anyclass (NFData)
--- Compound types (for type declarations)
+-- Composite types (for type declarations)
 data CTyp
-  = WS ![Mut WTyp]
-  | WA !(Mut WTyp)
-  | WF ![WTyp] ![WTyp]
+  = WS ![Mut WTyp] -- Struct, with individual field types
+  | WA !(Mut WTyp) -- Array, with its item type
+  | WF ![WTyp] ![WTyp] -- Function, with input and output types
+  deriving stock (Eq, Ord, Show, Data, Generic)
+  deriving anyclass (NFData)
+-- Subtypes can be declared final and declared to extend another nominal type
+-- (that must be structurally compatible with the type definition).
+data SubTyp = SubTyp
+  { stFinal :: !Bool
+  , stExtends :: !(Maybe RTyp)
+  , stIs :: !CTyp
+  }
+  deriving stock (Eq, Ord, Show, Data, Generic)
+  deriving anyclass (NFData)
+-- A potentially-recursive type can be an ordinary composite type (technically
+-- redundant but really nice to have), or a particular case chosen out of a
+-- recursive group `Map Name SubTyp`, always kept together. Within the subtypes
+-- comprising this recursive group, `RRef` is valid to refer to that particular
+-- group: no nesting is possible, and it should not be necessary. If mutual
+-- recursion is needed, it should be aggregated into a larger group.
+--
+-- This enables a simple representation of recursive type groups without
+-- imposing any kind of global coherence requirements, just local coherence
+-- of names within a single group.
+data RTyp
+  = RTyp !Name !(Map Name SubTyp) -- Recursive types and subtypes
+  | RRef !Name -- Recursive references, only valid within a recursive group
+  | CTyp !CTyp -- Plain composite groups
   deriving stock (Eq, Ord, Show, Data, Generic)
   deriving anyclass (NFData)
 
-data RTyp
-  = RTyp !Name !(Map Name SubTyp) -- Recursive subtypes
-  | RRef !Name -- Recursive references
-  | CTyp !CTyp
-  deriving stock (Eq, Ord, Show, Data, Generic)
-  deriving anyclass (NFData)
 
 -- The specification for HCls with regard to HTyp
 -- inside a recursive type group
@@ -1742,9 +1958,35 @@ pattern SS32 = S (TPrm Sgn WI32)
 pattern SU31 = S (TPrm Uns (WR Non HI31))
 pattern SS31 = S (TPrm Sgn (WR Non HI31))
 
+-- Unroll TDat, giving `STyp` instead of `Recursive () STyp`
+unrollTDat :: TDat -> Map Name [(Name, STyp)]
+unrollTDat t@(TDat constructors) =
+  constructors <&> fmap (fmap (recurses (const (S t))))
+
+-- Unroll TMutDat, giving `STyp` instead of `Recursive Name STyp`
+unrollTMutDat :: TMutDat -> Map Name [(Name, STyp)]
+unrollTMutDat (TMutDat which group) =
+  group ! which <&> fmap (fmap (recurses (\name -> SMutDat name group)))
+
 instance SynthType TDat where
-  wtyp (TDat _) = undefined
-  isDataType = Just
+  -- Codegenned as a recursive group with a _supertype struct which the
+  -- individual constructors subtype
+  wtyp (unrollTDat -> constructors) = WR Non $ HRTyp $ RTyp "_supertype" $
+    Map.insert "_supertype" (plainTyp $ WS []) $
+      constructors <&> plainTyp . WS . fmap (Mut . wtyp . snd)
+  isDataType = Just . unrollTDat
+instance SynthType TMutDat where
+  -- Codegenned as a recursive group where each type gets its own section for
+  -- its supertype and constructors, ty._self and ty.con1, ty.con2, etc.
+  wtyp (TMutDat which group) = WR Non $ HRTyp $ RTyp (suffix which "_supertype") $
+    group & Map.foldMapWithKey \ty constructors ->
+      Map.insert (suffix ty "_supertype") (plainTyp $ WS []) $
+        Map.fromList $ Map.toList constructors <&>
+          \(k, fields) -> (suffix ty k,) $ plainTyp $ WS $
+            fields <&> Mut . wtyp . recurses (\other -> SMutDat other group) . snd
+    where
+    suffix (Name name) (Name suffix) = Name (name <> "." <> suffix)
+  isDataType = Just . unrollTMutDat
 instance SynthType TFun where
   wtyp (TFun inputs output) = WR Non $ HCTyp $ WF (wtyp <$> inputs) [wtyp output]
 
@@ -1779,7 +2021,7 @@ instance SynthType TArr where
     ty <- genType Nothing t
     comment "create array literal:"
     traverse_ snd items
-    sexp "array.new_fixed" [ ty, wasmIdx $ length items ]
+    sexp "array.new_fixed" [ ty, wasmLen $ length items ]
   arrayfill t (_, len) (_, getter) = do
     ty <- genType Nothing t
     comment "create array:"
@@ -1835,8 +2077,6 @@ instance SynthType TTxt where
     arr
     idx
     sexp "array.get_u" [ ty ]
--- instance SynthType TIOL where
---   wtyp TIOL = 
 
 
 -- An enum synthetic type, represented as an i31 for tags
@@ -1850,15 +2090,14 @@ pattern TVoid = TEnum []
 
 instance SynthType TEnum where
   wtyp (TEnum _) = wtyp SU31
-  isDataType (TEnum names) = Just $ TDat $ Map.fromList $
-    names <&> (, [])
+  isDataType (TEnum names) = Just $ Map.fromList $ names <&> (, [])
   mkconstr (TEnum names) = Map.fromList $ zip [0..] names <&>
     \(tag, name) -> (name,) \_fields -> do
       sexp "i32.const" [ wasmIdx tag ## coerce name ]
       tell "ref.i31"
   unconstr self@(TEnum names) o (cases, fallback) = do
     tell "i31.get_u"
-    void $ brTable ([S self], [S (TPrm Uns o)])
+    void $ brTable ([S self], S . TPrm Uns <$> o)
       do (cases <@> Map.empty) :?? fallback
       do pure . \(labels :?? oops) -> fmap fst <$> (names <&> flip Map.lookup labels) :?? Just oops
       do ((False, ()) <$)
@@ -1870,7 +2109,7 @@ data TStruct = TStruct Name [(Name, STyp)]
 
 instance SynthType TStruct where
   wtyp (TStruct _ fields) = WR Non $ HCTyp $ WS (Mut . wtyp . snd <$> fields)
-  isDataType (TStruct recName fields) = Just $ TDat $
+  isDataType (TStruct recName fields) = Just $
     Map.singleton recName fields
   mkconstr self@(TStruct recName fields) = Map.singleton recName \fieldValues -> do
     comment "create struct:"
@@ -1942,7 +2181,7 @@ eIf cond ifTrue ifFalse = ECase (S TBool) cond (infer ifTrue)
 
 instance SynthType TBool where
   wtyp TBool = wtyp SU31
-  isDataType TBool = Just $ TDat $ Map.fromList
+  isDataType TBool = Just $ Map.fromList
     [ ("False", []), ("True", []) ]
   mkconstr TBool = Map.fromList
     [ ("False", \_ -> do
@@ -1954,13 +2193,13 @@ instance SynthType TBool where
         tell "ref.i31"
       )
     ]
-  unconstr TBool output (cases, fallback) =
+  unconstr TBool outputs (cases, fallback) =
     case (Map.lookup "False" cases, Map.lookup "True" cases) of
       (Nothing, Nothing) -> fallback
       (whenFalse, whenTrue) -> do
         tell "i31.get_u"
         tell . SEXP "if" =<< sequence
-          [ QUAL "result" <$> genWTyp output
+          [ foldMap (QUAL "result") <$> traverse genWTyp outputs
           , QUAL "then" <$> outputOf do fromMaybe (const fallback) whenTrue Map.empty
           , QUAL "else" <$> outputOf do fromMaybe (const fallback) whenFalse Map.empty
           ]
@@ -2073,6 +2312,172 @@ instance SynthType TBitarray where
       tell "i64.shr_u"
 
 
+instance SynthType TIOL where
+  wtyp TIOList = WR Non $ HCTyp $ WA $ Mut $ wtyp TIOData
+  wtyp TIOText = wtyp TTxt
+  wtyp TIOData = WR Non $ HCls HArray -- supertype of TIOList and TIOText
+
+  isArrayType TIOList = Just (TArr SIOData)
+  isArrayType TIOText = isArrayType TTxt
+  isArrayType TIOData = Nothing
+
+  arraylit t items = do
+    ty <- genType Nothing t
+    comment "create array literal:"
+    traverse_ snd items
+    sexp "array.new_fixed" [ ty, wasmLen $ length items ]
+  arraylength _ (_, expr) = do
+    expr
+    tell "array.len"
+  arrayindex TIOText (_, arr) (_, idx) = do
+    ty <- genType Nothing TIOText
+    arr
+    idx
+    sexp "array.get_u" [ ty ]
+  arrayindex t (_, arr) (_, idx) = do
+    ty <- genType Nothing t
+    arr
+    idx
+    sexp "array.get" [ ty ]
+
+  isDataType TIOData = Just $ Map.fromList
+    [ ("IOList", [("data", SIOData)])
+    , ("IOText", [("data", SIOText)])
+    ]
+  isDataType _ = Nothing
+
+  mkconstr _ = Map.fromList $ ["IOList", "IOText"] <&> (, \fields -> snd $ fields ! "data")
+  unconstr _ o (cases, fallback) = do
+    void $ brCasts ([SIOData], S . TPrm Uns <$> o)
+      [ withLexVar Nothing TIOList \(_expr, var) -> do
+          sexp "local.set" [ var ]
+          cases ! "IOList" $ Map.singleton "data" $ sexp "local.get" [ var ]
+          pure (wtyp TIOList, ())
+      , withLexVar Nothing TIOText \(_expr, var) -> do
+          sexp "local.set" [ var ]
+          cases ! "IOText" $ Map.singleton "data" $ sexp "local.get" [ var ]
+          pure (wtyp TIOText, ())
+      ] fallback
+
+data IOFun = IOByteLength | IOFlatten | IOFlattenAux
+  deriving stock (Eq, Ord, Show, Data, Generic)
+  deriving anyclass (NFData)
+
+instance ToFuncDef IOFun where
+  toFuncDef IOByteLength = FuncDef (Just "iobytelength") [wtyp TIOData] [WI32] [] do
+    withVar (Just "length") (TPrm Uns WI32) \var -> do
+      sexp "local.set" [ var, genConst @Word32 0 ]
+      let
+        acc = do
+          sexp "local.get" [ var ]
+          sexp "i32.add" []
+          sexp "local.set" [ var ]
+      sexp "local.get" [ wasmIdx 0 ]
+      unconstr TIOData []
+        ( Map.fromList
+          [ ("IOList", \fields -> do
+              ty <- genType Nothing TIOList
+              let getter = fields ! "data"
+              withVar (Just "idx") (TPrm Uns WI32) \vidx -> do
+                sexp "local.set" [ vidx, genConst @Word32 0 ]
+                flow Nothing mempty \(continue, break) -> do
+                  sexp "local.get" [ vidx ]
+                  arraylength TIOList (undefined, getter)
+                  sexp "i32.ge_u" []
+                  sexp "br_if" [ break ]
+
+                  getter
+                  sexp "local.get" [ vidx ]
+                  sexp "array.get" [ ty ]
+                  sexp "call" =<< sequence [ funcDef IOByteLength ]
+                  acc
+
+                  sexp "local.get" [ vidx ]
+                  sexp "i32.add" [ genConst @Word32 1 ]
+                  sexp "local.set" [ vidx ]
+                  sexp "br" [ continue ]
+            )
+          , ("IOText", \fields -> do
+              arraylength TIOText (undefined, fields ! "data")
+              acc
+            )
+          ]
+        , tell "unreachable"
+        )
+      sexp "local.get" [ var ]
+  toFuncDef IOFlatten = FuncDef (Just "ioflatten") [wtyp TIOData] [wtyp TIOText] [] do
+    withVar (Just "buffer") TTxt \var -> do
+      sexp "array.new_default" =<< sequence
+        [ genType Nothing TTxt
+        , outputOf do
+            sexp "local.get" [ wasmIdx 0 ]
+            sexp "call" . pure =<< funcDef IOByteLength
+        ]
+      sexp "local.tee" [ var ]
+      tell $ genConst @Word32 0
+      sexp "local.get" [ wasmIdx 0 ]
+      sexp "call" . pure =<< funcDef IOFlattenAux
+      tell "drop"
+      sexp "local.get" [ var ]
+  toFuncDef IOFlattenAux = FuncDef (Just "ioflatten_aux") [wtyp TIOText, WI32, wtyp TIOData] [WI32] [] do
+    sexp "local.get" [ wasmIdx 2 ]
+    unconstr TIOData []
+      ( Map.fromList
+        [ ("IOList", \fields -> do
+            ty <- genType Nothing TIOList
+            let getter = fields ! "data"
+            withVar (Just "idx") (TPrm Uns WI32) \vidx -> do
+              sexp "local.set" [ vidx, genConst @Word32 0 ]
+              flow Nothing mempty \(continue, break) -> do
+                sexp "local.get" [ vidx ]
+                arraylength TIOList (undefined, getter)
+                sexp "i32.ge_u" []
+                sexp "br_if" [ break ]
+
+                sexp "local.get" [ wasmIdx 0 ]
+                sexp "local.get" [ wasmIdx 1 ]
+                getter
+                sexp "local.get" [ vidx ]
+                sexp "array.get" [ ty ]
+                sexp "call" =<< sequence [ funcDef IOFlattenAux ]
+
+                sexp "local.set" [ wasmIdx 1 ]
+
+                sexp "local.get" [ vidx ]
+                sexp "i32.add" [ genConst @Word32 1 ]
+                sexp "local.set" [ vidx ]
+                sexp "br" [ continue ]
+          )
+        , ("IOText", \fields -> do
+            sexp "array.copy" =<< sequence
+              [ genType Nothing TTxt
+              , genType Nothing TTxt
+              , outputOf do sexp "local.get" [ wasmIdx 0 ] -- dest
+              , outputOf do sexp "local.get" [ wasmIdx 1 ] -- dest_idx
+              , outputOf do fields ! "data" -- src
+              , pure do genConst @Word32 0 -- src_idx
+              , SEXP "array.len" <$> sequence
+                  [outputOf (fields ! "data")] -- len
+              ]
+
+            arraylength TIOText (undefined, fields ! "data")
+            sexp "local.get" [ wasmIdx 1 ]
+            sexp "i32.add" []
+            sexp "local.set" [ wasmIdx 1 ]
+          )
+        ]
+      , tell "unreachable"
+      )
+    sexp "local.get" [ wasmIdx 1 ]
+
+instance Semantics IOFun where
+  semTyp IOByteLength = SFun [SIOData] SU32
+  semTyp IOFlatten = SFun [SIOData] (S TTxt)
+  semTyp IOFlattenAux = SFun [SIOText, SU32, SIOData] SU32
+
+  semCode = funcCall
+
+
 -- Another existential type, for foreign semantics
 data ForeignSemantics = forall sem. Semantics sem => ForeignSemantics sem
 
@@ -2090,8 +2495,11 @@ class Existentiable sem => Semantics sem where
   semTyp :: sem -> STyp
   semCode :: sem -> WASM
   semEval :: sem -> [Expr] -> Map Name Expr -> Maybe Expr
+  semEval _ _ _ = Nothing
   semExprs :: sem -> [Expr]
+  semExprs = mempty
   semEffects :: sem -> Effects
+  semEffects = mempty
 
 instance Eq ForeignSemantics where
   ForeignSemantics spec0 == ForeignSemantics spec2
@@ -2111,6 +2519,12 @@ instance Semantics ForeignSemantics where
   semEval (ForeignSemantics sem) = semEval sem
   semExprs (ForeignSemantics sem) = semExprs sem
   semEffects (ForeignSemantics sem) = semEffects sem
+
+
+--------------------------------------------------------------------------------
+-- Static analysis
+--------------------------------------------------------------------------------
+
 
 data Effect
   = Pure -- ^ no effect here!
@@ -2306,8 +2720,8 @@ class (Semigroup m, Semigroup (Sequence m)) => StaticAnalysis1 m where
   withPureBranch = (<>) (Branch mempty)
 
 
-(~~) :: forall m. Semigroup m => Sequence m -> Sequence m -> Sequence m
-m1 ~~ m2 = Sequence (Branch m1 <> Branch m2)
+(~|~) :: forall m. Semigroup m => Sequence m -> Sequence m -> Sequence m
+m1 ~|~ m2 = Sequence (Branch m1 <> Branch m2)
 
 (->-) :: forall m. Semigroup (Sequence m) => m -> m -> m
 m1 ->- m2 = Branch (Sequence m1 <> Sequence m2)
@@ -2531,12 +2945,17 @@ acrossCases' f = Branch . visit' \case
       go = Sequence . acrossCases' f
       children = go scrutinee <> do
         -- Sum across the case branches (with `Monoid m` instead of `Monoid (Sequence m)`)
-        summarizeCases (Map.elems (go . snd <$> cases)) ~~ go fallback
+        summarizeCases (Map.elems (go . snd <$> cases)) ~|~ go fallback
     in ShortCircuit case coerce (f expr) :: Visit (Sequence m) of
       ShortCircuit m -> m
       Append m -> m <> children
       Continue mm -> mm children
   expr -> coerce (f expr) :: Visit (Sequence m)
+
+
+--------------------------------------------------------------------------------
+-- Parsing
+--------------------------------------------------------------------------------
 
 
 
@@ -2720,7 +3139,7 @@ parseAtom = (asum . fmap P.try)
       TypeSensitive Nothing \structT ->
         case isDataType structT of
           Nothing -> error "Constructor of non data type"
-          Just (TDat constructors) ->
+          Just constructors ->
             let
               (constructorName, constructor) = case consNamed of
                 Just consName -> case Map.lookup consName constructors of
@@ -2740,7 +3159,7 @@ parseAtom = (asum . fmap P.try)
         Just ty -> Insensitive $ EVar ty name
         Nothing -> TypeSensitive Nothing \enumT ->
           case isDataType enumT of
-            Just (TDat constructors)
+            Just constructors
               | Just [] <- Map.lookup name constructors -> ECons enumT name []
             _ -> error $ "Missing name/nullary constructor: " <> show name
   , do
