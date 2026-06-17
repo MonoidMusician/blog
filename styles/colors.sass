@@ -47,7 +47,7 @@ h2, h3, h4, h5
   @if $highcontrast
     color: $stark
 
-h3, h4
+h3, h4, section > h1
   border-bottom-color: $text
   border-bottom-style: solid
   border-bottom-width: 1px
@@ -64,6 +64,19 @@ h4
     border-image: linear-gradient(to left, var(--rainbow)) 1
   @else
     border-image: linear-gradient(to right, var(--rainbow)) 1
+section > h1
+  line-height: 0.725
+  @if $light
+    border-image: linear-gradient(to left, var(--rainbow)) 1
+  @else
+    border-image: linear-gradient(to right, var(--rainbow)) 1
+  width: max-content
+  margin-left: auto
+  margin-right: auto
+  padding-left: 2px
+  padding-right: 2px
+  margin-top: 1.5em
+  margin-bottom: 1em
 
 hr
   border: none

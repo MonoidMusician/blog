@@ -760,6 +760,7 @@ Actions are on the right side of `<-`{.purescript}.
 The `ado`{.purescript} in the `case`{.purescript} statement(!) (not an expression) is just a syntactic reminder that it is still in a case combinators.
 
 Already-bound variables are available in certain syntactic positions:
+
 - the final `in`{.purescript}, which defines the return value, just like plain `ado`{.purescript} syyntax
 - the scrutinee of the `case`{.purescript} statement (the expression whose value is inspected in the case branch matches)
 - `let`{.purescript} statements in an `ado`{.purescript} block

@@ -15,6 +15,7 @@ Other type constructors follow a similar pattern to function types.
 
 Things get much more interesting when the algorithms solves for (type) variables by unification.
 I wonʼt get into all the details of how variables work, but the primary cases this comes up are:
+
 - In Haskell-like languages, this occurs when applying a polymorphic function, where the polymorphic type variables are solved for implicitly.
 - In most dependently-typed languages, this occurs when applying a function with implicit arguments.
   (Note that these need not be types, they could be values.)

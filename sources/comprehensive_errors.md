@@ -400,12 +400,14 @@ Each operation that runs not only **preserves the provenance** from the expressi
 Thus we see that it is common for nodes to have multiple provenances documenting all the ways that their expression arose. In fact, unification does not have a special type of provenance for itself, it just combines the provenance of its (normalized) inputs!
 
 There are several types of provenance that I make use of:
+
 - Location, that is, picking out a sub-expression
 - Type-of, returning the result of typechecking the node
 - Forms of normalization, including alpha-normalization, and beta-normalization (evaluation), also substituting all variables in scope.
 - Resolving imports
 
 So given a particular source expression, there is a **function from provenances to their corresponding expressions**. The contract of the compiler is that this function is **secretly total**: every provenance output by the compiler should refer to an actual known expression. But in general, the function will be written with effects:
+
 - For location provenance (drilling down into an AST), the function is partial (in the sense of `Maybe`) because the type of node may not be the type of node denoted by the location.
 - For type-of provenance, the function is partial because an expression may not typecheck, producing the errors we have been talking about.
 - Beta normalization provenance is also partial in the sense that it may not terminate, but again, a well-written typechecker implementation will make sure that only expressions that are known to typecheck are normalized, used, and could appear in the output.

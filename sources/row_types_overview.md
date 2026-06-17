@@ -68,6 +68,7 @@ and I'm *pretty* sure that the reason that row types allow duplicate labels is s
 (it also works in reverse: you can compute `right`{.ps} from `unioned`{.ps} also when `left`{.ps} is a closed row)
 
 if duplicate labels were not allowed, `Row.Union`{.ps} would either have to:
+
 - always block until the full row is known, which is super annoying (and could be implemented with `RowToList`{.ps} at that rate)
 - insert a `Lacks`{.ps} constraint on the tail of `right`{.ps} for each field in `left`{.ps}, which is ugly as fuck
 - insert a `Nub`{.ps} constraint prior to the result, which isn't as terrible as the other options (since `Nub`{.ps} can make progress on open rows), but it means that you can no longer compute `right`{.ps} from `left`{.ps} and `unioned`{.ps} (because `right`{.ps} could be anything from `unioned`{.ps} minus `left`{.ps} to `unioned`{.ps} itself), so it breaks inference in other ways

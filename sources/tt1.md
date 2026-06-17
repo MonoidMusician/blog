@@ -101,6 +101,7 @@ tsil2list (Snoc as as) = Cons a (tsil2list as)
 ```
 
 Note that we can read these functions as source transformations, even:
+
 - Take every occurrence of `Nil` and replace it with `Lin`, and vice-versa.
 - Take every occurrence of `Cons` and replace it with `(flip Snoc)`, and vice-versa.
 
