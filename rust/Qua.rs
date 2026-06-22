@@ -15,7 +15,7 @@ macro_rules! const_assert {
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum SKI { I = 1, K = 2, S = 3 } use SKI::*;
-impl const From<word> for SKI {
+impl From<word> for SKI {
   fn from(value: word) -> Self {
     match value {
       1 => I,
@@ -25,7 +25,7 @@ impl const From<word> for SKI {
     }
   }
 }
-impl const From<u32> for SKI {
+impl From<u32> for SKI {
   fn from(value: u32) -> Self {
     match value {
       1 => I,
@@ -35,12 +35,12 @@ impl const From<u32> for SKI {
     }
   }
 }
-impl const From<u8> for SKI {
+impl From<u8> for SKI {
   fn from(value: u8) -> Self {
     SKI::from(value as u32)
   }
 }
-impl const From<SKI> for Operand {
+impl From<SKI> for Operand {
   fn from(value: SKI) -> Self {
     Immediate((value as u64) << (word_size - 2))
   }
@@ -648,12 +648,12 @@ struct StackFrame {
   to_eval: Operand,
   was_evaling: Weak<SharedOperand>, // weak ref! must be zeroed out when freed
 }
-impl const From<Operand> for StackFrame {
+impl From<Operand> for StackFrame {
   fn from(to_eval: Operand) -> Self {
     StackFrame { to_eval, was_evaling: Weak::new() }
   }
 }
-impl const From<SKI> for StackFrame {
+impl From<SKI> for StackFrame {
   fn from(to_eval: SKI) -> Self {
     Self::from(Operand::from(to_eval))
   }

@@ -9,7 +9,6 @@
     "sass": "make sass"
   },
   "author": "Verity Scheel (monoidmusician)",
-  "license": "ISC",
   "dependencies": {
     "canvas": "^3.2.3",
     "esbuild": "^0.14.49",

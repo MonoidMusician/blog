@@ -46,7 +46,7 @@ categories and lattices
 
 # Functor typeclasses
 
-technically every functor thing should implement Invariant`
+technically every functor thing should implement `Invariant`
 
 - Variance of data types:
   - The strongest is `x = y -> f x -> f y`, but this is ... rare. only caused by type equality itself and nominal roles. but every type function *does* satisfy this

@@ -3,6 +3,7 @@
 set -euo pipefail
 
 {
+  cd -- "$(dirname "$0")"
   THIS=$(basename "$0" .sh)
 
   if [[ "${1:-}" == "--watch" ]]; then
@@ -58,8 +59,9 @@ set -euo pipefail
     )
 
     # Command to compile C -> (LLVM) -> WASM
-    $CLANG \
+    ${CLANG_WASM:-$CLANG} \
       --target=wasm32 \
+      -fuse-ld="${LLD_WASM:-wasm-ld}" \
       "${OPTIONS[@]}" \
       -o "$THIS.wasm" \
       "walloc.c" \
@@ -81,7 +83,7 @@ set -euo pipefail
     #   NATIVE_OPTIONS+=( -pg )
     # fi
 
-    clang "${NATIVE_OPTIONS[@]}" "$THIS.c" -o "$THIS.native"
+    # clang "${NATIVE_OPTIONS[@]}" "$THIS.c" -o "$THIS.native"
 
     # Convert binary to text representation
     # (prefer S-exprs, inline exports)
@@ -122,11 +124,10 @@ set -euo pipefail
     if which wasm-decompile >/dev/null 2>/dev/null; then wasm-decompile --enable-all "$THIS.wasm" > "$THIS.wasm.not.c" || true; fi
 
     # LLVM textual IR: "$THIS.ll"
-    $CLANG \
+    ${CLANG_WASM:-$CLANG} \
       --target=wasm32 \
       -emit-llvm \
       -O3 \
-      -c \
       -S \
       "$THIS.c" || true
 
@@ -135,7 +136,7 @@ set -euo pipefail
     rm -f clif/array_to_wasm_*.clif clif/wasm_to_array_trampoline_*.clif
 
     NODE_OPTIONS=(
-      --experimental-wasm-memory64
+      #--experimental-wasm-memory64
       --no-liftoff # disable Liftoff, the baseline compiler for WebAssembly
       --wasm-opt
       # --no-wasm-bounds-checks --no-wasm-stack-checks

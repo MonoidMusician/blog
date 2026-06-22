@@ -1,11 +1,14 @@
-{ pkgs ? import <nixpkgs> {} }:
+{ pkgs ? import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/3e41b24abd260e8f71dbe2f5737d24122f972158.tar.gz") {} }:
 
 pkgs.mkShell rec {
   # nativeBuildInputs is usually what you want -- tools you need to run
 
   nativeBuildInputs = with pkgs.buildPackages; [
-    nodejs purescript pandoc lilypond
+    # TODO: minimal and maximal shells?
+    nodejs_26 purescript pandoc lilypond
     (haskell.packages.ghc984.ghcWithPackages (pkgs: with pkgs; [ cabal-install haskell-language-server ]))
+    wasmtime wabt
+    clang # for native quapteryx binary
 
     woff2
 
@@ -26,7 +29,7 @@ pkgs.mkShell rec {
     watchexec
 
     (
-      let fenix = import (fetchTarball "https://github.com/nix-community/fenix/archive/6998514dce2c365142a0a119a95ef95d89b84086.tar.gz") { };
+      let fenix = import (fetchTarball "https://github.com/nix-community/fenix/archive/dd2c80d0b88463ccc0402c86e9e72dbb354ac091.tar.gz") { };
       in fenix.complete.toolchain
     )
   ];
@@ -35,6 +38,8 @@ pkgs.mkShell rec {
   shellHook = ''
     export LD_LIBRARY_PATH="$APPEND_LIBRARY_PATH:$LD_LIBRARY_PATH"
     export PATH="$PWD/node_modules/.bin:$PATH"
+    export CLANG_WASM="${pkgs.buildPackages.clang.cc}/bin/clang" # for quaperyx WASM
+    export LLD_WASM="${pkgs.buildPackages.llvmPackages.lld}/bin/wasm-ld" # for quaperyx WASM
     test -d node_modules || npm uninstall --no-save purescript
   '';
 }
