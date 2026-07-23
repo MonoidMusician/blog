@@ -100,6 +100,177 @@ metaprograms which compute runtime expressions of type \(A\).
 - `IO`{.dtt}, `IORef`{.dtt}, and so on come without laws
   - although uh, bind would be nice to remember properties about what was bound, if possible (without wrapping in a subtype and unwrapping)
 
+## Syntax
+
+
+```dtt
+#!pudding
+
+Fun I O := Π (i : I). O
+
+@(infix 50 .r)
+(->) : Type -> Type -> Type := Fun
+
+identity : Π {T : Type}. Fun T T := λ x. x
+
+compose : Π {X Y Z : Type}. Fun Y Z -> Fun X Y -> Fun X Z
+compose f g x := f (g x)
+
+'' The standard right-associative list type
+@data List (T : Type) : Type
+| nil : List T
+| cons : T -> List T -> List T
+
+@derive Functor List
+  '' Generates something like this:
+  /`
+  List'map {I O} (f : I -> O) : List I -> List O
+  | nil := nil
+  | cons (t : I) (ts : List I) :=
+    cons (f t : O) (List'map f ts : List O)
+  `/
+
+List'append {T} : List T -> List T -> List T
+| nil, tail := tail
+| cons t ts, tail := cons t (List'append ts tail)
+
+'' Left-associative
+@data Tsil : Π (T : Type). Type
+| lin : Tsil T
+| snoc : Tsil T -> T -> Tsil T
+
+@data Nat : Type
+| zero : Nat
+| succ : Nat -> Nat
+
+'' Match the associativity of List'append
+Nat'add : Nat -> Nat -> Nat
+| succ n, m := succ ('add n m) '' omit the namespace?
+| zero, m := m
+
+
+@(infix 50 .r)
+(+) := Nat'add
+
+@module List
+  length {T} : List T -> Nat
+  | nil := zero
+  | cons _ ts := succ (length ts)
+
+  length_homo {T} : Π (l1 l2 : List T). length (append l1 l2) = length l1 + length l2
+  | nil, l2 := refl
+  | cons _ l1, l2 :=
+  prove:
+      succ
+        length (l1 <> l2)
+    = succ (length l1)
+    + length l2
+  :by:
+    cong
+      succ
+      length_homo l1 l2
+  '' aka
+  /`
+  prove: succ (length (append l1 l2)) = succ (length l1) + length l2
+    :by: cong succ (length_homo l1 l2)
+  `/
+
+  while_just {I O} :
+    (I -> Maybe O) ->
+    List I ->
+    { justs : List O, tail : List I }
+  '' interrogate `f i`, to match it against `just o`
+  | f, cons i is & f i ??
+  | f, cons _ is , just o
+    '' bind the recursive call here, since it is convenient,
+    '' even though this pattern guard cannot fail
+    & { justs, tail } ?= while_just f is
+    '' cons onto `justs`
+    := { justs := cons o justs, tail }
+  '' we revert the `& f i ??` now, by just matching two items
+  | f, tail := { justs := nil, tail }
+ 
+  while_right {I L R} :
+    (I -> Either (I -> L) R) ->
+    List I ->
+    { rights : List R, leftover : List L }
+  | f, cons i is & f i ??
+  | f, cons _ is , right o
+    '' we can also bind the other way
+    & while_right f is =? { rights, leftover }
+    := { rights := cons o rights, leftover }
+  '' here is an example of using another case with `??`
+  ''  (rebind `is := cons i is` since we
+  ''   need the elements together anyways)
+  | f, is        , left g
+    := { rights := nil, leftover := List'map g is }
+  '' maybe we will allow omitting field names
+  | f, nil := { nil, nil }
+
+
+thingy :=
+  let:
+    here := -0
+    there := 1
+  here + there
+
+asdf :=
+  with: resource :do:
+    x + y
+  with: make resource
+    via some means :do:
+      thingy
+
+asdf :=
+  let:
+    { x, y } := {
+      x := 0,
+      y := 1,
+    }
+  x + y
+  :where:
+    f := 0
+    y := z
+
+actions := do:
+  x := run1
+  let: y := x + 1
+  let:
+    l := _
+    p := _
+  run2 x y
+  run3 =: z
+
+actions := do:
+  bracket:
+    acquire
+  :defer:
+    \acquired -> do:
+      release acquired
+  :do:
+    \acquired -> do:
+      main computation body
+
+actions := do:
+  do:
+    computation
+  :finally:
+    done
+
+  try:
+    computation
+  :catch:
+    \(SomeException (MyExceptionType)) ->
+      recover
+  :catch:
+    recoverOtherException
+  :catch:
+    desperateLastDitchAnything
+  :finally:
+    boop
+```
+
+
 ```xml {.skylighting}
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- ```{.xml .skylighting}``` -->
@@ -108,54 +279,46 @@ metaprograms which compute runtime expressions of type \(A\).
   <highlighting>
     <contexts>
       <context name="Root" attribute="Normal Text" lineEndContext="#stay">
-        <RegExpr attribute="Keyword" context="#stay" String="%[-a-zA-Z_][-a-zA-Z0-9_]*"/>
         <RegExpr attribute="Variable" context="#stay" String="\$[-a-zA-Z_][-a-zA-Z0-9_]*"/>
-        <RegExpr attribute="Annotation" context="#stay" String="@[-a-zA-Z_][-a-zA-Z0-9_]*:?"/>
-        <RegExpr attribute="Keyword" context="#stay" String="\s:\s|-&gt;|Π|Σ"/>
+        <RegExpr attribute="Keyword" context="#stay" String="@[-a-zA-Z_][-a-zA-Z0-9_]*:?"/>
+        <RegExpr attribute="Keyword" context="#stay" String="(\s|^)([:|&amp;]|:=|=:|-&gt;|Π|Σ|λ|\?\?|\?=|=\?)(\s|$)"/>
         <RegExpr attribute="Meta" context="#stay" String="…|&lt;[^][(){}&lt;&gt;]+&gt;"/>
         <IncludeRules context="FindOperators"/>
         <IncludeRules context="FindComments"/>
         <IncludeRules context="FindStrings"/>
-        <RegExpr attribute="Data Type" context="#stay" String="[A-Z][-a-zA-Z0-9_]*"/>
+        <RegExpr attribute="Import" context="#stay" String="[A-Z][-a-zA-Z0-9_]*'"/>
+        <RegExpr attribute="Data Type" context="#stay" String="[A-Z][-a-zA-Z0-9_][-a-zA-Z0-9_]*"/>
+        <RegExpr attribute="Annotation" context="AnnotationBlock" String="@\(\s*[-a-zA-Z_][-a-zA-Z0-9_]*"/>
       </context>
 
       <context name="FindOperators" attribute="Normal Text" lineEndContext="#stay">
         <RegExpr attribute="Operator" context="#stay" String="([-a-zA-Z_][-a-zA-Z0-9_]*:|:[-a-zA-Z_][-a-zA-Z0-9_]*:?)"/>
-        <!-- <RegExpr attribute="Operator" context="#stay" String="\(:|:\)|[=|+*?!\\:;]"/> -->
+        <RegExpr attribute="Operator" context="#stay" String="\(:|:\)|[-=|+*?!\\:;&lt;&gt;]"/>
       </context>
 
       <context name="FindComments" attribute="Comment">
-        <StringDetect attribute="Comment" context="LineComment" String="##"/>
+        <StringDetect attribute="Comment" context="LineComment" String="''"/>
         <StringDetect attribute="Comment" context="LineComment" String="#!"/>
-        <StringDetect attribute="Comment" context="BlockComment" String="{#"/>
-        <StringDetect attribute="Comment" context="ParenComment" String="(#"/>
+        <StringDetect attribute="Comment" context="BlockComment" String="/'"/>
+        <StringDetect attribute="Comment" context="ParenComment" String="/`"/>
       </context>
 
       <context name="LineComment" attribute="Comment" lineEndContext="#pop">
       </context>
       <context name="BlockComment" attribute="Comment" lineEndContext="#stay">
-        <StringDetect attribute="Comment" context="BlockComment" String="{#"/>
-        <StringDetect attribute="Comment" context="ParenComment" String="(#"/>
-        <StringDetect attribute="Comment" context="#pop" String="#}"/>
+        <StringDetect attribute="Comment" context="BlockComment" String="/'"/>
+        <StringDetect attribute="Comment" context="ParenComment" String="/`"/>
+        <StringDetect attribute="Comment" context="#pop" String="'/"/>
       </context>
       <context name="ParenComment" attribute="Comment" lineEndContext="#stay">
-        <StringDetect attribute="Comment" context="BlockComment" String="{#"/>
-        <StringDetect attribute="Comment" context="ParenComment" String="(#"/>
-        <StringDetect attribute="Comment" context="#pop" String="#)"/>
+        <StringDetect attribute="Comment" context="BlockComment" String="/'"/>
+        <StringDetect attribute="Comment" context="ParenComment" String="/`"/>
+        <StringDetect attribute="Comment" context="#pop" String="`/"/>
       </context>
 
       <!-- FindStrings looks for single and double quoted strings -->
       <context name="FindStrings" attribute="Normal Text" lineEndContext="#stay">
-        <DetectChar context="StringSQ" attribute="String SingleQ" char="'"/>
         <DetectChar context="StringDQ" attribute="String DoubleQ" char="&quot;"/>
-      </context>
-
-      <!-- StringSQ consumes anything till ' -->
-      <context name="StringSQ" attribute="String SingleQ" lineEndContext="#stay">
-        <!--no line continuation here-->
-        <Detect2Chars attribute="Escape" char="\" char1="'"/>
-        <Detect2Chars attribute="Escape" char="\" char1="\"/>
-        <DetectChar attribute="String SingleQ" context="#pop" char="'"/>
       </context>
 
       <!-- StringDQ consumes anything till ", substitutes vars and expressions -->
@@ -165,6 +328,32 @@ metaprograms which compute runtime expressions of type \(A\).
         <Detect2Chars attribute="Escape" char="\" char1="$"/>
         <Detect2Chars attribute="Escape" char="\" char1="\"/>
         <DetectChar attribute="String DoubleQ" context="#pop" char="&quot;"/>
+      </context>
+
+      <context name="AnnotationBlock">
+        <IncludeRules context="FindComments"/>
+        <IncludeRules context="FindStrings"/>
+        <IncludeRules context="FindBalanced"/>
+        <StringDetect attribute="Annotation" context="#pop" String=")"/>
+      </context>
+      <context name="FindBalanced">
+        <StringDetect context="Paren" String="("/>
+        <StringDetect context="Brace" String="{"/>
+        <StringDetect context="Bracket" String="["/>
+        <IncludeRules context="FindComments"/>
+        <IncludeRules context="FindStrings"/>
+      </context>
+      <context name="Paren">
+        <IncludeRules context="FindBalanced"/>
+        <StringDetect context="#pop" String=")"/>
+      </context>
+      <context name="Brace">
+        <IncludeRules context="FindBalanced"/>
+        <StringDetect context="#pop" String="}"/>
+      </context>
+      <context name="Bracket">
+        <IncludeRules context="FindBalanced"/>
+        <StringDetect context="#pop" String="]"/>
       </context>
     </contexts>
 

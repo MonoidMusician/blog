@@ -41,6 +41,11 @@
 -- - Optimized data types for the desired operations
 --   - string/list builders
 --   - transparently memoizing information like list size
+-- - Reduce, reuse, recycle
+--   - Arguments that are destructed and reconstructed can be saved and reused,
+--     assuming that there is no effect preventing this (e.g. the type being
+--     tagged with referential identity important)
+--   - Traversals that end up not changing the data return the original object
 -- - Imperative-like code:
 --   - Using mutable variables instead of distantly threaded state
 --   - Using control flow instead of repeated case analysis
@@ -50,6 +55,12 @@
 --   - Unpacking on the stack where possible, ignoring unused fields
 --   - Functions vs closures
 -- - Out of scope: laziness and strictness analysis
+-- - Not sure:
+--   - Perhaps you can avoid retraversing data by linearizing the actions to
+--     run, and/or encoding it as closures to call directly, with all choices
+--     made and data trimmed down.
+--   - Track FFI/unsafeCoerce to track which invariants are absolutely
+--     guaranteed or not (e.g. field order if this was JS...)
 module WASMFP where
 
 import Prelude hiding (unwords, break, filter, lex)
@@ -68,7 +79,7 @@ import Control.Monad.Reader.Class (MonadReader(ask, local))
 import Witherable (Filterable(mapMaybe, filter))
 import Control.Monad (when, unless, void, join, zipWithM_, (<=<))
 import qualified Data.Typeable as Typeable
-import Control.Monad.RWS.CPS (RWST, MonadState (state), MonadWriter (tell, listen, pass), modify', censor, gets, runRWST, MonadTrans (lift), MonadIO (liftIO))
+import Control.Monad.RWS.CPS (RWST, MonadState (state), MonadWriter (tell, listen, pass), modify', censor, gets, runRWST, MonadTrans (lift), MonadIO (liftIO), runRWS)
 import Data.Functor ((<&>))
 import qualified Data.Text.Internal.StrictBuilder as Builder
 import Data.Foldable (traverse_, for_, Foldable (toList), foldrM, fold, foldMap, asum)
@@ -108,6 +119,8 @@ import Control.Monad.State.Strict (evalState)
 import qualified Data.List.NonEmpty as NEL
 import GHC.Stack (HasCallStack)
 import Control.Applicative.Backwards (Backwards(Backwards, forwards))
+import Data.Monoid.Generic (GenericMonoid(..), GenericSemigroup(..))
+import Data.IntMap.Monoidal (MonoidalIntMap)
 
 -- Invoke wasmtime (from $PATH) with the given WASM source, with a main()
 -- function. Prints the source on error.
@@ -198,8 +211,8 @@ main = do
         case parsed of
           Left _ -> pure ()
           Right expr -> do
-            (_, _, code) <- runWASM $ genExpr expr
-            T.putStrLn $ genWASMC code
+            let (_, _, code) = runWASM $ genExpr expr
+            T.putStrLn $ genWASMC $ codegen code
             T.putStrLn $ T.show $ eval expr Map.empty
         T.putStrLn $ T.show $ parse t
         go
@@ -818,6 +831,8 @@ data WASMR = WASMR
   -- ^ the indices of each local in scope of the specified type
   , lexical :: Map Name WASMC
   -- ^ WASM indices of each local in scope in the surface language
+  , analysisDepth :: Int
+  -- ^ just an allocator for active analyses
   }
 -- WASM state context
 data WASMS = WASMS
@@ -844,16 +859,22 @@ data WASMS = WASMS
 
   -- TODO: memory and tables, imports and exports
   }
--- WASM writer context: code for the current function/initializer
-type WASMW = WASMC
+-- WASM writer context
+data WASMW = WASMW
+  { codegen :: WASMC
+  -- ^ code for the current function/initializer
+  -- , analysis :: MonoidalIntMap SomeAnalysis
+  }
+  deriving (Eq, Ord, Generic)
+  deriving Monoid via GenericMonoid WASMW
+  deriving Semigroup via GenericSemigroup WASMW
 -- The WASM monad
-newtype WASMM t = WASM (RWST WASMR WASMW WASMS IO t)
-  deriving newtype (Functor, Applicative, Monad, MonadReader WASMR, MonadState WASMS, MonadIO)
+newtype WASMM t = WASM (RWST WASMR WASMW WASMS Identity t)
+  deriving newtype (Functor, Applicative, Monad, MonadReader WASMR, MonadState WASMS)
 -- Writes WASM code
 type WASM = WASMM ()
 -- Returns WASM code
 type WASMMC = WASMM WASMC
-
 
 -- A helper for generating types, functions, et cetera, into a linear index
 -- in a way so they are deduplicated. The idea is that they are deduplicated
@@ -991,11 +1012,12 @@ contentless (COMMENT _) = True
 contentless _ = False
 
 instance MonadWriter WASMC WASMM where
-  tell = WASM . tell
+  tell c = WASM $ tell $ mempty { codegen = c }
   listen (WASM act) = do
     (a, w) <- WASM $ listen act
-    pure (a, w)
-  pass (WASM act) = WASM $ pass act
+    pure (a, codegen w)
+  pass (WASM act) = WASM $ pass $ act <&> \(a, f) ->
+    (a, \w -> w { codegen = f $ codegen w })
 instance Semigroup m => Semigroup (WASMM m) where (<>) = liftA2 (<>)
 instance Monoid m => Monoid (WASMM m) where mempty = pure mempty
 
@@ -1530,12 +1552,13 @@ genModule codeForMain = do
 
 -- Generate a WASM module into text
 genWAT :: WASM -> IO Text
-genWAT codeForMain = runWASM (genModule codeForMain)
-  <&> \(moduleCode, _, _) -> genWASMC moduleCode
+genWAT codeForMain = evaluate $
+  runWASM (genModule codeForMain)
+  & \(moduleCode, _, _) -> genWASMC moduleCode
 
 -- Run the WASM monad
-runWASM :: WASMM a -> IO (a, WASMS, WASMW)
-runWASM (WASM runIt) = runRWST runIt
+runWASM :: WASMM a -> (a, WASMS, WASMW)
+runWASM (WASM runIt) = runRWS runIt
   WASMR
   { scope = Map.empty
   , lexical = Map.empty
@@ -1553,15 +1576,15 @@ runWASM (WASM runIt) = runRWST runIt
   , binlits = Map.empty
   }
 -- Locally run WASM
-captureWASM :: WASMM (WASMM r -> IO r)
+captureWASM :: WASMM (WASMM r -> r)
 captureWASM = do
   r <- ask
   s <- gets id
   let
-    runner :: forall r. WASMM r -> IO r
+    runner :: forall r. WASMM r -> r
     runner (WASM runIt) =
-      runRWST runIt r s
-        <&> \(a, _, _) -> a
+      runRWS runIt r s
+        & \(a, _, _) -> a
   pure runner
 
 
@@ -2842,7 +2865,7 @@ flowed (CanEndCleanly m) = m
 flowed (EndsCleanly m) = m
 
 -- Add identities
-data MaybeAnalysis m = PureAnalysis | AbsurdAnalysis | SomeAnalysis (Flowy m)
+data MaybeAnalysis m = PureAnalysis | AbsurdAnalysis | JustAnalysis (Flowy m)
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
 
@@ -2850,9 +2873,9 @@ instance StaticAnalysis1 m => Semigroup (MaybeAnalysis m) where
   AbsurdAnalysis <> m = m
   m <> AbsurdAnalysis = m
   PureAnalysis <> PureAnalysis = PureAnalysis
-  SomeAnalysis m <> PureAnalysis = SomeAnalysis (withPureBranch m)
-  PureAnalysis <> SomeAnalysis m = SomeAnalysis (withPureBranch m)
-  SomeAnalysis m1 <> SomeAnalysis m2 = SomeAnalysis (m1 <> m2)
+  JustAnalysis m <> PureAnalysis = JustAnalysis (withPureBranch m)
+  PureAnalysis <> JustAnalysis m = JustAnalysis (withPureBranch m)
+  JustAnalysis m1 <> JustAnalysis m2 = JustAnalysis (m1 <> m2)
 instance StaticAnalysis1 m => Monoid (MaybeAnalysis m) where
   mempty = AbsurdAnalysis
 
@@ -2862,12 +2885,12 @@ instance Semigroup (Sequence m) => Semigroup (Sequence (MaybeAnalysis m)) where
   Sequence PureAnalysis <> m = m
   m <> Sequence PureAnalysis = m
   Sequence AbsurdAnalysis <> _ = Sequence AbsurdAnalysis
-  Sequence (SomeAnalysis (flowed -> m)) <> Sequence AbsurdAnalysis =
-    Sequence (SomeAnalysis (EndsInDisaster m))
-  Sequence (SomeAnalysis m1) <> Sequence (SomeAnalysis m2) = Sequence (SomeAnalysis (m1 ->- m2))
+  Sequence (JustAnalysis (flowed -> m)) <> Sequence AbsurdAnalysis =
+    Sequence (JustAnalysis (EndsInDisaster m))
+  Sequence (JustAnalysis m1) <> Sequence (JustAnalysis m2) = Sequence (JustAnalysis (m1 ->- m2))
 
 unMaybeAnalysis :: forall m. StaticAnalysis m => MaybeAnalysis m -> m
-unMaybeAnalysis (SomeAnalysis m) = flowed m
+unMaybeAnalysis (JustAnalysis m) = flowed m
 unMaybeAnalysis PureAnalysis = analyzeSequence []
 unMaybeAnalysis AbsurdAnalysis = analyzeBranches []
 

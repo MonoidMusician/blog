@@ -55,17 +55,17 @@ conserve_ t f = case f t of
   t' | t' /= t -> Altered t'
   _ -> Conserved t
 
-conserveM :: forall t m. Monad m => t -> (t -> m (Maybe t)) -> m (Conserve t)
+conserveM :: forall t m. Functor m => t -> (t -> m (Maybe t)) -> m (Conserve t)
 conserveM t f = f t <#> case _ of
   Just t' -> Altered t'
   Nothing -> Conserved t
 
-conserveM' :: forall t m. Monad m => t -> (t -> m (Conserve t)) -> m (Conserve t)
+conserveM' :: forall t m. Functor m => t -> (t -> m (Conserve t)) -> m (Conserve t)
 conserveM' t f = f t <#> case _ of
   Altered t' -> Altered t'
   Conserved _ -> Conserved t
 
-conserveM_ :: forall t m. Eq t => Monad m => t -> (t -> m t) -> m (Conserve t)
+conserveM_ :: forall t m. Eq t => Functor m => t -> (t -> m t) -> m (Conserve t)
 conserveM_ t f = f t <#> case _ of
   t' | t' /= t -> Altered t'
   _ -> Conserved t

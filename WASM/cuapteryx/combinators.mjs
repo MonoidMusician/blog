@@ -289,13 +289,13 @@ const combinatorTable = {
   },
   '&&': {
     name: "And",
-    2: 'aab',
-    value: '((SI)I)', def: 'SII',
+    2: 'aba',
+    value: '((SS)K)', def: 'SSK',
   },
   '||': {
     name: "Or",
-    2: 'aba',
-    value: '((SS)K)', def: 'SSK',
+    2: 'aab',
+    value: '((SI)I)', def: 'SII',
   },
   '$asBool': {
     name: "Canonicalize a Church Boolean",
