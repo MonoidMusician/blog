@@ -10,8 +10,949 @@
 <docs>https://www.rssboard.org/rss-specification</docs>
 <generator>pandoc-rss</generator>
 <item>
+<title>Waterfall Model of Types</title>
+<pubDate>Wed, 22 Jul 2026 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/waterfall_types.html</guid>
+<description><![CDATA[<p>This is my waterfall model of types, for thinking about compilers and programming language design. It is clearly biased towards Haskell but useful more generally, I think. A lot of compilers may only include a few stages from this model; none of them include stage 0.</p>
+<hr>
+<p><br></p>
+<p><strong>Waterfall Stage 0</strong> is what the user intends for the types to express. This is a problem because there is no way to convey this. But it is all-important: Everything flows from user intent. <strong><em>Everything</em></strong>.</p>
+<p>The holy grail of programming is how to express user intent with just the right amount of verbosity to make it clear and rigorous but not full of boilerplate.</p>
+<p>Types are a key part of this, and one of the most important ideas is that types can be the same in every respect <em>except</em> for how the user intends to use them. They can be isomorphic, they can be represented the same computationally, but be intended differently. (However, on the other hand, intention may alter usage patterns so that similar types lean towards different representations for efficiency.)</p>
+<p><br></p>
+<p><strong>Waterfall Stage 0.5</strong> is where the user gets to make their type design known in concrete terms, but before the logic of the programming language is in full force. This stage is concrete in the sense that it is executable code, but it is not concrete enough to actually understand what the types <em>are</em>: they are not be enumerated or their relationships may not be solidified yet. Think of metaprogramming and code generation: whether it is a parser generator or <a href="https://wiki.haskell.org/Template_Haskell">Template Haskell</a> or a Python script outputting types from an OpenAPI schema.<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a> But those are pedestrian examples: this area deserves a lot more love and research for sure.</p>
+<p><br></p>
+<p><strong>Waterfall Stage 1</strong> is The Concrete User-Facing Programming Language: the logic of what the compiler deals with, after parsing, templating, and basic desugaring – but still pretty close to the literal source code.</p>
+<p>This stage is all about nominal types, ever so important for capturing user intent for overloading (with typeclasses or other mechanisms) and also for clarity (newtypes and checked constructors, for example). Its goal is to be comprehensive yet cohesive: to make sure that the user intent is coming through and that the program works as a logical whole. Restrictions are placed, like disallowing <a href="https://wiki.haskell.org/index.php?title=Orphan_instance">Orphan Instances</a>, for the Good of the Logic (and ease and predictability of implementation). Users can write elaborate programs and have guarantees about how it will run and how it will fit into the larger picture. But, importantly, you do not need an implementation of this layer: it makes sense on its own.</p>
+<p><br></p>
+<p><strong>Waterfall Stage 1.5</strong> is the next layer down from that. It is a step towards implementation <em>and</em> it conveys information back to stage 1. Typeclasses are quickly <a href="https://haskellforall.com/2012/05/scrap-your-type-classes">scrapped</a>, completing desugaring/elaboration by compiling dictionaries into ordinary datatypes and regular argument passing. Other forms of subsumption are also elaborated into core terms.</p>
+<p>The <code class="haskell">Coercible</code> typeclass and <code class="haskell">coerce</code> function are all about this layer: the Haskell compiler can guarantee that, by looking through newtypes, these types are zero-cost coercible, and in fact, those coercions could be elided altogether. We have not committed to a data representation, just grouped certain types together in their representation. This is not going to let you coerce from an enum type to an integer type, for example, even if they are both stored in memory the same way.</p>
+<p><br></p>
+<p><strong>Waterfall Stage 2</strong> is How The Compiler Thinks The Types Should Be Represented. Nominal types are no longer relevant: everything is structural now. This is where the compiler gets to make decisions: data layout, boxing, float and integer sizes, tagged unions, all that fun stuff. Each type now comes with a description of how it is represented, how it interacts with the garbage collector, how you construct and destruct it, and other important details. Elaborate pattern matching is gone, replaced with simple case analysis on a single datatype at a time<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a>.</p>
+<p>We are not down to raw pointers and bytes yet, though. These types have been washed clean of their trappings of user intent, but they still come with strict contracts for how the compiler and runtime must work with them.</p>
+<p>Few user-accessible facilities will see through this stage, mostly those marked as unsafe like <a href="https://hackage-content.haskell.org/package/ghc-internal-9.1401.0/docs/GHC-Internal-Unsafe-Coerce.html#v:unsafeCoerce-35-"><code class="haskell">unsafeCoerce# :: forall (r1 :: RuntimeRep) (r2 :: RuntimeRep) (a :: TYPE r1) (b :: TYPE r2). a -&gt; b</code></a>, as opposed to proper systematic interfaces.</p>
+<p><br></p>
+<p><strong>Waterfall Stage 3</strong> is the memory model. The data has now been unrolled into word and byte arrays, but pointers are still present as a distinct concept. You want some notion of pointer provenance and typing, saying that pointers are allocated, tracked, dereferenced, and deallocated correctly.</p>
+<p>This is the stage that the garbage collector cares about. You can envision a simplistic stage 3 where each object comes with an allocation length and a bitmask saying which words in its data are pointers that the garbage collector needs to chase. Maybe the garbage collector can even be implemented as a program in a language designed for this stage.</p>
+<p>You can also do fun things like serializing shared and cyclic data by tracking which pointers have been written already and generating backrefs as needed.</p>
+<p>Some memory optimizations may be unlocked by treating data as bytes and words.</p>
+<p><br></p>
+<p><strong>Waterfall Stage 4</strong> is where it ends. Pointers are now just bytes like everything else, maybe you add pointer tagging or encode them with <a href="https://docs.rs/boxing/latest/boxing/nan/index.html">NaN boxing</a> or <a href="https://wingolog.org/archives/2011/05/18/value-representation-in-javascript-implementations">NuN boxing</a>. You hope that you have done everything correctly for the machine to interpret data according to the semantics of the program and hopefully user intent too. Everything is a cascade of tiny side-effects and unchecked memory access speeding along at a few GHz.</p>
+<p><br></p>
+<hr>
+<p>What is the waterfall model good for?</p>
+<p>It is good for talking about how user intent gets encoded and eventually discarded. The key takeaway is that nominal types are for the user and typechecker, and structural types are in the implementation.</p>
+<p>The waterfall is great for talking about optimizations. Aspects of user intent are lost along the way, but details about implementation are added and refined. Different optimizations naturally apply at different points of the waterfall. Sometimes user intent needs to be clawed back: static analysis recovers information about the range and shape (bit pattern) of numeric values possible in the program to enable certain optimizations.</p>
+<p>A lot of meaningful optimizations apply best at a high level: list/stream fusion, the idea that what you get out of a map should be what you just put into it<a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a>. Other optimizations need to wait until decisions have been made about data layout and representation: bithacking, coercing a data tag, and so on. Sometimes happy coincidences turn into opportunistic optimizations; rarely the compiler may shuffle its decisions around to make things coincide.</p>
+<p>Key to the story of optimizations is the accounting of side-effects, and even benign allocations eventually become impenetrable side-effects that the compiler is not sure whether it can elide.</p>
+<p><br></p>
+<hr>
+<p><br></p>
+<p>The waterfall model highlights lots of opportunities for improvement in how we do things.</p>
+<p><strong>Stage 0.5</strong> is awkward in every implementation thus far. Being able to describe what you want types to be and do without having to spell out all of the details is complicated, even in high-level languages with typeclasses and other type-directed codegen options.<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a> To date, there seems to be no good balance of ease-of-use, rigor, and efficiency for most metaprogramming options.</p>
+<p>Staged compilation with dependent types <em>may</em> be one solution here, so I am trying to implement it in <a href="https://blog.veritates.love/github.com/MonoidMusician/Pudding">Pudding</a> based on the outline in <a href="https://andraskovacs.github.io/pdfs/2ltt.pdf">Staged Compilation with Two-Level Type Theory</a>.</p>
+<p>Similarly, <strong>Stage 1</strong> is overly restrictive: Haskell specifies exact datatypes and pattern matching here, but we often want more flexibility. For example, ideally the compiler would be able to freely optimize programs to use list and text builders locally, or even ropes. (It can do so with fusion rewrite rules, but that is too local.) Laziness helps with abstraction here, it allows more flexibility in interleaving and skipping computations, but when you pattern match a datatype in Haskell, Haskell says you are bound to be matching on <em>that</em> datatype.</p>
+<p>And sometimes we write simple code first but then want to associate additional metadata on top of the data. <span data-t="" data-widget="">AST</span> nodes that cache what variables they refer to, stuff like that. Now you have to modify your datatype and every consumer and producer of it to retain that information, even places that should be oblivious to it. This is something I want to fix in <a href="https://blog.veritates.love/tmttmt.html#motivation">tmTTmt</a>.</p>
+<p>On the flipside, sometimes language semantics are a bit too loose for user intent. Sometimes you want to tell Haskell that pointer identity does matter, and not to elide allocations, because you are using finalizers or <a href="https://hackage-content.haskell.org/package/base-4.22.0.0/docs/GHC-StableName.html">stable names</a> on otherwise pure data without using <a href="https://hackage-content.haskell.org/package/base-4.22.0.0/docs/System-IO.html#t:IO"><code class="haskell">IO</code></a> to sequence it.</p>
+<p>Or sometimes the language semantics are fine, but you just want different semantics at/beyond Stage 2. Maybe you need to match the layout of a struct in C or GLSL. Maybe you want to know that your tuple of booleans fits into an atomic word more than that it is coercible with other tuples.</p>
+<p>My <a href="https://github.com/MonoidMusician/blog/blob/main/Haskell/src/WASMFP.hs">WASMFP</a> experiment, making a simple functional programming language that compiles to <span data-t="" data-widget="">WASM</span> with <span data-t="" data-widget="">GC</span> types, is unique in that each type can specify how it is treated by the surface syntax (like an <span data-t="" data-widget="">ADT</span> or like an array or opaquely) and how it is compiled to WASM on the backend.<a href="#fn5" class="footnote-ref" id="fnref5" role="doc-noteref"><sup>5</sup></a> This really cleanly illustrates Stage 1 nominal types versus Stage 2 structural types, and the WASM implementations handle the later stages: allocating GC types and tagging them so that <code class="wasm">i31</code> can live on the stack with references.</p>
+<p>Even more extreme than this, I think it would be really cool if types were allowed to specify their data layout exactly with a bidirectional parser–serializer, and all of the high-level data accesses were compiled to operate on that efficiently, somehow. Imagine if your implementation of a media codec like H264 or AAC was literally a series of datatypes that fit the bitstream exactly but also pulled out the important semantics into the user types you care about. How much tedious code would that eliminate, right there, all on its own?</p>
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn1"><p>Of course you can have fully dynamic types and programs, but the lack of static analysis becomes a hinderance.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn2"><p>So it can be compiled down to jumps in assembly.<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn3"><p>This depends on lawfulness of <code class="haskell">Ord</code> and correctness of <code class="haskell">insert</code> and <code class="haskell">lookup</code>.<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn4"><p>One particular annoyance in Haskell is that there is no option to “derive all the appropriate typeclasses”, you must still list them out. Mostly I wish for this with very lightweight newtype wrappers and for new monad transformers or classes.<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn5"><p>This uses <a href="https://blog.veritates.love/functions_as_data.html">existential types</a> to be easily extensible.<a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>]]></description>
+</item>
+<item>
+<title>Sticking Functions Where They Donʼt Belong</title>
+<pubDate>Thu, 04 Jun 2026 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/functions_as_data.html</guid>
+<description><![CDATA[<p>What does pure data mean? and how the heck do we stick functions in there?</p>
+<p>For me, <em>pure data</em> means a type that does or can implement:</p>
+<ul>
+<li><p><code class="haskell">Show</code>, to serialize the whole internal structure.</p></li>
+<li><p><a href="https://hackage-content.haskell.org/package/deepseq-1.5.2.0/docs/Control-DeepSeq.html#t:NFData"><code class="haskell">NFData</code></a>, to make sure the structure is fully evaluated (forces all the lazy thunks).</p>
+<details class="Bonus">
+<summary>
+<p>Aside about NFData for functions</p>
+</summary>
+<p>There were a <a href="https://github.com/haskell/deepseq/issues/16">few</a> <a href="https://github.com/haskell/deepseq/issues/111">debates</a> around whether the shallow <span data-t="" data-widget="">WHNF</span> instance for functions should be allowed to stay, as a cheat to work around otherwise awkward code. Well this blog post provides a potential way around that! Like, semantically you would want <code class="haskell">NFData</code> to normalize the closure, all of the data that stuck around to help the function implementation do its job. But part of the job of closures is to hide that data – you have no idea what types it has! That data probably cannot be normalized, unless everything can be normalized, and … you may not like what it drags in.</p>
+</details></li>
+<li><p><code class="haskell">Eq</code>, to compare values.</p></li>
+<li><p><code class="haskell">Ord</code>, to order values – not necessarily in any semantic way. Semantics usually prefer partial orders, anyway. Just think of this as “the typeclass that <code class="haskell">Set</code> and <code class="haskell">Map</code> use to keep track of keys”. Things that implement <code class="haskell">Eq</code> and <em>cannot</em> implement <code class="haskell">Ord</code> are really rare: existentials, or things implemented by the runtime (like pointer equality / referential identity – see <code class="haskell">Eq (IORef t)</code> for an example).</p></li>
+<li><p>Maybe <code class="haskell">Read</code>, although we will see later why that does not figure into our story much.</p></li>
+</ul>
+<p>A type that implements these interfaces lawfully has no surprises hidden inside. It is fully legible, plain, flat data. An <span data-t="" data-widget="">ADT</span>, a bytestring, an arbitrarily large natural number,— its representation shouldnʼt matter. Just data.</p>
+<p>Unfortunately this also means that it isnʼt <em>fun</em>. You can add extensibility to your data, but extensible <em>behavior</em> is more difficult. You can teach all the code that consumes it how to handle these new shapes of data, maybe provide them with a registry to look up behaviors ­– if they exist at runtime. But you canʼt embed functions in data. Not theoretically, not practically.<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a></p>
+<p>Or can you?</p>
+<h3 id="origin-story-toy-wasm-backend">Origin Story: Toy WASM Backend</h3>
+<p>I have been experimenting with making a silly little functional programming language that would compile to <span data-t="" data-widget="">WASM</span>, using <span data-t="" data-widget="">GC</span> types. (WASM GC provides structs and arrays with garbage collected references, integrated with the host runtime for references across the boundary: <code class="wasm">externref</code>. Not that I wouldnʼt want to make my own GC sometimeee, but it is worth trying WASM GC out especially for prototyping.)</p>
+<p>I really <em>really</em> want types in the language to have great freedom to choose how they are encoded, in types and in code. For example, the surface language provides basic syntax for arrays, text, and <span data-t="" data-widget="">ADT</span>s, but we should be able to encode enums as <code class="wasm">i8</code> or <code class="wasm">i31</code><a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a> or something. And maybe we want to have bitarrays encoded intelligently as bytearrays <code class="wasm">(array i8)</code>.</p>
+<p>I donʼt want to maintain a registry of the custom types I add. I donʼt want to infect codegen with knowledge of specialized types and compilation. The basic codegen is so simple, it should stay that way. Keep the essence pure.</p>
+<p>But I also donʼt want to give up on my expressions being pure data, an AST that I can inspect and compare and feed to property tests or something.</p>
+<p>What am I to do?</p>
+<h3 id="the-existential-pattern">The Existential Pattern</h3>
+<p>Letʼs smuggle functions into otherwise pure data, with a form of defunctionalization!</p>
+<p>The magic of typeclasses is that they provide global, <em>coherent</em> dictionaries, keyed to types. Because they are global and coherent, they donʼt contain data themselves: all that you need to know is what type they have. Theoretically.</p>
+<p>And the best part? Typeclass dictionaries contains functions, for free.</p>
+<p><code class="haskell">NFData</code> isnʼt a problem for typeclass dictionaries: there are no unexpected thunks or bottoms waiting in global typeclass dictionaries. <code class="haskell">Eq</code> and even <code class="haskell">Ord</code> are already provided on <a href="https://hackage-content.haskell.org/package/base-4.22.0.0/docs/Data-Typeable.html#t:TypeRep"><code class="haskell">TypeRep</code></a>, the runtime representation of <code class="haskell">Typeable</code> types (which is automatically derived). And <code class="haskell">Show</code> isnʼt a problem (but <code class="haskell">Read</code> will be).</p>
+<p>First we make a typeclass synonym that bundles the nice things we want.</p>
+<pre class="haskell"><code>-- Nice properties for existentially hidden data
+type Existentiable hidden = (Typeable hidden, NFData hidden, Ord hidden, Show hidden)</code></pre>
+<p>Next we make a typeclass that contains the functions we want to smuggle through. How about this one for injecting arbitrary foreign semantics into code.</p>
+<pre class="haskell"><code>class Existentiable sem =&gt; Semantics sem where
+  semTyp :: sem -&gt; STyp
+  semCode :: sem -&gt; WASM
+  semEval :: sem -&gt; [Expr] -&gt; Map Name Expr -&gt; Maybe Expr
+  semExprs :: sem -&gt; [Expr]
+  semEffects :: sem -&gt; Effects</code></pre>
+<p>The semantics type can be any data type that captures a behavior we want to see. Then once we have that data, we can project out the behaviors we care about: the type it has, some way to generate code, maybe simulate its evaluation, and an accounting of the effects it has, for static analysis purposes.</p>
+<p>These are basically hooks into our compiler, places where we can extensibly inject arbitrary new behaviors.</p>
+<p>Then we make an existential type that wraps any such data with its corresponding typeclass dictionary, including <code class="haskell">Typeable</code>, <code class="haskell">Eq</code>, and so on, up to the actual <code class="haskell">Semantics</code> we want.</p>
+<pre class="haskell"><code>data ForeignSemantics = forall sem. Semantics sem =&gt; ForeignSemantics sem</code></pre>
+<p>Note that all of the typeclass methods are projective (they receive a <code class="haskell">sem</code> and do not produce it), so we can implement <code class="haskell">Semantics</code> for this abstract <code class="haskell">ForeignSemantics</code> existential type too:</p>
+<pre class="haskell"><code>instance Semantics ForeignSemantics where
+  semTyp (ForeignSemantics sem) = semTyp sem
+  semCode (ForeignSemantics sem) = semCode sem
+  semEval (ForeignSemantics sem) = semEval sem
+  semExprs (ForeignSemantics sem) = semExprs sem
+  semEffects (ForeignSemantics sem) = semEffects sem</code></pre>
+<p>To do this, we have to implement the <code class="haskell">Existentiable</code> constituents.</p>
+<p><code class="haskell">Show</code> is straightforward, just unwrap it and apply <code class="haskell">show</code>. <code class="haskell">NFData</code> also just forwards to the wrapped <code class="haskell">NFData</code> – the dictionary, although it contains functions, does not need to be normalized for the reasons I discussed earlier: it is just a global typeclass dictionary.</p>
+<p><code class="haskell">Eq</code> and <code class="haskell">Ord</code> require comparing the runtime type reflection that is bundled in <code class="haskell">Typeable sem</code> between the two values it gets. And of course <code class="haskell">Typeable ForeignSemantics</code> comes for free – magic fairy dust courtesy of <span data-t="" data-widget="">GHC</span>.</p>
+<pre class="haskell"><code>instance Show ForeignSemantics where
+  show (ForeignSemantics spec) = show spec
+instance NFData ForeignSemantics where
+  rnf (ForeignSemantics spec) = rnf spec
+
+instance Eq ForeignSemantics where
+  ForeignSemantics spec0 == ForeignSemantics spec2
+    | Just spec1 &lt;- Typeable.cast spec0 = spec1 == spec2
+    | otherwise = False
+instance Ord ForeignSemantics where
+  ForeignSemantics spec0 `compare` ForeignSemantics spec2
+    | Just spec1 &lt;- Typeable.cast spec0 = spec1 `compare` spec2
+    | otherwise = Typeable.typeOf spec0 `compare` Typeable.typeOf spec2</code></pre>
+<p>Now we get to use <code class="haskell">ForeignSemantics</code> in the main AST for expressions, or wherever else it is useful, without spoiling deriving for <code class="haskell">Show</code> or <code class="haskell">NFData</code> or <code class="haskell">Eq</code> or <code class="haskell">Ord</code>.</p>
+<pre class="haskell"><code>-- The AST for expressions
+data Expr
+  -- Literals
+  = EF64 !Double
+  | EF32 !Float
+  | EU64 !Word64
+  | EU32 !Word32
+  | ES64 !Int64
+  | ES32 !Int32
+  | ETxt !Text
+
+  -- A let expression: multiple names to bind in order (not recursive let)
+  | ELet [(Expr, Bind)] Expr
+  -- A variable reference
+  | EVar STyp !Name
+  -- An n-ary lambda expression
+  | EFun STyp [Bind] Expr
+  -- Function application (n-ary)
+  | EApp Expr [Expr]
+
+  .
+  .
+  .
+
+  -- Foreign code
+  | EForeign ForeignSemantics
+  deriving stock (Generic, Show, Eq, Ord)
+  deriving anyclass (NFData)</code></pre>
+<p>Finally we can provide some helpful pattern synonyms. Since we bundled <code class="haskell">Typeable</code> with this existential type, we can compare it against a specific type and see if it was that type, using <a href="https://hackage-content.haskell.org/package/base-4.22.0.0/docs/Data-Typeable.html#v:cast"><code class="haskell">Typeable.cast</code></a>. (This requires a view pattern, which I am not really fond of, but is incredibly convenient in this situation.) The pattern synonym now works for destructing concrete types.</p>
+<p>For convenience, we might as well repeat it for the AST type too. Call it <code class="haskell">ESem</code>, since every <code class="haskell">Expr</code> constructor starts with <code class="haskell">E</code>.</p>
+<pre class="haskell"><code>pattern Sem :: Semantics sem =&gt; Semantics sem =&gt; sem -&gt; ForeignSemantics
+pattern Sem sem &lt;- ForeignSemantics (Typeable.cast -&gt; Just (sem :: sem)) where
+  Sem sem = ForeignSemantics sem
+
+pattern ESem :: Semantics sem =&gt; Semantics sem =&gt; sem -&gt; Expr
+pattern ESem sem = EForeign (Sem sem)</code></pre>
+<p>This is nice so that the library itself can provide instances and it still gets to match on them concretely when it needs to. For instance, <code class="haskell">STyp</code> is another existential for synthetic types.</p>
+<p>Now we can create instances and they just magically work. A minimal data type for a foreign call consists of its type, side effects that optimizations may need to know about, and the name of the WASM function or import to call.</p>
+<pre class="haskell"><code>data ForeignCall = ForeignCall STyp Effects Name
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass (NFData)
+
+instance Semantics ForeignCall where
+  semTyp (ForeignCall t _ _) = t
+  semCode (ForeignCall _ _ name) = tell $ SEXP "call" [ wasmID name ]
+  semEval _ _ _ = Nothing
+  semExprs _ = []
+  semEffects (ForeignCall _ ef _) = ef</code></pre>
+<p>Et voilà, it is automatically hooked into the compiler and we can summon any function up with the magic expression <code class="haskell">ESem (ForeignCall (itsType) mempty "functionToCall")</code>.</p>
+<div class="Note">
+<p>It is really important to note that this is one of the few times where we really do need typeclass-constrained existentials. Normally you would say that <code class="haskell">data Showable = forall t. Show t =&gt; Showable t</code> is equivalent to just <code class="haskell">String</code> (or whatever), because converting it to a <code class="haskell">String</code> via <code class="haskell">show</code> is all you can do with the existential <code class="haskell">t</code> value that you received. But because we want functions as data in there, we need to keep the typeclass dictionary abstract, and hang onto the underlying data type.</p>
+<p>Plus, you are doing real work here. You have to decide what is the essence of the data behind the behavior you want for each instance of the typeclass. You are designing the closure of the functions you want and calling it the <code class="haskell">sem</code> type. That is a big chunk of the work of defunctionalization anyway.</p>
+<p>But you donʼt have to worry about the extensibility of the defunctionality; about being a library versus being a consumer of that library. That is all taken care of by Haskell. Itʼs just another typeclass, and typeclasses are amazing.</p>
+<p>You just donʼt get a pretty enumeration of the instances at the end, that you would need for implementing deserialization like <code class="haskell">Read</code>. You are restricted to methods that are compatible with this extensible open-world view of what data it is seeing. But this is perfect for hooks into a compiler or such.</p>
+</div>
+<h3 id="conclusion">Conclusion</h3>
+<p>Defunctionalization is usually either a conscious, excruciatingly explicit design choice, or something that is performed externally on a closed codebase, where all the functions are known.</p>
+<p>This form of defunctionalization is extensible: you can write a Haskell library that contains some instances, and users can bring their own instances to the table, without any coordination.</p>
+<p>You get to add extensible behaviors to any part of your code or data, without compromising much on what it means to be data, or tracking a registry of extensions, or trying to predict what your users (or you in the future) might want to do with it.</p>
+<p>It requires some effort to determine what data is essential to the functions you want for an instance, but hopefully it is not too onerous and provides some clarity. It is better than the alternatives.</p>
+<div class="Bonus">
+<p>Unfortunately, there is no way to automatically serialize and deserialize these existential dictionaries. I was hoping that maybe <a href="https://hackage-content.haskell.org/package/ghc-compact-0.1.0.0/docs/GHC-Compact.html">GHC.Compact</a> could do it, but it does not have a carve-out for typeclass dictionaries. It does say:</p>
+<blockquote>
+<p>The serialized data can only be deserialized by the exact binary that created it, but it can be stored indefinitely before deserialization.</p>
+</blockquote>
+<p>Which – in theory – could even include functions and closures if you really want to play with fire. Same binary, same functions. Less dangerously, the binary could embed a canonical <code class="haskell">TypeRep -&gt; Dict</code> table (well, dictionary assembler) to look instances back up when deserializing. But the GHC runtime does not support that.</p>
+</div>
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn1"><p>Okay, some runtimes can <a href="https://blog.veritates.love/pickling.html#functions-builtins-bootstrapping">serialize functions as bytecode or syntax</a>, but that is not an option in Haskell, and is probably best to avoid.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn2"><p><code class="wasm">i31</code> shaves off a bit from <code class="wasm">i32</code> so it is colocatable with GC pointers<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>]]></description>
+</item>
+<item>
+<title>OOP Without the Goop</title>
+<pubDate>Wed, 27 May 2026 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/reformed_oop.html</guid>
+<description><![CDATA[<p><span data-t="" data-widget="">OOP</span> gets a lot of things wrong. Objects themselves are not interesting, they are usually beside the point. It is their behaviors, their interfaces, that are interesting. <a href="https://blog.veritates.love/resource_acquisition.html">Even lifecycle/RAII can be decoupled from an “object” and a “class”.</a></p>
+<p>Iʼve been experimenting with a different approach that simply seems cleaner. Less noise, fewer inconsequential details to worry about<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>, more flexibility. More coherence.</p>
+<p><span data-t="" data-widget="">OOP</span> sort of developed from the perspective of C turning into C++: it started with passing mutable struct pointers to individual global functions, and then C++ organized these “members” and “methods” into a class. The class also provided constructors and a destructor to manage the lifecycle of its data.<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a></p>
+<p>Things were a bit different with Python and especially JavaScript, for example, but they still sort of ended up in the same place.</p>
+<p>While organization is nice, this is too much living under one roof.</p>
+<p>Remember how we used to do private members in JavaScript? Before JavaScript had <code class="javascript">class</code> syntax and <code class="javascript">#privateField</code>s, the constructor (a plain function! but called with <code class="javascript">new</code>) had to use its local scope to store private variables, and bind closures that can access them.</p>
+<p>Why not push this to its limit? A constructor doesnʼt even need <code class="javascript">this</code>, it can just return a record (Plain Old JavaScript Object) of closures linked together by their shared scope.</p>
+<p>In fact, this is what Iʼve been doing in PureScript.</p>
+<p>Since PureScript has row types (enabling anonymous records), I donʼt need to foreign import types for foreign objects: I just declare their interface and import a single function that creates a new instance of that interface.</p>
+<p>While pure functional programming is a good fit for immutable data, I think this barebones-OOP style is an easier approach for mutable data, resources that change under effects.</p>
+<p>And it is multi-paradigm: it fits great in PureScript, probably is workable in Haskell without anonymous records, but it also works great in JavaScript, probably Python – who knows where it could lead, new languages perhaps?<a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a></p>
+<h2 id="records-of-closures">Records of Closures</h2>
+<p>We still need some place to keep all the behaviors on an object together, and I propose that it should be an immutable record of closures (effectful functions that will manipulate the data/resource).</p>
+<p>Before:</p>
+<pre class="purescript"><code>module Effect.Ref where
+
+-- Declare the foreign type
+-- (in PureScript there is nothing to import, per se)
+foreign import data Ref :: Type -&gt; Type
+
+-- Import a constructor
+foreign import new :: forall v. v -&gt; Effect (Ref v)
+
+-- And import all of the methods
+foreign import read :: forall v. Ref v -&gt; Effect v
+
+foreign import write :: forall v. v -&gt; Ref v -&gt; Effect Unit
+
+
+import Effect.Ref as Ref
+
+example :: Effect Int
+example = do
+  ref &lt;- Ref.new 0
+  -- You have to import the file
+  -- and remember where the object goes:
+  -- the first or the last argument?
+  Ref.write 1 ref
+  Ref.read ref
+  -- 1</code></pre>
+<p>After:</p>
+<pre class="purescript"><code>type Cell v =
+  { get :: Effect v
+  , set :: v -&gt; Effect Unit
+  }
+
+-- Import the constructor, which gives all of the methods
+foreign import mintCell :: forall v. v -&gt; Effect (Cell v)
+
+example :: Effect Int
+example = do
+  cell &lt;- mintCell 0
+  -- It is just a record so it is easy to call
+  cell.set 1
+  cell.get
+  -- 1</code></pre>
+<p>No opaque foreign type.</p>
+<p><em>Much</em> fewer things to import across the FFI boundary.</p>
+<p>And no module import to remember: methods are always available on the record with simple dot syntax, and you donʼt have to remember whether the object comes first or last in the arguments.</p>
+<div class="Details" data-box-name="Closures">
+<p>A function instantiated at runtime has access to variables in its local namespace (created for its current call) plus the namespace where it was created, all the way on up to the/a global namespace usually. Pairing the underlying code with a chain of namespaces is known as a <strong>closure</strong>. As an optimization, only the required variables may be packed in a closure, as opposed to whole namespaces.</p>
+<p>Closures pack variables of any type into an interface accessible through the function type: this is why they can be used to <a href="https://stackoverflow.com/a/13653533">encode existential quantification</a>, and also why they do <em>not</em> support things like <a href="https://github.com/haskell/deepseq/issues/16">NFData</a> and serialization, except <a href="https://blog.veritates.love/pickling.html#functions-builtins-bootstrapping">when the runtime could actually support it</a>.</p>
+<p>For our purposes, they provide abstraction (implementing the same interface by any means necessary) and the construction of closures provides the coherence that normally is associated with an “object”: <code class="purescript">cell.set</code> and <code class="purescript">cell.get</code> both contain the same mutable reference in their closure.</p>
+</div>
+<h3 id="extra-methods">Extra methods</h3>
+<p>For convenience and completeness, it is nice to have more methods. Iʼm particularly fond of a <code class="purescript">swap</code> method that returns the old value.</p>
+<p>We also might as well abstract the monad from <code class="purescript">Effect</code> to <code class="purescript">m</code> while we are here.</p>
+<pre class="purescript"><code>-- | This is an abstract interface to a simple mutable cell.
+type Cell m v =
+  { get :: m v
+  , set :: v -&gt; m Unit
+  , swap :: v -&gt; m v -- obtain the old value
+  , update :: (v -&gt; v) -&gt; m (Pair v) -- return both the old and new values
+  , modify :: Modify m v
+  }
+-- keep additional information `r` during modification
+newtype Modify m v = Modify (forall r. (v -&gt; Tuple v r) -&gt; m { prev :: v, next :: v, info :: r })</code></pre>
+<p>(<code class="purescript">Modify</code> is wrapped because the impredicative type <code class="purescript">forall r. …</code> causes issues for typeclass deriving, among other things.)</p>
+<pre class="purescript"><code>-- | Make a mutable cell, appropriate for the effect type (Ref or STRef)
+class Monad m &lt;= Cellular m where
+  mintCell :: forall @v. v -&gt; m (Cell m v)
+
+
+-- | Use a cell for a mutable state transformer.
+newtype Cellfie v m a = Cellfie (ReaderT (Cell m v) m a)</code></pre>
+<h3 id="operators">Operators</h3>
+<p>Now that we are duck typing this, we can provide operators to access the methods:</p>
+<pre class="purescript"><code>setCell :: forall ops m v r. Functor m =&gt; { set :: v -&gt; m r | ops } -&gt; v -&gt; m Unit
+setCell = map void &lt;&lt;&lt; _.set
+
+swapCell :: forall ops m v r. { swap :: v -&gt; m r | ops } -&gt; v -&gt; m r
+swapCell = _.swap
+
+infix 1 setCell as &amp;=      -- v -&gt; m Unit
+infix 1 swapCell as &lt;&amp;=    -- v -&gt; m v
+infix 1 updateCell as &amp;~   -- (v -&gt; v) -&gt; m Unit
+infix 1 swapifyCell as &lt;&amp;~ -- (v -&gt; v) -&gt; m v</code></pre>
+<p>PureScriptʼs row types make this seamless by enabling extensible records of operations <code class="purescript">{ | ops }</code>.</p>
+<h3 id="reactivity">Reactivity</h3>
+<p>Itʼs really important that properties of the interface are exposed as reactive streams, so downstream consumers know when they are changing. Conversely, it is preferable to expose setter methods still, as opposed to consuming reactive streams.</p>
+<p><a href="https://blog.veritates.love/frp_compatible.html">Everything Should Be FRP Compatible!</a></p>
+<div class="Warning">
+<p>Unfortunately, with current <span data-t="" data-widget="">API</span>s, it is not always possible to know when values are changing. Not enough events are exposed.</p>
+<p>An interface should still do its best to catch updates when possible (especially updates from the interface), and maybe provide a way to re-poll. This is the one time I think it is okay to break the rule that subscribers should not influence each other: if a new subscriber joins and the interface queries the property and realizes it has a stale value, it is okay to notify the other subscribers so they see the current value too.</p>
+</div>
+<p>Letʼs think about a very simple interface, an I/O channel for any kind of data.</p>
+<pre class="purescript"><code>type Interface i o =
+  { send :: i -&gt; Effect Unit
+  , receive :: River o
+  }
+
+mintReactiveCell :: forall t. ResourceM (Interface t t)
+mintReactiveCell = do
+  { send, stream } &lt;- createRiver
+  pure { send, receive: stream }</code></pre>
+<p>Arguably these interfaces could be designed to take streams instead of returning setter methods,</p>
+<pre class="purescript"><code>mintSomething :: forall t.
+  { input :: Lake t } -&gt;
+  ResourceM
+    { output :: River t }
+mintSomething = do
+  { send, stream } &lt;- createRiver
+  subscribe input send
+  pure { output: stream }</code></pre>
+<p>(This is just a trivial example.)</p>
+<p>Generally I donʼt think this is the right approach, for some interrelated reasons:</p>
+<ul>
+<li>Holding the output of <code class="purescript">mintReactiveCell</code> should mean you have capability to interact with that interface. It is good to keep both sides of the interface in the same record, pass it around as a coherent whole.</li>
+<li>It is not difficult to convert between the styles if/when you need to.</li>
+<li>It is uglier to insist that the input must be a stream when control might be changing hands. Either you would need to merge those streams somehow, or use <code class="purescript">createRiver</code> to expose the <code class="purescript">send</code>-style interface anyways</li>
+</ul>
+<h3 id="general-shape">General shape</h3>
+<p>A record where each field can be:</p>
+<ul>
+<li>A reference to the underlying foreign object, if necessary</li>
+<li>Static, immutable information about the object</li>
+<li>Setters/input ports, <code class="purescript">input -&gt; m Unit</code></li>
+<li>Methods, <code class="purescript">arg1 -&gt; arg2 -&gt; ... -&gt; m ret</code></li>
+<li>Plain getters <code class="purescript">m output</code></li>
+<li>Events output <code class="purescript">River event</code></li>
+<li>Reactive stores for mutable state: <code class="purescript">{ stream :: River state, current :: m state }</code><a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a> (preferable to plain getters!)</li>
+<li>Possibly some <code class="purescript">Lake</code>s too (“descriptions of how to subscribe to something, starting at an instant in time”), even <code class="purescript">ResourceM (River _)</code> if you want to have more active logic around who is viewing an interface (<span data-t="" data-widget="">e.g.</span> informing other subscribers when someone new joins in on the fun).
+<ul>
+<li><p>Also useful to have specific interfaces that distinguish loopback events from external events: this is great when working with the DOM, you really donʼt need to or want to update the <code class="javascript">.value</code> attribute of an <code class="html">&lt;input&gt;</code> element in its <code class="javascript">onchange</code> event, since that will clear state like selection and <a href="https://www.w3.org/TR/ime-api/#background"><span data-t="" data-widget="">IME</span> composition</a>.</p></li>
+<li><p>The maximalist version of this is</p>
+<pre class="purescript"><code>type Interface a =
+  { send :: a -&gt; Effect Unit
+  , receive :: River a
+  , loopback :: River a
+  , mailbox :: a -&gt; River Unit
+  , active :: a -&gt; River Boolean
+  , current :: Effect (Maybe a)
+  , destroy :: Effect Unit
+  }</code></pre>
+<p>Where different instantiations of the interface see the same events and updates, with the exception of which events are present on <code class="purescript">.loopback</code> but filtered out of <code class="purescript">.receive</code>.</p></li>
+<li><p>But even more elaborate schemes are sometimes necessary, like for negotiated properties, where the local interface can propose a value, stored as the requested value, while the actual value gets figured out via negotiation with a remote party. This is commonly visible in <span data-t="" data-widget="">WebRTC</span> for example, though it honestly occurs at all levels of the network stack, usually in less visible ways.</p></li>
+</ul></li>
+<li>Keyed data, <span data-t="" data-widget="">e.g.</span> <code class="purescript">EventType -&gt; River event</code> on an event target, or <code class="purescript">Array (River Number)</code> to represent axes on a <code class="purescript">GamePad</code>
+<ul>
+<li>In particular, you may want to memoize this, keep the same source ID/synchrony between subscribers of the <code class="purescript">River</code> and such.</li>
+</ul></li>
+<li>Child objects, sub-resources organized this way</li>
+</ul>
+<h2 id="philosophy">Philosophy</h2>
+<p>These are the factors that have led me here.</p>
+<p>Some of it is just convenience, but I think this convenience also points to it being a good choice.</p>
+<h3 id="abstraction">Abstraction</h3>
+<p>I think the extra abstraction is <em>really</em> nice.</p>
+<p>It has annoyed me so many times that one writes a program to an otherwise abstract interface, but it isnʼt actually adaptable to a new interface, because it relied on particular object types, not their interface.</p>
+<p>With <code class="purescript">Cell m v</code>, it doesnʼt actually matter what is backing the <code class="purescript">Cell</code>: it should support reading and writing.</p>
+<p>An asynchronous cell in <a href="https://pursuit.purescript.org/packages/purescript-aff"><code class="purescript">Aff</code></a> could even maintain its state remotely, via network requests. (… not that I would recommend that.)</p>
+<p>More interestingly, interfaces that are already asynchronous could be virtualized across the network. Could layer on caching, depending on the semantics.</p>
+<h3 id="mutable-variables-have-no-contract">Mutable variables have no contract</h3>
+<p>— no intentionality, either</p>
+<p>The bit of extra friction in using mutable values in PureScript has made me realize that not having mutable variables can actually be a good thing for clarity.</p>
+<p>Mutable variables, even including <code class="purescript">Cell m v</code>, are bad because they have no principle to their use: they can be overwritten with any value at any time.</p>
+<pre class="purescript"><code>mintAccumulator :: forall m w. Cellular m =&gt; Monoid w =&gt; m
+  { get :: m w, put :: w -&gt; m Unit, reset :: m w }</code></pre>
+<p>This accumulator, on the other hand, is principled. Its state always accumulates, until an explicit <code class="purescript">reset</code> is called: and that could be removed if monotonicity is worth guaranteeing.</p>
+<p>What about a counter?</p>
+<pre class="purescript"><code>mintCounter :: forall m. Cellular m =&gt; m (m Int)</code></pre>
+<p>You store it in an immutable variable, and each time it is called in an effectful context, it returns the next higher integer.</p>
+<p>Contrast this to bare imperative programming, where you declare plain variables with <em>no</em> contract for how they are used, no description of how they evolve over the program.</p>
+<p>This is especially frustrating in both the small scale and large:</p>
+<ul>
+<li>in individual loops, a mutable variable can represent all sorts of monoids (<a href="https://pursuit.purescript.org/packages/purescript-orders/6.0.0/docs/Data.Ord.Min#t:Min"><code class="purescript">Max Number</code></a>, <a href="https://pursuit.purescript.org/packages/purescript-prelude/6.0.2/docs/Data.Monoid.Additive#t:Additive"><code class="purescript">Additive Int</code></a>, <a href="https://pursuit.purescript.org/packages/purescript-prelude/6.0.2/docs/Data.Monoid.Conj#t:Conj"><code class="purescript">Conj Boolean</code></a>, and so many more), and it increases cognitive load trying to figure out what behavior it has
+<ul>
+<li>not every behavior is modeled by a monoid, but I think you will find that a lot are! and it is easier if the basic behavior is able to be described like this, and you just have to pay attention to the cases of exceptional behavior</li>
+</ul></li>
+<li>invariants over the course of a whole program run or object lifetime are also difficult to track: you have to chase down their use sites, not the definition site</li>
+<li>compilers miss out on opportunities for optimization</li>
+</ul>
+<h3 id="scopes">Scopes</h3>
+<p>This style of object pairs really well with my idea of scopes from <a href="https://blog.veritates.love/resource_acquisition.html#implementation">Resource Acquisition</a>.</p>
+<p>In this conception of scope, a scope is simply a way of accumulating destructors and telling us if a scope was destroyed already.<a href="#fn5" class="footnote-ref" id="fnref5" role="doc-noteref"><sup>5</sup></a> Trust me, tracking individual <code class="purescript">_.destroy</code> methods on objects is <em>not</em> fun.</p>
+<pre class="purescript"><code>newtype Scope = Scope
+  { putDestructor :: Effect Unit -&gt; Effect Unit
+  , destroy :: Effect Unit
+  , destroyed :: Effect (Disj Boolean)
+  }</code></pre>
+<p>My implementation also contains functions to wait for full initialization to complete, since this was convenienent for my <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API">WebAudio</a> worklet nodes: they can instantiate a normal gain node synchronously, as a proxy for other nodes to subscribe to, while waiting for the worklet to load.</p>
+<pre class="purescript"><code>newtype Scope = Scope
+  { putDestructor :: Effect Unit -&gt; Effect Unit
+  , destroy :: Effect Unit
+  , destroyed :: Effect (Disj Boolean)
+  , waitDestroyed :: App Fiber Unit
+  , putWaiters :: Waiters -&gt; Effect Unit
+  , wait :: App Fiber Unit
+  }
+derive newtype instance Monoid Scope
+derive newtype instance Semigroup Scope</code></pre>
+<p>This forms a monoid, stating that the way to inherit from multiple scopes is simply to register your destructors and waiters with all of them.</p>
+<p>You could possibly envision scopes containing locks in multithreaded languages. But I am not sure how well that would work with a monoid structure…</p>
+<p>(Basically my complaint about multithreaded data structures is that if everything is mutable, everything needs a lock. But these locks are just floating about in space, it is not clear how they fit together into a coherent constellation. If they instead live externally in a <code class="purescript">Scope</code> that governs a group of resources, it may be slightly clearer. Functional programming helps by separating the mutable cell from a complex immutable data structure beneath.)</p>
+<h3 id="inheritanceextensibility">Inheritance/extensibility</h3>
+<p>I think the story for extensibility is actually okay. You can merge records together to add more methods. Inheritance through composition: you can instantiate other objects and manage methods however you see fit.</p>
+<p>It is not compatible with prototypal inheritance. But if you really want <em>dynamic</em> extensibility in particular, you could maybe do something with <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy">proxies</a>.</p>
+<h3 id="erlang-style-processes">Erlang-style processes</h3>
+<p>Think of how a mutable cell evolves over time.</p>
+<p>One explanation for this behavior is as a <a href="https://hackage-content.haskell.org/package/machines-0.7.4/docs/Data-Machine-Mealy.html">Mealy machine</a>. It takes successive inputs that inform its internal state as it produces an output each time.</p>
+<pre class="purescript"><code>newtype Machine m i o = Machine (i -&gt; m (Tuple (Machine m i o) o))
+
+monadicMachine :: forall m s i o. Applicative m =&gt;
+  s -&gt;
+  (s -&gt; i -&gt; m (Tuple s o)) -&gt;
+  Machine m i o
+monadicMachine initial evolve = encapsulate initial
+  where
+  encapsulate state = Machine \input -&gt; ado
+    Tuple updated output &lt;- evolve state input
+    in Tuple (encapsulate updated) output</code></pre>
+<p>Notice how it encapsulates the state type <code class="purescript">s</code> and does not reveal it, capturing it in the closure instead.<a href="#fn6" class="footnote-ref" id="fnref6" role="doc-noteref"><sup>6</sup></a></p>
+<p>We can spawn a machine, backing it with a mutable variable: <code class="purescript">Machine m i o -&gt; m (i -&gt; m o)</code>.</p>
+<p>This has a problem when <code class="purescript">m</code> is asynchronous, though: requests can race, meaning that state is overwritten based on stale information.</p>
+<p>This basically led me down a rabbit hole of reinventing Erlang-style <a href="https://www.erlang.org/docs/24/man/gen_server"><code>gen_server</code></a>s that process a queue of inputs in order, checking state out and in as it works on a request.</p>
+<p>This eventually ended up as a <code class="purescript">SwitchProcessor</code>, with an internal state <code class="purescript">state</code> it can handle a keyed input <code class="purescript">input key</code> to produce a keyed output <code class="purescript">output key</code> via the monad <code class="purescript">m</code>, with some extra nuances in behavior along the way.</p>
+<pre class="purescript"><code>mkSwitchProcessor :: forall m state input output.
+  state -&gt; (forall key. state -&gt; input key -&gt; m (SwitchProcessing m (SwitchProcessor m input output) state (output key))) -&gt;
+  SwitchProcessor m input output
+
+data SwitchProcess m switch stay
+  = ProcessStay stay
+  | ProcessTrySwitch (m switch) (m stay)
+  | SwitchLater (m (SwitchProcess m switch stay))
+
+data SwitchProcessing m switch stay output
+    -- about to produce an output, with information on
+    -- what happens to its internal state or if it should
+    -- try to switch away
+  = SwitchProcessed (SwitchProcess m switch stay) (m output)
+  | SwitchProcessing stay
+    -- this `m` can block for a while and then return,
+    -- either returning the output immediately or
+    -- asking for a new state to continue processing
+    (m (Either o (stay -&gt; m (SwitchProcessing m switch stay output))))</code></pre>
+<blockquote>
+<p>An async processor that queues inputs until the state is available, and also allows switching out the whole processor for one with an interface of the same type.</p>
+<p>It maintains a queue of input-output pairs or threads waiting on state. It will transfer inputs over, but it can only switch if there are no threads waiting on the state.</p>
+<p>Switching allows adding or discarding items from state without dealing with optionality: they can be always present (or captured in the closure), no need to check if they are present on each operation and deal with errors.</p>
+<p>It also can help with directional state machines, where previous states become unreachable. Although there is nothing that prevents it from switching back to another instance of the previous machine later.</p>
+</blockquote>
+<p>Again, this is just an abstract interface to a mutable cell.</p>
+<p>Here it is implemented on top of JavaScript object mutability, but its interface could also be implemented across JavaScript workers with serializable objects, or in Erlang with its ability to send any Erlang object across processes or even servers (since they are immutable! all mutability is done via FFI or by emergent interactions between processes).</p>
+<h2 id="downsides">Downsides</h2>
+<p>Alright, there are some downsides to this approach. But I am not convinced that they are blockers, especially in a language like PureScript that makes it more ergonomic than the alternatives, and has the capacity to be optimizable (plus, JavaScript runtimes are impressively optimized already).</p>
+<ol>
+<li><p>It still has the same downside of <span data-t="" data-widget="">OOP</span> that everything is object-centric, being methods <em>on</em> an object, and so on.<a href="#fn7" class="footnote-ref" id="fnref7" role="doc-noteref"><sup>7</sup></a> But this is okay, I think that is reasonable when dealing with mutation/communication-centric things, as long as the rest of the language is not infected with object-centrism. And it is nice that the closures can be projected out into plain functions, without having to worry about if method access produces the right <code class="javascript">this</code> reference.<a href="#fn8" class="footnote-ref" id="fnref8" role="doc-noteref"><sup>8</sup></a></p></li>
+<li><p>There is no explicit referential identity: you cannot test whether two <code class="purescript">Cell</code>s are the same, because they are abstract interfaces now. You may still have some use cases where you want explicit referential identity, but … I think those are rare and deserve to be special, not the default.</p>
+<p>For the cases where you need it, you should expose the underlying OOP object still (that is, the object that is an instance of a class).</p></li>
+<li><p>As a consequence, binary/n-ary relational methods do not work well. Think <code class="javascript">Element.addChild</code> in the JavaScript DOM, where objects need to have a relationship with others based on their inherent referential identity: <code class="purescript">Element -&gt; Element -&gt; Effect Unit</code>.</p>
+<p>Again, the record can at least expose the underlying object to work around this.</p>
+<p>However, it is sometimes possible to redesign APIs so this is less necessary. The Dragon part of Riverdragon (which is a reactive VDOM) exposes how to create a DOM tree without any interfaces like <code class="javascript">Element.addChild</code>.</p></li>
+<li><p>Dealing with different monads in the interface is probably annoying – lifting it to a different monad after creation, for example. Sometimes you might just lift them individually at use. For existing typed languages, anything you could do to make the lifting easier, probably makes the usage harder.</p>
+<p>However, hopefully there are not too many monads floating around. And it is really smart to stick to something isomorphic to <code class="purescript">ReaderT _ Effect</code> / <code class="haskell">ReaderT _ IO</code>, so you can apply the <a href="https://hackage.haskell.org/package/unliftio-core-0.2.1.0/docs/Control-Monad-IO-Unlift.html#v:askRunInIO"><code class="haskell">UnliftIO</code> pattern</a>: save scope/context from an outer context to smuggle wherever effects need to be run.</p></li>
+<li><p>Itʼs more difficult to ascribe contracts to the behavior of these objects, since they are basically duck typed now. But again, I think it is a reasonable tradeoff here, and there are ways of being more explicit if you want to be. Make extra members with the contract names you want?</p></li>
+<li><p>It is difficult to let these interfaces be extensible. The expression problem strikes again!</p></li>
+<li><p>It probably makes optimization difficult, since everything is virtual, based on closures not methods.</p>
+<ul>
+<li>Counterpoint: you still often call concrete functions to create instances, <code class="purescript">mintThingy</code></li>
+</ul></li>
+<li><p>It requires a sufficiently high level language to make sense of records and closures in the first place. Low-level FFI and bootstrapping may still require interfacing with the old style of classes-and-methods or pointers-and-procedures, leaving it to the high level language to wrap them in records-and-closures.</p></li>
+<li><p>Additionally, it might be much harder to swing without garbage-collected languages, not sure on that.</p></li>
+</ol>
+<h2 id="examples">Examples</h2>
+<p>to demonstrate the concept<a href="#fn9" class="footnote-ref" id="fnref9" role="doc-noteref"><sup>9</sup></a></p>
+<h3 id="riverdragon-frp">Riverdragon FRP</h3>
+<h4 id="river-stream-flowing">River (Stream Flowing)</h4>
+<p>Creating a river (a flowing stream) is a resource action, so it returns a record of methods: the created <code class="purescript">stream</code> and a way to send events through it.</p>
+<pre class="purescript"><code>createRiver :: forall flow a m. MonadResource m =&gt;
+  m { send :: a -!&gt; Unit, stream :: Stream flow a, destroy :: Effect Unit }
+
+createStore ::
+  forall flow a m. MonadResource m =&gt;
+  a -&gt;
+  m
+    { send :: a -!&gt; Unit
+    , stream :: Stream flow a
+    , destroy :: Effect Unit
+    , current :: Effect a
+    }
+
+instantiate ::
+  forall flowIn flowOut a m.
+    MonadResource m =&gt;
+  Stream flowIn a -&gt;
+  m
+    { burst :: Array a
+    , stream :: Stream flowOut a
+    , destroy :: Effect Unit
+    }</code></pre>
+<p><code class="purescript">_.destroy</code> is just a convenience method, since it is already registered with the <code class="purescript">Scope</code> from <code class="purescript">MonadResource</code>.</p>
+<h4 id="lake-stream-notflowing">Lake (Stream NotFlowing)</h4>
+<p><code class="purescript">Stream</code>s follow this pattern somewhat, they are anything that implements this interface, basically:</p>
+<pre class="purescript"><code>data Stream (flow :: IsFlowing) a = Stream IsFlowing
+  ( { receive :: a -!&gt; Unit, commit :: Id -!&gt; Unit, destroyed :: Effect Unit } -&amp;&gt;
+    { burst :: Array a, sources :: Array Id, unsubscribe :: Effect Unit }
+  )</code></pre>
+<p>But <code class="purescript">Lake</code>s have an alternative interface, that handles the extra details.</p>
+<pre class="purescript"><code>makeLake :: forall a. ((a -!&gt; Unit) -&gt; ResourceM Unit) -&gt; Stream NotFlowing a
+
+makeLakeFFI :: forall a. ((a -!&gt; Unit) -&gt; Effect (Effect Unit)) -&gt; Stream NotFlowing a</code></pre>
+<p>It is available in with the nice <code class="purescript">ResourceM</code> monad, to track what resources need to be destroyed when the subscriber leaves, and in an FFI friendly version that is the classic event producer pattern: take a callback, set up some resources, and return an unsubscribe function.</p>
+<p>The <code class="purescript">Stream</code> itself does not use bare methods, it has dedicated module functions <code class="purescript">subscribe :: forall flow a m. MonadResource m =&gt; Stream flow a -&gt; (a -!&gt; Unit) -&gt; m Unit</code> and so on, since they require some logic not covered by the <code class="purescript">Stream</code> interface itself.</p>
+<h3 id="interface-to-a-mutable-value">Interface to a mutable value</h3>
+<p>I use this for the widgets on my blog. It is pretty similar to the above (in fact, it was inspired by and in turn re-inspired it).</p>
+<pre class="purescript"><code>-- | An interface to a mutable value, stored in one location. It may not have
+-- | a value at first, or ever.
+type Interface a =
+  { send :: a -&gt; Effect Unit
+  , receive :: River a
+  , loopback :: River a
+  , mailbox :: a -&gt; River Unit
+  , active :: a -&gt; River Boolean
+  , current :: Effect (Maybe a)
+  , destroy :: Effect Unit
+  }</code></pre>
+<p>The benefits over a <code class="purescript">Ref</code> are:</p>
+<ol>
+<li><p>You can receive notifications of the events via the <code class="purescript">River</code>s.</p></li>
+<li><p>Input and output are separated (<code class="purescript">send</code> vs <code class="purescript">current</code>), so you can map over them with a pair of functions, one for each direction. This allows widgets on my blog to communicate uniformly via JSON, while themselves seeing <code class="purescript">Interface Int</code> or whatever type they de/encode.</p>
+<div class="Details">
+<p>It is often useful to split the input and output sides of any interface like this, so it becomes a <a href="https://pursuit.purescript.org/packages/purescript-profunctor/6.0.1/docs/Data.Profunctor"><code>Profunctor</code></a> instead of an <a href="https://pursuit.purescript.org/packages/purescript-invariant/6.0.0/docs/Data.Functor.Invariant#t:Invariant"><code>Invariant</code></a> functor.</p>
+</div></li>
+<li><p>The key nicety is <code class="purescript">loopback</code> vs <code class="purescript">receive</code>, which can filter out events emitted out from a particular interface versus the events coming in to it. This is incredibly useful for UI events, where naïvely updating a text box could cause it to lose its selection.<a href="#fn10" class="footnote-ref" id="fnref10" role="doc-noteref"><sup>10</sup></a></p>
+<p>(Of course, any particular implementation of <code class="purescript">Interface</code> is free to ignore this and implement <code class="purescript">receive = loopback</code>, but it is still nice.)</p></li>
+<li><p>Finally, <code class="purescript">mailbox</code> and <code class="purescript">active</code> allow efficiently notifying for particular values. You can imagine a selection index maintained as an <code class="purescript">Interface Int</code> and 1000 DOM elements listening to see if they are selected. It is more efficient than <code class="purescript">\value -&gt; filter (== value) loopback</code> but retains the clean centralized state: it is the responsibility of <code class="purescript">mailbox</code> and <code class="purescript">active</code> to synchonize to that source of truth.</p></li>
+</ol>
+<h3 id="remote-resources">Remote resources</h3>
+<p>Here is a helper for requesting remote resources (<span data-t="" data-widget="">e.g.</span> over HTTP), that includes status via the <a href="https://package.elm-lang.org/packages/krisajenkins/remotedata/latest/RemoteData#RemoteData"><code class="purescript">RemoteData</code> pattern</a>, and automatically cancels itself when the scope is destroyed.</p>
+<p>Note that it has a temporary canceler and also a permanent destructor that prevents further requests.</p>
+<pre class="purescript"><code>data Status a
+  = Unloaded
+  | Loading (Effect Unit) -- canceler
+  | Failed String
+  | Loaded a
+
+remoteResource :: forall a m. MonadResource m =&gt;
+  { acquire :: Aff a
+  , reloadable :: Boolean
+  , retryable :: Boolean
+  } -&gt; m
+  { start :: Effect Unit
+  , load :: Aff a
+  , cancel :: Effect Unit
+  , loaded :: River a
+  , status :: River (Status a)
+  , destroy :: Effect Unit
+  }</code></pre>
+<p>This is just <em>so</em> much nicer than what JavaScript would have to offer: canceling requests is done with the awkward <a href="https://developer.mozilla.org/en-US/docs/Web/API/AbortController"><code class="javascript">AbortController</code></a>/<a href="https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal"><code class="javascript">AbortSignal</code></a> combo (why oh why are those full fledged objects), and it just has promises and the <code class="javascript">.addEventListener</code>/<code class="javascript">.removeEventListener</code> API instead of the proper asynchronous monad <code class="purescript">Aff</code> and FRP event stream <code class="purescript">River</code>.</p>
+<h3 id="helpers-for-destructors">Helpers for destructors</h3>
+<p>Two methods that are indispensible for tracking cleanup of objects:</p>
+<pre class="purescript"><code>mintCleanup :: forall m. Cellular m =&gt; m Unit -&gt; m (m Unit)
+mintCleanup = mintCell &gt;&gt;&gt; map \cell -&gt; do
+  callbackOnce &lt;- cell &lt;&amp;= (pure unit)
+  callbackOnce
+
+mintRolling :: forall m. Cellular m =&gt;
+  m (Interface m (m Unit) Unit)
+mintRolling = mintCell (pure unit) &lt;#&gt; \cell next -&gt; do
+  prev &lt;- cell &lt;&amp;= next
+  prev</code></pre>
+<p>The first ensures that its cleanup effect only runs once, prevent double counting. Additionally, it makes sure to free its closure to prevent resources from leaking via a retained destructor.</p>
+<p>Rolling accepts a new cleanup function each time it is called, running the old one. This is incredibly useful when subscribing to streams: sometimes you want each new event to teardown the previous actions.</p>
+<p>They both use <code class="purescript">cell &lt;&amp;=</code> which stands for <code class="purescript">cell.swap</code>.</p>
+<p>When specialized to <code class="purescript">Effect</code>, these both basically optimize away with <a href="https://github.com/aristanetworks/purescript-backend-optimizer/"><code>purescript-backend-optimizer</code></a>, using a <code class="javascript">let</code> binding:</p>
+<pre class="javascript"><code>var mintCleanupE = (x) =&gt; () =&gt; {
+  let a$p = x;
+  return () =&gt; {
+    const a$p$1 = a$p;
+    a$p = () =&gt; {
+    };
+    return a$p$1();
+  };
+};
+var mintRollingE = () =&gt; {
+  let a$p = () =&gt; {
+  };
+  return (next) =&gt; () =&gt; {
+    const a$p$1 = a$p;
+    a$p = next;
+    return a$p$1();
+  };
+};</code></pre>
+<p>This is a breaker that can only be tripped, not reset. It also frees its closure.</p>
+<pre class="purescript"><code>mintBreaker :: forall m i. Cellular m =&gt;
+  (i -&gt; m Unit) -&gt;
+  m
+    { run :: i -&gt; m Unit
+    , trip :: m Unit
+    , running :: m Boolean
+    }
+mintBreaker act = mintCell (Just act) &lt;#&gt; \cell -&gt;
+  { run: \i -&gt; do
+      cell.get &gt;&gt;= case _ of
+        Nothing -&gt; pure unit
+        Just fn -&gt; fn i
+  , trip: cell.set Nothing
+  , running: isJust &lt;$&gt; cell.get
+  }</code></pre>
+<h3 id="midi-keyboard-state">MIDI keyboard state</h3>
+<p>Keeping track of the state of a MIDI note is not straightforward. There are four relevant events: note on and note off, plus polyphonic aftertouch or channel aftertouch for updates while the note is pressed. Some manufacturers use note on with velocity 0 to mean note off.</p>
+<p>There is no event to request a resync, so it is best to track the state in one place, instantiated as soon as possible, and divvy out interfaces to the note events from there. That is, Rivers, and a <strong>lot</strong> of them.</p>
+<p>I like to package note events into an interface <code class="typescript">River&lt;MIDINoteLive&gt;</code> that captures on and off events directly, but includes a stream <code class="typescript">.aftertouch: River&lt;number&gt;</code> that represents aftertouch for that specific press: the event stops when the note is released, emits no more events. (For note off events, it is just an empty stream.)</p>
+<p>This is the most useful form when you want to handle notes in a synthesizer, but it is nontrivial to obtain from the raw MIDI events.</p>
+<p>This code makes extensive use of <code class="typescript">River.mailbox()</code> to ensure that specific listeners are activated, at the cost of making them into individual events, losing atomicness from the underlying event source.<a href="#fn11" class="footnote-ref" id="fnref11" role="doc-noteref"><sup>11</sup></a></p>
+<pre class="typescript"><code>export type MIDINote = {
+  channel: number, // 0–15
+  key: number, // 0–127, 21=A0 through G9=127
+};
+export type MIDIChannel = {
+  channel: number,
+  key?: undefined,
+};
+
+export type MIDINoteEvent =
+  | { type: "velocity", pressed: boolean, velocity: number, event?: MIDIMessageEvent } // 0 implies off
+  | { type: "aftertouch", aftertouch: number, event?: MIDIMessageEvent };
+export type MIDINoteState = {
+  pressed: boolean, // &lt;= (velocity &gt; 0)
+  velocity: number, // 0-127
+  aftertouch: number | undefined,
+  timeStamp?: number,
+  event?: MIDIMessageEvent,
+};
+export type MIDINoteUpdate = { event: MIDINoteEvent, state: MIDINoteState };
+
+// A live view of this note event (press or release) until its next release
+export type MIDINoteLive = {
+  pressed: boolean, // &lt;= (velocity &gt; 0)
+  velocity: number, // 0-127
+  timeStamp?: number,
+  event?: MIDIMessageEvent,
+  release: River&lt;MIDINoteLive&gt;, // empty if pressed == false, limit 1
+  aftertouch: River&lt;number&gt;, // empty if pressed == false, ends when released
+};
+
+// Keep track of all the notes that are currently playing on the MIDIInput,
+// so they do not get dropped for lack of subscribers. Provide convenient
+// (and efficient?) ways to slice the events by channel and by note.
+export type MIDINoteMap = {
+  // Update the state, returning the state if it makes sense
+  // (off events if it was on, and aftertouch only while it is on)
+  send(note: MIDINote, event: MIDINoteEvent, DOMevent?: MIDIMessageEvent): MIDINoteState | undefined,
+  // Merely parse an event (pure function)
+  fromWire(data: number[] | Uint8Array | null | undefined):
+    { note: MIDINote | MIDIChannel, event: MIDINoteEvent } | undefined,
+  // Parse a message event and update the state
+  parse(DOMevent: MIDIMessageEvent):
+    MIDINoteState | undefined,
+
+  // All events, for all channels and all notes
+  allEvents: River&lt;MIDINote &amp; MIDINoteUpdate&gt;,
+  // All updates for a specific note
+  noteEvents(note: MIDINote): River&lt;MIDINoteUpdate&gt;,
+  // On and off events for a specific note
+  presses(note: MIDINote): River&lt;MIDINoteState&gt;,
+  // Aftertouch for a specific note
+  aftertouch(note: MIDINote): River&lt;number | undefined&gt;,
+
+  // A live view of each note: on and off events
+  allNotes: River&lt;MIDINote &amp; MIDINoteUpdate &amp; { live: River&lt;MIDINoteLive&gt; }&gt;,
+  liveNote(note: MIDINote): River&lt;MIDINoteLive&gt;,
+  currentAftertouch(note: MIDINote): River&lt;number&gt;,
+
+  selectChannel(channel?: number): {
+    // All events, for all notes on this channel
+    allEvents: River&lt;MIDINote &amp; MIDINoteUpdate&gt;,
+    noteEvents(key: number): River&lt;MIDINoteUpdate&gt;,
+    presses(key: number): River&lt;MIDINoteState&gt;,
+    aftertouch(key: number): River&lt;number | undefined&gt;,
+
+    allNotes: River&lt;MIDINote &amp; MIDINoteUpdate &amp; { live: River&lt;MIDINoteLive&gt; }&gt;,
+    liveNote(key: number): River&lt;MIDINoteLive&gt;,
+    currentAftertouch(key: number): River&lt;number&gt;,
+  },
+
+  disconnect(): void,
+  reconnect(): void,
+};</code></pre>
+<h2 id="future">Future</h2>
+<p>I think what I have outlined here is a much simpler approach that cuts to the heart of what we need from interfaces to objects and mutability.</p>
+<p>It doesnʼt need to be done in functional languages or with monads, it works well in JavaScript with plain effectful functions!<a href="#fn12" class="footnote-ref" id="fnref12" role="doc-noteref"><sup>12</sup></a></p>
+<p>Iʼve been using this to develop <a href="https://blog.veritates.love/riverdragon_implementation.html">Riverdragon</a>, my take on <span data-t="" data-widget="">FRP</span>.<a href="#fn13" class="footnote-ref" id="fnref13" role="doc-noteref"><sup>13</sup></a> Iʼve even been using it to port Riverdragon from PureScript to other languages: I think <a href="https://tech.lgbt/@monoidmusician/116449166586150538">everything should be compatible with FRP</a> and I wanna use Riverdragon everywhere.</p>
+<p>I will keep using it, in my own work. Perhaps it can make its way to a published library. It would be even nicer to reimagine a whole ecosystem around it.</p>
+<ul>
+<li><a href="https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Riverdragon/River.purs" class="uri">https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Riverdragon/River.purs</a></li>
+<li><a href="https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Riverdragon/River/Bed.purs" class="uri">https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Riverdragon/River/Bed.purs</a></li>
+<li><a href="https://github.com/MonoidMusician/blog/tree/main/PureScript/src/Control/Monad/Cell" class="uri">https://github.com/MonoidMusician/blog/tree/main/PureScript/src/Control/Monad/Cell</a></li>
+<li><a href="https://github.com/MonoidMusician/blog/blob/main/assets/js/Riverdragon/Bed.ts" class="uri">https://github.com/MonoidMusician/blog/blob/main/assets/js/Riverdragon/Bed.ts</a></li>
+</ul>
+<p>Maybe you will join me too. Maybe we can make simpler new languages based on these concepts.</p>
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn1"><p>no worrying about function vs method calls, when to use <code class="purescript">this</code>, whether to use getters+setters or mutate a plain member (no!) or use explicit get and set methods, …<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn2"><p>Java took it further and said there is no function, only class, which was an ugly mistake.<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn3"><p>Yes please! But thatʼs not for this post.<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn4"><p>not distinguished from event streams at the type level<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn5"><p>This is sufficient in a garbage-collected language, at least.<a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn6"><p>This encapsulation even allows for machines that switch their internal state type, by handing off to a new machine: <code class="purescript">Either (Machine m i o) s</code>.<a href="#fnref6" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn7"><p>Iʼve always complained that <a href="https://blog.veritates.love/oop.html">why should things like addition and concatenation be methods on one object instead of the other?</a>, and I hope you also see why it is shortsighted that <span data-t="" data-widget="">OOP</span> forces that.<a href="#fnref7" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn8"><p>Although this is something that Python got right.<a href="#fnref8" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn9"><p>I think my best examples are yet to be written … I am still in the fundamentals and velocity-building stage of exploration here<a href="#fnref9" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn10"><p>Of course, this is possible to avoid with <a href="https://pursuit.purescript.org/packages/purescript-textcursor/2.0.0/docs/Web.Util.TextCursor">the correct web APIs</a>, but few people put in that effort, sigh…<a href="#fnref10" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn11"><p>Because they get their own source ID, so they have different <code class="typescript">.commit(id)</code> events.<a href="#fnref11" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn12"><p>Even <code class="purescript">Scope</code> works, using the usual tricks for local monads via a global variable, plus some care around closures/callbacks/asynchrony. like, stream callbacks ought to run in the scope that the stream was created in, not whatever happened to trigger the event.<a href="#fnref12" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn13"><p>Riverdragon needs surprisingly few object behaviors for its helpers: about 10.<a href="#fnref13" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>]]></description>
+</item>
+<item>
+<title>Everything Should Be FRP Compatible</title>
+<pubDate>Wed, 22 Apr 2026 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/frp_compatible.html</guid>
+<description><![CDATA[<p>I think FRP (Functional Reactive Programming) is great. I don’t think everything should be written in an FRP style, it has its warts, but I think all types of dynamic objects should be compatible with the philosophy, concepts, and interfaces of FRP.</p>
+<p>the basic idea is reactive values that may come with a “current” value or other form of history, and notify you when they change (if they aren’t <a href="https://stackoverflow.com/questions/5875929/specification-for-a-functional-reactive-programming-language/5878525#5878525">continuously variable</a>)</p>
+<p>this feels like <span data-t="" data-widget="">OOP</span> still, just with prioritizing the event stream/notifications as an integral part of the design, not something that needs to be bolted back on in every interface in ad-hoc ways</p>
+<p>the Functional part adds the nuance that we want to be able to describe not just instantiated values/streams, but also descriptions of what streams are before any effects are run: before instantiation, before <span data-t="" data-widget="">API</span>s are called, before referential identity</p>
+<p>every time one adds state (like deduplication, debouncing, or even just a counter) to a stream, it now can be observed from different perspectives: different instances of the same stream-description can behave differently</p>
+<p>this instantiation either happens implicitly at the consumer, or explicitly with a effect that instantiates one subscriber that broadcasts to all subscribers of a new stream</p>
+<p>this is the distinction I make between <code class="purescript">River</code> (an already-instantiated <code class="purescript">Stream Flowing</code> that broadcasts to all of its subscribers) versus <code class="purescript">Lake</code> (a <code class="purescript">Stream NotFlowing</code> that may have different events per subscriber, as it is instantiated for each)</p>
+<p><a href="https://blog.veritates.love/riverdragon_implementation.html">Riverdragon</a></p>
+<hr>
+<p>I recently had a bug in some <span data-t="" data-widget="">UI</span> code I wrote where I was explicitly instantiating a stream before rendering, to share some work across nodes in the <span data-t="" data-widget="">DOM</span></p>
+<p>(specifically: I was instantiating an <span data-t="" data-widget="">SVG</span> node into <code>&lt;defs&gt;</code> so it could be <code>&lt;use&gt;</code>ʼd multiple times later)</p>
+<p>because this instantiation effect happened <em>before</em> rendering, it caused a minor bug where the stream I had instantiated to gather the <code>&lt;defs&gt;</code> would miss it or be in a wonky state when the renderer got around to subscribing and adding it to the DOM</p>
+<p>the proper fix here was to instantiate the stateful <code>&lt;defs&gt;</code> node in a way that each new subscriber got the <em>full history</em> of events through it</p>
+<p>(the other behaviors available were: each new subscriber gets the latest event through it, or each new subscriber looks upstream just for the “burst” events that the stream would naturally generate – which is generally not the right behavior for a stateful stream)</p>
+<hr>
+<p>as an example of something that <em>should</em> be <span data-t="" data-widget="">FRP</span>-compatible but usually isnʼt:</p>
+<p>filesystems!</p>
+<p>now, thereʼs Annoying Details here,</p>
+<p>but youʼd kind of like an individual file to be something like an event stream that holds both the fileʼs contents and its metadata and can notify you when it changes</p>
+<p>(obviously for large files you donʼt want to actually read it into memory each time … but that is the simplest and most correct interface for small files, at least)</p>
+<p>then thereʼs annoying issues of what if the file goes away, or is renamed, … plus debouncing and stuff</p>
+<p>so file watching isnʼt trivial. but it is something that ought to be FRP-compatible.</p>
+<hr>
+<p>most Web APIs are vaguely FRP-compatible, theyʼll give you ways to invoke callbacks when things change</p>
+<p>but the whole Event / <code>addEventListener</code> design has gotten increasingly weird, especially with <code>AbortSignal</code> and stuff</p>
+<p>and itʼs a lot of work to package stuff into gestalt streams instead of disparate events on objects with mutable fields</p>
+<p>and itʼs interesting that plain objects <em>donʼt</em> give you ways to observe events on their fields: you have to proxy them or make your own setters or something</p>
+<hr>
+<p>the other interesting bit is that thereʼs no way to get the current mouse cursor position, both on the web and in some UI frameworks</p>
+<p>you instead have to listen for a mouse event</p>
+<p>(with asterisks around “the” and “mouse cursor”: there can be zero or multiple cursor locations, especially if they are touchpoints …</p>
+<p>… but generally there is still an API for plain mouse cursor events, that youʼd like to turn into a “current mouse position” reactive stream, sending its last known position to new subscribers)</p>]]></description>
+</item>
+<item>
+<title>Accuracy Makes Artʼs Stories Persuasive</title>
+<pubDate>Fri, 17 Apr 2026 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/accuracy.html</guid>
+<description><![CDATA[<p><span style="font-size: 110%"><span style="font-size: 130%">O</span>ne of the things I believe about art is that accuracy is rarely wasted.</span></p>
+<p>A couple days ago I made a piece of art that I found really satisfying, but it isnʼt quite accurate yet. I improved a lot of details: I eliminated flat colors that caught the eye, removed visible seams, added more textures and shapes to give depth to the scene, and rerendered it dozens of times to see how it was progressing.</p>
+<p>But I havenʼt gotten back to fixing the small two-pixel shadows. The large shadows were added all at once: they have a consistent perspective that sets the scene for the art. But thanks to shortcuts I took, the small shadows point away from the center, not along the angle of the large shadows.</p>
+<p>Itʼs a small detail that you might not notice unless it was pointed out to you. It doesnʼt look bad at all, and it is locally coherent, even – not glitchy.</p>
+<p>But I believe it contributes to a vague feeling of unease that most people could feel when looking at it. It just isnʼt <em>right</em>.</p>
+<p>More than that, it makes the story about the lazy kind of symmetry, copying pixels around, instead of joy,—</p>
+<p><span style="font-family: 'Petit Formal Script', cursive">the joy of architectural symmetry being broken by shadows falling from the sun: the inflection of symmetry by the inexorable forces of nature.</span></p>
+<p>Of course, raw accuracy is not the goal of art. Telling a story is. Artforms have their own language, techniques, and craftsmanship that frame the art more than accuracy. And usually it is pretty clear when certain kinds of accuracy get in the way of telling your story.</p>
+<p>But on the whole? Being accurate contributes to a work of artʼs feeling whole, feeling satisfying. It makes it not just compelling but persuasive.</p>
+<p><span style="font-size: 110%">It reflects pride in our work and why we do it.</span></p>]]></description>
+</item>
+<item>
+<title>Thoughts about versioning,</title>
+<pubDate>Mon, 12 Jan 2026 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/versioning.html</guid>
+<description><![CDATA[<p>I think versioning is one of the most important problems to deal with.</p>
+<p>Not “how do you slap version numbers on things and where do you put/distribute them”, but what do you actually <em>do</em> with that information. How do you deal with <em>change</em>?</p>
+<p>Weʼve gotten better at dealing with change within a running system (as one example, <span data-t="" data-widget="">FRP</span>), but dealing with change over larger timescales with less coherent “systems” is still enormously underaddressed.</p>
+<p>Whatever we can do to work in programming languages with sophisticated type systems and static analysis is going to be a boon for versioning systems.</p>
+<p>And I think fixing versioning will reveal insight and lead to fixing other things, increasing the efficiency of systems (build systems and user installations), removing edge cases from upgrades, and decreasing frustration with broken software.</p>
+<div class="centered">
+<p><em>these thoughts provided without warranty of any kind</em></p>
+</div>
+<h2 id="librarypackage-versions">Library/package versions</h2>
+<h3 id="intentional-breaking-changes">Intentional breaking changes</h3>
+<p>To start off, I want to comment on a pattern I see in some ecosystems: libraries will mark breaking changes with type/name changes, so that code relying on old behavior will fail to compile after a breaking change.</p>
+<p>That is, behavioral changes (which are otherwise silent) get reified as more substantial changes that the compiler can detect, to make users explicitly handle the behavior. Of course this relies on users seeing the note about behavior while they are investigating why their code broke, which is not a guarantee.</p>
+<p>It would also pair well with automatic code upgrading tools! But alas, those are all too uncommon.</p>
+<p>Unfortunately it introduces other issues too, by reducing compatibility between versions, coupling upstreams to consumers more closely, but thatʼs kind of unavoidable. The question is what do you do to the ecosystem to make that palatable. Commit to maintaining accurate version bounds. Commit to being maintainable.</p>
+<h3 id="maybe-libraries-should-have-version-bounds-out-of-source">Maybe libraries should have version bounds out of source</h3>
+<p>This brings me to an idea that Iʼve long had, that for packages that become unmaintained – for stable packages that donʼt <em>need</em> maintenance to their code – maybe their version bounds should live out of source.</p>
+<h2 id="practicalities-of-versions">Practicalities of versions</h2>
+<h3 id="reading-version-specific-info-straight-out-of-git">Reading version-specific info straight out of git</h3>
+<p>One of the key things I want to see happen is integration with version control systems (VCS) like git. Like, one option is to keep all of the data about versions in the source tree, and track that in the VCS. But all of that versioned data should already there in the history – the VCS already keeps track of it! So it should be at least possible to look up versions in git, using <span data-t="" data-widget="">e.g.</span> <code class="sh">git show $ref:$file</code>.</p>
+<p>One example that I would like to track like this is schemas (of any form) – especially schemas that allow automatic migrations. If you need to write out migrations manually, that will require a different story for source tracking. But at least grabbing information out of git should be a good starting point.</p>
+<h3 id="levels-of-versions">Levels of versions</h3>
+<p>But this raises the question of what are versions you care about. Release versions are the most obvious, and prerelease versions. They have official release processes.</p>
+<p>What about every commit in the repository? Well, every commit that affects what you are versioning at least.</p>
+<p>And then you have the trickiest, which is ephemeral versions, the “working tree” as youʼre developing – and presumably creating and fixing bugs all the while.</p>
+<p>Are your tools good enough to handle all of that chaos? Youʼll need static checking (syntax checking, type checking, maybe semantics!), fine-grained flexibility, and automation to keep on top of it – after all, you donʼt want to be writing database migrations every time you change a line of SQL in your code.</p>
+<h3 id="who-versions-the-versioner">Who versions the versioner</h3>
+<p>Finally, as the last major practicality, itʼs worth thinking about how there are layers of versioners too. Think about bootstrapping compilers or build tools for programming languages. They often can be built with their previous version, but a version from a year ago? Less likely.</p>
+<p>Similarly, for build workspaces if you upgrade your tools (or even just your Makefile), you may have problems with build tools that do not detect that things have changed and need rebuilding because nothing in the source changed, only things in the environment.</p>
+<p>Or you might introduce a discontinuity that leaves side effects when you run, say, <code class="sh">make clean</code> with your <em>new</em> tools on a workspace created by the old tools.</p>
+<p>This may be as benign as leaking disk space, if directories do not get cleaned up, but it can be more serious: if the management of that directory changed (<span data-t="" data-widget="">e.g.</span> from being generated to being versioned), it could result in a build or merge error until it is manually cleaned up, or reverted, cleaned, and fast forwarded again.</p>
+<p>One option for this would be to have build commands write the cleanup command in a more stable format, like its own Makefile that lives in a gitignored file, or even a shell script or executable.</p>
+<pre class="makefile"><code>.PHONY : build-thingy
+build-thingy : .Makefile.clean-thingy
+	# Normal build steps
+	echo "Do your things here"
+# But first we copy the current build file
+# to a gitignored location, so that it
+# persists across git checkouts
+.Makefile.clean-thingy : Makefile
+	@cp Makefile .Makefile.clean-thingy
+
+.PHONY : clean-thingy clean-thingy-impl
+clean-thingy :
+	# Reference the *old* Makefile to run
+	# cleanup for the old build!
+	@(test -f .Makefile.clean-thingy &amp;&amp; make -f .Makefile.clean-thingy clean-thingy-impl)
+	# You could also run the current
+	# clean-thingy-impl, to catch
+	# cleanup steps you add, I guess
+	@(not diff -q Makefile .Makefile.clean-thingy &gt;/dev/null &amp;&amp; make clean-thingy-impl)
+# The actual cleanup implementation
+clean-thingy-impl :
+	echo "Remove your build files here"</code></pre>
+<p>This seems like it would reduce edge cases, but still not eliminate them.</p>
+<h2 id="examples">Examples</h2>
+<h3 id="api-surface-of-programs"><span data-t="" data-widget="">API</span> surface of programs</h3>
+<p>For example, if we werenʼt using <em>JavaScript</em> (derisive) and were actually able to analyze their exact <span data-t="" data-widget="">API</span> surface, Electron apps probably would have less reason to be tied to particular Electron versions, besides bugfixes and stuff. This could allow apps to share Electron versions and reduce their size, ideally.</p>
+<p>Thereʼs no reason that the <span data-t="" data-widget="">API</span> surface between programs and their runtime framework shouldnʼt be analyzable, itʼs just that dynamic languages like JavaScript are a terrible tool for that. <span data-t="" data-widget="">WASM</span> has a chance at being better for this, because it was developed from a security-first sandbox. But it is constrained by lots of legacy formats on the flipside, so, letʼs just say that we are not there yet in any meaningful capacity.</p>
+<h3 id="dhall-is-too-strict-but">Dhall is too strict, <em>but</em></h3>
+<p>Dhall has a really strict type system. Even though this strictness and explicitness is great for pinning down semantics (and for ensuring that programs terminate), Dhall suffers from a lack of abstraction to make typing flexible enough to really be usable.</p>
+<p>Most notably it lacks row types to abstract over shapes of records, which I tried to address at one point. As an example, there are many record types <code class="dhall">t</code> such that a value <code class="dhall">v : t</code> is well-typed in the program <code class="dhall">v.field : Integer</code>. But there is no way to write a function <code class="dhall">f</code> to modify those values <code class="dhall">v</code> that will work for all of their possible types <code class="dhall">t</code>, in the sense of allowing <code class="dhall">(f v).field : Integer</code> to always typecheck when <code class="dhall">v.field : Integer</code> did.</p>
+<p>Notably this is less of a problem for the host language you embed it into. It is no problem to accept extra-wide records and extract just the fields of interest, or accept extra-narrow unions and expand to include the variants you expected.</p>
+<p>So you can write your config in Dhall, type check it, and likely plug it into a program that consumes the config. But you cannot write meaningful processing on this config type <em>in Dhall</em>, without committing to a very concrete type for the configuration and giving up the ability to have the few kinds of soft migrations that Dhall would allow. (Namely, adding variants to unions could be a minor version bump, and dually, <em>removing</em> fields from records (not adding them! there would be no way to add defaults to fields without extra support in the host language).)</p>
+<p>(Btw: the point isnʼt really about Dhall here, it is just a particularly strict example in a way that JSON is not, even with schemas and TypeScript, because virtually all of those tools will silently ignore “extraneous” record fields, and missing variants are literally undetectable. But as a stricter example, Lean has started using Lean as a configuration language for build systems – how do they handle versioning like this, across types??)</p>
+<h4 id="nicely-typed-migrations">Nicely typed migrations</h4>
+<p>Back in, say, 2018, I really thought about addressing this, but I never had enough reason/motivation to really try it out.</p>
+<p>But thereʼs something that Dhall gets right in being so strict, that provides a good model for <strong>good</strong> config for other domains and applications, languages and type systems.</p>
+<hr>
+<p>Alright, so. Letʼs imagine that you did commit to a strict configuration type per version, what would you need to make it tolerable?</p>
+<p>Well, you would want to have explicit migrations between the config types of each version, and then you need a way to apply them as necessary to actually. Each migration would just be a Dhall function from the old type to the new type, possibly taking in additional data just for the migration, data that it could prompt the user for.</p>
+<p>You could let the tool automatically apply migrations that follow the expected rules of “coercions”: dropping a record field or adding a union variant. You could even use your knowledge of variance in category theory: these automatic migrations could apply in reverse contravariantly (which is something that naïve host integration would not handle very well!), and they could apply transparently through covariant functors like lists, of course. Things like that! It could even fill in new <code class="dhall">Optional</code> fields with <code class="dhall">None</code> by default, list-typed fields with empty lists.</p>
+<div class="Bonus">
+<p>This is part of why I want tmTTmt to have the type system that it does: to support all of these coercions as first-class concepts, and not require weird workarounds.</p>
+</div>
+<p>When that fails, you could always write your own migration functions. Filling in <em>new</em> fields with explicit defaults (<span data-t="" data-widget="">e.g.</span> if you make the port configurable now, youʼll want to include <code class="dhall">port = 8080</code> by default in older configs). And because you have access to the whole config at once, you can potentially fill in defaults based on other fields of the config – <span data-t="" data-widget="">e.g.</span> making sure it is an unused port number, or defaulting a file location based upon its default location relative to other directories in the config, or stuff like that.</p>
+<h4 id="category-theoretic-versioning">Category theoretic versioning</h4>
+<p>Finally, we need to ask ourselves how these migrations should work together: how should they compose, and how should they cohere?</p>
+<p>Well, it is pretty obvious that we want explicit migrations to take precedence over coercions-as-implicit-migrations.</p>
+<p>Then we want to be able to chain migrations – ahem, <em>compose</em> migrations to form a category. If the config can migrate from v1.0.0 to v1.0.1 and v1.0.1 to v1.1.1, then you can form the migration from v1.0.0 to v1.1.1 via composition.<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a></p>
+<p>Next, you want to prefer the largest migrations – say that v1.0.1 → v1.1.1 removed a field, but v2.0.0 reintroduced that field again with a default value in the migration. You could build a migration from v1.0.1 → v2.0.0 that preserves the field instead of inserting the default value. So it should prefer that larger migration instead of composing the smaller migrations.</p>
+<p>Finally, we want these migrations to cohere, mostly. No matter which path we take to migrate between versions, it should hopefully result in the same config. This is called a <a href="https://ncatlab.org/nlab/show/thin+category"><em>thin category</em></a> or <em>posetal category</em>, as it resembles a poset: the endpoints determine the morphism, all paths between those points have equal compositions. As versions already form a poset, migrations will be minimally surprising when they form a poset too.</p>
+<p>(This is not to say that the morphisms do not contain information: the migrations are important! But the particular choice of how to migrate when there are several paths available would not matter.)</p>
+<p>Unfortunately the real world is probably not this clean, and having additional side-data during the migrations makes things harder to state/prove<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a>, but thatʼs how we should strive to make it coherent.</p>
+<div class="Bonus">
+<p>And to tie it in with earlier ideas, these schemas could live in a <code>ConfigType.dhall</code> file and be implicitly tracked in the version history of the Git repository. However, the migrations would need to be explicitly enumerated –&nbsp;maybe the set of supported migrations would be maintained actively in the tree, and old migrations dropped when they are no longer supported/available by default.</p>
+</div>
+<h4 id="digressions-about-config">Digressions about config</h4>
+<p>Layers of interpreting:</p>
+<ul>
+<li>User intent (the most important part, but ineffable, alas)</li>
+<li>Writing it in a config file</li>
+<li>Resolving the config file syntax to semantic config</li>
+<li>Implementing the config to choose codepaths or numbers or such</li>
+</ul>
+<p>Composition of config (layers of intent):</p>
+<ul>
+<li>Program defaults</li>
+<li>Global defaults</li>
+<li>User defaults</li>
+<li>Repository config (in git)</li>
+<li>Local overrides (not in git)</li>
+<li>Temporary/situation-specific overrides</li>
+</ul>
+<h3 id="database-migrations">Database migrations</h3>
+<p>I donʼt really use databases, SQLʼs data model is awful, a far cry from the cleanness of Dhallʼs immutable pure typed data.</p>
+<p>But yeah, you would want to think of database migrations in this kind of model too.</p>
+<p>One thing that pure config formats do not handle (well) is object identity. You usually need to insert (U)UIDs. Database primary keys. So on.</p>
+<p>I guess a tool could rewrite the config file to add UIDs when they are instantiated (think how harddrive partitions are sometimes referenced by UUIDs instead of names or partition numbers), or maintain a lockfile to map names to UIDs (which is messy in its own way). But you need <em>something</em> stable to key data over time, maintain object identity.</p>
+<p>On the other hand, using UUIDs makes diffing hard, for tests and repeatability.</p>
+<p>Just like you wouldnʼt want raw pointers to show up when you are <a href="https://blog.veritates.love/pickling.html">pickling</a> data: you want to serialize to a (more) deterministic type like integer backrefs into the structure (<span data-t="" data-widget="">e.g.</span> implementations of the JavaScript structured clone algorithm), when then do become rehydrated pointers in a new runtime context when deserialized.</p>
+<h3 id="front-end-back-end">Front end, back end</h3>
+<p>One of the problems of front end back end is that the client may be running a different version than the server.</p>
+<p>Dhall-style category theoretic versioning may help out a little bit, but it doesnʼt come for free. Either the client needs to be preloaded with a mechanism (and awareness) to download version migrations from a specific place, or the server needs to rewrite requests and responses from the client to mitigate versions. Additionally, since data flows both ways, the migrations are much more complicated then – round tripping may even require looking at the original data on the other side of the request/response flow. (<span data-t="" data-widget="">E.g.</span> if you change IDs from a number to a string, you could generate numbers for the strings, but need to look at how to map them back. Or other additional data along for the ride like that.)</p>
+<p>Worst case you need to run two versions of the backend at once, and maybe that really means youʼve ended up with three versions: the v1 backend (operating on v1 database) migrating to the v2 database with its updated v2 backend for the v2 client and the updated v1-backend-on-v2-database for the v1 client.</p>
+<h3 id="build-systems">Build systems</h3>
+<p>Ingredients of building software:</p>
+<ul>
+<li>Version control (donʼt leave home without it)
+<ul>
+<li>Local tweaks</li>
+<li>Work in progress</li>
+</ul></li>
+<li>Environmental dependencies (build tools, <span data-t="" data-widget="">etc.</span>)</li>
+<li>Package manager for dependencies on libraries</li>
+<li>Build orchestrator</li>
+<li>Code generators and compilers</li>
+</ul>
+<p>Directory and file layout. In source vs out of source builds. Temporary build directories. Generated source files. Hygienic builds. Incrementalization. Cache.</p>
+<p>Itʼs not enough to have this information. You have to know how it changes over time – mutably and immutably –, who is responsible for it, what goes into it, how it relates to everything around it.</p>
+<h3 id="live-reloading-frontend-dev">Live-reloading frontend dev</h3>
+<p>Ah yes, the mythical live-reloading front-end development experience.</p>
+<p>Letʼs start with a simplifying assumption: state is either stored in one central place (à la React Redux) or in the DOM (or the state of the browser, more generally).</p>
+<p>This state should be typed, otherwise it is unknown if the old state is compatible with the new state, or how to migrate (automatically or manually).</p>
+<p>But if it is typed, we can know statically at compile time whether it is unchanged. If it has changed,</p>
+<ul>
+<li>We can make a migration codec that</li>
+<li>Writing this as a function from the old data to new data is problematic.</li>
+</ul>
+<p>The point is, that we can make assumptions (regarding names and types) to make hot reload happen in some cases. The need for rapid feedback cycles mean that</p>
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn1"><p>If these migrations take in side data, it will need to take in the side data for both.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn2"><p>I guess it would be like, “there exists some side data that makes both paths equal”? “most side data can result in an equal config”?<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>]]></description>
+</item>
+<item>
 <title>Selective Applicative Functors</title>
-<pubDate>Mon, 29 Dec 2025 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/selective_applicatives_theoretical_basis.html</guid>
 <description><![CDATA[<p>I havenʼt seen a good accounting of the essence of selective applicative functors.</p>
 <p>Theyʼve been longing for a better description, to help explain what should be allowed and what should be disallowed, beyond “hey, here is a function <code class="haskell">select</code> that seems to do useful things and enable us to write interesting code”.</p>
@@ -23,7 +964,7 @@
 branch x l r = fmap (fmap Left) x &lt;*? fmap (fmap Right) l &lt;*? r</code></pre>
 <p>But the story has stopped short after <code class="haskell">select</code> because the familiar tools of theoretical analysis failed to apply to <code class="haskell">select</code>: there was no account for <code class="haskell">select</code> in terms of monoidal tensors, and even <code class="haskell">branch</code> did not meaningfully compose with itself, which means that there was no obvious way that the laws related to more familiar algebraic and categorical structures like monoids (and, it turns out, near-semirings).</p>
 <p>However, the final answer for what selective applicative functors want to be is really cool. We just have to work a bit harder to see it: we have to consider arrows (composable profunctors) instead of plain functors.</p>
-<p>Selective applicative functors want to encode <em>exclusive determined choice</em>. They can choose between a finite number of predetermined case branches based upon previous results during evaluation.<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a></p>
+<p>Selective applicative functors want to encode <em>exclusive and exhaustive determined choice</em>. They can choose between a finite number of predetermined case branches based upon previous results during evaluation.<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a></p>
 <p>Once you see it, it makes so much sense from a programming language perspective: it has the shape of an AST for a programming language. We can even go farther and relate it to the other typeclass for control flow, <code class="haskell">Alternative</code>, which provides <code class="haskell">&lt;|&gt;</code> for <em>nondeterministic</em> choice.</p>
 <h2 id="overview">Overview</h2>
 <p>Here it is, here is the essence of selective applicatives!</p>
@@ -130,7 +1071,7 @@ select input continue = caseTreeOn input $
 <p>You should think of <code class="haskell">CaseTree f i r</code> as a “finite-case” function from datatype <code class="haskell">i</code> to datatype <code class="haskell">r</code>, with effects in the functor <code class="haskell">f</code>. It is a restricted form of <code class="haskell">i -&gt; f r</code>, as this function demonstrates we can get back to the monadic arrow:</p>
 <pre class="haskell"><code>-- | One thing you can do is apply a `CaseTree` to a specific value of `i` to see
 -- | what branch it chooses. This lets you apply it via `&gt;&gt;=`.
-applyCaseTree :: forall i f r. Functor f =&gt; CaseTree i f r -&gt; i -&gt; f r
+applyCaseTree :: forall f i r. Functor f =&gt; CaseTree f i r -&gt; i -&gt; f r
 applyCaseTree (ZeroCases toVoid) i = absurd (toVoid i)
 applyCaseTree (OneCase fir) i = fir &lt;&amp;&gt; ($ i)
 applyCaseTree (TwoCases fg x y) ij =
@@ -140,7 +1081,7 @@ applyCaseTree (TwoCases fg x y) ij =
 <p><em>Or</em>, we can execute all effects from the <code class="haskell">f (_ -&gt; r)</code>s and get <code class="haskell">f (i -&gt; r)</code> simply by doing the case analysis at the level of the inner functions.</p>
 <pre class="haskell"><code>-- | The other way to apply it is via `&lt;*&gt;`, which means we do not get to skip
 -- | executing any branches.
-mergeCaseTree :: forall i f r. Applicative f =&gt; CaseTree i f r -&gt; f (i -&gt; r)
+mergeCaseTree :: forall f i r. Applicative f =&gt; CaseTree f i r -&gt; f (i -&gt; r)
 mergeCaseTree (ZeroCases toVoid) = pure (absurd . toVoid)
 mergeCaseTree (OneCase fir) = fir
 mergeCaseTree (TwoCases fg x y) =
@@ -151,7 +1092,7 @@ mergeCaseTree (TwoCases fg x y) =
 <p>This allows managing some of the effects of <code class="haskell">f</code> up front, between the input <code class="haskell">f i</code> and all of the branches.</p>
 <p>As one example, consider array decoders, indexed by the length of array they accept: this structure needs to be aggregated between the determiner on the left (<code class="haskell">f i</code>) and all of the case branches on the right (<code class="haskell">CaseTree f i r</code>), because the length of the encoded array can be any length from the determiner plus any length from <em>any</em> case branch.</p>
 </div>
-<p>This data type has a <em>ton</em> of structure. As a start, note that it is a profunctor: we can map the output covariantly, with <code class="haskell">map :: (r -&gt; r') -&gt; CaseTree f i r -&gt; CaseTree f i r'</code>, and the input contravariantly, with a function of type <code class="haskell">(i' -&gt; i) -&gt; CaseTree f i r -&gt; CaseTree i' f r</code>.</p>
+<p>This data type has a <em>ton</em> of structure. As a start, note that it is a profunctor: we can map the output covariantly, with <code class="haskell">map :: (r -&gt; r') -&gt; CaseTree f i r -&gt; CaseTree f i r'</code>, and the input contravariantly, with a function of type <code class="haskell">(i' -&gt; i) -&gt; CaseTree f i r -&gt; CaseTree f i' r</code>.</p>
 <div class="Details">
 <p>This is the full mapping function: to transform from <code class="haskell">CaseTree f i r</code> to <code class="haskell">CaseTree f' j r'</code>, you need a function <code class="haskell">j -&gt; i</code>, a natural transformation <code class="haskell">f ~&gt; f'</code>, and a function <code class="haskell">r -&gt; r'</code>.</p>
 <pre class="haskell"><code>mapCaseTree :: forall f f' i j r r'. Functor f' =&gt;
@@ -323,7 +1264,7 @@ uncons (Sequencing ab bc) =
   sequenceCaseTree (uncons ab) bc</code></pre>
 <p>Finally, this tells us that we can split control flow over <code class="haskell">ControlFlow f (Either x y)</code> just like we do for <code class="haskell">CaseTree</code>.</p>
 <pre class="haskell"><code>bifurcate ::
-  forall x y i f r.
+  forall x y f i r.
     Functor f =&gt;
   (i -&gt; Either x y) -&gt;
   ControlFlow f x r -&gt;
@@ -453,14 +1394,14 @@ branch determiner leftCase rightCase =
 -- ^ This easily generalizes to n-ary branches, unlike `branch` itself:
 
 -- | Use `partitionMap`, `&lt;*&gt;`, and `&lt;|&gt;` to derive `Casing` for idempotent effects.
-caseTreeOnPlus :: forall f i r. Apply f =&gt; Filterable f =&gt; Plus f =&gt; f i -&gt; CaseTree i f r -&gt; f r</code></pre>
+caseTreeOnPlus :: forall f i r. Apply f =&gt; Filterable f =&gt; Plus f =&gt; f i -&gt; CaseTree f i r -&gt; f r</code></pre>
 <p>Because this duplicates <code class="haskell">determiner</code>, it would only be safe for things like <code class="haskell">ParserT Identity</code> which does not have observable side effects from failed branches.<a href="#fn10" class="footnote-ref" id="fnref10" role="doc-noteref"><sup>10</sup></a> And it requires backtracking all the way back to before <code class="haskell">determiner</code> to even catch a <code class="haskell">Right</code> case out of it, which is something that parser combinators generally avoid for efficiency (for good reason!).</p>
 <p>However, this makes sense for LR parser combinators (yes those are a thing! they are necessarily applicative parsers and not monadic). All of the backtracking is resolved ahead of time in LR parser combinators, thanks to the powers of static analysis. It just requires the capability to prune branches at runtime for <code class="haskell">mapMaybe</code>, which not all LR parsers support.</p>
 <p>And importantly: despite the fact that the branching can be explained via <code class="haskell">&lt;|&gt;</code> and <code class="haskell">mapMaybe</code>, it is also incredibly useful to have information about <code class="haskell">CaseTree</code>, because that can be used to help ensure that the parser is not ambiguous.</p>
 <p>Finally, it is interesting to note that <code class="haskell">Alternative</code> functors have also been explained as categorified near-semirings (and thus support static analysis via near-semirings): <a href="https://people.cs.kuleuven.be/~tom.schrijvers/Research/papers/ppdp2015.pdf">From monoids to near-semirings: the essence of <code class="haskell">MonadPlus</code> and <code class="haskell">Alternative</code></a> by Exequiel Rivas, Mauro Jaskelioff, and Tom Schrijvers explains the typeclass laws, free constructions, and Cayley constructions (à la difference lists) from this perspective.<a href="#fn11" class="footnote-ref" id="fnref11" role="doc-noteref"><sup>11</sup></a></p>
 <p>So the conclusion is that the branching structures of <code class="haskell">Alternative</code> and <code class="haskell">Selective</code> are closely related, but not identical. The <code class="haskell">Alternative</code> can be thought of as a functor with nondeterministic branching, while <code class="haskell">Selective</code> needs to be explained via arrows to encode finite deterministic branching. They both allow retaining the structure of branches as independent from the sequential structure, and the selective structure can be encoded via <code class="haskell">&lt;|&gt;</code> and <code class="haskell">mapMaybe</code> in some well-behaved cases.</p>
 <h2 id="conclusion">Conclusion</h2>
-<p>Selective applicative functors are all about control flow with determined choice: the result of previous actions will determine which branch should be taken. In order to keep track of which branches are exclusive from each other, and to explain it via tensors, we have to explain it as a theory of <em>arrows</em>, not of functors. This is useful for tracking or preventing ambiguity during parsing, as one example.</p>
+<p>Selective applicative functors are all about control flow with determined choice: the result of previous actions will determine which branch should be taken. In order to keep track of which branches are exclusive from each other, and to explain it via tensors, we have to explain it as a theory of <em>arrows</em>, not of functors. Having this information about exclusivity is useful for tracking or preventing ambiguity during parsing, as one example.</p>
 <details class="Details">
 <summary>
 Definition
@@ -509,21 +1450,30 @@ data ControlFlow f i r where
 <p>Despite requiring slightly more involved concepts to explain (arrows and existential types), it solidifies into a structure that looks like ordinary control flow constructs that one might write in an AST for a programming language. You can think of the applicative functor <code class="haskell">f</code> as denoting the boundary between the ahead-of-time information available on the outside and the runtime information available to the functions <code class="haskell">(i -&gt; r)</code> on the inside at each step of the computation.</p>
 <p>The requirements of selective applicative functors are intentionally flexible, to allow it to be implemented in varied ways: applicatives for simple composable sequencing and staging of effects, monads for efficient execution and flexibility, near-semirings for static analysis, with the selective applicative structure as a common meeting ground for all of it.</p>
 <div class="Details" data-box-name="Laws">
-<p>Selective applicative structures derived from applicative instances only satisfy. We might call this “raw control flow”, as it exposes the particular branching structure it was constructed with (order of cases, exact interleaving of sequencing vs branching, and so on).</p>
+<p>Selective applicative structures derived from applicative instances (directly, or via postcomposition) only satisfy the associativity and identity laws. We might call this “raw control flow”, as it exposes the particular branching structure it was constructed with (order of cases, exact interleaving of sequencing vs branching, and so on).</p>
 <ul>
-<li>Multiplicative associativity: <code class="haskell">Sequencing (Sequencing f g) h = Sequencing f (Sequencing g h)</code></li>
-<li>Multiplicative identity: <code class="haskell">Sequencing (Pure id) f = f = Sequencing f (Pure id)</code></li>
-<li>Additive associativity: <code class="haskell">TwoCases id cx (TwoCases id cy cz) = TwoCases assoc (TwoCases id cx cy) cz</code></li>
-<li>Additive identity: <code class="haskell">TwoCases Left cx (ZeroCases absurd) = cx = TwoCases Right (ZeroCases absurd) cx</code></li>
+<li>Multiplicative associativity: <code class="haskell">Sequencing (Sequencing f g) h = Sequencing f (Sequencing g h)</code> like <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mi>x</mi><mo>∗</mo><mi>y</mi><mo stretchy="false">)</mo><mo>∗</mo><mi>z</mi><mo>=</mo><mi>x</mi><mo>∗</mo><mo stretchy="false">(</mo><mi>y</mi><mo>∗</mo><mi>z</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(x * y) * z = x * (y * z)</annotation></semantics></math></span></li>
+<li>Multiplicative identity: <code class="haskell">Sequencing (Pure id) f = f = Sequencing f (Pure id)</code> like <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mo>∗</mo><mi>x</mi><mo>=</mo><mi>x</mi><mo>=</mo><mi>x</mi><mo>∗</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">1 * x = x = x * 1</annotation></semantics></math></span></li>
+<li>Additive associativity: <code class="haskell">CaseBranch id cx (CaseBranch id cy cz) = CaseBranch assoc (CaseBranch id cx cy) cz</code> like <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mi>x</mi><mo>+</mo><mi>y</mi><mo stretchy="false">)</mo><mo>+</mo><mi>z</mi><mo>=</mo><mi>x</mi><mo>+</mo><mo stretchy="false">(</mo><mi>y</mi><mo>+</mo><mi>z</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(x + y) + z = x + (y + z)</annotation></semantics></math></span></li>
+<li>Additive identity: <code class="haskell">CaseBranch Left cx (ZeroCases absurd) = cx = CaseBranch Right (ZeroCases absurd) cx</code> like <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>+</mo><mn>0</mn><mo>=</mo><mi>x</mi><mo>=</mo><mn>0</mn><mo>+</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">x + 0 = x = 0 + x</annotation></semantics></math></span>.</li>
 </ul>
 <hr>
 <p>Better behaved instances follow the structure of a near-semiring, to model control flow more precisely. This includes constant functors of near-semirings, instances derived from monads, and composition with semilattice-like effects like <code class="haskell">Maybe</code> on the outside.</p>
 <ul>
-<li>Right distributivity: <code class="haskell">Sequencing (CaseBranch split cx cy) g = CaseBranch split (Sequencing cx g) (Sequencing cy g)</code></li>
-<li>Left absorbing element: <code class="haskell">Sequencing (Absurd absurd) g = Absurd absurd</code></li>
-<li>Optionally, (additive) commutativity: <code class="haskell">TwoCases id cx cy = TwoCases swap cx cy</code></li>
-<li>Optionally, additive idempotence: <code class="haskell">CaseBranch id cx cx = lcmap collapse cx</code></li>
+<li>Right<a href="#fn12" class="footnote-ref" id="fnref12" role="doc-noteref"><sup>12</sup></a> distributivity: <code class="haskell">Sequencing (CaseBranch split cx cy) g = CaseBranch split (Sequencing cx g) (Sequencing cy g)</code> like <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mi>x</mi><mo>+</mo><mi>y</mi><mo stretchy="false">)</mo><mo>∗</mo><mi>z</mi><mo>=</mo><mo stretchy="false">(</mo><mi>x</mi><mo>∗</mo><mi>z</mi><mo stretchy="false">)</mo><mo>+</mo><mo stretchy="false">(</mo><mi>y</mi><mo>∗</mo><mi>z</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(x + y) * z = (x * z) + (y * z)</annotation></semantics></math></span></li>
+<li>Left absorbing identity: <code class="haskell">Sequencing (Absurd absurd) g = Absurd absurd</code> like <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn><mo>∗</mo><mi>z</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">0 * z = 0</annotation></semantics></math></span></li>
 </ul>
+<hr>
+<p>There are a few other laws that we might like to apply:</p>
+<ul>
+<li>Optionally, (additive) commutativity for units: <code class="haskell">CaseBranch id (Pure f) g = CaseBranch swap g (Pure f)</code> like <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mo>+</mo><mi>x</mi><mo>=</mo><mi>x</mi><mo>+</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">1 + x = x + 1</annotation></semantics></math></span>.</li>
+<li>Optionally, (additive) full commutativity: <code class="haskell">CaseBranch id cx cy = CaseBranch swap cy cx</code> like <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>+</mo><mi>y</mi><mo>=</mo><mi>y</mi><mo>+</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">x + y = y + x</annotation></semantics></math></span></li>
+<li>Optionally, idempotence for units: <code class="haskell">CaseBranch f (Pure g) (Pure h) = Pure (f &gt;&gt;&gt; either g h)</code> like <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mo>+</mo><mn>1</mn><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">1 + 1 = 1</annotation></semantics></math></span></li>
+<li>Optionally, full additive idempotence: <code class="haskell">CaseBranch id cx cx = lcmap collapse cx</code> like <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>+</mo><mi>x</mi><mo>=</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">x + x = x</annotation></semantics></math></span></li>
+<li>Rarely, multiplicative commutativity: <code class="haskell">Sequencing (Action f) (Action g) = Sequencing (Action g) (Action f)</code> like <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>∗</mo><mi>y</mi><mo>=</mo><mi>y</mi><mo>∗</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">x * y = y * x</annotation></semantics></math></span></li>
+</ul>
+<hr>
+<p>In the interests of flexibility and composability, I think it is important to allow instances that do not model ideal control flow. This is especially the case in a ecosystem that doesnʼt have typeclasses for the algebraic explosion of structures like monoids, idempotent monoids, near-semirings, idempotent near-semirings, lattices, semilattices, bands, and so on.</p>
 </div>
 <p>Next time we will study the theory of these functors from the other side: basic examples, how they compose, what would be a good syntax for them. Eventually we will look at some applications of selective applicative functors in depth, and maybe discuss what the future of functorial and arrow-like structures are: sequencing (monads and categories) and parallelism (applicatives), exclusive determined choice (selectives), nondeterministic choice (alternatives), and <a href="https://www.cs.ox.ac.uk/jeremy.gibbons/publications/phases.pdf">staging</a> (functor composition). Can they all fit into one syntax? I mean, why not??</p>
 <section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
@@ -540,6 +1490,7 @@ data ControlFlow f i r where
 <li id="fn9"><p>The functor result does not matter, since it is coming from absurdity!<a href="#fnref9" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn10"><p>Strictly speaking, you could have idempotent effects: <code class="haskell">f *&gt; f = f</code>.<a href="#fnref10" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn11"><p>Note that we could product a similar datatype for <code class="haskell">CaseTree</code> and <code class="haskell">ControlFlow</code>, that is a right-associated free construction with an efficient Cayley construction, but in the case of determined choice, this would turn binary search of the case tree into linear search, compromising efficiency.<a href="#fnref11" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn12"><p>multiplication on the right distributes over addition (on the left)<a href="#fnref12" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
 </section>]]></description>
 </item>
@@ -591,6 +1542,10 @@ data ControlFlow f i r where
 <p>(This was my compromise instead of adding errors to streams like RxJS has.)</p>
 <p>Keeping things from leaking with functional-style JavaScript is tricky…</p>
 <p>The other interesting part of a streamʼs lifecycle is the startup burst: synchronous events emitted while a subscription is first being set up. This needs to be handled explicitly in many places in the implementation, but because it is synchronous, it doesnʼt necessitate any overarching coordination between streams or other resources and doesnʼt leak out of the API.</p>
+<h3 id="custodians-in-racket">Custodians in Racket</h3>
+<p>Racket implements Custodians, which can guard execution and resources, like OS processes, but within a single Racket process. Files, sockets, threads – even active allocations, for OOM killing. (That is integrated with the GC.)</p>
+<p><a href="https://docs.racket-lang.org/reference/eval-model.html#(part._custodian-model" class="uri">https://docs.racket-lang.org/reference/eval-model.html#(part._custodian-model</a>)</p>
+<p><a href="https://www-old.cs.utah.edu/plt/publications/ismm04-wf.pdf" class="uri">https://www-old.cs.utah.edu/plt/publications/ismm04-wf.pdf</a></p>
 <h2 id="implementation">Implementation</h2>
 <h3 id="inspirations">Inspirations</h3>
 <p><code class="purescript">Aff</code> (hey at least it has cancelers! supervisors, bracket, try-finally, synchronous and asynchronous scheduling … lots of good stuff actually)</p>
@@ -900,7 +1855,6 @@ http {
 </item>
 <item>
 <title>Quapteryx Takes Flight!</title>
-<pubDate>Mon, 29 Dec 2025 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/quapteryx5.html</guid>
 <description><![CDATA[<style>#TOC {display: none;}</style>
 <details open="" style="margin-bottom: 1em" class="Example">
@@ -1932,7 +2886,7 @@ word bitlength(const word* crumbstring, word known_words) {
 <col style="width: 27%">
 </colgroup>
 <thead>
-<tr class="header">
+<tr>
 <th style="text-align: left;">Test</th>
 <th style="text-align: right;">Total&nbsp;time</th>
 <th style="text-align: left;">Tests</th>
@@ -1940,25 +2894,25 @@ word bitlength(const word* crumbstring, word known_words) {
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td style="text-align: left;"><code class="nowrap">factorial(0)</code></td>
 <td style="text-align: right;">6.21ms</td>
 <td style="text-align: left;">x18</td>
 <td style="text-align: right;"></td>
 </tr>
-<tr class="even">
+<tr>
 <td style="text-align: left;"><code class="nowrap">factorial(1)</code></td>
 <td style="text-align: right;">21.94ms</td>
 <td style="text-align: left;">x18</td>
 <td style="text-align: right;">3.5x&nbsp;longer</td>
 </tr>
-<tr class="odd">
+<tr>
 <td style="text-align: left;"><code class="nowrap">factorial(2)</code></td>
 <td style="text-align: right;">354.50ms</td>
 <td style="text-align: left;">x18</td>
 <td style="text-align: right;">16.2x&nbsp;longer</td>
 </tr>
-<tr class="even">
+<tr>
 <td style="text-align: left;"><code class="nowrap">factorial(3)</code></td>
 <td style="text-align: right;">462.44ms</td>
 <td style="text-align: left;">x1</td>
@@ -2332,32 +3286,37 @@ Wxy  &amp;=_\beta xyy \\
 <col style="width: 40%">
 </colgroup>
 <thead>
-<tr class="header">
+<tr>
 <th style="text-align: left;">System</th>
 <th style="text-align: left;">Not flowing</th>
 <th style="text-align: left;">Flowing</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td style="text-align: left;">aff (asynchronous effects)</td>
 <td style="text-align: left;"><code class="ps">Aff</code>, <code class="ps">ParAff</code></td>
 <td style="text-align: left;"><code class="ps">Fiber</code>, of a running <code class="ps">Aff</code> action</td>
 </tr>
-<tr class="even">
+<tr>
 <td style="text-align: left;">River (event stream)</td>
 <td style="text-align: left;"><code class="ps">Lake = Stream NotFlowing</code></td>
 <td style="text-align: left;"><code class="ps">River = Stream Flowing</code></td>
 </tr>
-<tr class="odd">
+<tr>
 <td style="text-align: left;">Roar (audio graphs)</td>
 <td style="text-align: left;"><code class="ps">Knob</code> à la <code class="js">AudioParam</code></td>
 <td style="text-align: left;"><code class="ps">Roar</code>, output from an <code class="js">AudioNode</code></td>
 </tr>
-<tr class="even">
+<tr>
 <td style="text-align: left;">GHC (Haskell runtime)</td>
 <td style="text-align: left;"><code class="hs">IO</code></td>
 <td style="text-align: left;"><code class="hs">Async</code>, of a running <code class="hs">IO</code> action</td>
+</tr>
+<tr>
+<td style="text-align: left;">Python/JavaScript</td>
+<td style="text-align: left;">(Async) generator function</td>
+<td style="text-align: left;">(Async) iterable</td>
 </tr>
 </tbody>
 </table>
@@ -3143,7 +4102,7 @@ function MoreQR(data, ...params) {
 <del>
 Most notably: automatic connection only works on Chromium-based browsers and only for <span data-t="" data-widget="">LAN</span> connections.
 </del>
-<p><a href="https://webrtc-review.googlesource.com/c/src/+/366562">Chromium has changed and no longer allows the side channel</a>.</p>
+<p><a href="https://webrtc-review.googlesource.com/c/src/+/366562">Chromium has changed and no longer allows the smol side channel</a>.</p>
 </div>
 <h2 id="baseline-connection-initiation-happy-path">Baseline connection initiation (happy path ^^)</h2>
 <p>This relies on a particular mechanic that only seems to be available in Chromium: the peer reflexive candidate<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a> is available via <code class="js">RTCPeerConnection.prototype.getStats</code>, which exposes the <span data-t="" data-widget="">ICE</span> username fragment before the host JavaScript sets any answer <span data-t="" data-widget="">SDP</span>.</p>
@@ -3165,7 +4124,7 @@ Most notably: automatic connection only works on Chromium-based browsers and onl
 var rtc = new RTCPeerConnection(options);
 
 // As the host, we create a data channel immediately, so it is in the offer
-var dc = rtc.createDataChannel('init', { reliable: true });</code></pre></li>
+var dc = rtc.createDataChannel('init', { ordered: true });</code></pre></li>
 <li><p>Host creates an offer with all available candidates</p>
 <pre class="javascript"><code>// Create an offer
 var offer = undefined;
@@ -3214,7 +4173,7 @@ rtc.ondatachannel = ev =&gt; {
 <li><p>Host listens for the guest to try to connect, which allows us to finish the connection</p>
 <div class="Error">
 <p><del>This only works on Chromium-based browsers! And only over <span data-t="" data-widget="">LAN</span>! (not behind <span data-t="" data-widget="">NAT</span>)</del></p>
-<a href="https://webrtc-review.googlesource.com/c/src/+/366562">Chromium has changed and no longer allows the side channel</a>.
+<a href="https://webrtc-review.googlesource.com/c/src/+/366562">Chromium has changed and no longer allows the smol side channel</a>.
 </div>
 <ul>
 <li>The fingerprint comes from the <code class="sdp">a=ice-ufrag:</code> line</li>
@@ -5702,15 +6661,15 @@ typecheck: ["App" fn arg] =&gt; resultType:
   ## Unifies the result with a "Pi" type
   typecheck fn =&gt; ["Pi" binder domain codomain]
   ## See if `codomain` does not in fact depend on `binder`
-  tryApplyConstant binder codomain
-  ? ["constant" resultType]:
+  tryApplyConstant binder codomain =&gt; {{
+  | ["constant" resultType]:
     ## `resultType` got assigned, so this case is not necessary to produce
     ## *some* result that can inform further type errors, though this node does
     ## not truly typecheck if it fails:
     typecheck arg =&gt; domain
     ## `domain` is a non-linear pattern match, unifying `argType` and `domain`
     ## (any further references to `domain` would refer to the unified node)
-  ? ["non-constant"]:
+  | ["non-constant"]:
     ## Typecheck the argument in strict mode to ensure that type errors result
     ## in an immediate failure even if an approximate result can be computed:
     strictly (\[] =&gt; typecheck arg) =&gt; domain
@@ -5719,7 +6678,7 @@ typecheck: ["App" fn arg] =&gt; resultType:
     ## Now that it is safe to compute with `arg`, we apply it to compute the
     ## result type:
     substitute binder arg codomain =&gt; resultType
-  !
+  }}
 
 ## Probably should simplify this somehow ...</code></pre>
 <pre class="haskell"><code>-- The behavior of `select` for the typechecker monad/thingy is that if the
@@ -6551,7 +7510,7 @@ data SolverPosition = Pos LocalSolverPosition (Set PackageName)</code></pre>
 <p>Solving these issues means we can think of the equation above as giving us a function for <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi></mrow><annotation encoding="application/x-tex">q</annotation></semantics></math></span> in terms of <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi></mrow><annotation encoding="application/x-tex">p</annotation></semantics></math></span>: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>q</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo><mo>=</mo><mfrac><mrow><mo>−</mo><mi>b</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo><mo>±</mo><msqrt><mrow><mi>b</mi><mo stretchy="false">(</mo><mi>p</mi><msup><mo stretchy="false">)</mo><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo><mi>c</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo></mrow></msqrt></mrow><mrow><mn>2</mn><mi>a</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo></mrow></mfrac><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">q(p) = \frac{-b(p) \pm \sqrt{b(p)^2 - 4a(p)c(p)}}{2a(p)}.</annotation></semantics></math></span></p>
 <p>This puts the functions in lock-step in terms of their tangents, giving us what we need to calculate the outside of their sweep.</p>
 <h4 id="derivative-of-this">Derivative of this</h4>
-<p>Weʼll need the derive of this equation soon, so letʼs calculate it while weʼre here.</p>
+<p>Weʼll need the derivative of this equation soon, so letʼs calculate it while weʼre here.</p>
 <p>My first thought was great, we have a quadratic equation, so we know the formula and can just take the derivative of it!</p>
 <p>This was&nbsp;… naïve, oh so naïve. Letʼs see why.</p>
 <p>We have our solution here:</p>
@@ -6585,8 +7544,8 @@ q' = \frac{-c' b + cb'}{b^2} = \frac{-c'}{b} + \frac{cb'}{b^2}
 <p><span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msup><mi>a</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><msup><mi>q</mi><mn>2</mn></msup><mo>+</mo><mn>2</mn><mi>a</mi><mi>q</mi><msup><mi>q</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>+</mo><msup><mi>b</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mi>q</mi><mo>+</mo><mi>b</mi><msup><mi>q</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>+</mo><msup><mi>c</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>=</mo><mn>0.</mn></mrow><annotation encoding="application/x-tex">
 a'q^2 + 2aqq' + b'q + bq' + c' = 0.
 </annotation></semantics></math></span></p>
-<p>And <strong>this</strong>, now <em>this</em> has a nicer solution: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msup><mi>q</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>=</mo><mfrac><mrow><msup><mi>a</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><msup><mi>q</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mi>q</mi><mo>+</mo><msup><mi>c</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup></mrow><mrow><mn>2</mn><mi>a</mi><mi>q</mi><mo>+</mo><mi>b</mi></mrow></mfrac><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">
-q' = \frac{a' q^2 + b' q + c'}{2aq + b}.
+<p>And <strong>this</strong>, now <em>this</em> has a nicer solution: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msup><mi>q</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>=</mo><mo>−</mo><mfrac><mrow><msup><mi>a</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><msup><mi>q</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mi>q</mi><mo>+</mo><msup><mi>c</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup></mrow><mrow><mn>2</mn><mi>a</mi><mi>q</mi><mo>+</mo><mi>b</mi></mrow></mfrac><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">
+q' = -\frac{a' q^2 + b' q + c'}{2aq + b}.
 </annotation></semantics></math></span></p>
 <p>I think itʼs cute how the numerator is another quadratic polynomial with the derivatives of the coefficients of the original polynomial. Itʼs also convenient how we have no square roots or plusminus signs anymore – instead we write the derivative in terms of the original solution <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi></mrow><annotation encoding="application/x-tex">q</annotation></semantics></math></span>.</p>
 <p>We still have a denominator that can be zero, but this is for deeper reasons: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mn>2</mn><mi>a</mi><mi>q</mi><mo>+</mo><mi>b</mi><mo>=</mo><mo>−</mo><mi>b</mi><mo>±</mo><msqrt><mrow><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi></mrow></msqrt><mo>+</mo><mi>b</mi><mo>=</mo><mo>±</mo><msqrt><mrow><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo><mn>4</mn><mi>a</mi><mi>c</mi></mrow></msqrt><mo>=</mo><mn>0.</mn></mrow><annotation encoding="application/x-tex">2aq + b = -b \pm \sqrt{b^2 - 4ac} + b = \pm \sqrt{b^2 - 4ac} = 0.</annotation></semantics></math></span></p>
@@ -6596,8 +7555,8 @@ q' = \frac{a' q^2 + b' q + c'}{2aq + b}.
 <p><span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msup><mi>q</mi><mn>2</mn></msup><mo>=</mo><mfrac><mrow><mo>−</mo><mi>c</mi><mo>−</mo><mi>b</mi><mi>q</mi></mrow><mi>a</mi></mfrac><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">
 q^2 = \frac{-c-bq}{a}.
 </annotation></semantics></math></span></p>
-<p>With some work that gives us this formula: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msup><mi>q</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>=</mo><mfrac><mrow><msup><mi>a</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><msup><mi>q</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mi>q</mi><mo>+</mo><msup><mi>c</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup></mrow><mrow><mn>2</mn><mi>a</mi><mi>q</mi><mo>+</mo><mi>b</mi></mrow></mfrac><mo>=</mo><mfrac><mrow><mo stretchy="false">(</mo><mi>a</mi><msup><mi>b</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>−</mo><msup><mi>a</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mi>b</mi><mo stretchy="false">)</mo><mi>q</mi><mo>+</mo><msup><mi>c</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mi>a</mi><mo>−</mo><mi>c</mi><msup><mi>a</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup></mrow><mrow><mi>a</mi><mo stretchy="false">(</mo><mn>2</mn><mi>a</mi><mi>q</mi><mo>+</mo><mi>b</mi><mo stretchy="false">)</mo></mrow></mfrac><mo separator="true">,</mo></mrow><annotation encoding="application/x-tex">
-q' = \frac{a' q^2 + b' q + c'}{2aq + b} = \frac{(ab' - a' b)q + c' a - ca'}{a(2aq + b)},
+<p>With some work that gives us this formula: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msup><mi>q</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>=</mo><mo>−</mo><mfrac><mrow><msup><mi>a</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><msup><mi>q</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mi>q</mi><mo>+</mo><msup><mi>c</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup></mrow><mrow><mn>2</mn><mi>a</mi><mi>q</mi><mo>+</mo><mi>b</mi></mrow></mfrac><mo>=</mo><mo>−</mo><mfrac><mrow><mo stretchy="false">(</mo><mi>a</mi><msup><mi>b</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>−</mo><msup><mi>a</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mi>b</mi><mo stretchy="false">)</mo><mi>q</mi><mo>+</mo><msup><mi>c</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mi>a</mi><mo>−</mo><mi>c</mi><msup><mi>a</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup></mrow><mrow><mi>a</mi><mo stretchy="false">(</mo><mn>2</mn><mi>a</mi><mi>q</mi><mo>+</mo><mi>b</mi><mo stretchy="false">)</mo></mrow></mfrac><mo separator="true">,</mo></mrow><annotation encoding="application/x-tex">
+q' = -\frac{a' q^2 + b' q + c'}{2aq + b} = -\frac{(ab' - a' b)q + c' a - ca'}{a(2aq + b)},
 </annotation></semantics></math></span> which is nice and symmetric (it is patterned a little like the cross product in the numerator) but not what I ended up going for, I think I was worried about floating-point precision but idk.</p>
 </div>
 <div class="Bonus">
@@ -6710,10 +7669,10 @@ b_2 - b_1 &amp;=: a - \delta_0 d_0 - \delta_1 d_1,\\
 \delta_0 &amp;=: \rho_0 \frac{a \times d_1}{d_0 \times d_1},\\
 \delta_1 &amp;=: \rho_1 \frac{d_0 \times a}{d_0 \times d_1}.\\
 \end{aligned}
-</annotation></semantics></math></span> <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable rowspacing="0.25em" columnalign="right left" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mi>R</mi><mn>0</mn></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>:</mo><mo>=</mo><mfrac><mn>3</mn><mn>2</mn></mfrac><mfrac><mrow><msub><mi>κ</mi><mn>0</mn></msub><mo stretchy="false">(</mo><mi>a</mi><mo>×</mo><msub><mi>d</mi><mn>1</mn></msub><mo stretchy="false">)</mo></mrow><mrow><mo stretchy="false">(</mo><msub><mi>d</mi><mn>0</mn></msub><mo>×</mo><mi>a</mi><mo stretchy="false">)</mo><mo stretchy="false">(</mo><msub><mi>d</mi><mn>0</mn></msub><mo>×</mo><msub><mi>d</mi><mn>1</mn></msub><msup><mo stretchy="false">)</mo><mn>2</mn></msup></mrow></mfrac><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mi>R</mi><mn>1</mn></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>:</mo><mo>=</mo><mfrac><mn>3</mn><mn>2</mn></mfrac><mfrac><mrow><msub><mi>κ</mi><mn>1</mn></msub><mo stretchy="false">(</mo><msub><mi>d</mi><mn>0</mn></msub><mo>×</mo><mi>a</mi><mo stretchy="false">)</mo></mrow><mrow><mo stretchy="false">(</mo><mi>a</mi><mo>×</mo><msub><mi>d</mi><mn>1</mn></msub><mo stretchy="false">)</mo><mo stretchy="false">(</mo><msub><mi>d</mi><mn>0</mn></msub><mo>×</mo><msub><mi>d</mi><mn>1</mn></msub><msup><mo stretchy="false">)</mo><mn>2</mn></msup></mrow></mfrac><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable><annotation encoding="application/x-tex">
+</annotation></semantics></math></span> <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable rowspacing="0.25em" columnalign="right left" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mi>R</mi><mn>0</mn></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>:</mo><mo>=</mo><mfrac><mn>3</mn><mn>2</mn></mfrac><mfrac><mrow><msub><mi>κ</mi><mn>0</mn></msub><mo stretchy="false">(</mo><mi>a</mi><mo>×</mo><msub><mi>d</mi><mn>1</mn></msub><msup><mo stretchy="false">)</mo><mn>2</mn></msup></mrow><mrow><mo stretchy="false">(</mo><msub><mi>d</mi><mn>0</mn></msub><mo>×</mo><mi>a</mi><mo stretchy="false">)</mo><mo stretchy="false">(</mo><msub><mi>d</mi><mn>0</mn></msub><mo>×</mo><msub><mi>d</mi><mn>1</mn></msub><msup><mo stretchy="false">)</mo><mn>2</mn></msup></mrow></mfrac><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mi>R</mi><mn>1</mn></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>:</mo><mo>=</mo><mfrac><mn>3</mn><mn>2</mn></mfrac><mfrac><mrow><msub><mi>κ</mi><mn>1</mn></msub><mo stretchy="false">(</mo><msub><mi>d</mi><mn>0</mn></msub><mo>×</mo><mi>a</mi><msup><mo stretchy="false">)</mo><mn>2</mn></msup></mrow><mrow><mo stretchy="false">(</mo><mi>a</mi><mo>×</mo><msub><mi>d</mi><mn>1</mn></msub><mo stretchy="false">)</mo><mo stretchy="false">(</mo><msub><mi>d</mi><mn>0</mn></msub><mo>×</mo><msub><mi>d</mi><mn>1</mn></msub><msup><mo stretchy="false">)</mo><mn>2</mn></msup></mrow></mfrac><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable><annotation encoding="application/x-tex">
 \begin{aligned}
-R_0 &amp;:= \frac{3}{2}\frac{\kappa_0 (a \times d_1)}{(d_0 \times a)(d_0 \times d_1)^2},\\
-R_1 &amp;:= \frac{3}{2}\frac{\kappa_1 (d_0 \times a)}{(a \times d_1)(d_0 \times d_1)^2}.\\
+R_0 &amp;:= \frac{3}{2}\frac{\kappa_0 (a \times d_1)^2}{(d_0 \times a)(d_0 \times d_1)^2},\\
+R_1 &amp;:= \frac{3}{2}\frac{\kappa_1 (d_0 \times a)^2}{(a \times d_1)(d_0 \times d_1)^2}.\\
 \end{aligned}
 </annotation></semantics></math></span></p>
 <p>Thus we end up with the very pretty system of quadratics: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable rowspacing="0.25em" columnalign="right" columnspacing=""><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><msub><mi>ρ</mi><mn>0</mn></msub><mo>=</mo><mn>1</mn><mo>−</mo><msub><mi>R</mi><mn>1</mn></msub><msubsup><mi>ρ</mi><mn>1</mn><mn>2</mn></msubsup><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><msub><mi>ρ</mi><mn>1</mn></msub><mo>=</mo><mn>1</mn><mo>−</mo><msub><mi>R</mi><mn>0</mn></msub><msubsup><mi>ρ</mi><mn>0</mn><mn>2</mn></msubsup><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable><annotation encoding="application/x-tex">

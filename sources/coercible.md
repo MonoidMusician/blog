@@ -18,6 +18,10 @@ date: 2021/12/12
   - `Coercible`{.purescript} then is also generated using transitivity and reflexivity and application: `Coercible f g => forall a. Coercible (f a) (g a)`{.purescript}
 - Some notes on what I was trying in Haskell: https://gist.github.com/MonoidMusician/30813fb645abe0cef9cc5ec6efe16b10
 
+https://github.com/ghc-proposals/ghc-proposals/pull/233
+
+https://oleg.fi/gists/posts/2024-04-21-a-note-about-coercions.html
+
 -----
 
 so I was thinking about what evidence you actually get from a role, within the system, and I think it's literally just quantified constraints, and this will basically give us higher order roles when we need it (especially for things like monad transformers)

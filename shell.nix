@@ -16,7 +16,9 @@ pkgs.mkShell rec {
     # https://discourse.nixos.org/t/node2nix-issues/10762/2
     pixman
     cairo
+    freetype
     pango
+    harfbuzz
     libjpeg
     libpng
     libpng
@@ -24,6 +26,7 @@ pkgs.mkShell rec {
     giflib
     libuuid
     libGL
+    glib
     pkg-config # ??
 
     watchexec

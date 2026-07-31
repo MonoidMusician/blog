@@ -633,7 +633,6 @@ infixr 3 twoLanes as ///
 
 twoLanes ::
   forall p u1 u2 v1 v2 x1 x2 y1 y2.
-    Functor (p Void) =>
     Profunctor p =>
   CaseTree p u1 x1 v1 y1 ->
   CaseTree p u2 x2 v2 y2 ->
@@ -652,9 +651,7 @@ conduct pux = case _ of
 
 selectP ::
   forall p u v x y i j.
-    Functor (p Void) =>
     GuideFlow p =>
-    Conjuxt p =>
   p (u \/ j) (x \/ i) ->
   p v y ->
   p
@@ -663,6 +660,19 @@ selectP ::
 selectP l r =
   l ??? _TupleR
     !!! oneCase conjuxt0
+    /// oneCase r
+
+branchP ::
+  forall p i j u v x y w z.
+    GuideFlow p =>
+  p (i \/ j) (w \/ z) ->
+  p u x ->
+  p v y ->
+  p
+    ((i /\ u) \/ (j /\ v))
+    ((w /\ x) \/ (z /\ y))
+branchP c l r =
+  c ??? oneCase l
     /// oneCase r
 
 data CaseTree p u x v y

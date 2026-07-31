@@ -1,3 +1,9 @@
+sources/waterfall_types.md
+sources/functions_as_data.md
+sources/reformed_oop.md
+sources/frp_compatible.md
+sources/accuracy.md
+sources/versioning.md
 sources/selective_applicatives_theoretical_basis.md
 sources/resource_acquisition.md
 sources/simple_nginx.md

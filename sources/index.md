@@ -10,6 +10,35 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 
 ## Posts <a class="icon iconoir" href="rss.xml"><svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a><a class="icon iconoir" href="rss-lite.xml"><svg style="scale:0.6;transform-origin:left" width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
 
+- [Waterfall Model of Types](waterfall_types.html) [2026/07/22]{.dated}
+
+  My waterfall model of types, cascading from user intent, through programming language semantics, and down to pointers and bytes at the end of it all.
+
+- [Sticking Functions Where They Donʼt Belong](functions_as_data.html) [2026/06/04]{.dated}
+
+  Extensible Defunctionalization with Typeclasses. Or, Functions in Pure Data in Haskell.
+
+- [OOP Without the Goop: No “Objects”, Just Closures in Records](reformed_oop.html) [2026/05/27]{.dated}
+
+- [Everything Should Be FRP Compatible: Functional Reactive Programming Everywhere](frp_compatible.html) [2026/04/22]{.dated}
+
+- [Accuracy Makes Artʼs Stories Persuasive](accuracy.html) [2026/04/17]{.dated}
+
+  > One of the things I believe about art is that accuracy is rarely wasted.
+
+- [Thoughts about versioning, & config, & builds,](versioning.html) [2026/01/12]{.dated}
+
+  > I think versioning is one of the most important problems to deal with.
+  >
+  > Not “how do you slap version numbers on things and where do you put/distribute them”, but what do you actually *do* with that information.
+  > How do you deal with *change*?
+  >
+  > Weʼve gotten better at dealing with change within a running system (as one example, [FRP]{t=}), but dealing with change over larger timescales with less coherent “systems” is still enormously underaddressed.
+  >
+  > Whatever we can do to work in programming languages with sophisticated type systems and static analysis is going to be a boon for versioning systems.
+  >
+  > And I think fixing versioning will reveal insight and lead to fixing other things, increasing the efficiency of systems (build systems and user installations), removing edge cases from upgrades, and decreasing frustration with broken software.
+
 - Selective Applicative Functors
   1. [The Missing Theoretical Basis for Exclusive Determined Choice](selective_applicatives_theoretical_basis.html) [2025/12/25]{.dated}
 
@@ -194,8 +223,15 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   > The construction weʼll be talking about is my favorite esoteric construction of real numbers: the _[Eudoxus real numbers](https://ncatlab.org/nlab/show/Eudoxus+real+number)_.
 
 ## Series
+- Selective Applicative Functors
+  #. [The Missing Theoretical Basis for Exclusive Determined Choice](selective_applicatives_theoretical_basis.html) [2025/12/25]{.dated}
+  #. [Theory of Composition, Syntax, Analysis, [&c.]{t=}](selective_applicatives_theory.html) [WIP]{t=}
+  #. [Monoids for Static Analysis](monoids_static_analysis.html) [WIP]{t=}
+  #. [Applications and Examples](selective_applicatives_applications.html) [WIP]{t=}
 - Riverdragon [FRP]{t=} documentation
   #. [Implementing [FRP]{t=} and Why](riverdragon_implementation.html) [2025/02/22]{.dated}
+  #. [Everything Should Be FRP Compatible: Functional Reactive Programming Everywhere](frp_compatible.html) [2026/04/22]{.dated}
+  #. [All the subtypes of streams in Riverdragon](riverdragon_streams.html) [2026/05/05]{.dated}
 - [Live PureScript editing](live.html) (custom front-end using TryPureScriptʼs [API]{t=})
   #. [live_parser.html](live_parser.html)
   #. [live_frp.html](live_frp.html)
@@ -241,6 +277,11 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 
 ### Type Theory
 
+  - [Types of computation](computation.html) [WIP]{t=}
+  - [Waterfall Model of Types](waterfall_types.html)
+  - [Out of the Void: Eta for Absurd Functions](out_of_the_void.html)
+  - [FullOfPi](FullOfPi.html): The only binder is \(\lambda\), and \(\Pi\) is a bare type constructor on its own, just like the type universes \(U_n\).
+  - [What is the intersection of function types?](function_intersection.html)
   - Interactive type theory!
   - [WIP]{t=}: [User Operators with Implicits & Overloads](implicit_arguments.html), in bidirectional type checkers
   - The Algebra of Type Unification (semilattices everywhere!)
@@ -280,6 +321,10 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
     The former means “two functions, which can be composed” and the latter means “a curried function of two arguments”.
 
 ### Paradigms
+
+  - [OOP Without the Goop: No “Objects”, Just Closures in Records](reformed_oop.html) [2026/05/27]{.dated}
+
+  - [Everything Should Be FRP Compatible: Functional Reactive Programming Everywhere](frp_compatible.html) [2026/04/22]{.dated}
 
   - I should do a blog post on what “effects” mean in [FP]{t=} culture
 
@@ -343,7 +388,7 @@ _data = information^[bits & bytes] + structure^[expectations of what the bits & 
     My two observations:
 
     #. I love how in order to prove how the old-fashioned Riemann integral works (characterizing what functions are Riemann integrable), you essentially have to come up with the Lebesgue measure, which paves the way for the Lebesgue integral.
-    2. It is incredibly cool and incredibly counterintuitive how turning integration on its *side* produces better results.
+    #. It is incredibly cool and incredibly counterintuitive how turning integration on its *side* produces better results.
 
 ### Typeclasses
 

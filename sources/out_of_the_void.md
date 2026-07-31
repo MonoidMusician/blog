@@ -29,7 +29,7 @@ allAbsurd @{O := Bool} (always_tt @{I := Void}) (always_ff @{I := Void})
 
 @assume lie : Void
 
-always_tt @{I := Void} lie = tt#[lie : Void] = ff#[lie : Void] = always_ff @{I := Void}
+always_tt @{I := Void} lie = tt#[lie : Void] = ff#[lie : Void] = always_ff @{I := Void} lie
 ```
 
 A new term former `t#[p : T]` that affixes to the base term `t` some expressions `p` that may be (spurious) proofs of `Void`.
@@ -75,6 +75,8 @@ So I think it ends up being something like a co-context, stratifying the infecti
 Stuff stuck on bound variables will get deleted in a WHNF lambda abstraction.
 
 ## Formal presentation?
+
+Maybe it wants to be a program, and not horizontal bar rules ...
 
 \[
   \Gamma \vdash t : T \Leftarrow \Upsilon
@@ -125,3 +127,23 @@ In an absurd context, everything is equal
 \]
 
 And for efficiency, you can delete any entries \(p : T\) where \(T\) is apart from \(0\).
+
+## So?
+
+Does this solve the issue?
+
+Well, from the first presentation (with the tags), sort of:
+
+There is no missing path between `tt = ff` in a context with `lie : Void` because there is only a path between `tt#[lie : Void] = ff#[lie : Void]`, and `tt#[lie : Void]` does not reduce to `tt`.
+
+(Does this require directed equations? maybe.)
+
+In the second presentation (with the context of constraints), even more sort of?:
+
+This is no missing path between `tt = ff` because those are not equatable under empty constraints.
+They are only equatable under a context that generates a constraint `##[lie : Void]`.
+
+Now, maybe you argue I moved the goalposts.
+That might be true.
+
+But it is an algorithm that explains why `always_tt lie = always_ff lie` holds.

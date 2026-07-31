@@ -1,2 +1,3 @@
 /assets/js/Riverdragon/**/*.js linguist-generated=true gitlab-generated -diff
-
+/rss.xml linguist-generated=true gitlab-generated -diff
+/rss-lite.html linguist-generated=true gitlab-generated -diff
