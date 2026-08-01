@@ -1,3 +1,7 @@
+---
+widgets: true
+---
+
 ::: {.widget .full-width widget="Airplane" widget-datakey="default"}
 :::
 

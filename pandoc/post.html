@@ -21,7 +21,11 @@ $endif$
   <script src="assets/js/visible_space.js" defer></script>
   <script src="assets/js/canvas.js" defer></script>
   <script src="assets/js/draw.js" defer></script>
+$if(widgets)$
   <script src="widgets.js" async></script>
+$else$
+  <script src="widgets.lite.js" async></script>
+$endif$
   <style type="text/css">
 $if(quotes)$
       q { quotes: "“" "”" "‘" "’"; }

@@ -1,5 +1,6 @@
 ---
 title: Traintle? Turtular Train? Trundular Turtle?
+widgets: true
 ---
 
 <details class="Details">

@@ -3,6 +3,7 @@ title: Harpsynthorg
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
 # date: 2024/10/23
+widgets: true
 ---
 
 :::{widget="Widget.Roar.Harpsynthorg"}

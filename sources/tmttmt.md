@@ -4,6 +4,7 @@ subtitle: A programming language (front-end?) for making other programming langu
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
 date: 2023/10/13 – …
+widgets: true
 ---
 
 

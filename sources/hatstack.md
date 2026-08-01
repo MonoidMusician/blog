@@ -4,6 +4,7 @@ subtitle: "A stack based, concatenative language for [Hereditarily Finite Sets](
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
 preroll: '<span data-widget="Parser.Main.HFS" data-widget-datakey="default"></span>'
+widgets: true
 ---
 
 <script src="assets/js/hfs.js"></script>

@@ -32,6 +32,7 @@ pkgs.mkShell rec {
     watchexec
     jq
     nmap # for ncat
+    nginx
 
     (
       let fenix = import (fetchTarball "https://github.com/nix-community/fenix/archive/dd2c80d0b88463ccc0402c86e9e72dbb354ac091.tar.gz") { };

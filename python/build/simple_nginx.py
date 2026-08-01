@@ -5,14 +5,27 @@ from tempfile import TemporaryDirectory
 import subprocess
 
 import os
+from os import path
 import requests
 import json
+import sys
+import shutil
 
 port = "8998"
 run = True
 
 with TemporaryDirectory(suffix=f".nginx_{port}") as realtempdir:
     temp = (lambda base: lambda sub: base+sub)(realtempdir+"/" if run else f"/tmp/nginx_{port}_")
+
+    try:
+        which = shutil.which("nginx")
+
+        mimes = path.normpath(path.dirname(which)+'/../conf/mime.types')
+        if not path.isfile(mimes):
+            mimes = None
+    except Exception:
+        which = None
+        mimes = None
 
     CORS_headers = {
         'Access-Control-Allow-Origin': [Token.var("http_origin"), Token.always],
@@ -82,6 +95,7 @@ with TemporaryDirectory(suffix=f".nginx_{port}") as realtempdir:
             Comment("mapping of file types to MIME types", "(use [.] globbing to allow the file to not exist)"),
             ("include", "/etc/nginx/mime[.]types"),
             ("include", "/usr/local/etc/nginx/mime[.]types"),
+            *([("include", mimes)] if mimes else []),
             ("default_type", "application/octet-stream", comment("(default to binary data)")),
 
             "",
@@ -111,5 +125,8 @@ with TemporaryDirectory(suffix=f".nginx_{port}") as realtempdir:
     with open(realtempdir + "/nginx.conf", mode="wt") as f:
         f.write(config+"\n")
         f.flush()
-        subprocess.run(["nginx", "-e", "stderr", "-t", "-c", f.name])
+        if sys.argv[1] != "run":
+            subprocess.run(["nginx", "-e", "stderr", "-t", "-c", f.name])
+        else:
+            subprocess.run(["nginx", "-e", "stderr", "-c", f.name, *sys.argv[2:]])
 

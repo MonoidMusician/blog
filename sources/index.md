@@ -18,9 +18,9 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 
   Extensible Defunctionalization with Typeclasses. Or, Functions in Pure Data in Haskell.
 
-- [OOP Without the Goop: No “Objects”, Just Closures in Records](reformed_oop.html) [2026/05/27]{.dated}
+- [[OOP]{t=} Without the Goop: No “Objects”, Just Closures in Records](reformed_oop.html) [2026/05/27]{.dated}
 
-- [Everything Should Be FRP Compatible: Functional Reactive Programming Everywhere](frp_compatible.html) [2026/04/22]{.dated}
+- [Everything Should Be [FRP]{t=} Compatible: Functional Reactive Programming Everywhere](frp_compatible.html) [2026/04/22]{.dated}
 
 - [Accuracy Makes Artʼs Stories Persuasive](accuracy.html) [2026/04/17]{.dated}
 
@@ -322,7 +322,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 
 ### Paradigms
 
-  - [OOP Without the Goop: No “Objects”, Just Closures in Records](reformed_oop.html) [2026/05/27]{.dated}
+  - [[OOP]{t=} Without the Goop: No “Objects”, Just Closures in Records](reformed_oop.html) [2026/05/27]{.dated}
 
   - [Everything Should Be FRP Compatible: Functional Reactive Programming Everywhere](frp_compatible.html) [2026/04/22]{.dated}
 

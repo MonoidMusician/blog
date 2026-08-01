@@ -2,6 +2,7 @@
 title: Unicode Explorer
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
+widgets: true
 ---
 
 <style>

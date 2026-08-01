@@ -77,10 +77,11 @@ watch-pandoc :
 	watchexec -w pandoc -f 'pandoc/**' -w $(TXTDIR) -f '$(TXTDIR)/*.md' -r -- make pandoc
 
 prod-ps : PureScript/src PureScript/directives.txt spago.yaml PureScript/spago.yaml | $(BUILDIR)
-	rm -f $(BUILDIR)/widgets.js.gz
+	rm -f $(BUILDIR)/widgets.js.gz $(BUILDIR)/widgets.lite.js.gz $(BUILDIR)/widgets.lite.js
 	spago build
 	purs-backend-es bundle-app --directives PureScript/directives.txt --main Main --to $(BUILDIR)/widgets.js
-	gzip -f9k $(BUILDIR)/widgets.js
+	purs-backend-es bundle-app --directives PureScript/directives.txt --main Lite --minify --to $(BUILDIR)/widgets.lite.js
+	gzip -f9k $(BUILDIR)/widgets.js $(BUILDIR)/widgets.lite.js
 	make assets-ps
 
 .PHONY : assets-ps
@@ -89,8 +90,9 @@ assets-ps : assets/json
 	(for f in assets/json/*-parser-states.json; do gzip -f9k "$$f"; done)
 
 ps : PureScript/src spago.yaml PureScript/spago.yaml | $(BUILDIR)
-	rm -f $(BUILDIR)/widgets.js.gz
+	rm -f $(BUILDIR)/widgets.js.gz $(BUILDIR)/widgets.lite.js.gz
 	spago bundle --bundle-type app --module Main --outfile ../$(BUILDIR)/widgets.js
+	ln -f $(BUILDIR)/widgets.js $(BUILDIR)/widgets.lite.js
 	make assets-ps
 
 sources.txt : spago.lock spago.yaml PureScript/spago.yaml

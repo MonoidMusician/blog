@@ -1,3 +1,7 @@
+---
+widgets: true
+---
+
 :::{.centered}
 bones resting beneath\
 a lake, a stagnant stream.\

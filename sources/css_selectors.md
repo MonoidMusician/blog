@@ -3,6 +3,7 @@ title: Algebra of CSS Selectors
 subtitle: How do you zip two nested selectors together?
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
+widgets: true
 ---
 
 A basic demo of the algebra of CSS selectors.
