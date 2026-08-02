@@ -787,6 +787,77 @@ Interestingly, a similar idea of staging as the applicative paper shows up in th
 the parser *monad* is staged using `Compose`{.haskell} (that is, with a fixed order, instead of the commutative order of `Day`{.haskell}), since the result of parsing a token is of type `ParseMachine ix tok (ParseMachine ix tok r)`{.haskell}, to allow for committing to a parse locally.
 Controlling backtracking like this helps constrain memory usage during parsing.
 
+## Semirings for Regular Expressions
+
+This is based on the Functional Pearl: [“A Play on Regular Expressions”](https://sebfisch.github.io/haskell-regexp/regexp-play.pdf) by Sebastian Fischer, Frank Huch, and Thomas Wilke.
+
+There are three semirings introduced, in addition to Booleans.
+
+These semirings feature idempotent addition.
+Normally one needs to adjoin the naturals, keeping track of `1 + 1 = 2`, to keep satisfying distributivity: `a + a = 1*a + 1*a = (1+1)*a = 2*a`.
+But since addition is idempotent here, `1 + 1 = 1` is sufficient for these semirings.
+
+Important to note: zero and one are the identities for regular expressions.
+Zero refers to having no match, and one refers to an empty match.
+
+So all of the instances follow this template to handle the identities:
+
+```haskell
+instance Semiring _ where
+  zero = Zero; one = One
+
+  Zero  .+.  y     =  y
+  x     .+.  Zero  =  x
+  One   .+.  y     =  y
+  x     .+.  One   =  x
+  _     .+.  _     =  _
+
+  Zero  .*.  _     =  Zero
+  _     .*.  Zero  =  Zero
+  One   .*.  y     =  y
+  x     .*.  One   =  x
+  _     .*.  _     =  _
+```
+
+> Semiring used for leftmost matching.
+
+```haskell
+data Leftmost = Zero | One | Leftmost !Int
+
+instance Semiring Leftmost where
+  Leftmost a  .+.  Leftmost b  =  Leftmost (min a b)
+
+  Leftmost a  .*.  Leftmost b  =  Leftmost (min a b)
+```
+
+> Semiring used for longest matching.
+
+```haskell
+data Longest = Zero | One | Longest !Int
+
+instance Semiring Longest where
+
+  Longest a  .+.  Longest b  =  Longest (max a b)
+
+  Longest a  .*.  Longest b  =  Longest (a+b)
+```
+
+> Semiring used for leftmost longest matching.
+>
+> The `LeftLong`{.haskell} type satisfies the distributive laws only with a precondition on all involved multiplications: multiplied matches must be adjacent and the start position must be smaller than the end position.
+> This precondition is satisfied for all multiplications during regular expression matching.
+
+```haskell
+data LeftLong = Zero | One | LeftLong !Int !Int
+
+instance Semiring LeftLong where
+  LeftLong a b  .+.  LeftLong c d
+    | a<c || a==c && b>=d          =  LeftLong a b
+    | otherwise                    =  LeftLong c d
+
+  LeftLong a _  .*.  LeftLong _ b  =  LeftLong a b
+```
+
 ## Your Requests Here
 
 thatʼs all I have for now!
