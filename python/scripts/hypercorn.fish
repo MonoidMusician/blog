@@ -11,6 +11,8 @@ function remove_pid --on-signal SIGINT --on-event fish_exit
   rm -f $PID
 end
 
+python3 cert.py
+
 hypercorn \
   --reload \
   --bind 0.0.0.0:7357 \

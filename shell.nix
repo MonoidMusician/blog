@@ -4,6 +4,8 @@ pkgs.mkShell rec {
   # nativeBuildInputs is usually what you want -- tools you need to run
 
   nativeBuildInputs = with pkgs.buildPackages; [
+    fish
+
     # TODO: minimal and maximal shells?
     nodejs_26 purescript pandoc lilypond
     (haskell.packages.ghc984.ghcWithPackages (pkgs: with pkgs; [ cabal-install haskell-language-server ]))

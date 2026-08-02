@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from apps import silly
 from apps import festival
 from apps import index
+from apps import redirects
 
 # Remove the static route
 app = Quart(__name__, static_folder=None)
@@ -17,6 +18,7 @@ app.config.from_prefixed_env()
 # We want some dynamic routes based on the hostname, most specific first
 domain_routes = {
     r'^(a(wa)*\.)+': [silly.awawapp],
+    r'redirect\.': [redirects.app],
     # Default routes! index.app includes the static route
     r'': [index.app, silly.app, festival.app],
 }

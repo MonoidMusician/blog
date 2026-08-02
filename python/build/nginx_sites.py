@@ -70,7 +70,7 @@ def private(name, *directives):
         *directives
     )
 
-def proxy(upstream, location="/", *, trusted=False, keep_host=True):
+def proxy(upstream, location="/", *directives, trusted=False, keep_host=True):
     return Directive("location", location,
         ("proxy_pass", upstream),
         includable("proxy args",
@@ -88,8 +88,9 @@ def proxy(upstream, location="/", *, trusted=False, keep_host=True):
 
         # Custom
         when(keep_host, ("proxy_set_header", "Host", "$http_host")),
-        ("proxy_redirect", not keep_host),
+        ("proxy_redirect", keep_host if keep_host else "default"),
         ("proxy_set_header", auth_header_name, Token('""') if not trusted else Token("true")),
+        *directives,
     )
 
 def public_private_proxy(subdomain, upstream, location="/", *directives, keep_host=True):

@@ -1,4 +1,5 @@
 from .nginx import *
+from .nginx_sites import proxy
 
 import re
 from tempfile import TemporaryDirectory
@@ -17,7 +18,7 @@ parser = argparse.ArgumentParser(
     description='Simple CLI/JSON config/runner for (daemonless) nginx',
 )
 parser.set_defaults(run=False)
-parser.add_argument('--port', type=int, default=8998)
+parser.add_argument('--port', type=int, default=8999)
 
 
 subparsers = parser.add_subparsers()
@@ -30,10 +31,25 @@ args = parser.parse_args()
 
 print(json.dumps(args.__dict__))
 
-sys.exit(0)
-
 port = args.port
 run = args.run
+
+redirection_flow = [
+    ("recursive_error_pages", True), # handle 502
+    proxy("https://redirect.localhost", "/",
+        ("proxy_intercept_errors", True),
+        ("error_page", 404, "=", "@serve"), # no redirect issued
+        ("error_page", 502, "=", "@serve"), # handle upstream missing
+        ("index", "/"),
+        keep_host=False,
+    ),
+    Directive("location", "@serve", [
+        comment("use whatever the value of -p is"),
+        ("root", "./"),
+        ("index", "/"),
+        ("try_files", "$uri", "$uri.html", "$uri/index.html", "=404"),
+    ]),
+]
 
 with TemporaryDirectory(suffix=f".nginx_{port}") as realtempdir:
     temp = (lambda base: lambda sub: base+sub)(realtempdir+"/" if run else f"/tmp/nginx_{port}_")
@@ -42,7 +58,7 @@ with TemporaryDirectory(suffix=f".nginx_{port}") as realtempdir:
         which = shutil.which("nginx")
 
         # For nix installations
-        mimes = path.normpath(path.dirname(which)+'/../conf/mime[.]types')
+        mimes = path.normpath(path.dirname(which)+'/../conf/mime.types')
         if not path.isfile(mimes):
             mimes = None
     except Exception:
@@ -101,6 +117,8 @@ with TemporaryDirectory(suffix=f".nginx_{port}") as realtempdir:
             Comment("turn off logging"),
             ("access_log", False),
 
+            connection_upgrade,
+
             Comment("temporary files"),
             ("client_body_temp_path", temp("client_body")+"/"),
             ("fastcgi_temp_path", temp("fastcgi")+"/"),
@@ -113,6 +131,11 @@ with TemporaryDirectory(suffix=f".nginx_{port}") as realtempdir:
             ("tcp_nopush",          True),
             ("keepalive_timeout",   65),
             ("types_hash_max_size", 4096),
+
+            "",
+            Directive("upstream", "redirect.localhost", Body(
+                ("server", "127.0.0.1:7357"),
+            )),
 
             Comment("mapping of file types to MIME types", "(use [.] globbing to allow the file to not exist)"),
             ("include", "/etc/nginx/mime[.]types"),
@@ -127,18 +150,9 @@ with TemporaryDirectory(suffix=f".nginx_{port}") as realtempdir:
                 ("listen", f"[::]:{port}"),
                 "",
                 ("http2", True),
-                ("server_name", "localhost"),
+                ("server_name", "blog.localhost"),
                 "",
-                Directive("location", "/", [
-                    comment("use whatever the value of -p is"),
-                    ("root", "./"),
-                    comment("serve local files or return 404"),
-                    ("try_files", "$uri/index.html", "$uri", "=404"),
-                    comment("return a listing of files (optional)"),
-                    ("autoindex", True),
-                    "",
-                    allowCORS,
-                ]),
+                *redirection_flow,
             ]),
         ]),
     ])

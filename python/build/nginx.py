@@ -156,7 +156,7 @@ def nginx_map_body(*items, default=None, hostnames=False, volatile=False):
     for item, value in items:
         if item in ["hostnames", "volatile", "default", "include"]:
             item = "\\"+item
-        yield Directive(Token.re(item), value)
+        yield Directive(Token.re(item), Token.str(value))
 
 # https://nginx.org/en/docs/http/websocket.html
 # https://www.f5.com/company/blog/nginx/avoiding-top-10-nginx-configuration-mistakes#no-keepalives
