@@ -3,6 +3,7 @@ from quart import Quart, websocket
 from werkzeug.security import safe_join
 
 import sys, os
+import re
 
 app = quart.Blueprint('redirect', __name__, url_prefix='')
 
@@ -36,6 +37,8 @@ def implicit_index(p: str, q: str):
 
 identity = lambda p, q: (p, q)
 
+re_sep = re.compile(r"[-_\s]+")
+
 # Modifications to try
 mods = [
     [
@@ -43,9 +46,7 @@ mods = [
         identity,
     ],
     [
-        bi(lambda p: p.replace("_", "-").replace(" ", "-")),
-        bi(lambda p: p.replace(" ", "_")),
-        bi(lambda p: p.replace(" ", "_").replace("-", "_")),
+        bi(lambda p: re.sub(re_sep, "-", p)),
     ],
     [
         bi(lambda p: p + ".html")
