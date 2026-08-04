@@ -3,8 +3,7 @@ import quart
 auth_header_name = 'Sec-X-Authed'
 
 def has_auth(req):
-    app = quart.current_app
-    if app.config['DEBUG']:
+    if req.app.config['DEBUG']:
         return True
     # https://stackoverflow.com/questions/4361173/http-headers-in-websockets-client-api
     # okay websockets are a bad API and you can't actually set headers on them

@@ -1,11 +1,9 @@
-import quart
-from quart import Quart, websocket
-from werkzeug.security import safe_join
+import sanic
 
 import sys, os
 import re
 
-app = quart.Blueprint('redirect', __name__, url_prefix='')
+app = sanic.Blueprint('redirect', url_prefix='')
 
 # Lift a function to work on pairs of paths
 def bi(f: Callable[[str], Optional[str]]):
@@ -101,7 +99,7 @@ def logic(original_path: str, cwd: Optional[str] = None):
         )
         paths = dict(new_paths)
 
-    # print(original_path, paths)
+    print(original_path, paths)
 
     checked = set() # only check a file path once
     for (file_path, user_path) in paths.items():
@@ -118,14 +116,11 @@ def logic(original_path: str, cwd: Optional[str] = None):
 
 
 @app.get("<path:path>")
-async def redirect(path):
-    try:
-        new_path = logic(path, '../static/')
-        if new_path is not None:
-            return quart.redirect(new_path, 301)
-    except Exception as e:
-        print(e)
-    return ("Not Found", 404)
+async def redirect(request, path):
+    new_path = logic(path, '../static/')
+    if new_path is not None:
+        return sanic.response.redirect(new_path, status=301)
+    return sanic.response.HTTPResponse("Not Found", status=404)
 
 if __name__ == '__main__':
     args = sys.argv[1:]

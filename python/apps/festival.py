@@ -1,24 +1,24 @@
-import quart
+import sanic
 import asyncio
 import traceback
 
 from util import *
 
-app = quart.Blueprint('festival', __name__, url_prefix='/festival')
+app = sanic.Blueprint('festival', url_prefix='/festival')
 
 @app.websocket("/")
-async def festival_full():
-    require_auth(quart.session)
+async def festival_full(request, websocket):
+    require_auth(request)
     async def festival_api(websocket):
         while True:
             data = await websocket.receive()
             if not data: continue
             yield data
             await websocket.send_json({"type":"scheme","data":data})
-    return await festival_selected_websocket(festival_api)
+    return await festival_selected_websocket(festival_api, websocket)
 
 @app.websocket("/tts")
-async def festival_tts():
+async def festival_tts(request, websocket):
     async def festival_api(websocket):
         yield f"(Parameter.set 'Wavefiletype 'wav)"
         setup = False
@@ -28,11 +28,11 @@ async def festival_tts():
             if not data: continue
             yield f"(tts_textall {scheme_string(data)} {scheme_string("nil")})"
             await websocket.send_json({"type":"text","data":data})
-    return await festival_selected_websocket(festival_api)
+    return await festival_selected_websocket(festival_api, websocket)
 
 @app.websocket("/rich")
-async def festival_rich():
-    require_auth(quart.websocket)
+async def festival_rich(request, websocket):
+    require_auth(request)
     async def festival_api(websocket):
         yield f"(Parameter.set 'Wavefiletype 'wav)"
         setup = False
@@ -54,12 +54,9 @@ async def festival_rich():
                 await websocket.send_json({"type":"error","data":"Unrecognized command type"})
     return await festival_selected_websocket(festival_api)
 
-async def festival_selected_websocket(festival_selected_api):
-    websocket = quart.websocket
-
+async def festival_selected_websocket(festival_selected_api, websocket):
     reached_eof = asyncio.Event()
     (reader, writer) = await asyncio.open_connection('localhost', 1314)
-    await websocket.accept()
     setup = False
 
     async def _receive() -> None:

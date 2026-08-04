@@ -1,15 +1,15 @@
-import quart
+import sanic
 import asyncio
-from quart import Quart, websocket, request
 import random
 
 from util import *
 
-app = quart.Blueprint('silly', __name__, url_prefix='')
+app = sanic.Blueprint('silly', url_prefix='')
 
 # Echoes messages back to the sender
 @app.websocket("/echo")
-async def echo():
+async def echo(request, websocket):
+    print(request.transport.get_websocket_connection())
     try:
         while True:
             data = await websocket.receive()
@@ -24,7 +24,7 @@ broadcast_clients = []
 
 # Broadcasts messages to all connected clients
 @app.websocket("/broadcast")
-async def broadcast():
+async def broadcast(request, websocket):
     client = asyncio.Queue()
     broadcast_clients.append(client)
     try:
@@ -45,9 +45,9 @@ async def broadcast():
         broadcast_clients.remove(client)
 
 
-@app.route('/awawa', defaults={'path': ''})
-async def awawa(path: str):
-    host_parts = request.host_url.split(".")
+@app.route('/awawa')
+async def awawa(request, path: str = ''):
+    host_parts = request.host.split(".")
     domain = ".".join(host_parts[-2:]) if len(host_parts) > 2 else ".".join(host_parts)
     seed = request.url.replace(domain, "")
     count_a = seed.count("a")
@@ -58,11 +58,11 @@ async def awawa(path: str):
         count = random.randrange(128)
         aww = random.randrange(32) > 0
     message = ("a"+count*"wa") if aww else ("a"+count*"a"+count*"w")
-    resp = await quart.make_response(message)
-    resp.headers["X-AWAWA"] = str(count)
-    resp.headers["X-Powered-By"] = "catgirls & love"
-    return resp
+    return sanic.response.HTTPResponse(message, headers={
+        "X-AWAWA": str(count),
+        "X-Powered-By": "catgirls & love"
+    })
 
-awawapp = quart.Blueprint('awawa', __name__, url_prefix='')
-awawapp.add_url_rule('/', None, awawa, defaults={'path': ''})
-awawapp.add_url_rule('/<path:path>', None, awawa)
+awawapp = sanic.Blueprint('awawa', url_prefix='')
+awawapp.add_route(awawa, '/', name='awawa_root')
+awawapp.add_route(awawa, '/<path:path>')
