@@ -17,6 +17,7 @@ import Data.Array.NonEmpty as NEA
 import Data.BooleanAlgebra.NormalForm (asArray)
 import Data.CodePoint.Unicode (isAsciiUpper, isDecDigit)
 import Data.DateTime.Instant (unInstant)
+import Data.Distributive (collect, distribute)
 import Data.Either (Either(..), either, hush, isLeft)
 import Data.Filterable (filter, filterMap, separate)
 import Data.Foldable (all, any, findMap, fold, foldM, foldMap, foldl, for_, intercalate, oneOfMap, sum, traverse_)
@@ -48,7 +49,7 @@ import Data.Ord.Min (Min(..))
 import Data.Pair (Pair(..))
 import Data.Profunctor (dimap)
 import Data.Profunctor.Choice ((+++), (|||))
-import Data.Semigroup.Foldable (foldMap1)
+import Data.Semigroup.Foldable (fold1, foldMap1)
 import Data.Semigroup.Last (Last(..))
 import Data.Set (Set)
 import Data.Set as Set
@@ -71,7 +72,7 @@ import Effect.Uncurried (EffectFn2, runEffectFn2)
 import Foreign.Object as FO
 import Idiolect (incorporate, insteadOf, intercalateMap, minimumWith, neighbors, sgn, sqre, withIndices, (#..), (#:..), (#<>), (..$), (<#>:), (<#?>), (<>$), (==<), (>==))
 import Math.Bezier as Bezier
-import Math.Matrix (Afn2(..), B32, BBox2, Bez1(..), Bez3(..), Bounds, LTF(..), Lin2(..), V2, V3, Vec2(..), Vec3(..), bounds2bounds1, bounds2bounds2, clampBounds, d2r, disjointBounds, dot, inv, mkAfn2, mkBound, mkBounds, norm, norm2, normalize, pairs, pairsWith, r2d, rotl2, tf, tfBounds, tfI, translate2, unAfn2, ($*), ($.), (+<), (-<>), (.*), (<.), (<>+), (<>-), (<^), (>+))
+import Math.Matrix (Afn2(..), B32, BBox2, Bez1(..), Bez3(..), Bounds, LTF(..), Lin2(..), V2, V3, Vec2(..), Vec3(..), bounds2bez, bounds2bounds1, bounds2bounds2, clampBounds, d2r, disjointBounds, dot, inv, mkAfn2, mkBound, mkBounds, norm, norm2, normalize, overBounds, padBounds, pairs, pairsWith, r2d, rotl2, tf, tfBounds, tfI, translate2, unAfn2, ($*), ($.), (+<), (-<>), (.*), (<.), (<>+), (<>-), (<^), (>+))
 import Math.Poly (deriv)
 import Monoids.BoundsWith (BoundsWith, MinWith(..))
 import Parser.Comb.Dragon (renderParseError)
@@ -444,7 +445,7 @@ standardize key radius curve@(B3 p0 p1 p2 p3) = do
     Nothing -> do
       let
         id = Map.size library
-        strokes = dilate curve
+        strokes = dilatePath curve
         bbox = { stroke: Bezier.bboxBs strokes, centerline: Bezier.bboxB curve }
         strength = Pair (norm $ p0 -<> p1) (norm $ p2 -<> p3)
         basesamples = Array.range 0 100 <#> \i ->
@@ -592,21 +593,33 @@ renderTraintle cmds = D.Egg do
     in walkFrom <$> seedTrain
   let
     railmask = newmask curve
-    newmask curve inner outer = maskOf $ fold
-      [ clone curve
-        [ D.stylish =:= D.smarts
-          { "stroke": "white"
-          , "stroke-width": show outer <> "px"
-          }
+    newmask curve bbox inner outer =
+      maskOf (map (padBounds (Int.toNumber (outer + 12))) <$> bbox) $ fold
+        [ clone curve
+          [ D.stylish =:= D.smarts
+            { "stroke": "white"
+            , "stroke-width": show outer <> "px"
+            }
+          ]
+        , clone curve
+          [ D.stylish =:= D.smarts
+            { "stroke": "black"
+            , "stroke-width": show inner <> "px"
+            }
+          ]
         ]
-      , clone curve
-        [ D.stylish =:= D.smarts
-          { "stroke": "black"
-          , "stroke-width": show inner <> "px"
-          }
-        ]
-      ]
-    maskOf contents = mask $ defL \id -> D.svg_"mask" [ D.id =:= id ] contents
+    maskOf bbox contents = mask $
+      defL \id -> D.svg_"mask"
+        [ D.id =:= id
+        , bbox <#> map bounds2bez >>> \(V2 (B1 x0 x1) (B1 y0 y1)) ->
+            D.MultiAttr
+            [ D.attr "maskUnits" "userSpaceOnUse"
+            , D.attr "x" x0
+            , D.attr "y" y0
+            , D.attr "width" $ x1 - x0
+            , D.attr "height" $ y1 - y0
+            ]
+        ] contents
     withTrainUnits = liveArray $ freshTrains <#> \trains -> do
       NEA.drop 1 trains # pairs # withIndices
         # filter (Int.even <<< fst)
@@ -641,15 +654,15 @@ renderTraintle cmds = D.Egg do
             }
           ]
       , running >@ \{ paths } -> paths #.. \path -> Egg do
-          thisOne <- defineL \id -> D.path [ D.id =:= id, D.attr "d" =:= path ]
+          thisOne <- defineL \id -> D.path [ D.id =:= id, D.attr "d" =:= path.d ]
           pure $ clone thisOne
             [ D.stylish =:= D.smarts
               { "stroke": "#5a2814"
               , "stroke-width": "16px"
               }
-            , newmask thisOne 12 16
+            , newmask thisOne (pure path.bbox) 12 16
             ]
-      , D.g [ maskOf $ D.g [] $ fold
+      , D.g [ maskOf (running <#> _.bounds) $ D.g [] $ fold
           [ clone curve
               [ D.stylish =:= D.smarts
                 { "stroke": "white"
@@ -657,31 +670,31 @@ renderTraintle cmds = D.Egg do
                 }
               ]
           , running >@ \{ paths } -> paths #.. \path -> Egg do
-            thisOne <- defineL \id -> D.path [ D.id =:= id, D.attr "d" =:= path ]
+            thisOne <- defineL \id -> D.path [ D.id =:= id, D.attr "d" =:= path.d ]
             pure $ clone thisOne
               [ D.stylish =:= D.smarts
                 { "stroke": "black"
                 , "stroke-width": "13px"
                 }
-              , newmask thisOne 11 13
+              , newmask thisOne (pure path.bbox) 11 13
               ]
           ]
         ] $
           running >@ \{ paths } -> paths #.. \path -> Egg do
-            thisOne <- defineL \id -> D.path [ D.id =:= id, D.attr "d" =:= path ]
+            thisOne <- defineL \id -> D.path [ D.id =:= id, D.attr "d" =:= path.d ]
             pure $ clone thisOne
               [ D.stylish =:= D.smarts
                 { "stroke": "#cbd4d8"
                 , "stroke-width": "15px"
                 }
-              , newmask thisOne 13 15
+              , newmask thisOne (pure path.bbox) 13 15
               ]
       , clone curve
           [ D.stylish =:= D.smarts
             { "stroke": "#cbd4d8"
             , "stroke-width": "15px"
             }
-          , railmask 13 15
+          , railmask (running <#> _.bounds) 13 15
           ]
       , D.g [ D.stylish =:= D.smarts { "opacity": 0.7 } ] $ fold
         [ D.svg_"circle"
@@ -841,6 +854,7 @@ runTraintle { library, hitmap } cmds =
   , state: { library: _st.library, hitmap: _st.hitmap }
   , error: either identity mempty resultSplit
   , routes
+  , bounds: overBounds (Int.toNumber <<< (16 * _)) <$> bounds
   , info: _
   } $ definitions $
     (either (\e -> [ D.text "error" /\ D.text e ]) mempty resultSplit) <>
@@ -1419,17 +1433,17 @@ walkPaths curves start distances =
     composite { t, i } = t + Int.toNumber i
 
 
-dilate :: B32 -> Pair B32
-dilate curve@(B3 p0 _ _ p3) | curve == Bezier.castUp (Bezier.castUp (B1 p0 p3)) =
+dilatePath :: B32 -> Pair B32
+dilatePath curve@(B3 p0 _ _ p3) | curve == Bezier.castUp (Bezier.castUp (B1 p0 p3)) =
   let
-    delta = 8.0
+    delta = 16.0
     d = normalize $ p0 -<> p3
     ninety = rotl2 (90.0 * d2r)
     cross = delta .* (ninety $* d)
   in Pair (LTF cross $* curve) (LTF (inv cross) $* curve)
-dilate curve =
+dilatePath curve =
   let
-    delta = 8.0
+    delta = 16.0
     outer c@(B3 p0 p1 p2 p3) which =
       let
         d0 = normalize $ p0 -<> p1
@@ -1466,11 +1480,13 @@ separateRoutes =
 
 
 
-routesToPaths :: forall m r. MonadState { hitmap :: HitMap | r } m => Array Canonized -> m (Array String)
+routesToPaths :: forall m r. MonadState { hitmap :: HitMap | r } m => Array Canonized -> m (Array { d :: String, bbox :: BBox2 Number })
 routesToPaths originalSegments = do
   separated <- separateRoutes originalSegments
-  pure $ separated <#?> NEA.fromArray <#>
-    map canonCurve >>> bezsToPath
+  pure $ separated <#?> NEA.fromArray <#> \cs ->
+    { d: bezsToPath (canonCurve <$> cs)
+    , bbox: fold1 <$> collect canonStrokeBox cs
+    }
 
 bezsToPath :: NonEmptyArray B32 -> String
 bezsToPath segments =
