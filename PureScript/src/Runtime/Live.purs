@@ -342,7 +342,7 @@ fetchHighlight url = highlighting $ compact (affToLake (fetchText url))
 
 highlighting :: forall flow. Stream flow String -> Dragon
 highlighting stream = D.Replacing $ dam stream <#>
-  do PureScript.Highlight.highlight' >>> Dodo.print HTML.toDragon Dodo.twoSpaces >>> sourceCode "PureScript" []
+  do PureScript.Highlight.highlight' >>> Dodo.print (HTML.toDragon PureScript.Highlight.toClass) Dodo.twoSpaces >>> sourceCode "PureScript" []
 
 
 data ImportsExprDecls e =

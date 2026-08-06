@@ -82,7 +82,7 @@ import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones (off_, text, ($$), ($~~), (.$), (.$$), (.$~~), (<:>), (=:=), (>$), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (deletable, liveArray, sourceCode)
-import Riverdragon.River (Course(..), Lake, River, coursing, createRiver, createRiverStore, createStore, dam, fix, instantiate, limitTo, makeLake, makeLake', memoize, singleShot, statefulStream, stillRiver, store, subscribe, subscribeM)
+import Riverdragon.River (Course(..), Lake, River, coursing, createRiver, createRiverStore, createStore, dam, fix, instantiate, limitTo, makeLake, makeLake', memoize, singleShot, statefulStream, stillRiver, store, store', subscribe, subscribeM)
 import Riverdragon.River as River
 import Riverdragon.River.Bed (freshId)
 import Riverdragon.River.Beyond (animationLoop, debounce, dedup, documentEvent, everyFrame, instanced, withLast)
@@ -558,13 +558,12 @@ dragonEither f g = trackEither >>> map (withHead f ||| withHead g) >>> D.Replaci
   where
   withHead :: forall z. (River z -> Dragon) -> Tuple z (Lake z) -> Dragon
   withHead h (Tuple z zs) = D.Egg do
-    { stream: zz } <- store zs
-    pure $ h (pure z <|> zz)
+    { stream: zz } <- store' z zs
+    pure $ h zz
 
 -- wdassssssdaaxdwwwwwwwwwassaxddsssdxasssssdwaaadxwdaxaddaaxwwdxaa
 -- 16dwwwaa16saawww8dxwwwdd16sdd6wdd16sddwww8axwwwaa16saawww
--- &R{2e3w2q4a2q3w2e4d 12w4d12w4d}
--- &R{12we3de12weewwwqq12wq3aq12w12w12wq3aq12wqqwwwee12we3de12w12w12w}
+-- @S{8w} &R{@Se3de@Seewwwqq@Sq3aq@S12w@Sq3aq@Sqqwwwee@Se3de@S12w@S}
 renderTraintle :: River (Array Command) -> Dragon
 renderTraintle cmds = D.Egg do
   { defs, defL, defineL } <- manageDefs
@@ -633,14 +632,14 @@ renderTraintle cmds = D.Egg do
             , "stroke-width": "28px"
             }
           ]
-      -- , clone curve
-      --     [ D.stylish =:= D.smarts
-      --       { "stroke": "#361f13"
-      --       , "stroke-dasharray": "2.76,5.28"
-      --       , "stroke-dashoffset": "5.28"
-      --       , "stroke-width": "24px"
-      --       }
-      --     ]
+      , clone curve
+          [ D.stylish =:= D.smarts
+            { "stroke": "#361f13"
+            , "stroke-dasharray": "2.76,5.28"
+            , "stroke-dashoffset": "5.28"
+            , "stroke-width": "24px"
+            }
+          ]
       , running >@ \{ paths } -> paths #.. \path -> Egg do
           thisOne <- defineL \id -> D.path [ D.id =:= id, D.attr "d" =:= path ]
           pure $ clone thisOne
@@ -850,8 +849,7 @@ runTraintle { library, hitmap } cmds =
         definitions $ routes #:.. \name (Route route) ->
           [ D.show name /\ D.show
             { pathlength: route.pathlength
-            , length: Array.length route.segments
-            , segments: route.segments <#> \{ segment: Pair fwd _ } -> fwd.pos
+            , segments: Array.length route.segments
             }
           ]
     , D.text "paths" /\ D.show (Array.length result.paths)

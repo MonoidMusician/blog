@@ -7,7 +7,7 @@ import Data.Argonaut as J
 import Data.Array as Array
 import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..), hush, isLeft)
-import Data.Foldable (for_, maximum)
+import Data.Foldable (for_, maximum, traverse_)
 import Data.Identity (Identity(..))
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (un, unwrap)
@@ -17,10 +17,10 @@ import Data.Tuple (fst)
 import Effect (Effect)
 import Effect.Aff (Aff, launchAff_, try)
 import Effect.Aff as Aff
-import Effect.Aff as Ex
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
 import Effect.Class.Console as Console
+import Effect.Exception as Ex
 import Effect.Now (now)
 import Idiolect ((>==))
 import Node.Encoding (Encoding(..))
@@ -168,6 +168,7 @@ mainPurs = do
       Left e -> do
         Console.log $ m.modulePath <> " failed"
         Console.log $ Ex.message e
+        traverse_ Console.log $ Ex.stack e
   pure unit
 
 type Module =

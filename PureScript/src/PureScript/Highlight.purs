@@ -4,7 +4,7 @@ import Prelude
 
 import Data.Array (fold, foldMap)
 import Data.Generic.Rep (class Generic)
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..))
 import Data.Monoid (power)
 import Data.Set as Set
 import Data.Show.Generic (genericShow)
@@ -16,13 +16,12 @@ import PureScript.CST.Print as CST
 import PureScript.CST.TokenStream (TokenStep(..), TokenStream, step)
 import PureScript.CST.Types (Comment(..), Token(..), SourceToken)
 
-highlight' :: String -> Doc String
+highlight' :: String -> Doc Category
 highlight' = lex
   >>> printTokenStream
-  >>> map toClass
 
 highlight :: String -> String
-highlight = highlight' >>> Dodo.print toHTML Dodo.twoSpaces
+highlight = highlight' >>> Dodo.print (toHTML toClass) Dodo.twoSpaces
 
 
 highlightPandoc :: String -> String
