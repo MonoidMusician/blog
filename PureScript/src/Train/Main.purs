@@ -2,13 +2,13 @@ module Train.Main where
 
 import Prelude
 
-import Control.Alternative (guard)
+import Control.Alternative (empty, guard)
 import Control.Comonad (extract)
 import Control.Monad.Error.Class (throwError)
-import Control.Monad.Reader (ask)
+import Control.Monad.Reader (ask, asks, local)
 import Control.Monad.ResourceM (inSubScope, selfDestructor)
 import Control.Monad.ResourceT (Dir(..), ResourceM)
-import Control.Monad.State (class MonadState, State, execState, get)
+import Control.Monad.State (class MonadState, State, execState, get, gets, modify_)
 import Control.Monad.Writer (class MonadWriter, censor, tell)
 import Control.Plus (empty, (<|>))
 import Data.Array as Array
@@ -28,14 +28,14 @@ import Data.Generic.Rep (class Generic)
 import Data.Int as Int
 import Data.Interval (Interval)
 import Data.Lazy (Lazy, defer, force)
-import Data.Lens ((%=))
+import Data.Lens ((%=), (.~))
 import Data.Lens as L
 import Data.Lens.Record (prop)
 import Data.List (List(..), (:))
 import Data.List as List
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe, maybe')
 import Data.Monoid (power)
 import Data.Monoid.Conj (Conj(..))
 import Data.Newtype (un, unwrap, wrap)
@@ -90,6 +90,7 @@ import Riverdragon.River.Streamline (clientRect)
 import Safe.Coerce (coerce)
 import Type.Proxy (Proxy(..))
 import Uncurried.RWSE (RWSE, runRWSE)
+import Unsafe.Coerce (unsafeCoerce)
 import Web.DOM (Element)
 import Web.Event.Event (EventType(..))
 import Web.HTML (window)
@@ -560,10 +561,10 @@ dragonEither f g = trackEither >>> map (withHead f ||| withHead g) >>> D.Replaci
     { stream: zz } <- store zs
     pure $ h (pure z <|> zz)
 
--- trundle
-
 -- wdassssssdaaxdwwwwwwwwwassaxddsssdxasssssdwaaadxwdaxaddaaxwwdxaa
 -- 16dwwwaa16saawww8dxwwwdd16sdd6wdd16sddwww8axwwwaa16saawww
+-- &R{2e3w2q4a2q3w2e4d 12w4d12w4d}
+-- &R{12we3de12weewwwqq12wq3aq12w12w12wq3aq12wqqwwwee12we3de12w12w12w}
 renderTraintle :: River (Array Command) -> Dragon
 renderTraintle cmds = D.Egg do
   { defs, defL, defineL } <- manageDefs
@@ -578,6 +579,18 @@ renderTraintle cmds = D.Egg do
         loopPos = (t Math.% (2.0 * duration)) / duration
         loopAndBack = if loopPos <= 1.0 then loopPos else 2.0 - loopPos
       in loopAndBack
+  { stream: freshTrains } <- River.store $ River.latestStream running \{ routes, segments: fallback } ->
+    let
+      route@(Route { segments }) = maybe' (\_ -> mkRoute fallback) _.value $ Map.findMin routes
+      canonCurves = canonCurve <<< _.segment <$> segments
+      consist = [ 16.0 ] <>$ Array.range 0 2 #.. const [ 64.0, 32.0 ] #<> [ 64.0 ]
+      walkFrom point = walkPaths canonCurves point consist
+      atTime loopTime =
+        case routeAtTime route loopTime of
+          Just { at, to, curvature, i, t } -> { at, to: inv to, curvature, i, t, delta: mempty, distance: zero }
+          Nothing -> endPath canonCurves
+      seedTrain = atTime <$> looping.stream
+    in walkFrom <$> seedTrain
   let
     railmask = newmask curve
     newmask curve inner outer = maskOf $ fold
@@ -595,18 +608,6 @@ renderTraintle cmds = D.Egg do
         ]
       ]
     maskOf contents = mask $ defL \id -> D.svg_"mask" [ D.id =:= id ] contents
-    freshTrains = River.latestStream running \{ segments } ->
-      let
-        route = mkRoute segments
-        canonCurves = canonCurve <$> segments
-        consist = [ 16.0 ] <>$ Array.range 0 2 #.. const [ 64.0, 32.0 ] #<> [ 64.0 ]
-        walkFrom point = walkPaths canonCurves point consist
-        seedTrain =
-          looping.stream <#> \loopTime ->
-            case routeAtTime route loopTime of
-              Just { at, to, curvature, i, t } -> { at, to: inv to, curvature, i, t, delta: mempty, distance: zero }
-              Nothing -> endPath canonCurves
-      in walkFrom <$> seedTrain
     withTrainUnits = liveArray $ freshTrains <#> \trains -> do
       NEA.drop 1 trains # pairs # withIndices
         # filter (Int.even <<< fst)
@@ -840,10 +841,19 @@ runTraintle { library, hitmap } cmds =
   , trains, segments, paths: result.paths
   , state: { library: _st.library, hitmap: _st.hitmap }
   , error: either identity mempty resultSplit
+  , routes
   , info: _
   } $ definitions $
     (either (\e -> [ D.text "error" /\ D.text e ]) mempty resultSplit) <>
     [ D.text "cmds" /\ D.show cmds
+    , D.text "routes" /\ do
+        definitions $ routes #:.. \name (Route route) ->
+          [ D.show name /\ D.show
+            { pathlength: route.pathlength
+            , length: Array.length route.segments
+            , segments: route.segments <#> \{ segment: Pair fwd _ } -> fwd.pos
+            }
+          ]
     , D.text "paths" /\ D.show (Array.length result.paths)
     -- , D.text "paths" /\ D.show result.paths
     , D.text "train distances" /\ D.show (trains <#> _.distance)
@@ -867,12 +877,13 @@ runTraintle { library, hitmap } cmds =
     state <- get
     paths <- routesToPaths state.path.segments
     pure { paths }
-  _st@{ path: { commands: curve, segments }, pos: endpoint } /\ resultSplit /\ { bounds: preBounds } = action
+  _st@{ path: { commands: curve, segments }, pos: endpoint, routes } /\ resultSplit /\ { bounds: preBounds } = action
     # runRWSE { origin, mode: Drawing }
       { pos: origin
       , path: mempty
       , locations: Map.empty, stacks: Map.empty
       , subroutines: Map.empty
+      , route: empty
       , routes: Map.empty
       , hitmap, library
       , radii: Pair 7 13
@@ -893,9 +904,10 @@ runTraintle { library, hitmap } cmds =
 
 silent :: TraintleM ~> TraintleM
 silent act = do
-  { path } <- get
+  { path, route } <- get
   r <- censor mempty act
   setProp @"path" path
+  setProp @"route" route
   pure r
 
 renderCommand :: Command -> TraintleM Unit
@@ -934,6 +946,15 @@ renderCommand (SetRadius i) = do
   setProp @"radii" $
     fromMaybe (fromMaybe 0 (Array.last allRadii)) <<< Array.index allRadii <$>
       Pair i (i+1)
+renderCommand (TrainRoute name consist cmds) = do
+  -- Enter routing mode
+  local (prop (Proxy @"mode") .~ Routing name) do
+    saved <- gets _.route
+    modify_ _ { route = mempty }
+    traverse_ renderCommand cmds
+    generated <- gets _.route
+    modify_ _ { route = saved }
+    modify_ \s -> s { routes = s.routes # Map.insert name (mkRoute generated) }
 renderCommand v = trackBounds (renderAligned v)
 
 renderAligned :: Command -> TraintleM Unit
@@ -967,6 +988,15 @@ renderAligned cmd = do
           Proxy @"path" /\ Proxy @"segments" @<> [ segment ]
           Proxy @"pos" @= case fwd of
             { pos: Pair _ arrived } -> reversies arrived
+          asks _.mode >>= case _ of
+            Routing name -> do
+              last <- gets $ Array.last <<< _.route
+              case last, fwd of
+                Just (Pair { pos: Pair _ endpoint } _), { pos: Pair startpoint _ }
+                  | endpoint /= startpoint -> throwError $ "Discontinuity while routing " <> show name
+                _, _ -> pure unit
+              Proxy @"route" @<> [ segment ]
+            Drawing -> pure unit
         Nothing -> throwError "Could not find appropriate segment"
 
 
@@ -990,10 +1020,13 @@ type TraintleM = RWSE
   , library :: Map Int Standard
   , hitmap :: HitMap
   , subroutines :: Map String (Array Command)
+  , route :: Array Canonized
   , routes :: Map String Route
   , radii :: Pair Int
   }
   String
+
+derive instance Eq TrainMode
 
 data Command
   = Q | W | E | A | S | D | Z | X | C
@@ -1068,6 +1101,12 @@ parseCommandsWith finish continue ("~" : s0)
     (TrainRoute name (maybe [] List.toUnfoldable train) (List.toUnfoldable route) : _) <$>
       parseCommandsWith finish continue s3
 -- &NAME{...}: route
+parseCommandsWith finish continue ("&" : s0)
+  | Tuple name s1 <- parseNAME $ skipWS s0
+  , Tuple route s2 <- parseRoute $ skipWS s1
+  =
+    (TrainRoute name [] (List.toUnfoldable route) : _) <$>
+      parseCommandsWith finish continue s2
 -- {...}: logic?
 -- <x,y>, <x,y:>, <:dx,dy>, <x,y:dx,dy>: relative teleport to:facing
 -- $var: procedure variables?
@@ -1241,7 +1280,9 @@ trackBounds act = do
         { at: before.at, to: inv after.to }
         { at: after.at, to: inv before.to }
   case path.commands == commands || any Set.member [ Pair before after, reversed, backwards, revback ] cancel.moves of
+    -- Nothing new drawn
     true -> setProp @"path" cancel
+    -- Incorporate new segment
     false -> do
       tellR _ { bounds = Just <<< App <<< map mkBound ..$ [ before.at, after.at ] }
       setProp @"path" path { endpoint = Just (Last after), moves = Set.insert (Pair before after) path.moves }
@@ -1356,19 +1397,28 @@ walkPaths curves start distances =
   step Nothing _ = Nothing
   step (Just whence) distance = closestPoint
     where
-    matches :: Array OnPath
-    matches = join $ curves <#>: \i curve ->
-      Bezier.intersectCirclePrec 0.05 { p: whence.at, r: distance } curve <#> \{ p, t } ->
-        let
-          tangent = Bezier.evalB (deriv curve) t
-          to = sgn (dot tangent whence.to) .* tangent
-          delta = whence.at -<> p
-        in { at: p, to, t, i, delta, distance: norm delta, curvature: Bezier.curvatureAt curve t }
-    rightDirection = Array.filter (\{ delta } -> dot whence.to delta > 0.0) matches
-    closestSegments = rightDirection #.. \r -> Just (MinWith (abs (r.i - whence.i)) (NEA.singleton r))
+    -- Search nearby `i`, positive and negative in the same stage
+    searchOrder :: Array (Array Int)
+    searchOrder = [[whence.i]] <> do
+      (1 Array...(Array.length curves - 1)) <#> \d ->
+        [whence.i + d, whence.i - d]
+    closestPoint :: Maybe OnPath
+    closestPoint = searchOrder # Array.findMap \is ->
+      -- Find the closest point in time
+      minimumWith (\r -> Math.abs (composite r - composite whence)) $
+      -- That is headed in the right direction
+      Array.filter (\{ delta } -> dot whence.to delta > 0.0) $
+        -- On the nearest segments
+        is >>= \i -> curves Array.!! i #.. \curve ->
+          -- That intersects at the right distance
+          Bezier.intersectCirclePrec 0.05 { p: whence.at, r: distance } curve <#> \{ p, t } ->
+            let
+              tangent = Bezier.evalB (deriv curve) t
+              to = sgn (dot tangent whence.to) .* tangent
+              delta = whence.at -<> p
+            in { at: p, to, t, i, delta, distance: norm delta, curvature: Bezier.curvatureAt curve t }
+    -- Composite time across the whole set of curves
     composite { t, i } = t + Int.toNumber i
-    closestPoint = minimumWith (\r -> Math.abs (composite r - composite whence))
-      $ asArray $ closestSegments #.. (extract >>> NEA.toArray)
 
 
 dilate :: B32 -> Pair B32
