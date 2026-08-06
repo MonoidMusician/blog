@@ -1,3 +1,48 @@
+-- @inline export leftInv arity=3
+-- @inline export rightInv arity=3
+-- @inline export doubleInv arity=3
+-- @inline export gmul arity=3
+-- @inline export mmul arity=3
+-- @inline export affComb arity=5
+-- @inline export interp arity=4
+-- @inline export uninterp arity=4
+-- @inline export norm2 arity=3
+-- @inline export norm arity=2
+-- @inline export dot arity=5
+-- @inline export disjointBounds arity=6
+--
+-- -- FIXME?
+-- @inline Control.Apply.lift2 arity=2
+--
+-- @inline export functorVec3.map arity=2
+-- @inline export functorVec2.map arity=2
+-- @inline export functorVec1.map arity=2
+-- @inline export functorLin3.map arity=2
+-- @inline export functorLin2.map arity=2
+-- @inline export functorLin1.map arity=2
+-- @inline export functorAfn3.map arity=2
+-- @inline export functorAfn2.map arity=2
+-- @inline export functorAfn1.map arity=2
+--
+-- @inline export applyVec3.apply arity=2
+-- @inline export applyVec2.apply arity=2
+-- @inline export applyVec1.apply arity=2
+-- @inline export applyLin3.apply arity=2
+-- @inline export applyLin2.apply arity=2
+-- @inline export applyLin1.apply arity=2
+-- @inline export applyAfn3.apply arity=2
+-- @inline export applyAfn2.apply arity=2
+-- @inline export applyAfn1.apply arity=2
+--
+-- @inline export sModuleVec3(..).smul arity=2
+-- @inline export sModuleVec2(..).smul arity=2
+-- @inline export sModuleVec1(..).smul arity=2
+-- @inline export sModuleLin3(..).smul arity=2
+-- @inline export sModuleLin2(..).smul arity=2
+-- @inline export sModuleLin1(..).smul arity=2
+-- @inline export sModuleAfn3(..).smul arity=2
+-- @inline export sModuleAfn2(..).smul arity=2
+-- @inline export sModuleAfn1(..).smul arity=2
 module Math.Matrix where
 
 import Prelude
@@ -12,11 +57,10 @@ import Data.Distributive (class Distributive, collect, collectDefault, distribut
 import Data.Eq (class Eq1)
 import Data.Foldable (class Foldable, any, foldMap, foldl, foldr, sum)
 import Data.FoldableWithIndex (class FoldableWithIndex)
-import Data.Function (on)
 import Data.FunctorWithIndex (class FunctorWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.Int as Int
-import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Monoid (power)
 import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (class Newtype, un, unwrap)
@@ -33,10 +77,9 @@ import Data.These (These(..), these)
 import Data.Traversable (class Traversable, traverse)
 import Data.TraversableWithIndex (class TraversableWithIndex)
 import Data.Tuple (Tuple(..), fst, snd)
-import Debug (spy, spyWith)
-import Idiolect (neighbors, sqre, theseop, (/|\), (<#>:))
+import Debug (spyWith)
+import Idiolect (neighbors, theseop, (/|\), (<#>:))
 import Monoids.BoundsWith (BoundsWith(..), MaxWith(..), MinWith(..))
-import Parser.Optimized.Types (unsafeFromJust)
 import Safe.Coerce (coerce)
 import Unsafe.Coerce (unsafeCoerce)
 

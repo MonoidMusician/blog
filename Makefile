@@ -84,6 +84,14 @@ prod-ps : PureScript/src PureScript/directives.txt spago.yaml PureScript/spago.y
 	gzip -f9k $(BUILDIR)/widgets.js $(BUILDIR)/widgets.lite.js
 	make assets-ps
 
+test-opt : PureScript/src PureScript/directives.txt spago.yaml PureScript/spago.yaml | $(BUILDIR)
+	cp $(BUILDIR)/widgets.js $(BUILDIR)/.widgets.js.bak
+	rm -f $(BUILDIR)/widgets.js.gz $(BUILDIR)/widgets.lite.js.gz $(BUILDIR)/widgets.lite.js
+	spago build
+	purs-backend-es bundle-app --directives PureScript/directives.txt --main Main --to $(BUILDIR)/widgets.js
+	git diff --no-index -s $(BUILDIR)/.widgets.js.bak $(BUILDIR)/widgets.js || git diff --no-index $(BUILDIR)/.widgets.js.bak $(BUILDIR)/widgets.js > $(BUILDIR)/.widgets.js.diff || true
+	git diff --no-index $(BUILDIR)/.widgets.js.bak $(BUILDIR)/widgets.js
+
 .PHONY : assets-ps
 assets-ps : assets/json
 	time spago run -m Build
