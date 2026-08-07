@@ -41,3 +41,9 @@ Data.Profunctor.Choice.fanout arity=3
 Data.Profunctor.Choice.choiceFn.left arity=1
 Data.Profunctor.Choice.choiceFn.right arity=1
 Data.Profunctor.Choice.fanin arity=3
+
+Stylish.Record.withSeps arity=3
+Stylish.Record.withSepStylish.withoutSep always
+Stylish.Record.withSepStylish.withSep arity=2
+Stylish.Record.withSepClassy.withoutSep always
+Stylish.Record.withSepClassy.withSep arity=2

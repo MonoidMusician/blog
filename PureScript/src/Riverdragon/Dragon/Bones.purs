@@ -1,3 +1,8 @@
+-- @inline export attrableRecordNil(..).mkAttrRecord arity=3
+-- @inline export attrableRecordCons(..).mkAttrRecord arity=2
+-- @inline export attrableWithSep(..).mkAttr arity=2
+-- @inline export withSeps arity=3
+-- @inline export withSeps1 arity=2
 module Riverdragon.Dragon.Bones ( module Riverdragon.Dragon.Bones, module ReExports ) where
 
 import Prelude
@@ -581,9 +586,9 @@ instance multiProps :: (PropType t, IsSymbol sym) =>
 
 
 withSeps :: forall o. WithSep o => List String -> o -> o
-withSeps List.Nil = identity
-withSeps (List.Cons "" r) = withSeps r
-withSeps (List.Cons s r) = withSeps r <<< withSep s
+withSeps List.Nil o = o
+withSeps (List.Cons "" r) o = withSeps r o
+withSeps (List.Cons s r) o = withSeps r (withSep s o)
 
 withSeps1 :: forall o. WithSep o => List String -> o
 withSeps1 List.Nil = withoutSep ""
