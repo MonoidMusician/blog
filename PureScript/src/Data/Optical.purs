@@ -27,7 +27,7 @@ import Data.Tuple (Tuple(..))
 import Data.Variant (Variant)
 import Data.Variant as Variant
 import Prim.Row as Row
-import Type.Proxy (Proxy)
+import Type.Proxy (Proxy(..))
 
 class Optical :: Type -> (Type -> Type -> Type) -> Type -> Type -> Type -> Type -> Constraint
 class Profunctor p <= Optical path p s t a b | path s t -> a b where
@@ -69,6 +69,9 @@ setAt ::
     Optical path (->) s s a a =>
   path -> a -> m Unit
 setAt path value = modifyAt path (const value)
+
+setProp :: forall @sym t r r' m. MonadState (Record r) m => IsSymbol sym => Row.Cons sym t r' r => t -> m Unit
+setProp v = Proxy @sym @= v
 
 swapAt ::
   forall path s a m.

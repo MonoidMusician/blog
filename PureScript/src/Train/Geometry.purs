@@ -1,0 +1,219 @@
+module Train.Geometry where
+
+import Prelude
+
+import Control.Monad.State (class MonadState, get)
+import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
+import Data.Distributive (collect)
+import Data.Foldable (fold, foldMap, intercalate, sum)
+import Data.Functor.App (App(..))
+import Data.Int as Int
+import Data.List (List(..), (:))
+import Data.Map as Map
+import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Monoid.Conj (Conj(..))
+import Data.Newtype (un, unwrap)
+import Data.NonEmpty ((:|))
+import Data.Number as Math
+import Data.Optical (setProp)
+import Data.Ord.Max (Max(..))
+import Data.Ord.Min (Min(..))
+import Data.Pair (Pair(..))
+import Data.Semigroup.Foldable (fold1)
+import Data.Traversable (mapAccumL)
+import Data.Tuple (Tuple(..), fst, snd)
+import Idiolect (intercalateMap, minimumWith, sgn, (#..), (<#?>), (>==))
+import Math.Bezier as Bezier
+import Math.Matrix (B32, BBox2, Bez1(..), Bez3(..), LTF(..), Lin2(..), Vec2(..), bounds2bounds1, d2r, disjointBounds, dot, inv, norm, norm2, normalize, pairs, rotl2, tf, tfI, unAfn2, ($*), ($.), (-<>), (.*), (<.), (<>-), (<^))
+import Math.Poly (deriv)
+import Safe.Coerce (coerce)
+import Train.Types (Canonized, HitMap, OnPath, PointOnRoute, Route(..), Standard(..), canonCurve, canonStrokeBox)
+
+
+-- | The four 90deg rotations in a circle.
+rotations :: forall s. Ring s => Array (Lin2 s)
+rotations = do
+  let rot90 = Lin2 zero (negate one) one zero
+  [ tfI
+  , rot90
+  , rot90 <. rot90
+  , rot90 <. rot90 <. rot90
+  ]
+
+
+-- | Check if one path continues on from the other. (They are not considered intersecting.)
+continues :: Canonized -> Canonized -> Maybe Boolean
+continues (Pair p@{ canon: Standard { key: pK } } _) (Pair q@{ canon: Standard { key: qK } } _) =
+  let
+    Tuple pStart prot = unAfn2 p.transformI
+    Tuple qStart qrot = unAfn2 q.transformI
+    pEnd = p.transformI $* pK.delta
+    qEnd = q.transformI $* qK.delta
+    pFrom = prot $* pK.from
+    pTo = prot $* pK.to
+    qFrom = qrot $* qK.from
+    qTo = qrot $* qK.to
+  in Array.head do
+    Tuple pAt pDir <- [ Tuple pStart pFrom, Tuple pEnd pTo ]
+    Tuple qAt qDir <- [ Tuple qStart qFrom, Tuple qEnd qTo ]
+    -- _ <- pure $ spy "continues" { pAt, pDir, qAt, qDir }
+    if pAt /= qAt then [] else [(pDir == qDir) == ((pAt == pStart) /= (qAt == qStart))]
+
+
+-- | Test if two segments intersect, cached in the hitmap.
+intersects :: forall m r. MonadState { hitmap :: HitMap | r } m => Pair Canonized -> m Boolean
+intersects (Pair p q) | disjointBounds (canonStrokeBox p) (canonStrokeBox q) = pure false
+intersects (Pair p q) | Just result <- continues p q = pure $ not result
+intersects (Pair (Pair p@{ canon: Standard pC } _) (Pair q@{ canon: Standard qC } _)) = do
+  { hitmap } <- get
+  -- One can be the origin, so the other is transformed by this
+  let relate = p.transform <^ q.transform
+  let ids = (Pair pC.id qC.id)
+  -- It is keyed in the hitmap by the relation and the pair of IDs
+  case Map.lookup relate hitmap >>= Map.lookup ids of
+    Just result -> pure result
+    Nothing -> do
+      let
+        -- Each segment consists of two strokes. There is no need to test
+        -- interiors, for the grid-based simple curves we are considering.
+        Pair p1 p2 = tf (LTF p.transform) <$> pC.strokes
+        Pair q1 q2 = tf (LTF q.transform) <$> qC.strokes
+        result =
+          Bezier.doesIntersect p1 q1 ||
+          Bezier.doesIntersect p1 q2 ||
+          Bezier.doesIntersect p2 q1 ||
+          Bezier.doesIntersect p2 q2
+      -- Add it into the hitmap
+      setProp @"hitmap" $ Map.alter (Just <<< Map.insert ids result <<< fromMaybe Map.empty) relate hitmap
+      pure result
+
+
+-- | Use a set of curves, a starting point, and an array of distances to walk
+-- | the route to approximately place a set of train cars on it.
+walkPaths ::
+  Array B32 -> OnPath ->
+  Array Number ->
+  NonEmptyArray OnPath
+walkPaths curves start distances =
+  NEA.cons' start $ Array.catMaybes $ Array.scanl step (Just start) distances
+  where
+  step Nothing _ = Nothing
+  step (Just whence) distance = closestPoint
+    where
+    -- Search nearby `whence.i`, positive and negative in the same stage
+    searchOrder :: Array (Array Int)
+    searchOrder = [[whence.i]] <> do
+      (1 Array...(Array.length curves - 1)) <#> \d ->
+        [whence.i + d, whence.i - d]
+    closestPoint :: Maybe OnPath
+    closestPoint = searchOrder # Array.findMap \is ->
+      -- Find the closest point in time
+      minimumWith (\r -> Math.abs (composite r - composite whence)) $
+      -- That is headed in the right direction
+      Array.filter (\{ delta } -> dot whence.to delta > 0.0) $
+        -- On the nearest segments
+        is >>= \i -> curves Array.!! i #.. \curve ->
+          -- That intersects at the right distance
+          Bezier.intersectCirclePrec 0.05 { p: whence.at, r: distance } curve <#> \{ p, t } ->
+            let
+              tangent = Bezier.evalB (deriv curve) t
+              to = sgn (dot tangent whence.to) .* tangent
+              delta = whence.at -<> p
+            in { at: p, to, t, i, delta, distance: norm delta, curvature: Bezier.curvatureAt curve t }
+    -- Composite time across the whole set of curves
+    composite { t, i } = t + Int.toNumber i
+
+-- | Find the point at the fraction (0.0 to 1.0) of the pathlength.
+routeAtTime :: Route -> Number -> Maybe PointOnRoute
+routeAtTime (Route { segments, pathlength }) ofRoute = do
+  let alongRoute = pathlength * ofRoute
+  { i, pathlength: Pair segmentStart _, segment: segment@(Pair { canon } _) } <- segments
+    # Array.find \{ pathlength: Pair _ segmentEnd } -> segmentEnd >= alongRoute
+  let leftover = alongRoute - segmentStart
+  bookends <- (unwrap canon).samples # pairs
+    # Array.find \(Pair _ { pathlength: Pair _ endsUp }) -> endsUp >= leftover
+  case bookends of
+    Pair { t: t0, pathlength: Pair l0 _ } { t: t1, pathlength: Pair _ l1 } -> do
+      let
+        curve = canonCurve segment
+        t = bounds2bounds1 (coerce { min: l0, max: l1 }) (coerce { min: t0, max: t1 }) $. leftover
+        at = Bezier.evalB curve t
+        to = normalize $ Bezier.evalB (deriv curve) t
+        curvature = Bezier.curvatureAt curve t
+      Just { at, to, curvature, curve, t, i, segment }
+
+
+dilatePath :: B32 -> Pair B32
+dilatePath curve@(B3 p0 _ _ p3) | curve == Bezier.castUp (Bezier.castUp (B1 p0 p3)) =
+  let
+    delta = 16.0
+    d = normalize $ p0 -<> p3
+    ninety = rotl2 (90.0 * d2r)
+    cross = delta .* (ninety $* d)
+  in Pair (LTF cross $* curve) (LTF (inv cross) $* curve)
+dilatePath curve =
+  let
+    delta = 16.0
+    outer c@(B3 p0 p1 p2 p3) which =
+      let
+        d0 = normalize $ p0 -<> p1
+        d1 = normalize $ p2 -<> p3
+        ninety = rotl2 (which * 90.0 * d2r)
+        q0 = p0 <> delta .* (ninety $* d0)
+        q3 = p3 <> delta .* (ninety $* d1)
+        k0 = Bezier.curvatureAt c 0.0
+        k1 = Bezier.curvatureAt c 1.0
+        results = Bezier.fit
+          { p0: q0, p1: q3, d0, d1
+          , k0: 1.0 / ((1.0 / k0) + which * sgn k0 * delta)
+          , k1: 1.0 / ((1.0 / k1) + which * sgn k1 * delta)
+          }
+        expected t = Bezier.evalB c t <> delta .*
+          (rotl2 (which * 90.0 * d2r) $* Bezier.evalB (deriv c) t)
+        score c2 = sum $ ((_ / 12.0) <<< Int.toNumber <$> Array.range 0 12) <#>
+          \t -> norm2 (expected t <>- Bezier.evalB c2 t)
+        scored = (Tuple <*> score) <$> results
+      in fromMaybe c $ fst <$> minimumWith snd scored
+  in outer curve <$> Pair one (negate one)
+
+-- | Split an array of segments into non-intersecting paths.
+-- |
+-- | Currently just takes running segments until they self-intersect. This
+-- | behavior may change.
+separateRoutes :: forall m r. MonadState { hitmap :: HitMap | r } m => Array Canonized -> m (Array (Array Canonized))
+separateRoutes =
+  let
+    test running segment =
+      map (un Conj) $ un App $ foldMap (\other -> App $ Conj <<< not <$> intersects (Pair other segment)) running
+    addSegment (running :| rest) segment =
+      test running segment <#> if _
+        then segment : running :| rest
+        else pure segment :| running : rest
+  in Array.foldM addSegment (Nil :| Nil) >==
+    (Array.fromFoldable >>> Array.reverse >== Array.fromFoldable >>> Array.reverse)
+
+-- | Generate SVG paths from an array of segments. Returns the path string
+-- | and its bounding box.
+routesToPaths :: forall m r. MonadState { hitmap :: HitMap | r } m => Array Canonized -> m (Array { d :: String, bbox :: BBox2 Number })
+routesToPaths originalSegments = do
+  separated <- separateRoutes originalSegments
+  pure $ separated <#?> NEA.fromArray <#> \cs ->
+    { d: bezsToPath (canonCurve <$> cs)
+    , bbox: fold1 <$> collect canonStrokeBox cs
+    }
+
+-- | Render a Bezier array as a path string.
+bezsToPath :: NonEmptyArray B32 -> String
+bezsToPath segments =
+  let
+    pt (V2 x y) = show x <> "," <> show y
+    seg prev (B3 p0 p1 p2 p3) = { accum: p3, value: _ } $ fold
+      [ if p0 /= prev then "M" <> pt p0 else ""
+      , "C" <> intercalateMap " " pt [ p1, p2, p3 ]
+      ]
+  in intercalate " " $ _.value
+    $ mapAccumL seg (NEA.head segments # \(B3 p0 _ _ _) -> p0 <>- V2 one one)
+    $ segments
+
