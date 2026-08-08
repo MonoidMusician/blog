@@ -827,15 +827,21 @@ limitTo n (Stream flow setup) = Stream flow \cbs -> do
   setUnsub <- rolling
   receive <- breaker cbs.receive
   commit <- breaker cbs.commit
-  let destroyed = receive.trip <> commit.trip <> cbs.destroyed
-  incr <- threshold n (setUnsub mempty <> destroyed)
+  let destroy = receive.trip <> commit.trip <> setUnsub mempty
+  afterCommit <- rolling
+  incr <- threshold n (afterCommit (destroy <> cbs.destroyed))
   sub <- setup
-    { receive: receive.run
-    , commit: const incr <> commit.run
-    , destroyed: destroyed
+    -- Increment the limiter on every receive, because commits include filtered events
+    { receive: receive.run <> const incr
+    -- But run it *after* the commit, so the commit still goes through
+    , commit: commit.run <> const (afterCommit mempty)
+    , destroyed: destroy
     }
   setUnsub sub.unsubscribe
+  -- Increment for every burst event. It will unsubscribe immediately
+  -- if n <= Array.length sub.burst
   power incr (Array.length sub.burst)
+  -- Make sure the burst is limited too
   pure sub { burst = Array.take n sub.burst }
 
 -- | Cut off the stream when it returns `Nothing`.

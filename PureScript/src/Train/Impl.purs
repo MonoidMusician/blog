@@ -7,6 +7,7 @@ import Control.Monad.Reader (ask, asks, local)
 import Control.Monad.State (get, gets, modify_)
 import Control.Monad.Writer (censor)
 import Data.Array as Array
+import Data.Array.NonEmpty as NEA
 import Data.Foldable (any, traverse_)
 import Data.Functor.App (App(..))
 import Data.Lens ((%=), (.~))
@@ -22,8 +23,9 @@ import Data.Set as Set
 import Data.Tuple.Nested ((/\))
 import Idiolect (intercalateMap, (..$))
 import Math.Matrix (Vec2(..), inv, mkBound, (.*))
+import Train.Geometry (mkRoute)
 import Train.Library (allRadii, findCurve)
-import Train.Types (Command(..), TrainMode(..), TraintleM, canonCurve, mkRoute, tellR)
+import Train.Types (Command(..), TrainMode(..), TraintleM, canonCurve, tellR)
 import Type.Proxy (Proxy(..))
 
 
@@ -80,7 +82,11 @@ renderCommand (TrainRoute name consist cmds) = do
     traverse_ renderCommand cmds
     generated <- gets _.route
     modify_ _ { route = saved }
-    Proxy @"routes" @~ Map.insert name (mkRoute generated)
+    case NEA.fromArray generated of
+      Nothing -> pure unit
+      Just plan -> do
+        route <- mkRoute plan
+        Proxy @"routes" @~ Map.insert name route
 renderCommand v = trackBounds (renderTurtle v)
 
 renderTurtle :: Command -> TraintleM Unit
@@ -126,7 +132,13 @@ renderTurtle cmd = do
                   | endpoint /= startpoint -> throwError $ "Discontinuity while routing " <> show name
                 _, _ -> pure unit
               Proxy @"route" @<> [ segment ]
-            Drawing -> pure unit
+            Drawing -> do
+              last <- gets $ Array.last <<< _.route
+              case last, fwd of
+                Just (Pair { pos: Pair _ endpoint } _), { pos: Pair startpoint _ }
+                  | endpoint /= startpoint -> setProp @"route" []
+                _, _ -> pure unit
+              Proxy @"route" @<> [ segment ]
         Nothing -> throwError "Could not find appropriate segment"
 
 

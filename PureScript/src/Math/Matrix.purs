@@ -10,6 +10,7 @@
 -- @inline export norm arity=2
 -- @inline export dot arity=5
 -- @inline export disjointBounds arity=6
+-- @inline export bounds2bounds1 arity=2
 --
 -- -- FIXME?
 -- @inline Control.Apply.lift2 arity=2
@@ -703,12 +704,22 @@ bounds2bounds1 { min: Min fmin, max: Max fmax } { min: Min tmin, max: Max tmax }
   let s = (tmax - tmin)/(fmax - fmin) in
   Afn1 s (tmin - s * fmin)
 
+unit2bounds1 :: Bounds Number -> Afn1 Number
+unit2bounds1 = bounds2bounds1 unitBounds
+norm2bounds1 :: Bounds Number -> Afn1 Number
+norm2bounds1 = bounds2bounds1 normBounds
+
 bounds2bounds2 :: BBox2 Number -> BBox2 Number -> Afn2 Number
 bounds2bounds2 (V2 fx fy) (V2 tx ty) =
   let
     Afn1 sx dx = bounds2bounds1 fx tx
     Afn1 sy dy = bounds2bounds1 fy ty
   in Afn2 sx zero zero sy dx dy
+
+unit2bounds2 :: BBox2 Number -> Afn2 Number
+unit2bounds2 = bounds2bounds2 (pure unitBounds)
+norm2bounds2 :: BBox2 Number -> Afn2 Number
+norm2bounds2 = bounds2bounds2 (pure normBounds)
 
 submat3 :: forall s. Lin3 s -> Lin3 (Lin2 s)
 submat3 (Lin3 c1 c2 c3  c4 c5 c6  c7 c8 c9) = Lin3

@@ -7,7 +7,7 @@ import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Distributive (collect)
-import Data.Foldable (fold, foldMap, intercalate, sum)
+import Data.Foldable (fold, foldMap, intercalate, minimum, sum)
 import Data.Functor.App (App(..))
 import Data.Int as Int
 import Data.List (List(..), (:))
@@ -23,13 +23,14 @@ import Data.Ord.Min (Min(..))
 import Data.Pair (Pair(..))
 import Data.Semigroup.Foldable (fold1)
 import Data.Traversable (mapAccumL)
+import Data.TraversableWithIndex (forWithIndex)
 import Data.Tuple (Tuple(..), fst, snd)
-import Idiolect (intercalateMap, minimumWith, sgn, (#..), (<#?>), (>==))
+import Idiolect (intercalateMap, minimumWith, sgn, withIndices, (<#?>), (>==))
 import Math.Bezier as Bezier
-import Math.Matrix (B32, BBox2, Bez1(..), Bez3(..), LTF(..), Lin2(..), Vec2(..), bounds2bounds1, d2r, disjointBounds, dot, inv, norm, norm2, normalize, pairs, rotl2, tf, tfI, unAfn2, ($*), ($.), (-<>), (.*), (<.), (<>-), (<^))
+import Math.Matrix (B32, BBox2, Bez1(..), Bez3(..), LTF(..), Lin2(..), Vec2(..), bounds2bounds1, d2r, disjointBounds, dot, inv, norm2, normalize, pairs, rotl2, tf, tfI, unAfn2, ($*), ($.), (-<>), (.*), (.+<), (<.), (<>-), (<^), (>+.))
 import Math.Poly (deriv)
 import Safe.Coerce (coerce)
-import Train.Types (Canonized, HitMap, OnPath, PointOnRoute, Route(..), Standard(..), canonCurve, canonStrokeBox)
+import Train.Types (Canonized, Direction(..), HitMap, PointOnRoute, Route(..), RoutedTrain(..), Standard(..), canonCurve, canonStrokeBox, routeEnd, routeStart)
 
 
 -- | The four 90deg rotations in a circle.
@@ -93,10 +94,10 @@ intersects (Pair (Pair p@{ canon: Standard pC } _) (Pair q@{ canon: Standard qC 
 -- | Use a set of curves, a starting point, and an array of distances to walk
 -- | the route to approximately place a set of train cars on it.
 walkPaths ::
-  Array B32 -> OnPath ->
+  Route -> PointOnRoute ->
   Array Number ->
-  NonEmptyArray OnPath
-walkPaths curves start distances =
+  NonEmptyArray PointOnRoute
+walkPaths (Route { segments, curves }) start distances =
   NEA.cons' start $ Array.catMaybes $ Array.scanl step (Just start) distances
   where
   step Nothing _ = Nothing
@@ -105,23 +106,34 @@ walkPaths curves start distances =
     -- Search nearby `whence.i`, positive and negative in the same stage
     searchOrder :: Array (Array Int)
     searchOrder = [[whence.i]] <> do
-      (1 Array...(Array.length curves - 1)) <#> \d ->
+      (1 Array...(NEA.length curves - 1)) <#> \d ->
         [whence.i + d, whence.i - d]
-    closestPoint :: Maybe OnPath
+    closestPoint :: Maybe PointOnRoute
     closestPoint = searchOrder # Array.findMap \is ->
       -- Find the closest point in time
       minimumWith (\r -> Math.abs (composite r - composite whence)) $
       -- That is headed in the right direction
-      Array.filter (\{ delta } -> dot whence.to delta > 0.0) $
+      Array.filter (\{ at } -> dot (whence.at -<> at) whence.to > 0.0) $
         -- On the nearest segments
-        is >>= \i -> curves Array.!! i #.. \curve ->
+        is >>= \i -> do
+          curve <- foldMap pure $ curves NEA.!! i
+          seg <- foldMap pure $ segments NEA.!! i
           -- That intersects at the right distance
-          Bezier.intersectCirclePrec 0.05 { p: whence.at, r: distance } curve <#> \{ p, t } ->
-            let
-              tangent = Bezier.evalB (deriv curve) t
-              to = sgn (dot tangent whence.to) .* tangent
-              delta = whence.at -<> p
-            in { at: p, to, t, i, delta, distance: norm delta, curvature: Bezier.curvatureAt curve t }
+          { p, t } <- Bezier.intersectCirclePrec 0.05 { p: whence.at, r: distance } curve
+          let
+            { segment, pathlength: Pair start _ } = seg
+            Pair { canon: Standard { samples } } _ = segment
+            tangent = Bezier.evalB (deriv curve) t
+            to = sgn (dot tangent whence.to) .* tangent
+            delta = whence.at -<> p
+
+            -- Find the closest sample, and linearly interpolate pathlength within it
+            closest = Int.floor $ t * 100.0
+            within = t * 100.0 - Int.toNumber closest
+            pathlength = start + case samples Array.!! closest of
+              Just { pathlength: Pair x y } -> x .+<within>+. y
+              Nothing -> 0.0
+          pure { at: p, to, t, i, curve, segment, pathlength, curvature: Bezier.curvatureAt curve t }
     -- Composite time across the whole set of curves
     composite { t, i } = t + Int.toNumber i
 
@@ -130,7 +142,7 @@ routeAtTime :: Route -> Number -> Maybe PointOnRoute
 routeAtTime (Route { segments, pathlength }) ofRoute = do
   let alongRoute = pathlength * ofRoute
   { i, pathlength: Pair segmentStart _, segment: segment@(Pair { canon } _) } <- segments
-    # Array.find \{ pathlength: Pair _ segmentEnd } -> segmentEnd >= alongRoute
+    # NEA.find \{ pathlength: Pair _ segmentEnd } -> segmentEnd >= alongRoute
   let leftover = alongRoute - segmentStart
   bookends <- (unwrap canon).samples # pairs
     # Array.find \(Pair _ { pathlength: Pair _ endsUp }) -> endsUp >= leftover
@@ -142,7 +154,7 @@ routeAtTime (Route { segments, pathlength }) ofRoute = do
         at = Bezier.evalB curve t
         to = normalize $ Bezier.evalB (deriv curve) t
         curvature = Bezier.curvatureAt curve t
-      Just { at, to, curvature, curve, t, i, segment }
+      Just { at, to, curvature, curve, t, i, segment, pathlength }
 
 
 dilatePath :: B32 -> Pair B32
@@ -216,4 +228,46 @@ bezsToPath segments =
   in intercalate " " $ _.value
     $ mapAccumL seg (NEA.head segments # \(B3 p0 _ _ _) -> p0 <>- V2 one one)
     $ segments
+
+mkRoute :: forall m r. MonadState { hitmap :: HitMap | r } m => NonEmptyArray Canonized -> m Route
+mkRoute original = do
+  let
+    mapper l0 (Tuple i segment@(Pair { canon: Standard canon } _)) =
+      let l1 = l0 + canon.pathlength in
+      { accum: l1, value: { segment, i, pathlength: Pair l0 l1 } }
+    { accum: pathlength, value: segments } = mapAccumL mapper 0.0 $ withIndices original
+  crossings <- Map.unions <$> forWithIndex segments \j q -> do
+    Map.unions <$> forWithIndex (NEA.take (j-7) segments) \i p -> do
+      intersects (Pair p.segment q.segment) <#> case _ of
+        false -> Map.empty
+        true -> Map.singleton (Pair i j) $
+          case p.pathlength, q.pathlength of
+            Pair _ x, Pair y _ -> { pathlength: y - x }
+  let
+    curves = canonCurve <$> original
+    maxlength = fromMaybe pathlength $ minimum $ _.pathlength <$> crossings
+    isLoop = case NEA.head original, NEA.last original of
+      Pair { pos: Pair p _ } _, Pair { pos: Pair _ q } _ -> p == q
+  pure $ Route
+    { pathlength, segments, curves
+    , crossings, maxlength
+    , isLoop
+    }
+
+
+
+
+trainOnRoute :: Route -> Array Number -> RoutedTrain
+trainOnRoute route@(Route { pathlength }) consist = RoutedTrain
+  { route: route, consist
+  , endpoints
+  }
+  where
+  start = max
+    do NEA.last $ map _.pathlength $ walkPaths route (routeStart Forward route) consist
+    do NEA.last $ map _.pathlength $ walkPaths route (routeStart Forward route) (Array.reverse consist)
+  end = pathlength - min
+    do NEA.last $ map _.pathlength $ walkPaths route (routeEnd Backward route) consist
+    do NEA.last $ map _.pathlength $ walkPaths route (routeEnd Backward route) (Array.reverse consist)
+  endpoints = { start, end, buffer: max start end }
 

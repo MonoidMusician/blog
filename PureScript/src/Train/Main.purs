@@ -18,6 +18,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe')
 import Data.Newtype (unwrap)
 import Data.Number as Math
+import Data.Optical ((@~))
 import Data.Ord.Max (Max(..))
 import Data.Ord.Min (Min(..))
 import Data.Pair (Pair(..))
@@ -25,13 +26,14 @@ import Data.Time.Duration (Milliseconds(..))
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested ((/\))
+import Debug (spy)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Now (now)
 import Effect.Ref as Ref
 import Idiolect (incorporate, neighbors, sgn, sqre, withIndices, (#..), (#:..), (#<>), (<>$))
 import Math.Bezier as Bezier
-import Math.Matrix (Bez1(..), Bez3(..), Bounds, V2, Vec2(..), bounds2bez, bounds2bounds2, clampBounds, d2r, inv, mkBound, mkBounds, normalize, overBounds, padBounds, pairs, r2d, rotl2, ($*), (-<>), (.*), (<>+), (<>-))
+import Math.Matrix (Bez1(..), Bez3(..), Bounds, V2, Vec2(..), bounds2bez, bounds2bounds1, bounds2bounds2, clampBounds, d2r, inv, mkBound, mkBounds, normalize, overBounds, padBounds, pairs, r2d, rotl2, unit2bounds1, ($*), ($.), (-<>), (.*), (<>+), (<>-))
 import Math.Poly (deriv)
 import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones ((<:>), (=:=), (>@))
@@ -41,12 +43,13 @@ import Riverdragon.River (River, createRiver, createRiverStore, dam, statefulStr
 import Riverdragon.River as River
 import Riverdragon.River.Beyond (dedup, documentEvent, everyFrame)
 import Riverdragon.River.Streamline (clientRect)
-import Train.Geometry (routeAtTime, routesToPaths, walkPaths)
+import Train.Geometry (mkRoute, routeAtTime, routesToPaths, trainOnRoute, walkPaths)
 import Train.Impl (renderCommand)
 import Train.Library (standardCurves)
 import Train.Parser (parseTraintle)
-import Train.Types (Command, InterState, Route(..), TrainMode(..), canonCurve, endPath, mkRoute)
+import Train.Types (Command, Direction(..), InterState, Route(..), RoutedTrain(..), TrainMode(..), canonCurve, routeEnd)
 import Train.UI (clone, definitions, dragonEither, manageDefs, mask)
+import Type.Proxy (Proxy(..))
 import Uncurried.RWSE (runRWSE)
 import Web.Event.Event (EventType(..))
 import Web.UIEvent.MouseEvent as MouseEvent
@@ -291,18 +294,21 @@ renderTraintle cmds = D.Egg do
         loopPos = (t Math.% (2.0 * duration)) / duration
         loopAndBack = if loopPos <= 1.0 then loopPos else 2.0 - loopPos
       in loopAndBack
-  { stream: freshTrains } <- River.store $ River.latestStream running \{ routes, segments: fallback } ->
-    let
-      route@(Route { segments }) = maybe' (\_ -> mkRoute fallback) _.value $ Map.findMin routes
-      canonCurves = canonCurve <<< _.segment <$> segments
-      consist = [ 16.0 ] <>$ Array.range 0 2 #.. const [ 64.0, 32.0 ] #<> [ 64.0 ]
-      walkFrom point = walkPaths canonCurves point consist
-      atTime loopTime =
-        case routeAtTime route loopTime of
-          Just { at, to, curvature, i, t } -> { at, to: inv to, curvature, i, t, delta: mempty, distance: zero }
-          Nothing -> endPath canonCurves
-      seedTrain = atTime <$> looping.stream
-    in walkFrom <$> seedTrain
+  { stream: freshTrains } <- River.store $ River.latestStream running \{ routes } ->
+    case _.value <$> Map.findMin routes of
+      Nothing -> empty
+      Just (route@(Route { pathlength })) ->
+        let
+          consist = [ 16.0 ] <>$ Array.range 0 2 #.. const [ 64.0, 32.0 ] #<> [ 64.0, 16.0 ]
+          routed@(RoutedTrain { endpoints }) = trainOnRoute route consist
+          endLimit = 1.0 - endpoints.end / pathlength
+          walkFrom point = walkPaths route point consist
+          atTime loopTime =
+            case routeAtTime route $ endLimit * loopTime of
+              Just point -> point
+              Nothing -> routeEnd Forward route
+          seedTrain = atTime <$> looping.stream
+        in walkFrom <$> seedTrain
   let
     railmask = newmask curve
     newmask curve bbox inner outer =
@@ -333,6 +339,9 @@ renderTraintle cmds = D.Egg do
             ]
         ] contents
     withTrainUnits = liveArray $ freshTrains <#> \trains -> do
+      -- The first segment is the buffer,
+      -- then we take pairs for the two bogies of a car,
+      -- then we tack on neighbors
       NEA.drop 1 trains # pairs # withIndices
         # filter (Int.even <<< fst)
         # map snd # neighbors
@@ -431,14 +440,14 @@ renderTraintle cmds = D.Egg do
       , D.g [ D.stylish =:= D.smarts { "opacity": 1.0 } ] $
           withTrainUnits \_idx trainUnit ->
             let
-              cslope = -sqre 9.0 / 2.0
+              cslope = sqre 9.0 / 2.0
               jog curvature = "translate(" <> show 0.0 <> ", " <> show (curvature * cslope) <> ")"
               awayfrom = trainUnit <#> \{ prev, here: Pair back train } -> case prev of
-                Nothing -> train.delta
-                Just _ -> back.delta
+                Nothing -> back.at -<> train.at
+                Just (Pair _ y) -> y.at -<> back.at
               towards = trainUnit <#> \{ here: Pair back train, next } -> case next of
-                Nothing -> train.delta
-                Just (Pair { delta } _) -> delta
+                Nothing -> back.at -<> train.at
+                Just (Pair x _) -> train.at -<> x.at
             in D.g [] $ fold
               [ mempty
               , clone (pure "#g115")
@@ -485,7 +494,7 @@ renderTraintle cmds = D.Egg do
                   [ dam $ D.attr "transform" <:> intercalate (pure " ")
                     [ trainUnit <#> \{ here: Pair back train, next } -> case train.at of
                       V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
-                    , trainUnit <#> \{ here: Pair back train, next } -> case train.delta of
+                    , trainUnit <#> \{ here: Pair back train, next } -> case back.at -<> train.at of
                       V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
                     , pure "rotate(180, -32, 0)"
                     ]
@@ -552,7 +561,7 @@ renderTraintle cmds = D.Egg do
 runTraintle :: InterState -> Array Command -> _ -- { info :: Dragon, curve :: String, pos :: Pos, viewBox :: String, trains :: _, state :: InterState }
 runTraintle { library, hitmap } cmds =
   { curve, viewBox, pos: endpoint
-  , trains, segments, paths: result.paths
+  , segments, paths: result.paths
   , state: { library: _st.library, hitmap: _st.hitmap }
   , error: either identity mempty resultSplit
   , routes
@@ -565,13 +574,14 @@ runTraintle { library, hitmap } cmds =
         definitions $ routes #:.. \name (Route route) ->
           [ D.show name /\ D.show
             { pathlength: route.pathlength
-            , segments: Array.length route.segments
+            , maxlength: route.maxlength
+            , segments: NEA.length route.segments
+            , isLoop: route.isLoop
+            , zcrossings: route.crossings
             }
           ]
     , D.text "paths" /\ D.show (Array.length result.paths)
     -- , D.text "paths" /\ D.show result.paths
-    , D.text "train distances" /\ D.show (trains <#> _.distance)
-    -- , D.text "trains" /\ D.show trains
     , D.text "segments" /\ D.show (Array.length segments)
     -- , D.text "segments" /\ D.show (segments <#> map _ { canon { samples = unit } })
     , D.text "endpoint" /\ D.show endpoint
@@ -587,6 +597,12 @@ runTraintle { library, hitmap } cmds =
     traverse_ renderCommand cmds
     state <- get
     paths <- routesToPaths state.path.segments
+    when (Map.isEmpty state.routes) do
+      case NEA.fromArray state.route of
+        Nothing -> pure unit
+        Just r -> do
+          route <- mkRoute r
+          Proxy @"routes" @~ Map.insert "default" route
     pure { paths }
   _st@{ path: { commands: curve, segments }, pos: endpoint, routes } /\ resultSplit /\ { bounds: preBounds } = action
     # runRWSE { origin, mode: Drawing }
@@ -607,6 +623,3 @@ runTraintle { library, hitmap } cmds =
     V2 { min: Min mx, max: Max mX } { min: Min my, max: Max mY } ->
       intercalate " " $ show <<< (16 * _) <$>
         [ mx - 4, my - 4, mX - mx + 8, mY - my + 8 ]
-  trains =
-    walkPaths (canonCurve <$> segments) (endPath (canonCurve <$> segments))
-      $ [ 16.0 ] <>$ Array.range 0 1 #.. const [ 64.0, 32.0 ] #<> [ 64.0 ]

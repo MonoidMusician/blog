@@ -3,21 +3,20 @@ module Train.Types where
 import Prelude
 
 import Control.Monad.Writer (class MonadWriter, tell)
-import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
 import Data.Functor.App (App)
 import Data.Generic.Rep (class Generic)
 import Data.List (List)
 import Data.Map (Map)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe)
 import Data.Newtype (class Newtype, unwrap)
 import Data.Pair (Pair(..))
 import Data.Semigroup.Last (Last)
 import Data.Set (Set)
 import Data.Show.Generic (genericShow)
-import Data.Traversable (mapAccumL)
 import Data.Tuple (Tuple(..))
-import Idiolect (withIndices)
-import Math.Matrix (Afn2, B32, BBox2, Bez3(..), Bounds, LTF(..), V2, Vec2(..), normalize, tf, tfBounds, unAfn2, ($*), (<>-))
+import Math.Matrix (Afn2, B32, BBox2, Bez3(..), Bounds, LTF(..), V2, Vec2, inv, normalize, tf, tfBounds, unAfn2, ($*), (<>-))
 import Uncurried.RWSE (RWSE)
 
 
@@ -59,23 +58,6 @@ type Canonized = Pair
   , transformI :: Afn2 Int -- FIXME
   }
 
-
--- | A route consists of contiguous segments.
-newtype Route = Route
-  { segments :: Array { segment :: Canonized, i :: Int, pathlength :: Pair Number }
-  , pathlength :: Number
-  -- Information about loops, crossings, signals maybe
-  -- Time
-  }
-mkRoute :: Array Canonized -> Route
-mkRoute segments =
-  let
-    mapper l0 (Tuple i segment@(Pair { canon: Standard canon } _)) =
-      let l1 = l0 + canon.pathlength in
-      { accum: l1, value: { segment, i, pathlength: Pair l0 l1 } }
-    { accum: pathlength, value: segments } = mapAccumL mapper 0.0 $ withIndices segments
-  in Route { pathlength, segments }
-
 -- Get the plain Bezier for the segment
 canonCurve :: Canonized -> B32
 canonCurve (Pair p _) = tf (LTF p.transform) (unwrap p.canon).curve
@@ -86,38 +68,69 @@ canonStrokeBox (Pair { canon: Standard { bbox: { stroke } }, transform } _) =
   tfBounds transform stroke
 
 
--- | A particular point on the path.
-type OnPath =
-  { at :: V2
-  , to :: V2
-  , curvature :: Number
-  , t :: Number
-  , i :: Int
-  , delta :: V2
-  , distance :: Number
+
+-- | A route consists of contiguous segments.
+newtype Route = Route
+  { segments :: NonEmptyArray { segment :: Canonized, i :: Int, pathlength :: Pair Number }
+  , curves :: NonEmptyArray B32
+  , pathlength :: Number
+  -- Information about loops, crossings, signals maybe
+
+  , isLoop :: Boolean
+  , crossings ::
+      Map (Pair Int)
+      { pathlength :: Number }
+  , maxlength :: Number
+  -- Time
   }
 
-startPath :: Array B32 -> OnPath
-startPath = Array.head >>> case _ of
-  Nothing -> { at: mempty, to: V2 0.0 0.0, t: 0.0, i: 0, delta: mempty, distance: 0.0, curvature: 0.0 }
-  Just (B3 p0 p1 _ _) -> { at: p0, to: normalize $ p1 <>- p0, t: 0.0, i: 0, delta: mempty, distance: 0.0, curvature: 0.0 }
 
-endPath :: Array B32 -> OnPath
-endPath items = case Array.last items of
-  Nothing -> { at: mempty, to: V2 0.0 0.0, t: 0.0, i: 0, delta: mempty, distance: 0.0, curvature: 0.0 }
-  Just (B3 _ _ p2 p3) -> { at: p3, to: normalize $ p2 <>- p3, t: 1.0, i: Array.length items - 1, delta: mempty, distance: 0.0, curvature: 0.0 }
+newtype RoutedTrain = RoutedTrain
+  { route :: Route
+  , consist ::
+      -- Distances
+      Array Number
+  , endpoints ::
+      -- Buffer amounts, computed by placing the consist at the start and end
+      { start :: Number
+      , end :: Number
+      , buffer :: Number -- max of start and end
+      }
+  }
 
 
-
+-- | A particular point along a route.
 type PointOnRoute =
-  { segment :: Canonized
-  , i :: Int
-  , t :: Number
-  , at :: V2
-  , to :: V2
-  , curve :: B32
-  , curvature :: Number
+  { i :: Int              -- index in route
+  , segment :: Canonized  -- the segment it lies on
+  , curve :: B32          -- the segment Bezier
+  , t :: Number           -- time within segment
+  , at :: V2              -- precise point, curve@[t]
+  , to :: V2              -- tangent
+  , curvature :: Number   -- curvature at the point
+  , pathlength :: Number  -- pathlength from start of route
   }
+
+routeStart :: Direction -> Route -> PointOnRoute
+routeStart dir (Route r) = case NEA.head r.segments of
+  { segment, pathlength: Pair pathlength _ } | curve@(B3 p0 p1 _ _) <- canonCurve segment ->
+    { at: p0, to: applyDir $ normalize $ p1 <>- p0, t: 0.0, curve, segment, pathlength, i: 0, curvature: 0.0 }
+  where
+  applyDir = case dir of
+    Backward -> inv
+    _ -> identity
+
+routeEnd :: Direction -> Route -> PointOnRoute
+routeEnd dir (Route r) = case NEA.last r.segments of
+  { segment, pathlength: Pair _ pathlength } | curve@(B3 _ _ p2 p3) <- canonCurve segment ->
+    { at: p3, to: applyDir $ normalize $ p2 <>- p3, t: 1.0, curve, segment, pathlength, i: NEA.length r.segments - 1, curvature: 0.0 }
+  where
+  applyDir = case dir of
+    Forward -> inv
+    _ -> identity
+
+
+
 
 
 
