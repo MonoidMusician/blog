@@ -3,6 +3,7 @@ module Data.Pair where
 import Prelude
 
 import Control.Apply (lift2)
+import Control.Extend (class Extend)
 import Data.Align (class Align)
 import Data.Distributive (class Distributive, collectDefault)
 import Data.Eq (class Eq1)
@@ -17,6 +18,12 @@ import Data.Traversable (class Traversable)
 import Data.TraversableWithIndex (class TraversableWithIndex)
 
 data Pair a = Pair a a
+
+pair0 :: forall a. Pair a -> a
+pair0 (Pair a _) = a
+
+pair1 :: forall a. Pair a -> a
+pair1 (Pair _ a) = a
 
 derive instance functorPair :: Functor Pair
 derive instance foldablePair :: Foldable Pair

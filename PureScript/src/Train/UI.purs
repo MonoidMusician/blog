@@ -2,15 +2,19 @@ module Train.UI where
 
 import Prelude
 
+import Control.Alt ((<|>))
 import Control.Monad.ResourceT (ResourceM)
+import Data.Bifunctor (bimap)
 import Data.Either (Either(..))
 import Data.Filterable (separate)
+import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Profunctor.Choice ((|||))
 import Data.Tuple (Tuple(..))
 import Effect.Class (liftEffect)
 import Effect.Random (randomInt)
 import Idiolect ((<#?>))
+import Math.Matrix (Vec2(..))
 import Riverdragon.Dragon (Dragon)
 import Riverdragon.Dragon.Bones ((.$), (.$~~), (<:>))
 import Riverdragon.Dragon.Bones as D
@@ -18,10 +22,18 @@ import Riverdragon.Dragon.Wings (deletable)
 import Riverdragon.River (Course(..), Lake, River, coursing, createRiver, makeLake, memoize, store')
 import Riverdragon.River.Bed (freshId)
 import Riverdragon.River.Beyond (instanced, withLast)
+import Train.Types (Pos)
 
 definitions :: Array (Tuple Dragon Dragon) -> Dragon
 definitions entries = D.dl.$~~ entries >>= \(Tuple term def) ->
   [ D.dt.$ term, D.dd.$ def ]
+
+definitionsies :: Array (Tuple Dragon (Array Dragon)) -> Dragon
+definitionsies entries = D.dl.$~~ entries >>= \(Tuple term defs) ->
+  [ D.dt.$ term ] <|> D.dd[] <$> defs
+
+ulist :: Array Dragon -> Dragon
+ulist items = D.ul.$~~ D.li[] <$> items
 
 -- | Keep track of contiguous sequences of lefts and rights.
 trackEither :: forall x y. River (Either x y) -> Lake (Either (Tuple x (Lake x)) (Tuple y (Lake y)))
@@ -82,3 +94,15 @@ clone id attrs = D.svg_"use" ([ D.xlink_href <:> id ] <> attrs) mempty
 
 mask :: Lake String -> Lake D.AttrProp
 mask ids = D.attr "mask" <:> ids <#> \id -> "url(" <> id <> ")"
+
+
+renderPos :: Pos -> Dragon
+renderPos { at: V2 x y, to: V2 dx dy } = D.code [] $ D.text $show x <> "," <> show y <> " @ " <> show dx <> "/" <> show dy
+
+renderPosMap :: forall v. (v -> Dragon) -> Map.Map Pos v -> Dragon
+renderPosMap renderItem items = definitions $ Map.toUnfoldable items
+  <#> bimap renderPos renderItem
+
+renderPosMapsies :: forall v. (v -> Array Dragon) -> Map.Map Pos v -> Dragon
+renderPosMapsies renderItem items = definitionsies $ Map.toUnfoldable items
+  <#> bimap renderPos renderItem

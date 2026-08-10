@@ -11,7 +11,9 @@ import Data.List (List)
 import Data.Map (Map)
 import Data.Maybe (Maybe)
 import Data.Newtype (class Newtype, unwrap)
+import Data.Ord.Min (Min)
 import Data.Pair (Pair(..))
+import Data.Semigroup.First (First)
 import Data.Semigroup.Last (Last)
 import Data.Set (Set)
 import Data.Show.Generic (genericShow)
@@ -19,6 +21,10 @@ import Data.Tuple (Tuple(..))
 import Math.Matrix (Afn2, B32, BBox2, Bez3(..), Bounds, LTF(..), V2, Vec2, inv, normalize, tf, tfBounds, unAfn2, ($*), (<>-))
 import Uncurried.RWSE (RWSE)
 
+
+-- | A position on the grid is an integer point and a rational direction,
+-- | in lowest terms: this gives the straight line segment it should follow.
+type Pos = { at :: Vec2 Int, to :: Vec2 Int }
 
 
 -- | A standard prototypical curve with cached information about it.
@@ -131,12 +137,38 @@ routeEnd dir (Route r) = case NEA.last r.segments of
 
 
 
+type Layout =
+  -- Array of individual segments as they were drawn (deduplicated)
+  { array      :: Array Canonized
+  -- Map of all segment connections
+  , segments   :: Map Pos (Map Pos (First Int))
+  --------------------------------------------
+  -- Map of all straight runs of segments (only starting positions are included)
+  , straights  :: Map Pos { segments :: NonEmptyArray Int, end :: Pos }
+  -- Switches/turnouts, organized by origin and radius (positive = right, negative = left),
+  -- combined with information on the following straight
+  , switches   :: Map Pos (Map Int { step :: Pos, segments :: NonEmptyArray Int, end :: Pos })
+  -- Isolated loops, with a chosen basepoint and a set of all reached positions
+  , loops      :: Map Pos { chosen :: Min Pos, positions :: Set Pos }
+  -- Connected components (undirected)
+  , components :: Map Pos { chosen :: Min Pos, positions :: Set Pos }
+  -- Tell what feature each directed position is associated with:
+  -- a loop, a switch, or a straight run (which provides its start and end)
+  , feature    :: Map Pos (First Feature)
+  -- The complete logical layout
+  , logical    :: Map Pos (Map Pos (Map Int (Set (NonEmptyArray Int))))
+  --------------------------
+  , physical   :: Map Pos Pos
+  , clusters   :: Set (Set Pos)
+  , crossings  :: Set (Set Pos)
+  }
+
+data Feature
+  = FeatLoop { chosen :: Min Pos, positions :: Set Pos }
+  | FeatEndpoints Pos Pos
+  | FeatSwitch (Map Int { step :: Pos, segments :: NonEmptyArray Int, end :: Pos })
 
 
-
--- | A position on the grid is an integer point and a rational direction,
--- | in lowest terms: this gives the straight line segment it should follow.
-type Pos = { at :: Vec2 Int, to :: Vec2 Int }
 
 
 -- | The monad for interpreting a Traintle program.

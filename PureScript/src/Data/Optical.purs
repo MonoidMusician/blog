@@ -96,6 +96,13 @@ modifyAt ::
   path -> (a -> a) -> m Unit
 modifyAt path fn = modify_ (_Optic path fn)
 
+flipModifyAt ::
+  forall path s a m.
+    MonadState s m =>
+    Optical path (->) s s a a =>
+  (a -> a) -> path -> m Unit
+flipModifyAt fn path = modify_ (_Optic path fn)
+
 swapModifyAt ::
   forall path s a m.
     MonadState s m =>
@@ -120,13 +127,23 @@ appendAt ::
   path -> a -> m Unit
 appendAt path value = modifyAt path (_ <> value)
 
+flipAppendAt ::
+  forall path s a m.
+    MonadState s m =>
+    Optical path (->) s s a a =>
+    Monoid a =>
+  a -> path -> m Unit
+flipAppendAt value path = modifyAt path (_ <> value)
+
 infix 1 setAt as @=
 infix 1 swapAt as <@=
 infix 1 trySwapAt as <?@=
 infix 1 modifyAt as @~
+infix 1 flipModifyAt as ~@
 infix 1 swapModifyAt as <@~
 infix 1 trySwapModifyAt as <?@~
 infix 1 appendAt as @<>
+infix 1 flipAppendAt as <>@
 
 
 

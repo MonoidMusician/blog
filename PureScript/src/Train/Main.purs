@@ -10,10 +10,11 @@ import Data.Array.NonEmpty as NEA
 import Data.DateTime.Instant (unInstant)
 import Data.Either (either)
 import Data.Filterable (filter)
-import Data.Foldable (fold, foldMap, intercalate, traverse_)
+import Data.Foldable (all, fold, foldMap, intercalate, traverse_)
 import Data.Functor.App (App(..))
 import Data.Int as Int
 import Data.Lazy (force)
+import Data.List as List
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe')
 import Data.Newtype (unwrap)
@@ -22,6 +23,7 @@ import Data.Optical ((@~))
 import Data.Ord.Max (Max(..))
 import Data.Ord.Min (Min(..))
 import Data.Pair (Pair(..))
+import Data.Set as Set
 import Data.Time.Duration (Milliseconds(..))
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..), fst, snd)
@@ -31,7 +33,7 @@ import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Now (now)
 import Effect.Ref as Ref
-import Idiolect (incorporate, neighbors, sgn, sqre, withIndices, (#..), (#:..), (#<>), (<>$))
+import Idiolect (incorporate, intercalateMap, neighbors, sgn, sqre, withIndices, (#..), (#:..), (#<>), (<>$))
 import Math.Bezier as Bezier
 import Math.Matrix (Bez1(..), Bez3(..), Bounds, V2, Vec2(..), bounds2bez, bounds2bounds1, bounds2bounds2, clampBounds, d2r, inv, mkBound, mkBounds, normalize, overBounds, padBounds, pairs, r2d, rotl2, unit2bounds1, ($*), ($.), (-<>), (.*), (<>+), (<>-))
 import Math.Poly (deriv)
@@ -46,9 +48,10 @@ import Riverdragon.River.Streamline (clientRect)
 import Train.Geometry (mkRoute, routeAtTime, routesToPaths, trainOnRoute, walkPaths)
 import Train.Impl (renderCommand)
 import Train.Library (standardCurves)
+import Train.Logic (analyzeLayout)
 import Train.Parser (parseTraintle)
 import Train.Types (Command, Direction(..), InterState, Route(..), RoutedTrain(..), TrainMode(..), canonCurve, routeEnd)
-import Train.UI (clone, definitions, dragonEither, manageDefs, mask)
+import Train.UI (clone, definitions, definitionsies, dragonEither, manageDefs, mask, renderPos, renderPosMap, renderPosMapsies, ulist)
 import Type.Proxy (Proxy(..))
 import Uncurried.RWSE (runRWSE)
 import Web.Event.Event (EventType(..))
@@ -279,6 +282,21 @@ widget { interface } = do
   O wwwqwe @S  wwwwwwwwe
   O ewwwq @S qwwwewww
   O &R{wwwqwwwe @S ewwwq}
+-}
+{-
+  r2 8w ewwq 8w8w
+  x =O 16w =F 6w dwa 8w
+  O 37w = E
+  F 3w awd 11w
+  F sss qwwe 8w3w
+
+  = 8w ewwq 8w8w
+
+  @L{r3 eewwwwwqqaaaaaaaaqwwwwweww r2}
+
+  =&R{
+  8w ewwq 16w @L
+  13w qwwe 11w
 -}
 renderTraintle :: River (Array Command) -> Dragon
 renderTraintle cmds = D.Egg do
@@ -590,6 +608,33 @@ runTraintle { library, hitmap } cmds =
     , D.text "preBounds" /\ D.show preBounds
     -- , D.text "library" /\ D.show _st.library
     , D.text "hitmap" /\ D.show (Map.size _st.hitmap)
+    , D.text "layout" /\ definitions
+        let
+          renderSwitch = (\(Tuple radius { end, segments }) -> definitionsies [ (D.show radius <> D.text " / " <> renderPos end) /\ (D.show <$> NEA.toArray segments) ])
+          renderStraight = (\{ end, segments } -> definitions [ renderPos end /\ intercalateMap (D.text ", ") D.show segments ])
+          _components = result.layout.components
+          componentsValid = _components # all \c@{ chosen, positions } ->
+            Just (unwrap chosen) == Set.findMin positions &&
+              do positions # all \pos -> Map.lookup pos _components == Just c
+          renderComponent = _.positions >>> Array.fromFoldable >>> intercalateMap (D.text " : ") renderPos
+          renderComponents =
+            if componentsValid
+              then Map.values >>> List.nub >>> map renderComponent >>> Array.fromFoldable >>> ulist
+              else renderPosMap renderComponent
+        in
+          [ D.text "switches" /\ renderPosMapsies (map renderSwitch <<< Map.toUnfoldable) result.layout.switches
+          , D.text "straights" /\ renderPosMap renderStraight result.layout.straights
+          , D.text "loops" /\ renderPosMap (_.positions >>> Array.fromFoldable >>> intercalateMap (D.text " : ") renderPos) result.layout.loops
+          , D.text "logical" /\ D.show result.layout.logical
+
+          , D.text "components" /\ renderComponents result.layout.components
+
+          , D.text "physical" /\ D.show result.layout.physical
+          , D.text "clusters" /\ D.show result.layout.clusters
+          , D.text "crossings" /\ D.show result.layout.crossings
+
+          -- , D.text "segments" /\ renderPosMap (renderPosMap (D.show <<< unwrap)) result.layout.segments
+          ]
     ]
   where
   origin = { at: V2 0 0, to: V2 1 0 }
@@ -603,7 +648,8 @@ runTraintle { library, hitmap } cmds =
         Just r -> do
           route <- mkRoute r
           Proxy @"routes" @~ Map.insert "default" route
-    pure { paths }
+    layout <- analyzeLayout state.path.segments
+    pure { paths, layout }
   _st@{ path: { commands: curve, segments }, pos: endpoint, routes } /\ resultSplit /\ { bounds: preBounds } = action
     # runRWSE { origin, mode: Drawing }
       { pos: origin
