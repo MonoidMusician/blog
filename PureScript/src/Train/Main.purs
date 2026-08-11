@@ -24,8 +24,9 @@ import Data.Ord.Max (Max(..))
 import Data.Ord.Min (Min(..))
 import Data.Pair (Pair(..))
 import Data.Set as Set
+import Data.String (joinWith)
 import Data.Time.Duration (Milliseconds(..))
-import Data.Traversable (traverse)
+import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested ((/\))
 import Debug (spy)
@@ -33,7 +34,7 @@ import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Now (now)
 import Effect.Ref as Ref
-import Idiolect (incorporate, intercalateMap, neighbors, sgn, sqre, withIndices, (#..), (#:..), (#<>), (<>$))
+import Idiolect (incorporate, intercalateMap, neighbors, sgn, sqre, withIndices, (#..), (#:..), (#<>), (<>$), (>==))
 import Math.Bezier as Bezier
 import Math.Matrix (Bez1(..), Bez3(..), Bounds, V2, Vec2(..), bounds2bez, bounds2bounds1, bounds2bounds2, clampBounds, d2r, inv, mkBound, mkBounds, normalize, overBounds, padBounds, pairs, r2d, rotl2, unit2bounds1, ($*), ($.), (-<>), (.*), (<>+), (<>-))
 import Math.Poly (deriv)
@@ -54,6 +55,7 @@ import Train.Types (Command, Direction(..), InterState, Route(..), RoutedTrain(.
 import Train.UI (clone, definitions, definitionsies, dragonEither, manageDefs, mask, renderPos, renderPosMap, renderPosMapsies, ulist)
 import Type.Proxy (Proxy(..))
 import Uncurried.RWSE (runRWSE)
+import Unsafe.Coerce (unsafeCoerce)
 import Web.Event.Event (EventType(..))
 import Web.UIEvent.MouseEvent as MouseEvent
 import Widget (Widget, autoAdaptInterface, valueInterface)
@@ -271,6 +273,15 @@ widget { interface } = do
           ]
     ]
 
+num :: Number -> String
+num x = "" <> unsafeCoerce x
+
+int :: Int -> String
+int x = "" <> unsafeCoerce x
+
+spaced :: Array (River String) -> River String
+spaced = sequence >== joinWith " "
+
 -- wdassssssdaaxdwwwwwwwwwassaxddsssdxasssssdwaaadxwdaxaddaaxwwdxaa
 -- 16dwwwaa16saawww8dxwwwdd16sdd6wdd16sddwww8axwwwaa16saawww
 -- @S{8w} &R{@Se3de@Seewwwqq@Sq3aq@S12w@Sq3aq@Sqqwwwee@Se3de@S12w@S}
@@ -298,6 +309,8 @@ widget { interface } = do
   8w ewwq 16w @L
   13w qwwe 11w
 -}
+-- 3(ee6wqqaaaaqq6w10e 4w8e4w)
+-- 4q4w4qaaqawe3deewwqq4a11w
 renderTraintle :: River (Array Command) -> Dragon
 renderTraintle cmds = D.Egg do
   { defs, defL, defineL } <- manageDefs
@@ -334,13 +347,13 @@ renderTraintle cmds = D.Egg do
         [ clone curve
           [ D.stylish =:= D.smarts
             { "stroke": "white"
-            , "stroke-width": show outer <> "px"
+            , "stroke-width": int outer <> "px"
             }
           ]
         , clone curve
           [ D.stylish =:= D.smarts
             { "stroke": "black"
-            , "stroke-width": show inner <> "px"
+            , "stroke-width": int inner <> "px"
             }
           ]
         ]
@@ -448,7 +461,7 @@ renderTraintle cmds = D.Egg do
             ] mempty
         , D.svg_"path"
             [ D.attr "d" <:> running <#> \{ pos: { at: V2 x y, to: V2 dx dy } } ->
-                "M" <> show (16*x) <> "," <> show (16*y) <> "l" <> show (16*dx) <> "," <> show (16*dy)
+                "M" <> int (16*x) <> "," <> int (16*y) <> "l" <> int (16*dx) <> "," <> int (16*dy)
             , D.stylish =:= D.smarts
               { "stroke": "red"
               , "stroke-width": "2px"
@@ -459,7 +472,7 @@ renderTraintle cmds = D.Egg do
           withTrainUnits \_idx trainUnit ->
             let
               cslope = sqre 9.0 / 2.0
-              jog curvature = "translate(" <> show 0.0 <> ", " <> show (curvature * cslope) <> ")"
+              jog curvature = "translate(" <> num 0.0 <> ", " <> num (curvature * cslope) <> ")"
               awayfrom = trainUnit <#> \{ prev, here: Pair back train } -> case prev of
                 Nothing -> back.at -<> train.at
                 Just (Pair _ y) -> y.at -<> back.at
@@ -469,77 +482,77 @@ renderTraintle cmds = D.Egg do
             in D.g [] $ fold
               [ mempty
               , clone (pure "#g115")
-                  [ dam $ D.attr "transform" <:> intercalate (pure " ")
+                  [ dam $ D.attr "transform" <:> spaced
                     [ trainUnit <#> \{ here: Pair back train, next } -> case back.at of
-                      V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
+                      V2 x y -> "translate(" <> num x <> ", " <> num y <> ")"
                     , awayfrom <#> case _ of
-                      V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
+                      V2 dx dy -> "rotate(" <> num (Math.atan2 dy dx * r2d) <> ")"
                     , trainUnit <#> \{ here: Pair back train, next } -> jog back.curvature
                     , pure "translate(64, 0) rotate(-90,-384,208)"
                     ]
                   ]
               , clone (pure "#use115")
-                  [ dam $ D.attr "transform" <:> intercalate (pure " ")
+                  [ dam $ D.attr "transform" <:> spaced
                     [ trainUnit <#> \{ here: Pair back train, next } -> case back.at of
-                      V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
+                      V2 x y -> "translate(" <> num x <> ", " <> num y <> ")"
                     , trainUnit <#> \{ here: Pair back train, next } -> case back.to of
-                      V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
+                      V2 dx dy -> "rotate(" <> num (Math.atan2 dy dx * r2d) <> ")"
                     , trainUnit <#> \{ here: Pair back train, next } -> jog back.curvature
                     , pure "rotate(180) translate(64, 0) rotate(-90,-384,208)"
                     ]
                   ]
               , clone (pure "#g115")
-                  [ dam $ D.attr "transform" <:> intercalate (pure " ")
+                  [ dam $ D.attr "transform" <:> spaced
                     [ trainUnit <#> \{ here: Pair back train, next } -> case train.at of
-                      V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
+                      V2 x y -> "translate(" <> num x <> ", " <> num y <> ")"
                     , towards <#> case _ of
-                      V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
+                      V2 dx dy -> "rotate(" <> num (Math.atan2 dy dx * r2d) <> ")"
                     , trainUnit <#> \{ here: Pair back train, next } -> jog train.curvature
                     , pure "rotate(180) translate(64, 0) rotate(-90,-384,208)"
                     ]
                   ]
               , clone (pure "#use115")
-                  [ dam $ D.attr "transform" <:> intercalate (pure " ")
+                  [ dam $ D.attr "transform" <:> spaced
                     [ trainUnit <#> \{ here: Pair back train, next } -> case train.at of
-                      V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
+                      V2 x y -> "translate(" <> num x <> ", " <> num y <> ")"
                     , trainUnit <#> \{ here: Pair back train, next } -> case train.to of
-                      V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
+                      V2 dx dy -> "rotate(" <> num (Math.atan2 dy dx * r2d) <> ")"
                     , trainUnit <#> \{ here: Pair back train, next } -> jog train.curvature
                     , pure "rotate(180) translate(64, 0) rotate(-90,-384,208)"
                     ]
                   ]
               , clone (pure "#g189425-2")
-                  [ dam $ D.attr "transform" <:> intercalate (pure " ")
+                  [ dam $ D.attr "transform" <:> spaced
                     [ trainUnit <#> \{ here: Pair back train, next } -> case train.at of
-                      V2 x y -> "translate(" <> show x <> ", " <> show y <> ")"
+                      V2 x y -> "translate(" <> num x <> ", " <> num y <> ")"
                     , trainUnit <#> \{ here: Pair back train, next } -> case back.at -<> train.at of
-                      V2 dx dy -> "rotate(" <> show (Math.atan2 dy dx * r2d) <> ")"
+                      V2 dx dy -> "rotate(" <> num (Math.atan2 dy dx * r2d) <> ")"
                     , pure "rotate(180, -32, 0)"
                     ]
                   -- , D.attr "opacity" =:= 0.4
                   ]
               ]
-      , D.Replacing $ freshTrains <#> \trains ->
-          D.g [ D.stylish =:= D.smarts { "opacity": 0.0 } ] $ fold $ trains #.. \train ->
-            [ D.svg_"circle"
-                [ D.attr "r" =:= "4px"
-                , pure train <#> \{ at: V2 x y } -> D.MultiAttr
-                    [ D.attr "cx" x
-                    , D.attr "cy" y
-                    ]
-                , D.stylish =:= D.smarts
-                  { "fill": "yellow"
-                  }
-                ] mempty
-            , D.svg_"path"
-                [ D.attr "d" <:> pure train <#> \{ at: V2 x y, to: V2 dx dy } ->
-                    "M" <> show x <> "," <> show y <> "l" <> show dx <> "," <> show dy
-                , D.stylish =:= D.smarts
-                  { "stroke": "yellow"
-                  , "stroke-width": "2px"
-                  }
-                ] mempty
-            ]
+      -- , D.Replacing $ freshTrains <#> \trains ->
+      --     D.g [ D.stylish =:= D.smarts { "opacity": 0.0 } ] $ fold $ trains #.. \train ->
+      --       [ D.svg_"circle"
+      --           [ D.attr "r" =:= "4px"
+      --           , pure train <#> \{ at: V2 x y } -> D.MultiAttr
+      --               [ D.attr "cx" x
+      --               , D.attr "cy" y
+      --               ]
+      --           , D.stylish =:= D.smarts
+      --             { "fill": "yellow"
+      --             }
+      --           ] mempty
+      --       , D.svg_"path"
+      --           [ D.attr "d" <:> pure train <#> \{ at: V2 x y, to: V2 dx dy } ->
+      --               "M" <> show x <> "," <> show y <> "l" <> show dx <> "," <> show dy
+      --           , D.stylish =:= D.smarts
+      --             { "stroke": "yellow"
+      --             , "stroke-width": "2px"
+      --             }
+      --           ] mempty
+      --       ]
       -- , D.Replacing $ running <#> \{ segments } ->
       --     D.g [ D.stylish =:= D.smarts { "opacity": 0.7 } ] $ segments #.. \p ->
       --       (tf (LTF p.transform) <$> p.canon.strokes) #.. \q ->
@@ -608,6 +621,7 @@ runTraintle { library, hitmap } cmds =
     , D.text "preBounds" /\ D.show preBounds
     -- , D.text "library" /\ D.show _st.library
     , D.text "hitmap" /\ D.show (Map.size _st.hitmap)
+    {-
     , D.text "layout" /\ definitions
         let
           renderSwitch = (\(Tuple radius { end, segments }) -> definitionsies [ (D.show radius <> D.text " / " <> renderPos end) /\ (D.show <$> NEA.toArray segments) ])
@@ -635,6 +649,7 @@ runTraintle { library, hitmap } cmds =
 
           -- , D.text "segments" /\ renderPosMap (renderPosMap (D.show <<< unwrap)) result.layout.segments
           ]
+    -- -}
     ]
   where
   origin = { at: V2 0 0, to: V2 1 0 }

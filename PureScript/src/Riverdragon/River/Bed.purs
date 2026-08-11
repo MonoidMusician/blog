@@ -99,7 +99,7 @@ allocRefLoop :: forall s o.
   Allocar (Allocar o)
 allocRefLoop spec = do
   Ref.new (0 /\ spec.start) <#> Ref.modify'
-    \s -> { value: uncurry spec.out s, state: (add 1 <<< fst &&& uncurry spec.incr) s }
+    \s -> { value: uncurry spec.out s, state: Tuple (1 + fst s) (uncurry spec.incr s) }
 
 freshId :: Allocar (Allocar Int)
 freshId = allocRefLoop { start: unit, incr: mempty, out: const }

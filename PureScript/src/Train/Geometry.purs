@@ -2,6 +2,7 @@ module Train.Geometry where
 
 import Prelude
 
+import Control.Alternative (guard)
 import Control.Monad.State (class MonadState, get)
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
@@ -112,28 +113,29 @@ walkPaths (Route { segments, curves }) start distances =
     closestPoint = searchOrder # Array.findMap \is ->
       -- Find the closest point in time
       minimumWith (\r -> Math.abs (composite r - composite whence)) $
-      -- That is headed in the right direction
-      Array.filter (\{ at } -> dot (whence.at -<> at) whence.to > 0.0) $
-        -- On the nearest segments
-        is >>= \i -> do
-          curve <- foldMap pure $ curves NEA.!! i
-          seg <- foldMap pure $ segments NEA.!! i
+      -- On the nearest pair of segments
+      is >>= \i -> case curves NEA.!! i, segments NEA.!! i of
+        Just curve, Just seg -> do
           -- That intersects at the right distance
-          { p, t } <- Bezier.intersectCirclePrec 0.05 { p: whence.at, r: distance } curve
-          let
-            { segment, pathlength: Pair start _ } = seg
-            Pair { canon: Standard { samples } } _ = segment
-            tangent = Bezier.evalB (deriv curve) t
-            to = sgn (dot tangent whence.to) .* tangent
-            delta = whence.at -<> p
+          { p, t } <- Bezier.intersectCirclePrec 0.2 { p: whence.at, r: distance } curve
+          -- And is headed in the right direction
+          if dot (whence.at -<> p) whence.to > 0.0 then do
+            let
+              { segment, pathlength: Pair start _ } = seg
+              Pair { canon: Standard { samples } } _ = segment
+              tangent = Bezier.evalB22 (deriv curve) t
+              to = sgn (dot tangent whence.to) .* tangent
+              delta = whence.at -<> p
 
-            -- Find the closest sample, and linearly interpolate pathlength within it
-            closest = Int.floor $ t * 100.0
-            within = t * 100.0 - Int.toNumber closest
-            pathlength = start + case samples Array.!! closest of
-              Just { pathlength: Pair x y } -> x .+<within>+. y
-              Nothing -> 0.0
-          pure { at: p, to, t, i, curve, segment, pathlength, curvature: Bezier.curvatureAt curve t }
+              -- Find the closest sample, and linearly interpolate pathlength within it
+              closest = Int.floor $ t * 100.0
+              within = t * 100.0 - Int.toNumber closest
+              pathlength = start + case samples Array.!! closest of
+                Just { pathlength: Pair x y } -> x .+<within>+. y
+                Nothing -> 0.0
+            pure { at: p, to, t, i, curve, segment, pathlength, curvature: Bezier.curvatureAt curve t }
+          else []
+        _, _ -> []
     -- Composite time across the whole set of curves
     composite { t, i } = t + Int.toNumber i
 
@@ -151,8 +153,8 @@ routeAtTime (Route { segments, pathlength }) ofRoute = do
       let
         curve = canonCurve segment
         t = bounds2bounds1 (coerce { min: l0, max: l1 }) (coerce { min: t0, max: t1 }) $. leftover
-        at = Bezier.evalB curve t
-        to = normalize $ Bezier.evalB (deriv curve) t
+        at = Bezier.evalB32 curve t
+        to = normalize $ Bezier.evalB22 (deriv curve) t
         curvature = Bezier.curvatureAt curve t
       Just { at, to, curvature, curve, t, i, segment, pathlength }
 
@@ -182,10 +184,10 @@ dilatePath curve =
           , k0: 1.0 / ((1.0 / k0) + which * sgn k0 * delta)
           , k1: 1.0 / ((1.0 / k1) + which * sgn k1 * delta)
           }
-        expected t = Bezier.evalB c t <> delta .*
-          (rotl2 (which * 90.0 * d2r) $* Bezier.evalB (deriv c) t)
+        expected t = Bezier.evalB32 c t <> delta .*
+          (rotl2 (which * 90.0 * d2r) $* Bezier.evalB22 (deriv c) t)
         score c2 = sum $ ((_ / 12.0) <<< Int.toNumber <$> Array.range 0 12) <#>
-          \t -> norm2 (expected t <>- Bezier.evalB c2 t)
+          \t -> norm2 (expected t <>- Bezier.evalB32 c2 t)
         scored = (Tuple <*> score) <$> results
       in fromMaybe c $ fst <$> minimumWith snd scored
   in outer curve <$> Pair one (negate one)

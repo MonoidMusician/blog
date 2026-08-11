@@ -1,4 +1,4 @@
--- @inline curvaturePND always
+-- @inline export curvaturePND always
 -- @inline bbox1' always
 module Math.Bezier where
 
@@ -13,6 +13,7 @@ import Data.Array as Array
 import Data.Distributive (class Distributive, collect, distribute)
 import Data.Filterable (filter)
 import Data.Foldable (all, any, foldMap)
+import Data.Function.Uncurried (Fn4, Fn8, Fn9, mkFn4, runFn4, runFn8, runFn9)
 import Data.Maybe (Maybe(..), fromMaybe')
 import Data.Newtype (unwrap)
 import Data.Number as Math
@@ -254,33 +255,41 @@ intersect = intersectPrec epsilon
 -- TODO: reduce duplicate points
 intersectPrec :: Number -> B32 -> B32 -> Array (Pair { t :: Number, p :: V2 })
 intersectPrec prec _p _q =
-  go
+  runFn4 go
     -- Track the time intervals along with the curve at those spots
-    (Tuple (B1 (V1 0.0) (V1 1.0)) _p)
-    (Tuple (B1 (V1 0.0) (V1 1.0)) _q)
+    (B1 (V1 0.0) (V1 1.0)) _p
+    (B1 (V1 0.0) (V1 1.0)) _q
   where
   -- Largest dimension of box
   mag (V2 bx by) = max (unwrap bx.max - unwrap bx.min) (unwrap by.max - unwrap by.min)
   -- Return middle t
-  sample (B1 t0 t1) curve =
-    let  t = (unwrap t0 + unwrap t1)/2.0
-    in { t, p: evalB curve t }
+  sample (B1 (V1 t0) (V1 t1)) curve =
+    let  t = (t0 + t1)/2.0
+    in { t, p: evalB32 curve t }
 
-  go :: Tuple B11 B32 -> Tuple B11 B32 -> Array (Pair { t :: Number, p :: V2 })
-  go (Tuple pt p) (Tuple qt q) =
+  go :: Fn4 B11 B32 B11 B32 (Array (Pair { t :: Number, p :: V2 }))
+  go = mkFn4 \pt p qt q ->
     let
       -- Use approximate bounding box
-      bbp = getBounds p
-      bbq = getBounds q
+      bbp = getBoundsB32 p
+      bbq = getBoundsB32 q
     in if disjointBounds bbp bbq then [] else
     if max (mag bbp) (mag bbq) < prec
     -- Return middle time, sampling the original curve there
     then [Pair (sample pt _p) (sample qt _q)]
-    else do
-      -- Bisect the time intervals and the curves themselves
-      p' <- bisect pt /|\ bisect p # \(Pair p0 p1) -> [p0, p1]
-      q' <- bisect qt /|\ bisect q # \(Pair q0 q1) -> [q0, q1]
-      go p' q'
+    else
+      let
+        -- Bisect the time intervals and the curves themselves
+        Pair pt0 pt1 = bisectB11 pt
+        Pair qt0 qt1 = bisectB11 qt
+        Pair p0 p1 = bisectB32 p
+        Pair q0 q1 = bisectB32 q
+      in Array.concat
+        [ runFn4 go pt0 p0 qt1 q1
+        , runFn4 go pt0 p0 qt0 q0
+        , runFn4 go pt1 p1 qt0 q0
+        , runFn4 go pt1 p1 qt1 q1
+        ]
 
 doesIntersect :: B32 -> B32 -> Boolean
 doesIntersect _p _q =
@@ -296,17 +305,56 @@ doesIntersect _p _q =
   go (Tuple pt p) (Tuple qt q) =
     let
       -- Use approximate bounding box
-      bbp = getBounds p
-      bbq = getBounds q
+      bbp = getBoundsB32 p
+      bbq = getBoundsB32 q
     in if disjointBounds bbp bbq then false else
     if max (mag bbp) (mag bbq) < epsilon
     then true
     else do
       -- Bisect the time intervals and the curves themselves
       let
-        Pair p0 p1 = bisect pt /|\ bisect p
-        Pair q0 q1 = bisect qt /|\ bisect q
+        Pair p0 p1 = bisectB11 pt /|\ bisectB32 p
+        Pair q0 q1 = bisectB11 qt /|\ bisectB32 q
       go p0 q0 || go p0 q1 || go p1 q0 || go p1 q1
+
+getBoundsB32 :: B32 -> Vec2 (Bounds Number)
+getBoundsB32 (B3 (V2 x0 y0) (V2 x1 y1) (V2 x2 y2) (V2 x3 y3)) =
+  runFn9 getBoundsB32Impl x0 x1 x2 x3 y0 y1 y2 y3 V2
+getBoundsB32 (B3 (V2 x0 y0) (V2 x1 y1) (V2 x2 y2) (V2 x3 y3)) = V2
+  { min: Min (min4 x0 x1 x2 x3), max: Max (max4 x0 x1 x2 x3) }
+  { min: Min (min4 y0 y1 y2 y3), max: Max (max4 y0 y1 y2 y3) }
+  where
+  min4 t0 t1 t2 t3 = Math.min (Math.min t0 t1) (Math.min t2 t3)
+  max4 t0 t1 t2 t3 = Math.max (Math.max t0 t1) (Math.max t2 t3)
+
+foreign import getBoundsB32Impl :: Fn9 Number Number Number Number Number Number Number Number (forall x. x -> x -> Vec2 x) (Vec2 (Bounds Number))
+
+evalB32 :: B32 -> Number -> V2
+evalB32 (B3 (V2 x0 y0) (V2 x1 y1) (V2 x2 y2) (V2 x3 y3)) t1 = V2
+  (t0*t0*t0*x0 + 3.0*t1*t0*t0*x1 + 3.0*t1*t1*t0*x2 + t1*t1*t1*x3)
+  (t0*t0*t0*y0 + 3.0*t1*t0*t0*y1 + 3.0*t1*t1*t0*y2 + t1*t1*t1*y3)
+  where
+  t0 = 1.0 - t1
+
+evalB22 :: B22 -> Number -> V2
+evalB22 (B2 (V2 x0 y0) (V2 x1 y1) (V2 x2 y2)) t1 = V2
+  (t0*t0*x0 + 2.0*t1*t0*x1 + 3.0*t1*t1*x2)
+  (t0*t0*y0 + 2.0*t1*t0*y1 + 3.0*t1*t1*y2)
+  where
+  t0 = 1.0 - t1
+
+bisectB11 :: B11 -> Pair B11
+bisectB11 (B1 (V1 x) (V1 y)) =
+  let h = (x + y) / 2.0 in
+  coerce $ Pair (B1 x h) (B1 h y)
+
+bisectB32 :: B32 -> Pair B32
+bisectB32 (B3 p0 p1 p2 p3) =
+  let avg m n = 0.5 .* (m <> n)
+      B2 p01 p12 p23 = B2 (avg p0 p1) (avg p1 p2) (avg p2 p3)
+      B1 p012 p123 = B1 (avg p01 p12) (avg p12 p23)
+      p0123 = avg p012 p123
+  in Pair (B3 p0 p01 p012 p0123) (B3 p0123 p123 p23 p3)
 
 sameCurve :: B32 -> B32 -> Maybe (Afn1 V2)
 sameCurve p q =

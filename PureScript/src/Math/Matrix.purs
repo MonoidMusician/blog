@@ -35,6 +35,16 @@
 -- @inline export applyAfn2.apply arity=2
 -- @inline export applyAfn1.apply arity=2
 --
+-- @inline export semigroupVec3(..).append arity=2
+-- @inline export semigroupVec2(..).append arity=2
+-- @inline export semigroupVec1(..).append arity=2
+-- @inline export semigroupLin3(..).append arity=2
+-- @inline export semigroupLin2(..).append arity=2
+-- @inline export semigroupLin1(..).append arity=2
+-- @inline export semigroupAfn3(..).append arity=2
+-- @inline export semigroupAfn2(..).append arity=2
+-- @inline export semigroupAfn1(..).append arity=2
+--
 -- @inline export sModuleVec3(..).smul arity=2
 -- @inline export sModuleVec2(..).smul arity=2
 -- @inline export sModuleVec1(..).smul arity=2
