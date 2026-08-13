@@ -110,7 +110,7 @@ envelopeComponent init = do
             , D.attr "y" =:= -20.0
             ] $ D.text "Volume ->"
         ]
-      , D.g [] $~~
+      , D.g[] $~~
         [ D.circleW'
           ( stream <#> \current -> do
               let

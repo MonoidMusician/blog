@@ -174,7 +174,7 @@ showStack i = D.span :."full stack".$ go i
   go (Zero state) = D.sub.$ renderSt mempty state
   go (Snoc stack tok state) = go stack
     <> renderCSTTree tok
-    <> D.sub [] (renderSt mempty state)
+    <> D.sub[] (renderSt mempty state)
 
 renderStackItem :: Either CodePoint SAST -> Dragon
 renderStackItem (Left x) = renderTok mempty x

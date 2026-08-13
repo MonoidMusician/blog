@@ -41,3 +41,8 @@ memoizeEq f = unsafeST do
 
 memoizeRefEq :: forall a b. (a -> b) -> (a -> b)
 memoizeRefEq = coerce (memoizeEq :: (UnsafeRefEq a -> b) -> (UnsafeRefEq a -> b))
+
+-- fairFold :: forall f t. Foldable f => (t -> t -> t) -> f t -> t
+-- fairFold f items = do
+--   Array.fromFoldable items
+

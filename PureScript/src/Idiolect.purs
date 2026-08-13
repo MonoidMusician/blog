@@ -41,6 +41,11 @@ import Prim.RowList as RL
 import Record as Record
 import Type.Proxy (Proxy(..))
 
+type Desc :: Symbol -> Type -> Type
+type Desc name ty = ty
+
+infix 8 type Desc as @::
+
 type EffectArrow a b = a -> Effect b
 -- | it's an arrow! that does! stuff!
 infixr 1 type EffectArrow as -!>

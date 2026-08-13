@@ -108,7 +108,7 @@ infixr 0 ofFragment as $~~ -- made to work with $ on left and <#> on right
 _ofText :: forall r. (Dragon -> r) -> String -> r
 _ofText fn = fn <<< text
 infixr 0 _ofText as $$
--- | `D.span [] $$~ inputValueStream`
+-- | `D.span[] $$~ inputValueStream`
 _ofTexting :: forall flow r. (Dragon -> r) -> Stream flow String -> r
 _ofTexting fn = fn <<< Text <<< dam
 infixr 0 _ofTexting as $$~

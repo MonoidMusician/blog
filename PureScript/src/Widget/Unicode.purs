@@ -425,7 +425,7 @@ widgetShow _ = pure $ Egg do
     slider id desc attrs = D.span.$ fold
       [ D.label [ D.attr "for" =:= id ] $$ desc <> ": "
       , D.input [ D.id =:= id, oneStream attrs ]
-      , D.br []
+      , D.br[]
       ]
 
 

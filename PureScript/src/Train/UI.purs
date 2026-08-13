@@ -97,7 +97,7 @@ mask ids = D.attr "mask" <:> ids <#> \id -> "url(" <> id <> ")"
 
 
 renderPos :: Pos -> Dragon
-renderPos { at: V2 x y, to: V2 dx dy } = D.code [] $ D.text $show x <> "," <> show y <> " @ " <> show dx <> "/" <> show dy
+renderPos { at: V2 x y, to: V2 dx dy } = D.code[] $ D.text $ show x <> "," <> show y <> " @ " <> show dx <> "/" <> show dy
 
 renderPosMap :: forall v. (v -> Dragon) -> Map.Map Pos v -> Dragon
 renderPosMap renderItem items = definitions $ Map.toUnfoldable items

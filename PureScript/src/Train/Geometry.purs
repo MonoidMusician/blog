@@ -2,7 +2,6 @@ module Train.Geometry where
 
 import Prelude
 
-import Control.Alternative (guard)
 import Control.Monad.State (class MonadState, get)
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
@@ -125,7 +124,6 @@ walkPaths (Route { segments, curves }) start distances =
               Pair { canon: Standard { samples } } _ = segment
               tangent = Bezier.evalB22 (deriv curve) t
               to = sgn (dot tangent whence.to) .* tangent
-              delta = whence.at -<> p
 
               -- Find the closest sample, and linearly interpolate pathlength within it
               closest = Int.floor $ t * 100.0
@@ -139,10 +137,9 @@ walkPaths (Route { segments, curves }) start distances =
     -- Composite time across the whole set of curves
     composite { t, i } = t + Int.toNumber i
 
--- | Find the point at the fraction (0.0 to 1.0) of the pathlength.
+-- | Find the point at the length (from 0.0 to route.pathlength).
 routeAtTime :: Route -> Number -> Maybe PointOnRoute
-routeAtTime (Route { segments, pathlength }) ofRoute = do
-  let alongRoute = pathlength * ofRoute
+routeAtTime (Route { segments, pathlength }) alongRoute = do
   { i, pathlength: Pair segmentStart _, segment: segment@(Pair { canon } _) } <- segments
     # NEA.find \{ pathlength: Pair _ segmentEnd } -> segmentEnd >= alongRoute
   let leftover = alongRoute - segmentStart

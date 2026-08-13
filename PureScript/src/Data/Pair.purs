@@ -25,6 +25,12 @@ pair0 (Pair a _) = a
 pair1 :: forall a. Pair a -> a
 pair1 (Pair _ a) = a
 
+pairy :: forall i o. (Pair i -> o) -> (i -> i -> o)
+pairy f x y = f (Pair x y)
+
+unpairy :: forall i o. (i -> i -> o) -> (Pair i -> o)
+unpairy f (Pair x y) = f x y
+
 derive instance functorPair :: Functor Pair
 derive instance foldablePair :: Foldable Pair
 instance foldable1Pair :: Foldable1 Pair where

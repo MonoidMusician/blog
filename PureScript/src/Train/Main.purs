@@ -4,55 +4,56 @@ import Prelude
 
 import Control.Monad.ResourceM (inSubScope, selfDestructor)
 import Control.Monad.State (get)
-import Control.Plus (empty)
+import Control.Plus (empty, (<|>))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.DateTime.Instant (unInstant)
 import Data.Either (either)
-import Data.Filterable (filter)
-import Data.Foldable (all, fold, foldMap, intercalate, traverse_)
+import Data.Filterable (compact, filter)
+import Data.Foldable (fold, foldMap, intercalate, oneOf, traverse_)
 import Data.Functor.App (App(..))
 import Data.Int as Int
 import Data.Lazy (force)
-import Data.List as List
 import Data.Map as Map
-import Data.Maybe (Maybe(..), maybe')
+import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (unwrap)
 import Data.Number as Math
+import Data.Number.Format as Format
 import Data.Optical ((@~))
 import Data.Ord.Max (Max(..))
 import Data.Ord.Min (Min(..))
-import Data.Pair (Pair(..))
-import Data.Set as Set
+import Data.Pair (Pair(..), unpairy)
 import Data.String (joinWith)
 import Data.Time.Duration (Milliseconds(..))
 import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested ((/\))
-import Debug (spy)
+import Debug (spy, traceM)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Now (now)
 import Effect.Ref as Ref
-import Idiolect (incorporate, intercalateMap, neighbors, sgn, sqre, withIndices, (#..), (#:..), (#<>), (<>$), (>==))
+import Idiolect (incorporate, neighbors, sgn, sqre, withIndices, (#..), (#:..), (#<>), (<>$), (>==))
 import Math.Bezier as Bezier
-import Math.Matrix (Bez1(..), Bez3(..), Bounds, V2, Vec2(..), bounds2bez, bounds2bounds1, bounds2bounds2, clampBounds, d2r, inv, mkBound, mkBounds, normalize, overBounds, padBounds, pairs, r2d, rotl2, unit2bounds1, ($*), ($.), (-<>), (.*), (<>+), (<>-))
+import Math.Matrix (Bez1(..), Bez3(..), Bounds, V2, Vec2(..), bounds2bez, bounds2bounds2, clampBounds, d2r, extent, mkBound, mkBounds, normalize, overBounds, padBounds, pairs, r2d, rotl2, unit2bounds1, ($*), ($.), (-<>), (.*), (<>+), (<>-))
 import Math.Poly (deriv)
 import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones ((<:>), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (liveArray, sourceCode)
-import Riverdragon.River (River, createRiver, createRiverStore, dam, statefulStream, store)
+import Riverdragon.River (River, createRiver, createRiverStore, dam, statefulStream, store, (<?*>), (>>~))
 import Riverdragon.River as River
-import Riverdragon.River.Beyond (dedup, documentEvent, everyFrame)
+import Riverdragon.River.Beyond (dedup, dedupOn, documentEvent, everyFrame)
 import Riverdragon.River.Streamline (clientRect)
+import Train.Dynamics as Dynamics
 import Train.Geometry (mkRoute, routeAtTime, routesToPaths, trainOnRoute, walkPaths)
 import Train.Impl (renderCommand)
 import Train.Library (standardCurves)
 import Train.Logic (analyzeLayout)
 import Train.Parser (parseTraintle)
-import Train.Types (Command, Direction(..), InterState, Route(..), RoutedTrain(..), TrainMode(..), canonCurve, routeEnd)
-import Train.UI (clone, definitions, definitionsies, dragonEither, manageDefs, mask, renderPos, renderPosMap, renderPosMapsies, ulist)
+import Train.Track (planAndScheduleRoute)
+import Train.Types (Command, Direction(..), InterState, Route(..), RoutedTrain(..), TrainMode(..), routeEnd)
+import Train.UI (clone, definitions, dragonEither, manageDefs, mask)
 import Type.Proxy (Proxy(..))
 import Uncurried.RWSE (runRWSE)
 import Unsafe.Coerce (unsafeCoerce)
@@ -77,6 +78,126 @@ widget { interface } = do
           ]
     , dragonEither (D.Text <<< dam) renderTraintle $
         parseTraintle <<< snd <$> valueSet
+    , Egg do
+        let routeDist = 10_000.0
+        let tract = { wheels: 5.0, motors: 500.0 } :: Dynamics.Traction
+        plan <- pure $ spy "plan" $ Dynamics.planAndSchedule
+          { traction: { wheels: 25.0, motors: 1250.0 }
+          , speeds:
+            [ Dynamics.planZone 0.0 (mkBound 0.0)
+            , Dynamics.planZone 0.0 (mkBound routeDist)
+            , Dynamics.planLimit 300.0
+            ]
+          , extent: mkBounds 0.0 10_000.0
+          }
+        let planTime = plan.time
+        traceM $ Array.fromFoldable $ Dynamics.unfoldPlan plan.plan <#> Dynamics.seg4dbg
+
+
+        looping <- River.store do
+          everyFrame # River.mapAl \_ -> now <#> unInstant >>> \(Milliseconds t) ->
+            let
+              duration = extent planTime * 1_000.0
+              loopPos = (t Math.% (2.0 * duration)) / duration
+              loopAndBack = if loopPos <= 1.0 then loopPos else 2.0 - loopPos
+            in unit2bounds1 planTime $. loopAndBack
+
+        v0 <- River.createStore 0.0
+        di <- River.createStore 0.0
+        ti <- River.createStore 0.0
+        let
+          di' = ado
+            veloc <- v0.stream
+            time <- ti.stream
+            in Dynamics.curve tract veloc time # _.dist
+          ti' =
+            (\veloc dist -> Dynamics.maxAtDistance tract veloc dist # _.time)
+            <$> v0.stream <?*> di.stream
+        v1 <- River.store $ oneOf
+          [ ado
+              veloc <- v0.stream
+              dist <- di.stream
+              in Dynamics.maxAtDistance tract veloc dist # _.veloc
+          , ado
+              veloc <- v0.stream
+              time <- ti.stream
+              in Dynamics.curve tract veloc time # _.veloc
+          ]
+        let
+          dms speed = fold
+            [ fmting speed, D.text " dm/s"
+            , D.text " = "
+            , fmting $ speed <#> \s -> s * 0.36
+            , D.text " km/h"
+            ]
+          fmt = Format.toStringWith (Format.fixed 2)
+          fmting = D.Text <<< map fmt
+
+        pure $ fold
+          [ D.input
+            [ D.attr "type" =:= "range"
+            , D.prop "min" =:= 0.0
+            , D.prop "max" =:= 300.0
+            , D.prop "step" =:= 0.1
+            , D.stylish =:= D.smarts
+                { "width": "100%"
+                , "display": "block"
+                }
+            , D.onInputNumber =:= v0.send
+            , D.value =:= 0.0
+            ]
+          , dms v0.stream
+          , D.input
+            [ D.attr "type" =:= "range"
+            , D.prop "min" =:= 0.0
+            , D.prop "max" =:= routeDist
+            , D.stylish =:= D.smarts
+                { "width": "100%"
+                , "display": "block"
+                }
+            , D.onInputNumber =:= di.send
+            , D.value <:> di'
+            ]
+          , fmting (di.stream <|> di'), D.text " dm"
+          , D.input
+            [ D.attr "type" =:= "range"
+            , D.prop "min" =:= 0.0
+            , D.prop "max" =:= 100.0
+            , D.prop "step" =:= 0.1
+            , D.stylish =:= D.smarts
+                { "width": "100%"
+                , "display": "block"
+                }
+            , D.onInputNumber =:= ti.send
+            , D.value <:> pure 0.0 <|> River.noBurst ti'
+            ]
+          , fmting (ti' <|> ti.stream), D.text " s"
+          , D.input
+            [ D.attr "type" =:= "range"
+            , D.prop "min" =:= 0.0
+            , D.prop "max" =:= 300.0
+            , D.prop "step" =:= 0.1
+            , D.stylish =:= D.smarts
+                { "width": "100%"
+                , "display": "block"
+                }
+            , D.prop "disabled" =:= true
+            , D.value <:> v1.stream
+            ]
+          , dms v1.stream
+          , D.html_"hr" [] mempty
+          , D.input
+            [ D.attr "type" =:= "range"
+            , D.prop "min" =:= 0.0
+            , D.prop "max" =:= routeDist
+            , D.stylish =:= D.smarts
+                { "width": "100%"
+                , "display": "block"
+                }
+            , D.prop "disabled" =:= true
+            , D.value <:> looping.stream <#> plan.animation
+            ]
+          ]
     , Egg do
         curves <- liftEffect do
           traverse (traverse valueInterface) $ Pair
@@ -318,28 +439,31 @@ renderTraintle cmds = D.Egg do
     statefulStream { library: force standardCurves, hitmap: Map.empty } (dedup cmds)
       \s c -> let r = runTraintle s c in { emit: Just r, state: r.state }
   curve <- defineL \id -> D.path [ D.id =:= id, D.attr "d" <:> _.curve <$> running ]
-  looping <- River.store do
+
+  let routeCmp (Route { pathlength, curves }) = Tuple pathlength curves
+  rawRoute <- pure $ dedupOn (map routeCmp) $ running <#> \{ routes } ->
+    case _.value <$> Map.findMin routes of
+      Nothing -> Nothing
+      Just route -> Just route
+  { stream: freshRoute } <- River.store $ rawRoute <#> map \(route@(Route { pathlength })) ->
+    let
+      consist = [ 16.0 ] <>$ Array.range 0 2 #.. const [ 64.0, 32.0 ] #<> [ 64.0, 16.0 ]
+      route@(RoutedTrain rt@{ route: Route r }) = trainOnRoute route consist
+      speeds =
+        [ Dynamics.planLimit 300.0
+        , Dynamics.planZone 0.0 (mkBound rt.endpoints.start)
+        , Dynamics.planZone 0.0 (mkBound r.pathlength)
+        ]
+    in planAndScheduleRoute { route, traction: { wheels: 5.0, motors: 500.0 }, speeds }
+  looping <- River.store $ compact freshRoute >>~ \route -> do
     everyFrame # River.mapAl \_ -> now <#> unInstant >>> \(Milliseconds t) ->
       let
-        duration = 20.0 * 1000.0
+        duration = extent route.time * 1_000.0
         loopPos = (t Math.% (2.0 * duration)) / duration
         loopAndBack = if loopPos <= 1.0 then loopPos else 2.0 - loopPos
-      in loopAndBack
-  { stream: freshTrains } <- River.store $ River.latestStream running \{ routes } ->
-    case _.value <$> Map.findMin routes of
-      Nothing -> empty
-      Just (route@(Route { pathlength })) ->
-        let
-          consist = [ 16.0 ] <>$ Array.range 0 2 #.. const [ 64.0, 32.0 ] #<> [ 64.0, 16.0 ]
-          routed@(RoutedTrain { endpoints }) = trainOnRoute route consist
-          endLimit = 1.0 - endpoints.end / pathlength
-          walkFrom point = walkPaths route point consist
-          atTime loopTime =
-            case routeAtTime route $ endLimit * loopTime of
-              Just point -> point
-              Nothing -> routeEnd Forward route
-          seedTrain = atTime <$> looping.stream
-        in walkFrom <$> seedTrain
+      in unit2bounds1 route.time $. loopAndBack
+  { stream: freshTrains } <- River.store $ freshRoute >>~ maybe mempty
+    \{ train } -> NEA.toArray <<< train <$> looping.stream
   let
     railmask = newmask curve
     newmask curve bbox inner outer =
@@ -373,7 +497,7 @@ renderTraintle cmds = D.Egg do
       -- The first segment is the buffer,
       -- then we take pairs for the two bogies of a car,
       -- then we tack on neighbors
-      NEA.drop 1 trains # pairs # withIndices
+      Array.drop 1 trains # pairs # withIndices
         # filter (Int.even <<< fst)
         # map snd # neighbors
   pure $ fold
