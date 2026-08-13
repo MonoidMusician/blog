@@ -7,8 +7,9 @@ import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Distributive (collect)
-import Data.Foldable (fold, foldMap, intercalate, minimum, sum)
+import Data.Foldable (all, fold, foldMap, intercalate, minimum, sum)
 import Data.Functor.App (App(..))
+import Data.Functor.Compose (Compose(..))
 import Data.Int as Int
 import Data.List (List(..), (:))
 import Data.Map as Map
@@ -82,10 +83,10 @@ intersects (Pair (Pair p@{ canon: Standard pC } _) (Pair q@{ canon: Standard qC 
         Pair p1 p2 = tf (LTF p.transform) <$> pC.strokes
         Pair q1 q2 = tf (LTF q.transform) <$> qC.strokes
         result =
-          Bezier.doesIntersect p1 q1 ||
-          Bezier.doesIntersect p1 q2 ||
-          Bezier.doesIntersect p2 q1 ||
-          Bezier.doesIntersect p2 q2
+          Bezier.doesIntersectPrec 0.1 p1 q1 ||
+          Bezier.doesIntersectPrec 0.1 p1 q2 ||
+          Bezier.doesIntersectPrec 0.1 p2 q1 ||
+          Bezier.doesIntersectPrec 0.1 p2 q2
       -- Add it into the hitmap
       setProp @"hitmap" $ Map.alter (Just <<< Map.insert ids result <<< fromMaybe Map.empty) relate hitmap
       pure result
@@ -180,7 +181,7 @@ dilatePath curve =
           { p0: q0, p1: q3, d0, d1
           , k0: 1.0 / ((1.0 / k0) + which * sgn k0 * delta)
           , k1: 1.0 / ((1.0 / k1) + which * sgn k1 * delta)
-          }
+          } # Array.filter (Compose >>> all Math.isFinite)
         expected t = Bezier.evalB32 c t <> delta .*
           (rotl2 (which * 90.0 * d2r) $* Bezier.evalB22 (deriv c) t)
         score c2 = sum $ ((_ / 12.0) <<< Int.toNumber <$> Array.range 0 12) <#>

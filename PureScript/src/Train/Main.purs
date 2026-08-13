@@ -433,6 +433,7 @@ spaced = sequence >== joinWith " "
 -}
 -- 3(ee6wqqaaaaqq6w10e 4w8e4w)
 -- 4q4w4qaaqawe3deewwqq4a11w
+-- 2(eewwwqq4awwwewqqq5weee4weedddewwqq13w)
 renderTraintle :: River (Array Command) -> Dragon
 renderTraintle cmds = D.Egg do
   { defs, defL, defineL } <- manageDefs

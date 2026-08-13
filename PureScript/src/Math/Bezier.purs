@@ -292,29 +292,36 @@ intersectPrec prec _p _q =
         ]
 
 doesIntersect :: B32 -> B32 -> Boolean
-doesIntersect _p _q =
-  go
-    -- Track the time intervals along with the curve at those spots
-    (Tuple (B1 (V1 0.0) (V1 1.0)) _p)
-    (Tuple (B1 (V1 0.0) (V1 1.0)) _q)
+doesIntersect = doesIntersectPrec epsilon
+
+doesIntersectPrec :: Number -> B32 -> B32 -> Boolean
+doesIntersectPrec prec _p _q =
+  go _p _q
   where
   -- Largest dimension of box
   mag (V2 bx by) = max (unwrap bx.max - unwrap bx.min) (unwrap by.max - unwrap by.min)
 
-  go :: Tuple B11 B32 -> Tuple B11 B32 -> Boolean
-  go (Tuple pt p) (Tuple qt q) =
+  invalid :: B32 -> Boolean
+  invalid (B3 (V2 x0 y0) (V2 x1 y1) (V2 x2 y2) (V2 x3 y3)) =
+    Math.isNaN x0 || Math.isNaN y0 ||
+    Math.isNaN x1 || Math.isNaN y1 ||
+    Math.isNaN x2 || Math.isNaN y2 ||
+    Math.isNaN x3 || Math.isNaN y3
+
+  go :: B32 -> B32 -> Boolean
+  go p q =
     let
       -- Use approximate bounding box
       bbp = getBoundsB32 p
       bbq = getBoundsB32 q
-    in if disjointBounds bbp bbq then false else
-    if max (mag bbp) (mag bbq) < epsilon
+    in if disjointBounds bbp bbq || invalid p || invalid q then false else
+    if max (mag bbp) (mag bbq) < prec
     then true
     else do
       -- Bisect the time intervals and the curves themselves
       let
-        Pair p0 p1 = bisectB11 pt /|\ bisectB32 p
-        Pair q0 q1 = bisectB11 qt /|\ bisectB32 q
+        Pair p0 p1 = bisectB32 p
+        Pair q0 q1 = bisectB32 q
       go p0 q0 || go p0 q1 || go p1 q0 || go p1 q1
 
 getBoundsB32 :: B32 -> Vec2 (Bounds Number)
