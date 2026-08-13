@@ -429,6 +429,7 @@ spaced = sequence >== joinWith " "
   =&R{
   8w ewwq 16w @L
   13w qwwe 11w
+  }
 -}
 -- 3(ee6wqqaaaaqq6w10e 4w8e4w)
 -- 4q4w4qaaqawe3deewwqq4a11w

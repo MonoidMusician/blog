@@ -7,6 +7,7 @@ import Train.Types
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Maybe (Maybe(..))
+import Data.Pair (Pair(..))
 import Idiolect (type (@::))
 import Math.Matrix (Bounds, clampBound, inv, mkBounds)
 import Partial.Unsafe (unsafeCrashWith)
@@ -43,8 +44,8 @@ planAndScheduleRoute { route: RoutedTrain rt@{ route: Route r }, traction, speed
     { route: RoutedTrain rt
     , train: \time ->
         let dist = fromPlan.animation $ clampBound fromPlan.time $ time in
-        case routeAtTime rt.route dist of
+        case routeAtTime rt.route $ clampBound fromPlan.extent dist of
           Just start -> walkPaths rt.route (start { to = inv start.to }) (Array.reverse rt.consist)
-          Nothing -> unsafeCrashWith $ "Dist not found: " <> show dist <> " " <> show fromPlan.extent
+          Nothing -> unsafeCrashWith $ "Dist not found: " <> show dist <> " " <> show fromPlan.extent <> " " <> show (r.segments <#> \{ pathlength: Pair _ end } -> end)
     }
 
