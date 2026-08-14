@@ -98,7 +98,7 @@ findCurve { pos: { at: start, to: heading }, radius } library = library # findMa
       pos = tfPos transformI <$> Pair
         { at: mempty, to: key.from }
         { at: key.delta, to: key.to }
-    in { canon, pos, transformI, transform }
+    in { radius, canon, pos, transformI, transform }
 
 
 standardize ::

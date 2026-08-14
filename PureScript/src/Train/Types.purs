@@ -58,7 +58,8 @@ derive instance Newtype Standard _
 -- | A standard segment placed at a location, recorded as a pair so the reverse
 -- | path is available without a library lookup.
 type Canonized = Pair
-  { canon :: Standard
+  { radius :: Int
+  , canon :: Standard
   , pos :: Pair Pos
   , transform :: Afn2 Number
   , transformI :: Afn2 Int -- FIXME

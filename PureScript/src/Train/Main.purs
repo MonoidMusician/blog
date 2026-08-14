@@ -28,7 +28,7 @@ import Data.Time.Duration (Milliseconds(..))
 import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested ((/\))
-import Debug (spy, traceM)
+import Debug (spy, spyWith, traceM)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Now (now)
@@ -90,17 +90,16 @@ widget { interface } = do
             ]
           , extent: mkBounds 0.0 10_000.0
           }
-        let planTime = plan.time
-        traceM $ Array.fromFoldable $ Dynamics.unfoldPlan plan.plan <#> Dynamics.seg4dbg
+        traceM $ Array.fromFoldable $ Dynamics.unfoldPlan plan.plan <#> Dynamics.seg4dbg { wheels: 25.0, motors: 1250.0 }
 
 
         looping <- River.store do
           everyFrame # River.mapAl \_ -> now <#> unInstant >>> \(Milliseconds t) ->
             let
-              duration = extent planTime * 1_000.0
+              duration = extent plan.time * 1_000.0
               loopPos = (t Math.% (2.0 * duration)) / duration
               loopAndBack = if loopPos <= 1.0 then loopPos else 2.0 - loopPos
-            in unit2bounds1 planTime $. loopAndBack
+            in unit2bounds1 plan.time $. loopAndBack
 
         v0 <- River.createStore 0.0
         di <- River.createStore 0.0
@@ -451,12 +450,16 @@ renderTraintle cmds = D.Egg do
     let
       consist = [ 16.0 ] <>$ Array.range 0 2 #.. const [ 64.0, 32.0 ] #<> [ 64.0, 16.0 ]
       route@(RoutedTrain rt@{ route: Route r }) = trainOnRoute route consist
-      speeds =
-        [ Dynamics.planLimit 300.0
-        , Dynamics.planZone 0.0 (mkBound rt.endpoints.start)
-        , Dynamics.planZone 0.0 (mkBound r.pathlength)
+      speeds = []
+      limits = Map.fromFoldable
+        [ Tuple 0 250.0
+        , Tuple 13 180.0
+        , Tuple 7 100.0
         ]
-    in planAndScheduleRoute { route, traction: { wheels: 5.0, motors: 500.0 }, speeds }
+      tract = { wheels: 25.0, motors: 750.0 }
+      plan = planAndScheduleRoute { route, traction: tract, speeds, limits }
+    in plan
+      # spyWith "segments" (\_ -> Dynamics.segs4dbg tract plan.plan)
   looping <- River.store $ compact freshRoute >>~ \route -> do
     everyFrame # River.mapAl \_ -> now <#> unInstant >>> \(Milliseconds t) ->
       let

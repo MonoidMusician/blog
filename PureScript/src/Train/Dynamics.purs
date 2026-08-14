@@ -2,7 +2,9 @@ module Train.Dynamics where
 
 import Prelude
 
+import Data.Array as Array
 import Data.Array.NonEmpty as NEA
+import Data.Either (Either(..))
 import Data.List (List(..), (:))
 import Data.Map (Map)
 import Data.Map as Map
@@ -12,12 +14,13 @@ import Data.Number as Math
 import Data.Ord.Max (Max(..))
 import Data.Ord.Min (Min(..))
 import Data.Pair (Pair(..))
+import Data.Profunctor (dimap)
 import Data.Semigroup.Foldable (foldl1)
 import Data.Traversable (mapAccumR, maximum)
 import Data.TraversableWithIndex (mapAccumLWithIndex)
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested ((/\))
-import Idiolect (type (@::), (**))
+import Idiolect (type (@::), intercalateMap, (**))
 import Math.Matrix (Bounds, extent, mkBounds, overBounds)
 import Partial.Unsafe (unsafeCrashWith)
 
@@ -44,7 +47,7 @@ planAndSchedule { traction, speeds, extent: domain@{ min: Min e0, max: Max e1 } 
   , extent: domain, maxSpeed, time: overBounds (_.time <<< byDist) domain
   }
   where
-  plan = maybe (planLimit Math.infinity) (foldl1 (combinePlans traction)) $ NEA.fromArray speeds
+  plan = generatePlan traction speeds
   schedule@(SpeedSchedule _ _ _ scheduleByDist _) = schedulePlan traction plan
   status = scheduleAtTime schedule
   animation = _.dist <<< status
@@ -171,9 +174,12 @@ intersect traction { veloc: veloc@(Pair v0 v1), dist } =
     meeting = (dist + adjust.dist) / 2.0
     mk d0 d1 =
       let
+        -- FIXME handle negatives
         i0 = maxAtDistance traction v0 d0
         i1 = maxAtDistance traction v1 d1
-      in { dist: Pair d0 d1, time: Pair i0.time i1.time, veloc: (i0.veloc + i1.veloc) / 2.0 }
+      in if d0 >= 0.0 && d1 >= 0.0 && Math.abs (i0.veloc - i1.veloc) > 1e-4
+        then unsafeCrashWith $ "intersect failed: " <> show { veloc, dist, d0, d1, i0, i1 }
+        else { dist: Pair d0 d1, time: Pair i0.time i1.time, veloc: (i0.veloc + i1.veloc) / 2.0 }
   in case compare v0 v1 of
     EQ -> mk (dist / 2.0) (dist / 2.0)
     LT -> mk meeting (dist - meeting)
@@ -206,8 +212,16 @@ curve traction veloc =
 -- | In each segment of a speed plan, the train will either be holding a limit, or accelerating from a starting velocity, or decelerating to a velocity target.
 data SpeedSegment
   = Limit ("veloc" @:: Number) -- constant at speed limit
-  | Accel ("veloc" @:: Number) -- accelerating from velocity
-  | Decel ("veloc" @:: Number) -- decelerating from velocity
+  | Accel ("veloc_orig" @:: Number) -- accelerating from velocity
+  | Decel ("veloc_goal" @:: Number) -- decelerating to velocity
+
+derive instance Eq SpeedSegment
+derive instance Ord SpeedSegment
+
+instance Show SpeedSegment where
+  show (Limit v) = "(Limit " <> show v <> ")"
+  show (Accel v) = "(Accel " <> show v <> ")"
+  show (Decel v) = "(Decel " <> show v <> ")"
 
 -- | A speed plan is segmentwise plan, segmented by distance along the track.
 data SpeedPlan =
@@ -247,7 +261,7 @@ combineLimit ::
   Pair SpeedSegment ->
   "span" @:: Number ->
   SpeedSplit
-combineLimit traction (Pair p0 p1) dist = case p0, p1 of
+combineLimit traction (Pair p0 p1) dist = goodSplit case p0, p1 of
   Limit l1, Limit l2 -> SpeedSegment $ Limit $ min l1 l2
   Accel v1, Accel v2 -> SpeedSegment $ Accel $ min v1 v2
   Decel v1, Decel v2 -> SpeedSegment $ Decel $ min v1 v2
@@ -273,8 +287,8 @@ combineLimit traction (Pair p0 p1) dist = case p0, p1 of
     | otherwise -> splitR (Limit l) (toVelocity traction $ Pair v l) (Decel v)
 
   -- Accel + Decel
-  Accel v0, Decel v1 -> SpeedSplit (Accel v0) (_.dist $ intersect traction { veloc: Pair v0 v1, dist }) (Decel v1)
-  Decel v1, Accel v0 -> SpeedSplit (Accel v0) (_.dist $ intersect traction { veloc: Pair v1 v0, dist }) (Decel v1)
+  Accel v0, Decel v1 -> split2 (Accel v0) (_.dist $ intersect traction { veloc: Pair v0 v1, dist }) (Decel v1)
+  Decel v1, Accel v0 -> split2 (Accel v0) (_.dist $ intersect traction { veloc: Pair v0 v1, dist }) (Decel v1)
 
   where
 
@@ -284,12 +298,23 @@ combineLimit traction (Pair p0 p1) dist = case p0, p1 of
   splitR l { dist: d } r | d < dist = SpeedSplit l (Pair (dist - d) d) r
   splitR _ _ r = SpeedSegment r
 
+  split2 _ (Pair d0 _) r | d0 <= 0.0 = SpeedSegment r
+  split2 l (Pair _ d1) _ | d1 <= 0.0 = SpeedSegment l
+  split2 l d r = SpeedSplit l d r
+
+  goodSplit (SpeedSplit l (Pair d0 d1) r)
+    | (Math.isFinite d0 && d0 > dist) || (Math.isFinite d1 && d1 > dist) = unsafeCrashWith $ "Too long: " <> show { d0, d1, dist, info: intercalateMap " ; " show [p0,p1,l,r] }
+    | Math.isFinite (d0 + d1) && (d0 + d1) > dist + 0.01 = unsafeCrashWith $ "Too long: " <> show { d0, d1, d: d0 + d1, dist, info: intercalateMap " ; " show [p0,p1,l,r] }
+  goodSplit r = r
+
 
 -- | Split a segment.
-splitSegment :: Traction -> SpeedSegment -> "dist" @:: Number -> Pair SpeedSegment
+splitSegment :: Traction -> SpeedSegment -> "dist" @:: Pair Number -> Pair SpeedSegment
 splitSegment _ (Limit v) _ = pure (Limit v)
-splitSegment traction (Accel v) dist = Pair (Accel v) (Accel $ _.veloc $ maxAtDistance traction v dist)
-splitSegment traction (Decel v) dist = Pair (Decel $ _.veloc $ maxAtDistance traction v dist) (Decel v)
+splitSegment traction (Accel v) (Pair dist _)
+  = Pair (Accel v) (Accel $ _.veloc $ maxAtDistance traction v dist)
+splitSegment traction (Decel v) (Pair _ dist)
+  = Pair (Decel $ _.veloc $ maxAtDistance traction v dist) (Decel v)
 
 
 
@@ -379,33 +404,72 @@ refoldPlan :: NonEmpty List { dist :: Bounds Number, plan :: SpeedSegment } -> S
 refoldPlan ({ plan: init } :| rest) = SpeedPlan init $ Map.fromFoldable $
   rest <#> \{ dist: { min: Min start }, plan } -> Tuple start plan
 
+simplify :: SpeedPlan -> SpeedPlan
+simplify = dimap unfoldPlan refoldPlan simplify1
+
+sameType :: SpeedSegment -> SpeedSegment -> Boolean
+sameType = case _, _ of
+  Limit _, Limit _ -> true
+  Accel _, Accel _ -> true
+  Decel _, Decel _ -> true
+  _, _ -> false
+
+cat :: SpeedSegment -> SpeedSegment -> Maybe SpeedSegment
+cat = case _, _ of
+  Limit l1, Limit l2 -> Just (Limit (min l1 l2))
+  Accel v, Accel _ -> Just (Accel v)
+  Decel _, Decel v -> Just (Decel v)
+  _, _ -> Nothing
+
+simplify1 :: NonEmpty List { dist :: Bounds Number, plan :: SpeedSegment } -> NonEmpty List { dist :: Bounds Number, plan :: SpeedSegment }
+simplify1 ({ dist: { min: d0, max: Max m0 }, plan: plan0 } :| { dist: { min: Min m1, max: d1 }, plan: plan1 } : more) | Just plan <- cat plan0 plan1 =
+  if m0 == m1 -- && plan0 == plan1
+    then simplify1 ({ dist: { min: d0, max: d1 }, plan: plan } :| more)
+    else unsafeCrashWith $ "Bad SpeedPlan: " <> show { m0, m1, eq: m0 == m1 } <> " " <> show { plan0, plan1, eq: plan0 == plan1 }
+simplify1 (p0 :| p1 : ps) =
+  case simplify1 (p1 :| ps) of
+    p1' :| ps' ->
+      p0 :| p1' : ps'
+simplify1 ps = ps
+
+
 seg4dbg :: forall r.
+  Traction ->
   { dist :: Bounds Number, plan :: SpeedSegment | r } ->
-  { d0 :: Number, d1 :: Number, plan :: String, v :: Number }
-seg4dbg { dist: { min: Min d0, max: Max d1 }, plan } =
+  { d0 :: Number, d1 :: Number, plan :: String, v2 :: Number }
+seg4dbg tract { dist: { min: Min d0, max: Max d1 }, plan } =
   case plan of
-    Limit v -> { d0, d1, plan: "Limit", v }
-    Accel v -> { d0, d1, plan: "Accel", v }
-    Decel v -> { d0, d1, plan: "Decel", v }
+    Limit v -> { d0, d1, plan: "Limit " <> show v, v2: v }
+    Accel v -> { d0, d1, plan: "Accel " <> show v, v2: (maxAtDistance tract v (d1 - d0)).veloc }
+    Decel v -> { d0, d1, plan: "Decel " <> show v, v2: (maxAtDistance tract v (d1 - d0)).veloc }
+
+segs4dbg :: Traction -> SpeedPlan -> Array { d0 :: Number, d1 :: Number, plan :: String, v2 :: Number }
+segs4dbg tract plan = Array.fromFoldable $ unfoldPlan plan <#> seg4dbg tract
 
 -- | Combine two speed plans, taking the minimum allowed velocity at each point on the track.
 combinePlans :: Traction -> SpeedPlan -> SpeedPlan -> SpeedPlan
 combinePlans traction planL0 planR0 =
-  refoldPlan $ zipPlans (unfoldPlan planL0) (unfoldPlan planR0)
+  let result = zipPlans (unfoldPlan planL0) (unfoldPlan planR0) in
+  refoldPlan $ verify1 result
   where
   -- TODO: quick scan to make it less quadratic?
   zipPlans (_l@{ dist: { min: Min d0, max: Max d1L }, plan: planL } :| moreL) (_r@{ dist: { max: Max d1R }, plan: planR } :| moreR) =
-    -- let _ = spy "l" $ seg4dbg _l in
-    -- let _ = spy "r" $ seg4dbg _r in
+    -- let _ = spy "l" $ seg4dbg traction _l in
+    -- let _ = spy "r" $ seg4dbg traction _r in
     case compare d1L d1R of
       EQ -> intoTail d0 d1L moreL moreR $ combineLimit traction (Pair planL planR) (d1L - d0)
       LT ->
-        let Pair plan0 plan1 = splitSegment traction planR (d1L - d0) in
-        -- let _ = spy "plan0" $ seg4dbg { dist: Pair d0 d1L, plan: plan0 } in
+        let Pair plan0 plan1 = splitSegment traction planR (Pair (d1L - d0) (d1R - d1L)) in
+        -- let _ = verify ({ dist: mkBounds d0 d1L, plan: plan0 } : { dist: mkBounds d1L d1R, plan: plan1 } : Nil) in
+        -- let _ = spy "plan0 <> l" $ seg4dbg traction { dist: mkBounds d0 d1L, plan: plan0 } in
+        -- let _ = spy "plan1" $ seg4dbg traction { dist: mkBounds d1L d1R, plan: plan1 } in
         intoTail d0 d1L moreL ({ dist: mkBounds d1L d1R, plan: plan1 } : moreR) $
           combineLimit traction (Pair plan0 planL) (d1L - d0)
       GT ->
-        let Pair plan0 plan1 = splitSegment traction planL (d1R - d0) in
+        let Pair plan0 plan1 = splitSegment traction planL (Pair (d1R - d0) (d1L - d1R)) in
+        -- let _ = verify ({ dist: mkBounds d0 d1R, plan: plan0 } : { dist: mkBounds d1R d1L, plan: plan1 } : Nil) in
+        -- let _ = spy "plan0 <> r" $ seg4dbg traction { dist: mkBounds d0 d1R, plan: plan0 } in
+        -- let _ = spy "plan1" $ seg4dbg traction { dist: mkBounds d1R d1L, plan: plan1 } in
         intoTail d0 d1R ({ dist: mkBounds d1R d1L, plan: plan1 } : moreL) moreR $
           combineLimit traction (Pair plan0 planR) (d1R - d0)
 
@@ -413,12 +477,49 @@ combinePlans traction planL0 planR0 =
   choose x _ = x
 
   intoTail :: Number -> Number -> List _ -> List _ -> SpeedSplit -> _
-  intoTail d0 d2 moreL moreR = case _ of
-    SpeedSplit p0 (Pair split0 split2) p1 ->
-      let d1 = choose (d0 + split0) (d2 - split2) in
-      { dist: mkBounds d0 d1, plan: p0 } :| { dist: mkBounds d1 d2, plan: p1 } : zipTail moreL moreR
-    SpeedSegment plan -> { dist: mkBounds d0 d2, plan } :| zipTail moreL moreR
+  intoTail d0 d2 moreL moreR =
+    -- spy "merged" >>>
+    case _ of
+      SpeedSplit p0 (Pair split0 split2) p1 ->
+        let d1 = choose (d0 + split0) (d2 - split2) in
+        let _ = verify ({ dist: mkBounds d0 d1, plan: p0 } : { dist: mkBounds d1 d2, plan: p1 } : Nil) in
+        -- verify1 $
+          { dist: mkBounds d0 d1, plan: p0 } :| { dist: mkBounds d1 d2, plan: p1 } : zipTail moreL moreR
+      SpeedSegment plan ->
+        -- verify1 $
+          { dist: mkBounds d0 d2, plan } :| zipTail moreL moreR
 
   zipTail (x : xs) (y : ys) = let z :| zs = zipPlans (x :| xs) (y :| ys) in z : zs
   zipTail Nil ys = ys
   zipTail xs Nil = xs
+
+  endpointL _ (Limit v) = v
+  endpointL _ (Accel v) = v
+  endpointL d (Decel v) = maxAtDistance traction v d # _.veloc
+
+  endpointR _ (Limit v) = v
+  endpointR d (Accel v) = maxAtDistance traction v d # _.veloc
+  endpointR _ (Decel v) = v
+
+  verifyPair { dist: { min: Min d0, max: Max d1L }, plan: planL } { dist: { min: Min d1R, max: Max d2 }, plan: planR } next =
+    if d0 > d1L then Left $ "Monotonicity L: " <> show [d0, d1L] else
+    if d1R > d2 then Left $ "Monotonicity R: " <> show [d1R, d2] else
+    if d1L /= d1R then Left $ "Endpoint mismatch: " <> show d1L <> " /= " <> show d1R else
+    let v0 = endpointR (d1L - d0) planL in
+    let v1 = endpointL (d2 - d1R) planR in
+    if Math.abs (v0 - v1) > 1.0e-4
+      then Left $ "Speed mismatch: " <> show planL <> " -> " <> show v0 <> " /= " <> show v1 <> " <- " <> show planR <> " (" <> show (d1L - d0) <> " / " <> show (d2 - d1R) <> ")"
+      else next unit
+
+  verifying (s1 : s2 : more) = verifyPair s1 s2 \_ -> verifying (s2 : more)
+  verifying _ = Right unit
+
+  verify more = case verifying more of
+    Left err -> unsafeCrashWith err
+    Right _ -> more
+  verify1 (hd :| tl) = case verifying (hd : tl) of
+    Left err -> unsafeCrashWith err
+    Right _ -> hd :| tl
+
+generatePlan :: Traction -> Array SpeedPlan -> SpeedPlan
+generatePlan traction = maybe (planLimit Math.infinity) (foldl1 (combinePlans traction)) <<< NEA.fromArray

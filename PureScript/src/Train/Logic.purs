@@ -23,7 +23,7 @@ import Data.Set as Set
 import Data.Tuple (Tuple(..))
 import Idiolect (incorporate, (#..), (#:..), (..$), (<#>:), (<#?>), (>==), (\|/))
 import Math.Matrix (inv)
-import Train.Types (Canonized, Feature(..), HitMap, Layout, Pos, Standard(..))
+import Train.Types (Canonized, Feature(..), HitMap, Layout, Pos)
 import Type.Proxy (Proxy(..))
 
 analyzeLayout :: forall m r. MonadState { hitmap :: HitMap | r } m => Array Canonized -> m Layout
@@ -79,7 +79,7 @@ analyzeLayout array = ado
   switches = simpleSwitches <#> foldMapWithIndex \step (First seg) ->
     case array Array.!! seg of
       Nothing -> mempty
-      Just (Pair { canon: Standard { radius } } _) ->
+      Just (Pair { radius } _) ->
         Map.singleton radius
           case Map.lookup step straights of
             Nothing -> { step, segments: pure seg, end: step }

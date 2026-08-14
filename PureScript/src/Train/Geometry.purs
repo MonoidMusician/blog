@@ -141,11 +141,12 @@ walkPaths (Route { segments, curves }) start distances =
 -- | Find the point at the length (from 0.0 to route.pathlength).
 routeAtTime :: Route -> Number -> Maybe PointOnRoute
 routeAtTime (Route { segments, pathlength }) alongRoute = do
-  { i, pathlength: Pair segmentStart _, segment: segment@(Pair { canon } _) } <- segments
-    # NEA.find \{ pathlength: Pair _ segmentEnd } -> segmentEnd >= alongRoute
+  { i, pathlength: Pair segmentStart _, segment: segment@(Pair { canon } _) } <- NEA.toArray segments
+    # Array.find \{ pathlength: Pair _ segmentEnd } -> segmentEnd >= alongRoute
   let leftover = alongRoute - segmentStart
   bookends <- (unwrap canon).samples # pairs
-    # Array.find \(Pair _ { pathlength: Pair _ endsUp }) -> endsUp >= leftover
+    -- Use addition instead of subtraction for reason of precision
+    # Array.find \(Pair _ { pathlength: Pair _ endsUp }) -> segmentStart + endsUp >= alongRoute
   case bookends of
     Pair { t: t0, pathlength: Pair l0 _ } { t: t1, pathlength: Pair _ l1 } -> do
       let
