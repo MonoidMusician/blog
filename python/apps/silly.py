@@ -9,10 +9,9 @@ app = sanic.Blueprint('silly', url_prefix='')
 # Echoes messages back to the sender
 @app.websocket("/echo")
 async def echo(request, websocket):
-    print(request.transport.get_websocket_connection())
     try:
         while True:
-            data = await websocket.receive()
+            data = await websocket.recv()
             await websocket.send(data)
     except asyncio.CancelledError:
         # Handle disconnection here
@@ -27,22 +26,30 @@ broadcast_clients = []
 async def broadcast(request, websocket):
     client = asyncio.Queue()
     broadcast_clients.append(client)
-    try:
+
+    async def receive():
         while True:
-            from_user, data = await race(
-                asyncio.create_task(client.get()),
-                asyncio.create_task(websocket.receive()),
-            )
+            data = await websocket.recv()
             await websocket.send(data)
-            if from_user:
-                for other in broadcast_clients:
-                    if other == client: continue
-                    other.put_nowait(data)
+            for other in broadcast_clients:
+                if other == client: continue
+                other.put_nowait(data)
+
+    async def drain():
+        while True:
+            data = await client.get()
+            await websocket.send(data)
+
+    try:
+        draining = asyncio.create_task(drain())
+        await receive()
     except asyncio.CancelledError:
+        draining.cancel()
         # Handle disconnection here
         raise
     finally:
         broadcast_clients.remove(client)
+        client.shutdown()
 
 
 @app.route('/awawa')

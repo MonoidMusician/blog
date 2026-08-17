@@ -1,3 +1,0 @@
-#!/usr/bin/env fish
-cd (dirname (status -f))/..
-exec ./scripts/fishy $argv

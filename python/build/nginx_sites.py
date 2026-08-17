@@ -19,6 +19,7 @@ friendly = """
 
 bad_bots = ["ChatGPT-User", "GPTBot"]
 #bad_bots = list(json.loads(requests.get("https://github.com/ai-robots-txt/ai.robots.txt/raw/refs/heads/main/robots.json").text).keys())
+bad_bots = r"AI2Bot|Ai2Bot-Dolma|aiHitBot|Andibot|Amazonbot|anthropic-ai|Applebot|Applebot-Extended|Brightbot 1.0|Bytespider|CCBot|ChatGPT-User|Claude-SearchBot|Claude-User|Claude-Web|ClaudeBot|cohere-ai|cohere-training-data-crawler|Cotoyogi|Crawlspace|Diffbot|DuckAssistBot|FacebookBot|Factset_spyderbot|FirecrawlAgent|FriendlyCrawler|Google-CloudVertexBot|Google-Extended|GoogleOther|GoogleOther-Image|GoogleOther-Video|GPTBot|iaskspider/2.0|ICC-Crawler|ImagesiftBot|img2dataset|imgproxy|ISSCyberRiskCrawler|Kangaroo Bot|meta-externalagent|Meta-ExternalAgent|meta-externalfetcher|Meta-ExternalFetcher|MistralAI-User/1.0|NovaAct|OAI-SearchBot|omgili|omgilibot|Operator|PanguBot|Perplexity-User|PerplexityBot|PetalBot|PhindBot|QualifiedBot|Scrapy|SemrushBot-OCOB|SemrushBot-SWA|Sidetrade indexer bot|TikTokSpider|Timpibot|VelenPublicWebCrawler|Webzio-Extended|wpbot|YouBot|customer|l9explore".split("|")
 
 def robots_txt(*disallowed):
     content = [friendly]
@@ -131,9 +132,22 @@ sites = [
         serve(root="/var/www/veritates.love")
     ),
 
+    "",
+    Directive("upstream", "redirect.blog.veritates.love", Body(
+        ("server", "127.0.0.1:48484"),
+    )),
+
     Comment("Blog!"),
     public(["blog.veritates.love", "tmttmt.xyz", "blog.tmttmt.xyz"],
-        serve(root="/var/www/blog.veritates.love"),
+        ("recursive_error_pages", True), # handle 502
+        proxy("http://redirect.blog.veritates.love", "/",
+            ("proxy_intercept_errors", True),
+            ("error_page", 404, "=", "@serve"), # no redirect issued
+            ("error_page", 502, "=", "@serve"), # handle upstream missing
+            ("index", "/"),
+            keep_host=False,
+        ),
+        serve(location="@serve", root="/var/www/blog.veritates.love", index="/", try_files=("$uri", "$uri.html", "$uri/index.html")),
         robots_txt("/assets/", "/styles", "/widgets.js"),
     ),
 

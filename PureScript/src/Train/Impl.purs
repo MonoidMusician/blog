@@ -68,7 +68,11 @@ renderCommand (Subroutine name (Just cmds)) = do
 renderCommand (Subroutine name Nothing) = do
   { subroutines } <- get
   case Map.lookup name subroutines of
-    Just cmds -> traverse_ renderCommand cmds
+    Just cmds -> do
+      saved <- get
+      local (_ { origin = saved.pos }) do
+        traverse_ renderCommand cmds
+      modify_ _ { radii = saved.radii }
     Nothing -> throwError $ "Unknown subroutine " <> show name
 renderCommand (SetRadius i) = do
   setProp @"radii" $

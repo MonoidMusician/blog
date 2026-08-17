@@ -75,6 +75,96 @@ The curve radii are 3.5, 6.5, 10.5, 13.5, 20.5 (3.5, 13.5, 20.5 make the nicest 
 :::{widget="Traintle"}
 :::
 
+## Dynamics
+
+Train acceleration is modeled in two speed regimes:
+
+- Low-speed acceleration is limited by wheel traction: how much force can the wheel produce from friction on the rails.
+  Velocity increases at a constant rate.
+- High-speed acceleration is limited by power.
+  Kinetic energy increases at a constant rate.
+  (Mass can be canceled.)
+
+Friction and potential energy are not yet modeled.
+
+Let \(a_w\) be the acceleration limit ([e.g.]{t=} in \({\text{m}}/{\text{s}}\)), let \(p_m\) be the motive power (in massless units, [e.g.]{t=} \({\text{m}^2}/{\text{s}^3} = {\text{J}}/{\text{kg}}\)).
+
+\[a = \min \left(a_w, \frac{p_m}{v} \right).\]
+
+The crossover velocity is \(v_c = \frac{p_m}{a_w}\), where the two accelerations are equal.
+
+\[
+  a = \begin{dcases}
+    \frac{p_m}{v} &\text{if } v \ge v_c = \frac{p_m}{a_w} \\[1ex]
+    a_w           &\text{if } v \le v_c = 〃
+  \end{dcases}
+\]
+
+We can calculate the time and distance required to get to crossover velocity from a standstill:
+
+\[
+  \begin{align*}
+    t_c &= \frac{v_c}{a_w} = \frac{\frac{p_m}{a_w}}{a_w} = \frac{p_m}{a_w^2}, \text{ and }\\[3ex]
+    x_c &= \frac{0 + v_c}{2}\cdot t_c = \frac{1}{2}a_w t_c^2 = \frac{p_m^2}{2a_w}.
+  \end{align*}
+\]
+
+(For constant acceleration, the average velocity is the average of the initial and final velocities.)
+
+The acceleration curve for constant power can be solved as a separable ODE (Ordinary Differential Equation).
+This is probably overkill, but the method is useful.
+
+\[
+  \begin{align*}
+    a = \frac{dv}{dt} &= \frac{p_m}{v} \\[3ex]
+    \frac{v}{p_m}\,dv &= dt \\[3ex]
+    \int\negthickspace \frac{v}{p_m}\,dv &= \int\negthickspace dt \\[3ex]
+    \frac{1}{2} \frac{v^2}{p_m} &= t + C \\[3ex]
+    v &= \sqrt{2p_m (t + C)}
+  \end{align*}
+\]
+
+This says that kinetic energy (proportional to \(v^2\)) increases linearly with time.
+\(C\) is the time it takes to reach that energy from a standstill ­– **if** it was following the constant-power curve the whole time.
+But letʼs solve for \(C\) such that \(v(t_c) = v_c\), so the two acceleration curves line up.
+
+\[
+  \begin{align*}
+    t_c + C &= \frac{1}{2} \frac{v_c^2}{p_m} \\[2ex]
+    C &= \frac{1}{2} \frac{v_c^2}{p_m} - t_c \\[2ex]
+      &= \frac{1}{2} \frac{p_m^{\bcancel{2}}}{a_w^2\bcancel{p_m}} - \frac{p_m}{a_w^2} \\[2ex]
+      &= -\frac{1}{2} t_c \\[2ex]
+  \end{align*}
+\]
+\[
+  \begin{align*}
+    v &= \sqrt{2p_m \left(t - \frac{1}{2} t_c \right)} \\[1ex]
+      &= \sqrt{2p_m t - \frac{p_m^2}{a_w^2}}
+  \end{align*}
+\]
+
+\[
+  v = \begin{dcases}
+    \sqrt{2p_m \left(t - \frac{1}{2} t_c \right)}
+      &\text{if } v \ge v_c = \frac{p_m}{a_w} \\[3ex]
+    a_w t
+      &\text{if } v \le v_c = 〃
+  \end{dcases}
+\]
+
+\[
+  x = \begin{dcases}
+    x_c + \frac{2\sqrt{2p_m}}{3} \left(t - \frac{1}{2} t_c \right)^{\negthickspace 3/2}
+      &\text{if } v \ge v_c = \frac{p_m}{a_w} \\[3ex]
+    \frac{1}{2} a_w t^2
+      &\text{if } v \le v_c = 〃
+  \end{dcases}
+\]
+
+
+
+## Graphics
+
 <svg
    inkscape:export-ydpi="256.70172"
    inkscape:export-xdpi="256.70172"

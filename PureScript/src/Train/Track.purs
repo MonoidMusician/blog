@@ -83,9 +83,9 @@ planAndScheduleRoute { route: RoutedTrain rt@{ route: Route r }, traction, speed
           _ -> []
 
   extraSpeeds =
-    -- spyWith "extraSpeeds" (Dynamics.segs4dbg traction) $
+    spyWith "extraSpeeds" (Dynamics.segs4dbg traction) $
       Dynamics.simplify $
-        -- spyWith "extraSpeeds0" (Dynamics.segs4dbg traction) $
+        spyWith "extraSpeeds0" (Dynamics.segs4dbg traction) $
             Dynamics.generatePlan traction $
               endpoints <> curveSpeeds
 

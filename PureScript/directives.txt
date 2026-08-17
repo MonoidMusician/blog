@@ -47,3 +47,5 @@ Stylish.Record.withSepStylish.withoutSep always
 Stylish.Record.withSepStylish.withSep arity=2
 Stylish.Record.withSepClassy.withoutSep always
 Stylish.Record.withSepClassy.withSep arity=2
+
+Debug.spyWith never

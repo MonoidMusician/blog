@@ -221,7 +221,7 @@ def ssl(cert_bundle, port=443, default_server=False, ssl_verify_client=True):
     yield ("ssl_stapling", False)
     yield ("ssl_verify_depth", 2)
 
-def serve(root, location="/", index="index.html", dir=True, autoindex=None, disable_symlinks=None):
+def serve(root, location="/", index="index.html", dir=True, html=False, try_files=(), autoindex=None, disable_symlinks=None):
     def _(*directives):
         return Directive("location", Token.re(location),
             ("root", root),
@@ -231,7 +231,7 @@ def serve(root, location="/", index="index.html", dir=True, autoindex=None, disa
             *directives,
             # First attempt to serve request as file, then
             # as directory, then fall back to displaying a 404.
-            ("try_files", "$uri", *when(dir, "$uri/"), "=404"),
+            ("try_files", *(try_files or ("$uri", *when(dir, "$uri/"), *when(html, "$uri.html"))), "=404"),
         )
     return _
 

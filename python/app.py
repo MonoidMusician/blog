@@ -22,106 +22,63 @@ domain_routes = {
     r'': [index.app, silly.app, festival.app],
 }
 
-domain_routing = []
-for i, (host_re, blueprints) in enumerate(domain_routes.items()):
-    # Create a new app for this domain pattern
-    app = Sanic(blueprints[0].name)
-    app.config.load_environment_vars()
-    app.config["MOTD"] = False
-    app.config["TOUCHUP"] = False
+class DomainRouter(sanic.router.Router):
+    domains = []
+    app = None
 
-    # app.config["DEBUG"] = True
-    # app.config["NOISY_EXCEPTIONS"] = True
-    # app.state.mode = sanic.application.constants.Mode.DEBUG
+    def get(self, path: str, method: str, host: str | None):
+        for matching, router in self.domains:
+            if matching.match(host or ''):
+                if self.app is not None:
+                    _saved = self.app.router
+                    self.app.router = router
+                    try:
+                        result = router.get(path, method, host)
+                    finally:
+                        self.app.router = _saved
+                    return result
+                else:
+                    return router.get(path, method, host)
+        return super().get(path, method, host)
+
+
+
+domain_router = DomainRouter()
+
+app = Sanic("app", router=domain_router)
+app.config.load_environment_vars()
+app.config["MOTD"] = False
+app.config["TOUCHUP"] = False
+
+# app.config["DEBUG"] = True
+# app.config["NOISY_EXCEPTIONS"] = True
+# app.state.mode = sanic.application.constants.Mode.DEBUG
+
+domain_router.app = app
+
+@app.get("/sorry")
+def sorry(req): return sanic.response.HTTPResponse("sorry", status=404)
+
+# app.blueprint(index.common)
+
+for i, (host_re, blueprints) in enumerate(domain_routes.items()):
+    _saved = app._future_registry
+    app._future_registry = type(app._future_registry)()
+
+    # Create a new router for this domain pattern
+    app.router = sanic.router.Router()
 
     # Register the blueprints on it
     app.blueprint(index.common)
     for bp in blueprints:
         app.blueprint(bp)
-    domain_routing.append((re.compile(host_re), app))
 
-# Custom middleware to match domains with regexes to determine custom
-# routing rules
-def match_domains():
-    async def modified(scope, receive, send):
-        # Broadcast lifespan events to all apps
-        if scope["type"] == "lifespan":
-            try:
-                await multiplex_lifespan(scope, receive, send)
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                print(e)
-                print(e.args)
-                import traceback
-                print(traceback.print_tb(e.__traceback__))
-                raise
-        # Otherwise select the correct app to handle it
-        else:
-            # Extract the hostname
-            hostname = ""
-            for name, value in scope["headers"]:
-                name = name.decode("latin1")
-                # Look for the host header
-                if name.lower() == "host":
-                    host = value.decode(errors="surrogateescape")
-                    # Parse out just the hostname
-                    parsed = urlparse(f"http://{host}")
-                    hostname = parsed.hostname
-                    break
+    app.finalize()
+    domain_router.domains.append((re.compile(host_re), app.router))
 
-            # Test it against each of the routing tables! (in order)
-            for matching, app in domain_routing:
-                if matching.match(hostname):
-                    # Finally call the normal ASGI logic for Sanic to handle the request
-                    await app(scope, receive, send)
-                    break
-
-    async def multiplex_lifespan(scope, receive, send):
-        del scope["state"]
-
-        first = True
-
-        # Spawn each app concurrently and communicate with a queue
-        def spawn(app):
-            q = asyncio.Queue()
-            async def s(msg):
-                nonlocal first
-                if msg["type"].endswith(".failed") and first:
-                    await send(msg)
-                    first = False
-                q.task_done()
-            thread = app(scope, q.get, s)
-            return (q, asyncio.ensure_future(thread))
-        spawned = [
-            spawn(app)
-            for _, app in domain_routing
-        ]
-
-        try:
-            while True:
-                message = await receive()
-                first = True
-                # Broadcast to all threads
-                for q, _ in spawned:
-                    await q.put(message)
-                await q.join() # Wait for all threads
-
-                # Fill in the completed message
-                if first:
-                    await send({"type": f"{message["type"]}.complete"})
-
-                # Wait for shutdown
-                if message["type"] == "lifespan.shutdown":
-                    break
-        except CancelledError as e:
-            for _, thread in spawned:
-                thread.cancel(e)
-            raise
-
-        for _, thread in spawned:
-            await thread
-
-    return modified
-
-app = match_domains()
+    # And on the main router
+    app.router = domain_router
+    app._future_registry = _saved
+    # for bp in blueprints:
+    #     del app.blueprints[bp.name]
+    #     app.blueprint(bp)

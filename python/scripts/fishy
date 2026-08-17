@@ -1,3 +1,0 @@
-#!/usr/bin/env fish
-source (dirname (status -f))/../.venv/bin/activate.fish
-exec fish $argv

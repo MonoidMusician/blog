@@ -1,5 +1,3 @@
-import quart
-
 auth_header_name = 'Sec-X-Authed'
 
 def has_auth(req):

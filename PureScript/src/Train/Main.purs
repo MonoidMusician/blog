@@ -415,24 +415,69 @@ spaced = sequence >== joinWith " "
   O &R{wwwqwwwe @S ewwwq}
 -}
 {-
-  r2 8w ewwq 8w8w
-  x =O 16w =F 6w dwa 8w
-  O 37w = E
-  F 3w awd 11w
-  F sss qwwe 8w3w
+  r2 # set radius for q/e and a/d
 
-  = 8w ewwq 8w8w
+  # Extend each siding
+  @EXT{6w}
 
-  @L{r3 eewwwwwqqaaaaaaaaqwwwwweww r2}
-
-  =&R{
-  8w ewwq 16w @L
-  13w qwwe 11w
+  @FORK{
+    # Start at the (local) origin
+    = qwwe 3w    @EXT
+    = 6w awd 3w  @EXT
+    = 3w ewwq    @EXT
+    = 9w dwa     @EXT
+    = 16w        @EXT
+    # Each gets the extension
   }
+
+  # Draw a big loop
+  @LOOPL{
+    r3 # set radius
+    qq 5w ee8de 5wqww
+  }
+  @LOOPR{
+    r3 # set radius
+    ee 5w qq8aq 5weww
+  }
+
+  # Fork and rejoin
+  @FORK @EXT 16w x
+  @FORK @EXT 16w
+  # Loop around
+  @LOOPR
+  16w @EXT @EXT 16w
+  2w @LOOPL 2w
+
+  # Finish the implicit route
+  qwwe 3w @EXT @EXT ewwq 3w @LOOPR
 -}
 -- 3(ee6wqqaaaaqq6w10e 4w8e4w)
 -- 4q4w4qaaqawe3deewwqq4a11w
 -- 2(eewwwqq4awwwewqqq5weee4weedddewwqq13w)
+{-
+  @S{14w}
+  4(wwqwe @S ewq ww qaq ww qaq ww qaq)
+  4(9w @S 9w qaq ww qaq ww qaq)
+  4(wwewq @S qwe ww qaq ww qaq ww qaq)
+-}
+{-
+  @S{14w}
+  4(wwqwe @S ewq ww qaq ww qaq ww qaq)
+  4(9w    @S     9w qaq ww qaq ww qaq)
+  4(wwewq @S qwe ww qaq ww qaq ww qaq)
+    9w    @S     9w qaq ww qaq
+  4(wwqwe @S ewq ww qaq)
+  4(9w    @S     9w qaq)
+  4(wwewq @S qwe ww qaq)
+    ww qaq ww qaq
+  4(wwqwe @S ewq ww qaq ww qaq ww qaq)
+  4(9w    @S     9w qaq ww qaq ww qaq)
+  4(wwewq @S qwe ww qaq ww qaq ww qaq)
+    9w    @S     9w qaq ww qaq
+  4(wwqwe @S ewq ww qaq)
+  4(9w    @S     9w qaq)
+  4(wwewq @S qwe ww qaq)
+-}
 renderTraintle :: River (Array Command) -> Dragon
 renderTraintle cmds = D.Egg do
   { defs, defL, defineL } <- manageDefs
