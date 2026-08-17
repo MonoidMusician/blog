@@ -3,6 +3,7 @@ cd -- "$(dirname "$0")/.."
 set -euo pipefail
 
 ARGS=(
+  --reload
   --host=127.0.0.1
   --port=48484
   app

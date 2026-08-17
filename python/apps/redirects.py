@@ -2,6 +2,7 @@ import sanic
 
 import sys, os
 import re
+from urllib.parse import unquote
 
 app = sanic.Blueprint('redirect', url_prefix='')
 
@@ -35,7 +36,7 @@ def implicit_index(p: str, q: str):
 
 identity = lambda p, q: (p, q)
 
-re_sep = re.compile(r"[-_\s]+")
+re_sep = re.compile(r"[-+_\s]+")
 
 # Modifications to try
 mods = [
@@ -117,7 +118,7 @@ def logic(original_path: str, cwd: Optional[str] = None):
 
 @app.get("<path:path>")
 async def redirect(request, path):
-    new_path = logic(path, '../static/')
+    new_path = logic(unquote(path), '../static/')
     if new_path is not None:
         return sanic.response.redirect(new_path, status=301)
     return sanic.response.HTTPResponse("Not Found", status=404)

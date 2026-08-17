@@ -2,6 +2,7 @@ import sanic
 from sanic import Sanic, response
 
 import os
+from urllib.parse import unquote
 import watchfiles
 
 from util.auth import *
@@ -13,18 +14,13 @@ common = sanic.Blueprint('common', url_prefix='')
 def file_error(request, err):
     return sanic.response.HTTPResponse("Not found", status=404)
 
-@app.get("/static/<filename:path>")
-async def static(request, filename):
-    return await sanic.response.file('./static/'+filename)
+app.static("/static/", './static/', follow_external_symlink_files=True)
 
 @app.get("/")
 async def index(request):
     return response.redirect('/static/index.html')
 
-@app.get("/assets/<path:path>")
-async def assets(request, path):
-    return await sanic.response.file('./assets/'+path)
-
+app.static("/assets/", './assets/')
 
 @common.exception(AuthError)
 def auth_error(request, err):
@@ -38,7 +34,7 @@ async def auth(request):
 
 @app.websocket("/watch/<path:path>")
 async def watching(request, websocket, path):
-    resolved = os.path.abspath(path)
+    resolved = os.path.abspath(unquote(path))
     #print(path, resolved)
     async for i in watchfiles.awatch('.', path, recursive=False, watch_filter=lambda _, changed: changed==resolved):
         #print(i)
