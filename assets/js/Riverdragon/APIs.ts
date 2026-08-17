@@ -13,9 +13,9 @@
 //
 // Philosophy of design:
 //
-// - https://blog.veritates.love/resource_acquisition.html
-// - https://blog.veritates.love/riverdragon_implementation.html
-// - https://blog.veritates.love/reformed_oop.html
+// - https://blog.veritates.love/resource-acquisition
+// - https://blog.veritates.love/riverdragon-implementation
+// - https://blog.veritates.love/reformed-oop
 //
 // Each API is exposed as a function to instantiate or acquire a resource. This
 // instance is represented as a record of members and methods, to capture static

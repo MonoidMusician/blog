@@ -20,7 +20,7 @@ this instantiation either happens implicitly at the consumer, or explicitly with
 
 this is the distinction I make between `River`{.purescript} (an already-instantiated `Stream Flowing`{.purescript} that broadcasts to all of its subscribers) versus `Lake`{.purescript} (a `Stream NotFlowing`{.purescript} that may have different events per subscriber, as it is instantiated for each)
 
-[Riverdragon](riverdragon_implementation.html)
+[Riverdragon](riverdragon-implementation)
 
 ------
 

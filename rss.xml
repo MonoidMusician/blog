@@ -12,7 +12,7 @@
 <item>
 <title>Waterfall Model of Types</title>
 <pubDate>Wed, 22 Jul 2026 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/waterfall_types.html</guid>
+<guid>https://blog.veritates.love/waterfall-types</guid>
 <description><![CDATA[<p>This is my waterfall model of types, for thinking about compilers and programming language design. It is clearly biased towards Haskell but useful more generally, I think. A lot of compilers may only include a few stages from this model; none of them include stage 0.</p>
 <hr>
 <p><br></p>
@@ -52,7 +52,7 @@
 <p><strong>Stage 0.5</strong> is awkward in every implementation thus far. Being able to describe what you want types to be and do without having to spell out all of the details is complicated, even in high-level languages with typeclasses and other type-directed codegen options.<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a> To date, there seems to be no good balance of ease-of-use, rigor, and efficiency for most metaprogramming options.</p>
 <p>Staged compilation with dependent types <em>may</em> be one solution here, so I am trying to implement it in <a href="https://blog.veritates.love/github.com/MonoidMusician/Pudding">Pudding</a> based on the outline in <a href="https://andraskovacs.github.io/pdfs/2ltt.pdf">Staged Compilation with Two-Level Type Theory</a>.</p>
 <p>Similarly, <strong>Stage 1</strong> is overly restrictive: Haskell specifies exact datatypes and pattern matching here, but we often want more flexibility. For example, ideally the compiler would be able to freely optimize programs to use list and text builders locally, or even ropes. (It can do so with fusion rewrite rules, but that is too local.) Laziness helps with abstraction here, it allows more flexibility in interleaving and skipping computations, but when you pattern match a datatype in Haskell, Haskell says you are bound to be matching on <em>that</em> datatype.</p>
-<p>And sometimes we write simple code first but then want to associate additional metadata on top of the data. <span data-t="" data-widget="">AST</span> nodes that cache what variables they refer to, stuff like that. Now you have to modify your datatype and every consumer and producer of it to retain that information, even places that should be oblivious to it. This is something I want to fix in <a href="https://blog.veritates.love/tmttmt.html#motivation">tmTTmt</a>.</p>
+<p>And sometimes we write simple code first but then want to associate additional metadata on top of the data. <span data-t="" data-widget="">AST</span> nodes that cache what variables they refer to, stuff like that. Now you have to modify your datatype and every consumer and producer of it to retain that information, even places that should be oblivious to it. This is something I want to fix in <a href="https://blog.veritates.love/tmttmt#motivation">tmTTmt</a>.</p>
 <p>On the flipside, sometimes language semantics are a bit too loose for user intent. Sometimes you want to tell Haskell that pointer identity does matter, and not to elide allocations, because you are using finalizers or <a href="https://hackage-content.haskell.org/package/base-4.22.0.0/docs/GHC-StableName.html">stable names</a> on otherwise pure data without using <a href="https://hackage-content.haskell.org/package/base-4.22.0.0/docs/System-IO.html#t:IO"><code class="haskell">IO</code></a> to sequence it.</p>
 <p>Or sometimes the language semantics are fine, but you just want different semantics at/beyond Stage 2. Maybe you need to match the layout of a struct in C or GLSL. Maybe you want to know that your tuple of booleans fits into an atomic word more than that it is coercible with other tuples.</p>
 <p>My <a href="https://github.com/MonoidMusician/blog/blob/main/Haskell/src/WASMFP.hs">WASMFP</a> experiment, making a simple functional programming language that compiles to <span data-t="" data-widget="">WASM</span> with <span data-t="" data-widget="">GC</span> types, is unique in that each type can specify how it is treated by the surface syntax (like an <span data-t="" data-widget="">ADT</span> or like an array or opaquely) and how it is compiled to WASM on the backend.<a href="#fn5" class="footnote-ref" id="fnref5" role="doc-noteref"><sup>5</sup></a> This really cleanly illustrates Stage 1 nominal types versus Stage 2 structural types, and the WASM implementations handle the later stages: allocating GC types and tagging them so that <code class="wasm">i31</code> can live on the stack with references.</p>
@@ -64,14 +64,14 @@
 <li id="fn2"><p>So it can be compiled down to jumps in assembly.<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn3"><p>This depends on lawfulness of <code class="haskell">Ord</code> and correctness of <code class="haskell">insert</code> and <code class="haskell">lookup</code>.<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn4"><p>One particular annoyance in Haskell is that there is no option to “derive all the appropriate typeclasses”, you must still list them out. Mostly I wish for this with very lightweight newtype wrappers and for new monad transformers or classes.<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
-<li id="fn5"><p>This uses <a href="https://blog.veritates.love/functions_as_data.html">existential types</a> to be easily extensible.<a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn5"><p>This uses <a href="https://blog.veritates.love/functions-as_data">existential types</a> to be easily extensible.<a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
 </section>]]></description>
 </item>
 <item>
 <title>Sticking Functions Where They Donʼt Belong</title>
 <pubDate>Thu, 04 Jun 2026 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/functions_as_data.html</guid>
+<guid>https://blog.veritates.love/functions-as_data</guid>
 <description><![CDATA[<p>What does pure data mean? and how the heck do we stick functions in there?</p>
 <p>For me, <em>pure data</em> means a type that does or can implement:</p>
 <ul>
@@ -209,7 +209,7 @@ instance Semantics ForeignCall where
 <section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
 <hr>
 <ol>
-<li id="fn1"><p>Okay, some runtimes can <a href="https://blog.veritates.love/pickling.html#functions-builtins-bootstrapping">serialize functions as bytecode or syntax</a>, but that is not an option in Haskell, and is probably best to avoid.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn1"><p>Okay, some runtimes can <a href="https://blog.veritates.love/pickling#functions-builtins-bootstrapping">serialize functions as bytecode or syntax</a>, but that is not an option in Haskell, and is probably best to avoid.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn2"><p><code class="wasm">i31</code> shaves off a bit from <code class="wasm">i32</code> so it is colocatable with GC pointers<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
 </section>]]></description>
@@ -217,8 +217,8 @@ instance Semantics ForeignCall where
 <item>
 <title>OOP Without the Goop</title>
 <pubDate>Wed, 27 May 2026 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/reformed_oop.html</guid>
-<description><![CDATA[<p><span data-t="" data-widget="">OOP</span> gets a lot of things wrong. Objects themselves are not interesting, they are usually beside the point. It is their behaviors, their interfaces, that are interesting. <a href="https://blog.veritates.love/resource_acquisition.html">Even lifecycle/RAII can be decoupled from an “object” and a “class”.</a></p>
+<guid>https://blog.veritates.love/reformed-oop</guid>
+<description><![CDATA[<p><span data-t="" data-widget="">OOP</span> gets a lot of things wrong. Objects themselves are not interesting, they are usually beside the point. It is their behaviors, their interfaces, that are interesting. <a href="https://blog.veritates.love/resource-acquisition">Even lifecycle/RAII can be decoupled from an “object” and a “class”.</a></p>
 <p>Iʼve been experimenting with a different approach that simply seems cleaner. Less noise, fewer inconsequential details to worry about<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>, more flexibility. More coherence.</p>
 <p><span data-t="" data-widget="">OOP</span> sort of developed from the perspective of C turning into C++: it started with passing mutable struct pointers to individual global functions, and then C++ organized these “members” and “methods” into a class. The class also provided constructors and a destructor to manage the lifecycle of its data.<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a></p>
 <p>Things were a bit different with Python and especially JavaScript, for example, but they still sort of ended up in the same place.</p>
@@ -279,7 +279,7 @@ example = do
 <p>And no module import to remember: methods are always available on the record with simple dot syntax, and you donʼt have to remember whether the object comes first or last in the arguments.</p>
 <div class="Details" data-box-name="Closures">
 <p>A function instantiated at runtime has access to variables in its local namespace (created for its current call) plus the namespace where it was created, all the way on up to the/a global namespace usually. Pairing the underlying code with a chain of namespaces is known as a <strong>closure</strong>. As an optimization, only the required variables may be packed in a closure, as opposed to whole namespaces.</p>
-<p>Closures pack variables of any type into an interface accessible through the function type: this is why they can be used to <a href="https://stackoverflow.com/a/13653533">encode existential quantification</a>, and also why they do <em>not</em> support things like <a href="https://github.com/haskell/deepseq/issues/16">NFData</a> and serialization, except <a href="https://blog.veritates.love/pickling.html#functions-builtins-bootstrapping">when the runtime could actually support it</a>.</p>
+<p>Closures pack variables of any type into an interface accessible through the function type: this is why they can be used to <a href="https://stackoverflow.com/a/13653533">encode existential quantification</a>, and also why they do <em>not</em> support things like <a href="https://github.com/haskell/deepseq/issues/16">NFData</a> and serialization, except <a href="https://blog.veritates.love/pickling#functions-builtins-bootstrapping">when the runtime could actually support it</a>.</p>
 <p>For our purposes, they provide abstraction (implementing the same interface by any means necessary) and the construction of closures provides the coherence that normally is associated with an “object”: <code class="purescript">cell.set</code> and <code class="purescript">cell.get</code> both contain the same mutable reference in their closure.</p>
 </div>
 <h3 id="extra-methods">Extra methods</h3>
@@ -318,7 +318,7 @@ infix 1 swapifyCell as &lt;&amp;~ -- (v -&gt; v) -&gt; m v</code></pre>
 <p>PureScriptʼs row types make this seamless by enabling extensible records of operations <code class="purescript">{ | ops }</code>.</p>
 <h3 id="reactivity">Reactivity</h3>
 <p>Itʼs really important that properties of the interface are exposed as reactive streams, so downstream consumers know when they are changing. Conversely, it is preferable to expose setter methods still, as opposed to consuming reactive streams.</p>
-<p><a href="https://blog.veritates.love/frp_compatible.html">Everything Should Be FRP Compatible!</a></p>
+<p><a href="https://blog.veritates.love/frp-compatible">Everything Should Be FRP Compatible!</a></p>
 <div class="Warning">
 <p>Unfortunately, with current <span data-t="" data-widget="">API</span>s, it is not always possible to know when values are changing. Not enough events are exposed.</p>
 <p>An interface should still do its best to catch updates when possible (especially updates from the interface), and maybe provide a way to re-poll. This is the one time I think it is okay to break the rule that subscribers should not influence each other: if a new subscriber joins and the interface queries the property and realizes it has a stale value, it is okay to notify the other subscribers so they see the current value too.</p>
@@ -411,7 +411,7 @@ mintSomething = do
 <li>compilers miss out on opportunities for optimization</li>
 </ul>
 <h3 id="scopes">Scopes</h3>
-<p>This style of object pairs really well with my idea of scopes from <a href="https://blog.veritates.love/resource_acquisition.html#implementation">Resource Acquisition</a>.</p>
+<p>This style of object pairs really well with my idea of scopes from <a href="https://blog.veritates.love/resource-acquisition#implementation">Resource Acquisition</a>.</p>
 <p>In this conception of scope, a scope is simply a way of accumulating destructors and telling us if a scope was destroyed already.<a href="#fn5" class="footnote-ref" id="fnref5" role="doc-noteref"><sup>5</sup></a> Trust me, tracking individual <code class="purescript">_.destroy</code> methods on objects is <em>not</em> fun.</p>
 <pre class="purescript"><code>newtype Scope = Scope
   { putDestructor :: Effect Unit -&gt; Effect Unit
@@ -720,7 +720,7 @@ export type MIDINoteMap = {
 <h2 id="future">Future</h2>
 <p>I think what I have outlined here is a much simpler approach that cuts to the heart of what we need from interfaces to objects and mutability.</p>
 <p>It doesnʼt need to be done in functional languages or with monads, it works well in JavaScript with plain effectful functions!<a href="#fn12" class="footnote-ref" id="fnref12" role="doc-noteref"><sup>12</sup></a></p>
-<p>Iʼve been using this to develop <a href="https://blog.veritates.love/riverdragon_implementation.html">Riverdragon</a>, my take on <span data-t="" data-widget="">FRP</span>.<a href="#fn13" class="footnote-ref" id="fnref13" role="doc-noteref"><sup>13</sup></a> Iʼve even been using it to port Riverdragon from PureScript to other languages: I think <a href="https://tech.lgbt/@monoidmusician/116449166586150538">everything should be compatible with FRP</a> and I wanna use Riverdragon everywhere.</p>
+<p>Iʼve been using this to develop <a href="https://blog.veritates.love/riverdragon-implementation">Riverdragon</a>, my take on <span data-t="" data-widget="">FRP</span>.<a href="#fn13" class="footnote-ref" id="fnref13" role="doc-noteref"><sup>13</sup></a> Iʼve even been using it to port Riverdragon from PureScript to other languages: I think <a href="https://tech.lgbt/@monoidmusician/116449166586150538">everything should be compatible with FRP</a> and I wanna use Riverdragon everywhere.</p>
 <p>I will keep using it, in my own work. Perhaps it can make its way to a published library. It would be even nicer to reimagine a whole ecosystem around it.</p>
 <ul>
 <li><a href="https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Riverdragon/River.purs" class="uri">https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Riverdragon/River.purs</a></li>
@@ -738,7 +738,7 @@ export type MIDINoteMap = {
 <li id="fn4"><p>not distinguished from event streams at the type level<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn5"><p>This is sufficient in a garbage-collected language, at least.<a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn6"><p>This encapsulation even allows for machines that switch their internal state type, by handing off to a new machine: <code class="purescript">Either (Machine m i o) s</code>.<a href="#fnref6" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
-<li id="fn7"><p>Iʼve always complained that <a href="https://blog.veritates.love/oop.html">why should things like addition and concatenation be methods on one object instead of the other?</a>, and I hope you also see why it is shortsighted that <span data-t="" data-widget="">OOP</span> forces that.<a href="#fnref7" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn7"><p>Iʼve always complained that <a href="https://blog.veritates.love/oop">why should things like addition and concatenation be methods on one object instead of the other?</a>, and I hope you also see why it is shortsighted that <span data-t="" data-widget="">OOP</span> forces that.<a href="#fnref7" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn8"><p>Although this is something that Python got right.<a href="#fnref8" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn9"><p>I think my best examples are yet to be written … I am still in the fundamentals and velocity-building stage of exploration here<a href="#fnref9" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn10"><p>Of course, this is possible to avoid with <a href="https://pursuit.purescript.org/packages/purescript-textcursor/2.0.0/docs/Web.Util.TextCursor">the correct web APIs</a>, but few people put in that effort, sigh…<a href="#fnref10" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
@@ -751,7 +751,7 @@ export type MIDINoteMap = {
 <item>
 <title>Everything Should Be FRP Compatible</title>
 <pubDate>Wed, 22 Apr 2026 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/frp_compatible.html</guid>
+<guid>https://blog.veritates.love/frp-compatible</guid>
 <description><![CDATA[<p>I think FRP (Functional Reactive Programming) is great. I don’t think everything should be written in an FRP style, it has its warts, but I think all types of dynamic objects should be compatible with the philosophy, concepts, and interfaces of FRP.</p>
 <p>the basic idea is reactive values that may come with a “current” value or other form of history, and notify you when they change (if they aren’t <a href="https://stackoverflow.com/questions/5875929/specification-for-a-functional-reactive-programming-language/5878525#5878525">continuously variable</a>)</p>
 <p>this feels like <span data-t="" data-widget="">OOP</span> still, just with prioritizing the event stream/notifications as an integral part of the design, not something that needs to be bolted back on in every interface in ad-hoc ways</p>
@@ -759,7 +759,7 @@ export type MIDINoteMap = {
 <p>every time one adds state (like deduplication, debouncing, or even just a counter) to a stream, it now can be observed from different perspectives: different instances of the same stream-description can behave differently</p>
 <p>this instantiation either happens implicitly at the consumer, or explicitly with a effect that instantiates one subscriber that broadcasts to all subscribers of a new stream</p>
 <p>this is the distinction I make between <code class="purescript">River</code> (an already-instantiated <code class="purescript">Stream Flowing</code> that broadcasts to all of its subscribers) versus <code class="purescript">Lake</code> (a <code class="purescript">Stream NotFlowing</code> that may have different events per subscriber, as it is instantiated for each)</p>
-<p><a href="https://blog.veritates.love/riverdragon_implementation.html">Riverdragon</a></p>
+<p><a href="https://blog.veritates.love/riverdragon-implementation">Riverdragon</a></p>
 <hr>
 <p>I recently had a bug in some <span data-t="" data-widget="">UI</span> code I wrote where I was explicitly instantiating a stream before rendering, to share some work across nodes in the <span data-t="" data-widget="">DOM</span></p>
 <p>(specifically: I was instantiating an <span data-t="" data-widget="">SVG</span> node into <code>&lt;defs&gt;</code> so it could be <code>&lt;use&gt;</code>ʼd multiple times later)</p>
@@ -788,7 +788,7 @@ export type MIDINoteMap = {
 <item>
 <title>Accuracy Makes Artʼs Stories Persuasive</title>
 <pubDate>Fri, 17 Apr 2026 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/accuracy.html</guid>
+<guid>https://blog.veritates.love/accuracy</guid>
 <description><![CDATA[<p><span style="font-size: 110%"><span style="font-size: 130%">O</span>ne of the things I believe about art is that accuracy is rarely wasted.</span></p>
 <p>A couple days ago I made a piece of art that I found really satisfying, but it isnʼt quite accurate yet. I improved a lot of details: I eliminated flat colors that caught the eye, removed visible seams, added more textures and shapes to give depth to the scene, and rerendered it dozens of times to see how it was progressing.</p>
 <p>But I havenʼt gotten back to fixing the small two-pixel shadows. The large shadows were added all at once: they have a consistent perspective that sets the scene for the art. But thanks to shortcuts I took, the small shadows point away from the center, not along the angle of the large shadows.</p>
@@ -803,7 +803,7 @@ export type MIDINoteMap = {
 <item>
 <title>Thoughts about versioning,</title>
 <pubDate>Mon, 12 Jan 2026 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/versioning.html</guid>
+<guid>https://blog.veritates.love/versioning</guid>
 <description><![CDATA[<p>I think versioning is one of the most important problems to deal with.</p>
 <p>Not “how do you slap version numbers on things and where do you put/distribute them”, but what do you actually <em>do</em> with that information. How do you deal with <em>change</em>?</p>
 <p>Weʼve gotten better at dealing with change within a running system (as one example, <span data-t="" data-widget="">FRP</span>), but dealing with change over larger timescales with less coherent “systems” is still enormously underaddressed.</p>
@@ -913,7 +913,7 @@ clean-thingy-impl :
 <p>One thing that pure config formats do not handle (well) is object identity. You usually need to insert (U)UIDs. Database primary keys. So on.</p>
 <p>I guess a tool could rewrite the config file to add UIDs when they are instantiated (think how harddrive partitions are sometimes referenced by UUIDs instead of names or partition numbers), or maintain a lockfile to map names to UIDs (which is messy in its own way). But you need <em>something</em> stable to key data over time, maintain object identity.</p>
 <p>On the other hand, using UUIDs makes diffing hard, for tests and repeatability.</p>
-<p>Just like you wouldnʼt want raw pointers to show up when you are <a href="https://blog.veritates.love/pickling.html">pickling</a> data: you want to serialize to a (more) deterministic type like integer backrefs into the structure (<span data-t="" data-widget="">e.g.</span> implementations of the JavaScript structured clone algorithm), when then do become rehydrated pointers in a new runtime context when deserialized.</p>
+<p>Just like you wouldnʼt want raw pointers to show up when you are <a href="https://blog.veritates.love/pickling">pickling</a> data: you want to serialize to a (more) deterministic type like integer backrefs into the structure (<span data-t="" data-widget="">e.g.</span> implementations of the JavaScript structured clone algorithm), when then do become rehydrated pointers in a new runtime context when deserialized.</p>
 <h3 id="front-end-back-end">Front end, back end</h3>
 <p>One of the problems of front end back end is that the client may be running a different version than the server.</p>
 <p>Dhall-style category theoretic versioning may help out a little bit, but it doesnʼt come for free. Either the client needs to be preloaded with a mechanism (and awareness) to download version migrations from a specific place, or the server needs to rewrite requests and responses from the client to mitigate versions. Additionally, since data flows both ways, the migrations are much more complicated then – round tripping may even require looking at the original data on the other side of the request/response flow. (<span data-t="" data-widget="">E.g.</span> if you change IDs from a number to a string, you could generate numbers for the strings, but need to look at how to map them back. Or other additional data along for the ride like that.)</p>
@@ -953,7 +953,7 @@ clean-thingy-impl :
 </item>
 <item>
 <title>Selective Applicative Functors</title>
-<guid>https://blog.veritates.love/selective_applicatives_theoretical_basis.html</guid>
+<guid>https://blog.veritates.love/selective-applicatives_theoretical_basis</guid>
 <description><![CDATA[<p>I havenʼt seen a good accounting of the essence of selective applicative functors.</p>
 <p>Theyʼve been longing for a better description, to help explain what should be allowed and what should be disallowed, beyond “hey, here is a function <code class="haskell">select</code> that seems to do useful things and enable us to write interesting code”.</p>
 <p>Selective applicative functors were originally proposed in 2019 in the paper <a href="https://dl.acm.org/doi/pdf/10.1145/3341694">Selective Applicative Functors</a>, by Andrey Mokhov, Georgy Lukyanov, Simon Marlow, and Jeremie Dimino, with this typeclass definition:</p>
@@ -1497,7 +1497,7 @@ data ControlFlow f i r where
 <item>
 <title>Forms of resource acquisition</title>
 <pubDate>Mon, 29 Dec 2025 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/resource_acquisition.html</guid>
+<guid>https://blog.veritates.love/resource-acquisition</guid>
 <description><![CDATA[<p>The main takeaway from this has been that instead of thinking about individual resources and their creation conditions and destructors, itʼs been more fruitful to think about it as consisting of <em>scopes</em> of resources, which can be destroyed when they are no longer needed. Resources only exist as destructors and wait-functions to call in the scope. This works much better since we are operating at the level of a monad abstraction.</p>
 <p>Thinking of gestalt scopes also allows waiting for the entire scope to be ready, in asynchronous ways: forwards and backwards and in parallel as necessary.</p>
 <h2 id="case-studies">Case Studies</h2>
@@ -1750,7 +1750,7 @@ subscribeM1 :: forall flow a m. MonadResource m =&gt; Stream flow a -&gt; (a -&g
 <item>
 <title>Simple Local Nginx Config</title>
 <pubDate>Mon, 04 Aug 2025 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/simple_nginx.html</guid>
+<guid>https://blog.veritates.love/simple-nginx</guid>
 <description><![CDATA[<p>I made this as a drop-in replacement for <code class="sh">python3 -m http.server 8998</code> or the older Python 2 <code class="sh">python -m SimpleHTTPServer 8998</code>, because I needed a file server that supported range requests and <span data-t="" data-widget="">CORS</span>.</p>
 <p>That is, this is a simple nginx config that serves static files from the current directory <code class="sh">$PWD</code>, with all the goodies that it supports out of the box: high performance, range requests, caching/ETags, directory indexes, error logging, and so on. This config includes wide-open <span data-t="" data-widget="">CORS</span> config since I often need that in these circumstances, but you should take it and customize it to your needs. You can easily add upstreams to be reverse proxied, or whatever other features you want.</p>
 <p>You need to run it with <code class="sh">nginx -c "$(realpath nginx.conf)" -p "$PWD" -e stderr</code> (of course, substituting the path to <code>nginx.conf</code> if needed, or choosing another location than <code class="sh">$PWD</code>, and so on).</p>
@@ -1855,7 +1855,7 @@ http {
 </item>
 <item>
 <title>Quapteryx Takes Flight!</title>
-<guid>https://blog.veritates.love/quapteryx5.html</guid>
+<guid>https://blog.veritates.love/quapteryx5</guid>
 <description><![CDATA[<style>#TOC {display: none;}</style>
 <details open="" style="margin-bottom: 1em" class="Example">
 <summary>
@@ -2105,9 +2105,9 @@ for (const [symbol, sk] of Object.entries(combinatorTable)) {
 <item>
 <title>Efficient Quapteryx Evaluator</title>
 <pubDate>Sun, 11 May 2025 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/quapteryx4.html</guid>
+<guid>https://blog.veritates.love/quapteryx4</guid>
 <description><![CDATA[<div class="centered">
-<p><em>Continued from <a href="https://blog.veritates.love/quapteryx3.html">Quapteryx Part III: Quaternary Combinators</a>, where I was writing WASM by hand and then ported it to C and got it working.</em></p>
+<p><em>Continued from <a href="https://blog.veritates.love/quapteryx3">Quapteryx Part III: Quaternary Combinators</a>, where I was writing WASM by hand and then ported it to C and got it working.</em></p>
 </div>
 <p>The next step was rewriting it from scratch for an efficient evaluator, and this is where I realized that having C structs and pointers (and malloc!) was really what I needed. I used <a href="https://wingolog.org/archives/2020/10/13/malloc-as-a-service">walloc.c</a> for the malloc implementation, also to keep it lightweight and WASMy.</p>
 <p>Thus the stack is clang + LLVM + walloc.c + WASM builtins + a JS wrapper to run it.</p>
@@ -2614,9 +2614,9 @@ bool step(void) {
 <item>
 <title>Quaternary Combinators</title>
 <pubDate>Sun, 11 May 2025 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/quapteryx3.html</guid>
+<guid>https://blog.veritates.love/quapteryx3</guid>
 <description><![CDATA[<div class="centered">
-<p><em>See <a href="https://blog.veritates.love/quapteryx1.html">Quapteryx Part I: On the SKI Combinator Calculus</a> and <a href="https://blog.veritates.love/quapteryx2.html">Quapteryx Part II: Ojo: a Bitflipped Jot, and a Real Flop</a> for introduction/background on this topic.</em></p>
+<p><em>See <a href="https://blog.veritates.love/quapteryx1">Quapteryx Part I: On the SKI Combinator Calculus</a> and <a href="https://blog.veritates.love/quapteryx2">Quapteryx Part II: Ojo: a Bitflipped Jot, and a Real Flop</a> for introduction/background on this topic.</em></p>
 </div>
 <p>Quaternary combinators.</p>
 <p>If binary is base 2, then quaternary is base 4. Just as binary has bits (digits) and bitstrings (sequences of digits), quaternary has <a href="https://en.wikipedia.org/wiki/Quaternary_numeral_system#Relation_to_binary_and_hexadecimal">crumbs</a> and crumbstrings:</p>
@@ -2933,7 +2933,7 @@ word bitlength(const word* crumbstring, word known_words) {
 <p>Thus my tests went through various irreducible values of <code>m</code> and <code>n</code> to evaluate <code>factorial(3)(m)(n)</code> and ensure that it evaluated to <code>0m0m0m0m0m0mn</code> each time, and so on.</p>
 <p>The alternate way is to evaluate <code>factorial(x)(SB)(SK)</code> to get to a canonical Church numeral <code>(SB)(SB)…(SB)(SK)</code>.</p>
 <div class="centered">
-<p><em>Read on at <a href="https://blog.veritates.love/quapteryx4.html">Quapteryx Part IV: Efficient Quapteryx Evaluator</a>.</em></p>
+<p><em>Read on at <a href="https://blog.veritates.love/quapteryx4">Quapteryx Part IV: Efficient Quapteryx Evaluator</a>.</em></p>
 </div>
 <section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
 <hr>
@@ -2947,9 +2947,9 @@ word bitlength(const word* crumbstring, word known_words) {
 <item>
 <title>Ojo: a Bitflipped Jot, and a Real Flop</title>
 <pubDate>Sat, 10 May 2025 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/quapteryx2.html</guid>
+<guid>https://blog.veritates.love/quapteryx2</guid>
 <description><![CDATA[<div class="centered">
-<p><em>See <a href="https://blog.veritates.love/quapteryx1.html">Quapteryx Part I: On the SKI Combinator Calculus</a> for an introduction.</em></p>
+<p><em>See <a href="https://blog.veritates.love/quapteryx1">Quapteryx Part I: On the SKI Combinator Calculus</a> for an introduction.</em></p>
 </div>
 <h2 id="iota-jot-unlambda">Iota, Jot, Unlambda</h2>
 <p>We ended with the iota combinator last time. The language Iota is just the language of the iota combinator and function application, expressed in a prefix manner:</p>
@@ -3127,7 +3127,7 @@ snd ('0' '0' &lt;fa:P2&gt; &lt;bz:P2&gt;) = snd &lt;bz:P2&gt;</code></pre>
 <p><em>However</em>, the core ideas are sound – even attractive: every natural number is a program, use <code class="st">0</code> as prefix application, and reductions are possible by searching through the string with a grammar.</p>
 <p>Quapteryx builds on these ideas for a really efficient implementation, hopefully.</p>
 <div class="centered">
-<p><em>Read on at <a href="https://blog.veritates.love/quapteryx2.html">Quapteryx Part III: Quaternary Combinators</a>.</em></p>
+<p><em>Read on at <a href="https://blog.veritates.love/quapteryx2">Quapteryx Part III: Quaternary Combinators</a>.</em></p>
 </div>
 <section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
 <hr>
@@ -3139,13 +3139,13 @@ snd ('0' '0' &lt;fa:P2&gt; &lt;bz:P2&gt;) = snd &lt;bz:P2&gt;</code></pre>
 <item>
 <title>On the SKI Combinator Calculus</title>
 <pubDate>Sat, 10 May 2025 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/quapteryx1.html</guid>
+<guid>https://blog.veritates.love/quapteryx1</guid>
 <description><![CDATA[<p>For a long time Iʼve been fascinated by the idea that every number could be a program, every file could be executable. There would be no decoding errors, no bad bits or bytes, it would just interpret everything equally – regardless of whether you intended it or not, really.</p>
 <p>Sure thereʼs Gödel numberings of various systems, but they are pretty artificial, and they are usually not surjective: some numbers just arenʼt programs! Sorry computer.</p>
 <div class="centered">
 <p><em>Gödel numbering: an encoding only a mathematician could love.</em></p>
 </div>
-<p>Where Gödel numberings are ugly, the corresponding deal for finite set theory is elegant: I already made <a href="https://blog.veritates.love/hatstack.html">HatStack</a>, a stack-based language for hereditarily finite set theory, where every piece of data is just a natural number and these natural numbers <em>are</em> sets, bitwise.</p>
+<p>Where Gödel numberings are ugly, the corresponding deal for finite set theory is elegant: I already made <a href="https://blog.veritates.love/hatstack">HatStack</a>, a stack-based language for hereditarily finite set theory, where every piece of data is just a natural number and these natural numbers <em>are</em> sets, bitwise.</p>
 <p>It uses the <a href="https://en.wikipedia.org/wiki/Hereditarily_finite_set#Ackermann_coding">Ackermann coding</a>, whose premise is really simple: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>∈</mo><mi>y</mi></mrow><annotation encoding="application/x-tex">x \in y</annotation></semantics></math></span> just means that the bit numbered <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span> is set in the number <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi></mrow><annotation encoding="application/x-tex">y</annotation></semantics></math></span>: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><msup><mn>2</mn><mi>x</mi></msup><mo><mi mathvariant="normal">&amp;</mi></mo><mi>y</mi><mo stretchy="false">)</mo><mo mathvariant="normal">≠</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">(2^x \band y) \ne 0</annotation></semantics></math></span>. Every set is just the bitfield of its children, who (as numbers) are just the bitfield of <em>their</em> children – hence, <em>hereditarily</em> finite:</p>
 <p><span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>y</mi><mo>=</mo><munder><mo>⋃</mo><mrow><mi>x</mi><mo>∈</mo><mi>y</mi></mrow></munder><mo stretchy="false">{</mo><mi>x</mi><mo stretchy="false">}</mo><mo>=</mo><munder><mo>∑</mo><mrow><mi>x</mi><mo>∈</mo><mi>y</mi></mrow></munder><msup><mn>2</mn><mi>x</mi></msup><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">y = \bigcup\limits_{x \in y} \{ x \} = \sum_{x \in y} 2^x.</annotation></semantics></math></span></p>
 <p>But whatʼs the answer for programs? Say, for a nice lambda calculus? Is there a similar encoding that is surjective and has nice properties?</p>
@@ -3153,7 +3153,7 @@ snd ('0' '0' &lt;fa:P2&gt; &lt;bz:P2&gt;) = snd &lt;bz:P2&gt;</code></pre>
 <p>Every few months I would open the wiki page on <a href="https://en.wikipedia.org/wiki/Iota_and_Jot#Jot">Jot</a>, reference it in some conversation of nerdery. A kind of restless fascination lingered in the background… But I never seriously engaged with it, until I nerdsniped myself one day.</p>
 <p>I did a deep dive into Jot for several months, figuring out exactly what made it tick, before determining that it was way too unwieldy for my purposes.</p>
 <p>Instead, I realized that I could make a really efficient evaluator using SKI calculus a little more directly, using a <em>qauternary</em> encoding (base 4) and calling in Quapteryx. I wanted to target WASM for several reasons, and I tried hand writing WASM (well, the textual format WAT), before deciding that that, too, was too unwieldy. So I translated my WASM to C by hand, fixed a few bugs and actually got it working, and then I scrapped it for an actually efficient evaluator.</p>
-<p><a href="https://blog.veritates.love/quapteryx2.html">My journey into Jot</a> is the subject of the next chapter, and <a href="https://blog.veritates.love/quapteryx3.html">Quapteryx</a> is documented in the other chapters.</p>
+<p><a href="https://blog.veritates.love/quapteryx2">My journey into Jot</a> is the subject of the next chapter, and <a href="https://blog.veritates.love/quapteryx3">Quapteryx</a> is documented in the other chapters.</p>
 <p>However, most readers will probably benefit from the background that occupies the rest of this chapter.</p>
 <h2 id="ski-combinators">SKI Combinators</h2>
 <p>SKI combinators are a distillation of the essence of untyped lambda calculus.</p>
@@ -3255,13 +3255,13 @@ Wxy  &amp;=_\beta xyy \\
 <p>Being an improper combinator is kind of a dealbreaker: you canʼt compute reductions of a language with just <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ι</mi></mrow><annotation encoding="application/x-tex">\iota</annotation></semantics></math></span>. You have to resort to inserting <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi></mrow><annotation encoding="application/x-tex">S</annotation></semantics></math></span> and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span> and evaluating with those.</p>
 <p>… Or can you?</p>
 <div class="centered">
-<p><em>Read on at <a href="https://blog.veritates.love/quapteryx2.html">Quapteryx Part II: Ojo: a Bitflipped Jot, and a Real Flop</a> or jump to the good stuff at <a href="https://blog.veritates.love/quapteryx3.html">Quapteryx Part III: Quaternary Combinators</a> and beyond.</em></p>
+<p><em>Read on at <a href="https://blog.veritates.love/quapteryx2">Quapteryx Part II: Ojo: a Bitflipped Jot, and a Real Flop</a> or jump to the good stuff at <a href="https://blog.veritates.love/quapteryx3">Quapteryx Part III: Quaternary Combinators</a> and beyond.</em></p>
 </div>]]></description>
 </item>
 <item>
 <title>Implementing FRP and Why</title>
 <pubDate>Sat, 22 Feb 2025 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/riverdragon_implementation.html</guid>
+<guid>https://blog.veritates.love/riverdragon-implementation</guid>
 <description><![CDATA[<p><span style="display: block;text-align: center;font-size:1.2em">🐲 <em>whatʼs upstream?</em> 🌊</span></p>
 <p>To explain <em>why</em> I wrote Riverdragon, we need to need to talk about what makes “<span data-t="" data-widget="">FRP</span>” <em>Functional</em> Reactive Programming, and the challenges that being purely functional imposes.</p>
 <p>Of course, it is not all challenges: the sequencing of effects is a boon for maintainable code, it just means that you have to be more careful and deliberate about it.</p>
@@ -3607,7 +3607,7 @@ devicePixelRatio = River.mayMemoize $ River.unsafeRiver $ makeLake \cb -&gt; do
   l &lt;- devicePixelRatio
   r &lt;- devicePixelRatio
   in D.li[] $ D.show l &lt;&gt; D.text " = " &lt;&gt; D.show r</code></pre>
-<p>You can paste that expression at <a href="https://blog.veritates.love/live_frp.html">Live FRP DOM Coding</a>.<a href="#fn9" class="footnote-ref" id="fnref9" role="doc-noteref"><sup>9</sup></a></p>
+<p>You can paste that expression at <a href="https://blog.veritates.love/live-frp">Live FRP DOM Coding</a>.<a href="#fn9" class="footnote-ref" id="fnref9" role="doc-noteref"><sup>9</sup></a></p>
 <h3 id="benefits-of-isflowing">Benefits of <code class="ps">IsFlowing</code></h3>
 <p>The main benefit of <code class="ps">IsFlowing</code> is that multiple subscribers know they are seeing the same values at, well, similar points in time (not exactly the same, but synchronously close together). (And again, the instantiation of a <code class="ps">Lake</code> to a <code class="ps">River</code> produces a burst which it is valuable to capture explicitly.)</p>
 <p>One of the things that this elucidated for me was the signature of <code class="ps">fix</code>, which has always been mystifying.</p>
@@ -3719,7 +3719,7 @@ fix :: forall o i. (River i -&gt; { loopback :: Stream _ i, output :: Stream _ o
 <item>
 <title>Perfect Vector Graphics for a QR code</title>
 <pubDate>Wed, 29 Jan 2025 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/svgqr.html</guid>
+<guid>https://blog.veritates.love/svgqr</guid>
 <description><![CDATA[<p>You would think that SVG would be a perfect medium for rendering QR codes (or other 2D matrix codes): it is perfectly scalable so the renderer can decide how best to render it at each resolution, thereʼs no need to mess around with hints like <a href="https://developer.mozilla.org/en-US/docs/Web/CSS/image-rendering"><code class="css">image-rendering: pixelated;</code></a>, and so there should be no compromises, right? Right??</p>
 <p>Well the quality of SVG renderers really varies, and iOS was having trouble rendering the SVGs for the complex, large QR codes I was using (nearly max size). Specifically, it was failing to render adjacent black modules<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a> of the QR code as contiguous blocks of rendered pixels: in fact, entire rows and columns “between” the modules were consistently white all the way across, but only a single screen pixel in width. (Some form of this problem appeared at every zoom level I tried.)</p>
 <p>Presumably this is due to some rounding assumptions the renderer made when dealing with many objects that had fill but no stroke. After all, I had chosen the simplest method of <em>generating</em> the SVG: each module became a <code class="dimension">1x1</code> filled rectangle in the SVG, which was then sized to fit on the screen. Again, one would naïvely think that having it on integer coordinates in the SVG coordinate space may help a renderer realize they were adjacent, certainly there were no floating point problems before scaling, but for whatever reason, this did not in fact help.</p>
@@ -4095,7 +4095,7 @@ function MoreQR(data, ...params) {
 <item>
 <title>WebRTC over QR Connection Protocol</title>
 <pubDate>Sun, 26 Jan 2025 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/webrtc_over_qr.html</guid>
+<guid>https://blog.veritates.love/webrtc-over_qr</guid>
 <description><![CDATA[<p>Details on the connection protocol for <a href="https://webrtc-over-qr.veritates.love/">WebRTC over QR</a>. How is it even possible, and how could you use it too?</p>
 <div class="Warning">
 <p>See there for caveats and compatibility and so on.</p>
@@ -4242,7 +4242,7 @@ Note that the host and guest have somewhat/extremely different <span data-t="" d
 </ol>
 <h2 id="tweaks-and-so-on">Tweaks and so on</h2>
 <p>First of all: to get the JavaScript-in-HTML-in-<code>data:</code> <span data-t="" data-widget="">URI</span> to fit into a QR code with a full <span data-t="" data-widget="">SDP</span>, the JavaScript template needs to be minified a bunch, but it is possible.</p>
-<p>As I mentioned above, outside of this happy path you need to return a fingerprint, and this is what the <a href="https://blog.veritates.love/qrinqr.html">QR in QR</a> code is intended for: with aggressive minification and code golfing, the guest can print a QR code which the host can scan. This is an alright solution for that in a local situation.</p>
+<p>As I mentioned above, outside of this happy path you need to return a fingerprint, and this is what the <a href="https://blog.veritates.love/qrinqr">QR in QR</a> code is intended for: with aggressive minification and code golfing, the guest can print a QR code which the host can scan. This is an alright solution for that in a local situation.</p>
 <p>And for <span data-t="" data-widget="">WAN</span> connections, it needs the public <span data-t="" data-widget="">IP</span> address and public port from the <span data-t="" data-widget="">STUN</span> candidate(s). I donʼt really have a great way to return this information yet: itʼs just a bit ugly to write the guest code, it really should be a dedicated mode with a separate template. (<span data-t="" data-widget="">TURN</span> servers<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a> are basically out of scope for this, though it would be possible to add support&nbsp;… but at that point you should almost always set up your own signaling server and use standard solutions, especially since <span data-t="" data-widget="">TURN</span> servers require passwords and are not publicly available because of the bandwidth considerations.)</p>
 <p>Smaller details include:</p>
 <ul>
@@ -4262,7 +4262,7 @@ Note that the host and guest have somewhat/extremely different <span data-t="" d
 <item>
 <title>Code golf for computing a 32-byte QR code!</title>
 <pubDate>Fri, 20 Dec 2024 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/qrinqr.html</guid>
+<guid>https://blog.veritates.love/qrinqr</guid>
 <description><![CDATA[<p>If you run <code class="js">.replaceAll(/ *(\/\/[^\n]*\n)?/g, '').replace('\\x20',' ').length</code> on <a href="https://blog.veritates.love/assets/js/qr.ann.js">this fileʼs contents</a>, you will see that this JavaScript comes in at 512 ASCII characters when minified! (Newlines without comments are still used as substitutes for semicolons, to keep the minified file somewhat readable. Other spaces are not important except for the one in the string.)</p>
 <p>Why would I do such a thing? Well, it helps me bootstrap a WebRTC connection over QR codes! The host generates a HTML stub that contains this JavaScript, allowing it to display the fingerprint of the guestʼs generated certificate.</p>
 <p>There is a hard limit of 2,953 bytes of UTF-8 for QR codes, and I have even less to work with considering that I have to encode it into a <code>data:</code> URI, so having a compact algorithm for this is essential.</p>
@@ -4558,7 +4558,7 @@ document.body.innerHTML=o</code></pre>
 <item>
 <title>Design your programming languages right!</title>
 <pubDate>Mon, 16 Dec 2024 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/design_it_right.html</guid>
+<guid>https://blog.veritates.love/design-it_right</guid>
 <description><![CDATA[<p>I just think we should have some ground rules for new programming languages and their configuration. Yʼknow?</p>
 <p>Just some rambly thoughts on features I think you should include, or at least think about and not block yourself <em>out of</em> including. And other topics I am thinking about with no real answers yet.</p>
 <h2 id="solved-problems-non-issues">Solved problems / non-issues</h2>
@@ -4603,7 +4603,7 @@ document.body.innerHTML=o</code></pre>
 <item>
 <title>Self-names (paths)</title>
 <pubDate>Mon, 16 Dec 2024 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/selfnames.html</guid>
+<guid>https://blog.veritates.love/selfnames</guid>
 <description><![CDATA[<blockquote>
 <p><a href="https://martinfowler.com/bliki/TwoHardThings.html">There are 2 hard problems in computer science: cache invalidation, naming things, and off-by-1 errors.</a> </p>
 </blockquote>
@@ -4630,7 +4630,7 @@ document.body.innerHTML=o</code></pre>
 <item>
 <title>Monoids in Public</title>
 <pubDate>Wed, 03 Dec 2025 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/monoids_in_public.html</guid>
+<guid>https://blog.veritates.love/monoids-in_public</guid>
 <description><![CDATA[<div class="Note">
 <p>It is a weird historical quirk that Haskell/PureScript call the symmetric operation <code class="purescript">(&lt;&gt;) :: m -&gt; m -&gt; m</code> by the name of “append”. Most of the world reserves append and prepend for the asymmetric operations shaped like <code class="purescript">List t -&gt; t -&gt; List t</code> and <code class="purescript">t -&gt; List t -&gt; t</code>, respectively, and call <code class="purescript">(&lt;&gt;)</code> by the name of “concatenation” (literally meaning “<a href="https://en.wiktionary.org/wiki/concatenate">chaining together</a>”). That is pretty clearly a better convention, but I will still use the Haskell convention in this article.</p>
 </div>
@@ -5202,7 +5202,7 @@ instance Semigroup t =&gt; Monoid (CustomOverlap t) where
 <item>
 <title>Infodumping About Selective Applicative Functors</title>
 <pubDate>Wed, 10 Apr 2024 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/infodump_selective_applicatives.html</guid>
+<guid>https://blog.veritates.love/infodump-selective_applicatives</guid>
 <description><![CDATA[<div class="centered">
 <p><em>Originally posted at <a href="https://tech.lgbt/@monoidmusician/112250458187094582" class="uri">https://tech.lgbt/@monoidmusician/112250458187094582</a></em></p>
 </div>
@@ -5307,7 +5307,7 @@ branch :: m (Either x y) -&gt; m (x -&gt; z) -&gt; m (y -&gt; z) -&gt; m z</code
 <p>with <code class="purescript">caseTreeOn</code>, we donʼt just have a monoid anymore: we still combine effects sequentially with a monoid, but we combine the alternatives with a (potentially differently behaved) semigroup</p>
 <p>(we can ignore empty case trees: 0-ary branch just evaluates its first argument)</p>
 <p>thereʼs probably some laws you want to impose between the monoid and semigroup</p>
-<p>in fact, having a lattice or semilattice <a href="https://blog.veritates.love/semilattice_semiring.html">is particularly nice</a></p>
+<p>in fact, having a lattice or semilattice <a href="https://blog.veritates.love/semilattice-semiring">is particularly nice</a></p>
 <p>and semilattices crawl all over static analysis, you wouldnʼt believe it</p>
 <p>(well, maybe you would ^^)</p>
 <hr>
@@ -5475,7 +5475,7 @@ alt l r = select (note unit &lt;$&gt; try l) (const &lt;$&gt; r)</code></pre>
 <p><span class="dated">2023/08/09</span></p>
 <p>Iʼm pretty sure itʼs possible to interpret this selective applicative parsing within the style of LR parsing</p>
 <p>(in fact, it may be the most well-behaved setting)</p>
-<p>I wrote a bunch about how LR(1) parsing works: <a href="https://blog.veritates.love/parser.html">Interactive Parser Explanations</a> (as always, thereʼs a bunch more to write)</p>
+<p>I wrote a bunch about how LR(1) parsing works: <a href="https://blog.veritates.love/parser">Interactive Parser Explanations</a> (as always, thereʼs a bunch more to write)</p>
 <p>quick overview is that it builds a graph of state nodes, where each state is a partial parse of some rules and the lookahead that one would expect after parsing that rule (based on how you got to the state)</p>
 <p>each step looks at the current token in the stream, and decides to <em>shift</em> the token onto the stack and continue parsing the rules, or <em>reduce</em> a finished rule (if you see its lookahead) and get its arguments off of the stack</p>
 <p>conflicts occur when there are multiple actions that one could take from a state on a token: shift/reduce conflicts or reduce/reduce conflicts</p>
@@ -5736,7 +5736,7 @@ $increment : lvalue -&gt; statement</code></pre>
 <item>
 <title>Pickling Tasty Data</title>
 <pubDate>Sun, 28 Jan 2024 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/pickling.html</guid>
+<guid>https://blog.veritates.love/pickling</guid>
 <description><![CDATA[<p>I want to talk about data today. In particular, I want to talk about runtime representations of data, <strong>real</strong> data – data that can be mutable and referentially opaque at runtime – and demystify what they actually are in terms of more familiar notions of data.</p>
 <p>You shouldnʼt just throw up your hands once you have cyclic references! Itʼs possible and worthwhile to design tools to work with the raw graph of runtime data, no matter its shape.</p>
 <p>With the proper metaprogramming hooks, you could save and restore a whole runtime environment <em>from the inside</em>, which is pretty amazing to think about.</p>
@@ -5770,7 +5770,7 @@ $increment : lvalue -&gt; statement</code></pre>
 </ul></li>
 <li>Quotiented data (Agda, Lean, Rocq)
 <ul>
-<li>see <a href="https://blog.veritates.love/adt_lies_for_truth.html">Subtypes/Quotients: Lies Told in Defense of the Truth</a> (<span data-t="" data-widget="">WIP</span>)</li>
+<li>see <a href="https://blog.veritates.love/adt-lies_for_truth">Subtypes/Quotients: Lies Told in Defense of the Truth</a> (<span data-t="" data-widget="">WIP</span>)</li>
 </ul></li>
 </ol>
 <p>It will be important to think about what notions of equality are useful and adequate for these kinds of data!</p>
@@ -6279,7 +6279,7 @@ intoObject path = first $ \key -&gt; ObjectIdx key : path</code></pre>
 <li id="fn3"><p>besides performance – we always disregard performance here<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn4"><p>Citation needed.<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn5"><p><a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
-<li id="fn6"><p>Sighs in <a href="https://blog.veritates.love/tmttmt.html">tmTTmt</a>&nbsp;…<a href="#fnref6" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn6"><p>Sighs in <a href="https://blog.veritates.love/tmttmt">tmTTmt</a>&nbsp;…<a href="#fnref6" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn7"><p>Even in non-Turing-complete languages!<a href="#fnref7" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn8"><p>This is slightly unfair, considering that Dhall now uses <span data-t="" data-widget="">NbE</span>, but it amounts to the same thing.<a href="#fnref8" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn9"><p>BEAM uses mutation to construct data locally, but this is only an implementation detail that cannot be observed from Erlang.<a href="#fnref9" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
@@ -6295,7 +6295,7 @@ intoObject path = first $ \key -&gt; ObjectIdx key : path</code></pre>
 <item>
 <title>A Semiring From Any Semilattice</title>
 <pubDate>Sat, 28 Oct 2023 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/semilattice_semiring.html</guid>
+<guid>https://blog.veritates.love/semilattice-semiring</guid>
 <description><![CDATA[<p>Iʼve been working on some theoretical aspects of programming recently. Writing new compiler optimization passes. Thinking about <a href="https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Parser/Languages/Talk.purs">parsers</a> through the lens of <a href="https://hackage.haskell.org/package/selective-0.7/docs/Control-Selective.html#t:Selective">selective applicative functors</a>, and tweaking them to encode <a href="https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Parser/Selective.purs">exclusive choice</a>.</p>
 <p>If you go far enough down the rabbit hole, it turns out that you want semirings for static analysis. This is not unheard of in compilers! Itʼs a really good technique for analyzing control flow, for example: information about exclusive branches are combined additively, and information from sequential operations are combined multiplicatively. It is especially appropriate because, semantically speaking, you want those sequential operations to distribute over the branching.</p>
 <p>(You can already see this in more typical typeclasses like <code class="haskell">Alternative</code>, which is naturally analyzed by taking <code class="haskell">&lt;*&gt;</code> to <code class="haskell">*</code> and <code class="haskell">&lt;|&gt;</code> to <code class="haskell">+</code>. Itʼs just that Iʼm interested in augmenting <code class="haskell">Selective</code> to encode exclusive choice too.)</p>
@@ -6403,7 +6403,7 @@ instance Monoid t =&gt; Semiring (WithZero t) where
 <item>
 <title>TransMorphism Type Theory MetaTheory</title>
 <pubDate>Fri, 13 Oct 2023 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/tmttmt.html</guid>
+<guid>https://blog.veritates.love/tmttmt</guid>
 <description><![CDATA[<p><span style="display: block;text-align: center;font-size:1.2em">🦋 <em>heck u! *programs ur semicolons :3*</em> 🦋</span></p>
 <p>Iʼve been dreaming of making my own metalanguage for writing type theories for many years now. I havenʼt implemented much yet, but Iʼve been refining my ideas. Hereʼs a tiny taste:</p>
 <p><em>What you write:</em></p>
@@ -6450,7 +6450,7 @@ normalize (Roll layer) = Roll (map normalize layer)</code></pre>
 <p>My goal is to have a syntax that is straightforward for humans to write and easy for computers to interpret.</p>
 <p>But I donʼt want this process to be magic! I just want it to look convenient for writing powerful systems of type theory.</p>
 <h2 id="abstract">Abstract</h2>
-<p><a href="https://blog.veritates.love/blog.veritates.love/tmttmt.html">tmTTmt</a> (transmorphism Type Theory metatheory) is an experiment in the UX and aesthetics of a pure, typed functional programming language, with the goal of being an interlingua (it must be easy to parse, reducible to an implementation with few required primitives, and human readable along the way, including methods for understanding what the source code is and does) and with an eye towards being suitable for being an exceptional metalanguage for type theory and compilers and also a welcoming place to write down algorithms of general interest (e.g.&nbsp;computing a cubic Bézier from a quadratic Bézier, or computing an LR(1) parse table from a grammar, or describing high-level cryptography operations that can be compiled to appropriate code in languages such as JavaScript, Python, or Erlang)</p>
+<p><a href="https://blog.veritates.love/blog.veritates.love/tmttmt">tmTTmt</a> (transmorphism Type Theory metatheory) is an experiment in the UX and aesthetics of a pure, typed functional programming language, with the goal of being an interlingua (it must be easy to parse, reducible to an implementation with few required primitives, and human readable along the way, including methods for understanding what the source code is and does) and with an eye towards being suitable for being an exceptional metalanguage for type theory and compilers and also a welcoming place to write down algorithms of general interest (e.g.&nbsp;computing a cubic Bézier from a quadratic Bézier, or computing an LR(1) parse table from a grammar, or describing high-level cryptography operations that can be compiled to appropriate code in languages such as JavaScript, Python, or Erlang)</p>
 <h2 id="demos">Demos</h2>
 <p>AAaaahhhh</p>
 <p>Implementation in progress!</p>
@@ -6804,7 +6804,7 @@ Maybe2List: a =&gt; a
 <item>
 <title>The Best Errors for Solving Dependency Versions</title>
 <pubDate>Sat, 21 Jan 2023 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/version_solver.html</guid>
+<guid>https://blog.veritates.love/version-solver</guid>
 <description><![CDATA[<div class="Bonus" data-box-name="Backstory">
 <blockquote>
 <p>Just copy the <a href="https://github.com/elm/compiler/blob/0.19.1/builder/src/Deps/Solver.hs">Elm version solver</a> from Haskell to PureScript, itʼll be easy.</p>
@@ -7316,7 +7316,7 @@ data SolverPosition = Pos LocalSolverPosition (Set PackageName)</code></pre>
 <item>
 <title>Impossible Bézier Calligraphy</title>
 <pubDate>Sun, 23 Apr 2023 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/bezier_calligraphy.html</guid>
+<guid>https://blog.veritates.love/bezier-calligraphy</guid>
 <description><![CDATA[<p>The story of how I implemented calligraphy for <a href="https://www.jasondavies.com/animated-bezier/">cubic Bézier curves</a> (the kind widely used in graphics programs, especially the common <a href="https://en.wikipedia.org/wiki/Scalable_Vector_Graphics">Scalable Vector Graphics (SVG) format</a>).</p>
 <p>The problem statement:</p>
 <div class="Key_Idea" data-box-name="Challenge">
@@ -7747,7 +7747,7 @@ R_1 &amp;:= \frac{3}{2}\frac{\kappa_1 (d_0 \times a)^2}{(a \times d_1)(d_0 \time
 <item>
 <title>Interactive Parser Explanations</title>
 <pubDate>Wed, 20 Jul 2022 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/parser.html</guid>
+<guid>https://blog.veritates.love/parser</guid>
 <description><![CDATA[<p>I have been building this framework for explaining, analyzing, and teaching about LR(1) grammars for a couple months now. I hope to turn it into a series of interactive blog posts to explain what parsing is and some approaches we can take to it, most notably <a href="https://en.wikipedia.org/wiki/Canonical_LR_parser">LR(1)</a> parsing. Many notable parser generators like Haskellʼs <a href="https://www.haskell.org/happy/">Happy</a> and the mainstream <a href="https://en.wikipedia.org/wiki/Yacc">Yacc</a>, <a href="https://en.wikipedia.org/wiki/GNU_Bison">Bison</a>, and <a href="https://tree-sitter.github.io/tree-sitter/">Tree-sitter</a> use variants of LR(1), modified for efficiency by reducing the number of generated states.<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a></p>
 <p>The interactive widgets here will allow you to build and verify your intuition by clicking through examples, because I believe that once you are armed with the basic ideas and the right intuition, you can figure out the rest of details for yourself.</p>
 <p>Alternatively, it can serve as a playground to test out hypotheses about grammars, see exactly where things go wrong when conflicts occur, and what to do to fix those errors.<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a></p>
@@ -7780,21 +7780,21 @@ instance Semigroup (ShiftReduce s r) where
 <p>EDIT: this project kind of stalled, sorry. Iʼm still thinking about parsers a lot, but not in this introductory way. You can bug or help me write more ^^</p>
 <h3 id="topics">Topics</h3>
 <ul>
-<li><span data-t="" data-widget="">TODO</span>: <a href="https://blog.veritates.love/parser_by_example.html">Using this tool by example</a></li>
-<li><span data-t="" data-widget="">TODO</span>: <a href="https://blog.veritates.love/parser_terminology.html">Terminology reference</a></li>
-<li><span data-t="" data-widget="">WIP</span>: <a href="https://blog.veritates.love/parser_basics.html">Basics: What are grammars</a> (BNF, RegExp)
+<li><span data-t="" data-widget="">TODO</span>: <a href="https://blog.veritates.love/parser-by_example">Using this tool by example</a></li>
+<li><span data-t="" data-widget="">TODO</span>: <a href="https://blog.veritates.love/parser-terminology">Terminology reference</a></li>
+<li><span data-t="" data-widget="">WIP</span>: <a href="https://blog.veritates.love/parser-basics">Basics: What are grammars</a> (BNF, RegExp)
 <ol>
 <li>Nonterminals and terminals</li>
 <li>Sequencing and alternation (regexes)</li>
 </ol></li>
-<li><span data-t="" data-widget="">WIP</span>: <a href="https://blog.veritates.love/parser_applications.html">Uses of grammars</a>:
+<li><span data-t="" data-widget="">WIP</span>: <a href="https://blog.veritates.love/parser-applications">Uses of grammars</a>:
 <ol>
 <li>Generators: nondeterministically generate strings in the grammar by following the rules as state transitions</li>
 <li>Recognition: recognize which strings belong to the grammar and which do not</li>
 <li>Syntax highlighting: cursed.</li>
 <li>Parsing: find an unambiguous parse tree for inputs that belong to the grammar</li>
 </ol></li>
-<li><span data-t="" data-widget="">WIP</span>: <a href="https://blog.veritates.love/parser_lr1.html">Basics of LR(1) Parsing</a>
+<li><span data-t="" data-widget="">WIP</span>: <a href="https://blog.veritates.love/parser-lr1">Basics of LR(1) Parsing</a>
 <ol>
 <li>States</li>
 <li>State transitions</li>

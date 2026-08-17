@@ -39,7 +39,7 @@ Unfortunately this also means that it isnʼt _fun_.
 You can add extensibility to your data, but extensible _behavior_ is more difficult.
 You can teach all the code that consumes it how to handle these new shapes of data, maybe provide them with a registry to look up behaviors ­– if they exist at runtime.
 But you canʼt embed functions in data.
-Not theoretically, not practically.^[Okay, some runtimes can [serialize functions as bytecode or syntax](pickling.html#functions-builtins-bootstrapping), but that is not an option in Haskell, and is probably best to avoid.]
+Not theoretically, not practically.^[Okay, some runtimes can [serialize functions as bytecode or syntax](pickling#functions-builtins-bootstrapping), but that is not an option in Haskell, and is probably best to avoid.]
 
 Or can you?
 

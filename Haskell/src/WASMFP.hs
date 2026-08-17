@@ -17,7 +17,7 @@
 --
 -- The goal is to have extensible user types (with their own codegen),
 -- extensible code (embedding foreign code and typeclass-like generated code),
--- and extensible analyses. See https://blog.veritates.love/functions_as_data.html
+-- and extensible analyses. See https://blog.veritates.love/functions-as-data
 --
 -- The main ingredients are:
 --
@@ -2624,7 +2624,7 @@ instance Semantics ForeignCall where
   semEffects (ForeignCall _ ef _) = ef
 
 
--- https://blog.veritates.love/monoids_in_public.html#top-down-traversals
+-- https://blog.veritates.love/monoids-in-public#top-down-traversals
 data Visit m
   -- Skip evaluating the children
   = ShortCircuit m

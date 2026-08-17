@@ -5,7 +5,7 @@ author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
-_[Overflow](knowlish_overflow.html)_
+_[Overflow](knowlish-overflow)_
 
 ## CLI
 

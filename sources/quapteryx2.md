@@ -7,7 +7,7 @@ date: 2025/05/10
 ---
 
 :::centered
-_See [Quapteryx Part I: On the SKI Combinator Calculus](quapteryx1.html) for an introduction._
+_See [Quapteryx Part I: On the SKI Combinator Calculus](quapteryx1) for an introduction._
 :::
 
 ## Iota, Jot, Unlambda
@@ -297,5 +297,5 @@ _[&c.]{t=} [&c.]{t=}_
 Quapteryx builds on these ideas for a really efficient implementation, hopefully.
 
 :::centered
-_Read on at [Quapteryx Part III: Quaternary Combinators](quapteryx2.html)._
+_Read on at [Quapteryx Part III: Quaternary Combinators](quapteryx2)._
 :::

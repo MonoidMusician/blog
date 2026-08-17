@@ -1,6 +1,6 @@
 ---
 title: HatStack
-subtitle: "A stack based, concatenative language for [Hereditarily Finite Sets](hereditarily_finite_sets.html)"
+subtitle: "A stack based, concatenative language for [Hereditarily Finite Sets](hereditarily-finite-sets)"
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
 preroll: '<span data-widget="Parser.Main.HFS" data-widget-datakey="default"></span>'
@@ -10,7 +10,7 @@ widgets: true
 <script src="assets/js/hfs.js"></script>
 
 HatStack is a unityped stack language, kind of like Forth!
-There is only one type: [Hereditarily Finite Sets](hereditarily_finite_sets.html), represented as arbitrary-precision natural numbers using the [Ackermann coding](https://en.wikipedia.org/wiki/Hereditarily_finite_set#Ackermann_coding).
+There is only one type: [Hereditarily Finite Sets](hereditarily-finite-sets), represented as arbitrary-precision natural numbers using the [Ackermann coding](https://en.wikipedia.org/wiki/Hereditarily_finite_set#Ackermann_coding).
 Except we are sneaky, and it has multiple representations under the hood:
 
 ```purescript

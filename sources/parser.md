@@ -66,17 +66,17 @@ You can bug or help me write more ^^
 
 ### Topics
 
-- [TODO]{t=}: [Using this tool by example](parser_by_example.html)
-- [TODO]{t=}: [Terminology reference](parser_terminology.html)
-- [WIP]{t=}: [Basics: What are grammars](parser_basics.html) (BNF, RegExp)
+- [TODO]{t=}: [Using this tool by example](parser-by-example)
+- [TODO]{t=}: [Terminology reference](parser-terminology)
+- [WIP]{t=}: [Basics: What are grammars](parser-basics) (BNF, RegExp)
   #. Nonterminals and terminals
   #. Sequencing and alternation (regexes)
-- [WIP]{t=}: [Uses of grammars](parser_applications.html):
+- [WIP]{t=}: [Uses of grammars](parser-applications):
   #. Generators: nondeterministically generate strings in the grammar by following the rules as state transitions
   #. Recognition: recognize which strings belong to the grammar and which do not
   #. Syntax highlighting: cursed.
   #. Parsing: find an unambiguous parse tree for inputs that belong to the grammar
-- [WIP]{t=}: [Basics of LR(1) Parsing](parser_lr1.html)
+- [WIP]{t=}: [Basics of LR(1) Parsing](parser-lr1)
   #. States
   #. State transitions
   #. Closure of states

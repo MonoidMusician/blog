@@ -10,7 +10,7 @@ Textual languages for humans are often _context-free_ languages, which is touted
 So why are binary formats often _more_ convenient for computers to parse, despite being wildly context-sensitive??
 Is there any reliable way to describe their grammars too?
 
-I thought that the answer must lie in [selective applicative functors](selective_applicatives_theoretical_basis.html), augmented with a [few new types of control flow](selective_applicatives_theory.html#nuanced-control-flow).
+I thought that the answer must lie in [selective applicative functors](selective-applicatives-theoretical-basis), augmented with a [few new types of control flow](selective-applicatives-theoretical-basis#nuanced-control-flow).
 I think this was the right approach.
 
 This selective applicative structure introduces a controlled flow of information, not only within the grammar, but all the way up to the user level and back.
@@ -26,7 +26,7 @@ This helps keep grammars compositional, efficient; it reduces noise in the gramm
 For staged parsers, it needs to be integrated so that compiling the grammar can happen ahead of time, incorporating the new entrypoint into the overall parser.^[Why donʼt more parsing frameworks incorporate multiple entrypoints?? It is really necessary for highlighting code snippets.]
 
 :::{.Example box-name="Examples"}
-For example, [CSS]{t=} specifies an [`<any-value>` rule](https://www.w3.org/TR/css-syntax-3/#any-value) to ensure forwards compatibility and error recovery, and my [tmTTmt](tmttmt.html) likewise constrains the allowable syntax for [values, types, and comments](tmttmt_syntax.html) so parsers do not have to implement the full specification at once.
+For example, [CSS]{t=} specifies an [`<any-value>` rule](https://www.w3.org/TR/css-syntax-3/#any-value) to ensure forwards compatibility and error recovery, and my [tmTTmt](tmttmt) likewise constrains the allowable syntax for [values, types, and comments](tmttmt) so parsers do not have to implement the full specification at once.
 
 Even Haskell and PureScript parse user operators generically first, with fixed associativity and no precedence, before rewriting the tree using a custom parser to incorporate their resolved fixities^[precedence and associativity, via the `infix`{.purescript} declaration].
 :::

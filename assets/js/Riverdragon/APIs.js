@@ -13,9 +13,9 @@
 //
 // Philosophy of design:
 //
-// - https://blog.veritates.love/resource_acquisition.html
-// - https://blog.veritates.love/riverdragon_implementation.html
-// - https://blog.veritates.love/reformed_oop.html
+// - https://blog.veritates.love/resource-acquisition
+// - https://blog.veritates.love/riverdragon-implementation
+// - https://blog.veritates.love/reformed-oop
 //
 // Each API is exposed as a function to instantiate or acquire a resource. This
 // instance is represented as a record of members and methods, to capture static
@@ -964,9 +964,9 @@ export var Network;
     // General fetch function with an auxiliary callback to handle the request
     // body. Can modify the request before sending. A local `AbortSignal` is
     // always added.
-    function fetchAdv(input, init, 
+    function fetchAdv(input, init,
     // obtain specific data from the request
-    onResponse, 
+    onResponse,
     // set headers and such
     modifyRequest) {
         return Resource.inSubScope(() => {
@@ -1241,7 +1241,7 @@ export var Audio;
         // Load it once, across all requests
         urlOrSource = String(urlOrSource);
         let blob = undefined;
-        const wait = 
+        const wait =
         // Get an existing promise, or true if it was fully loaded
         loaded.get(audioContext).get(urlOrSource) ??
             // Otherwise ask the audio context to load it

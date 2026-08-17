@@ -1,6 +1,6 @@
 ---
 title: Uses of Grammars
-subtitle: "[Interactive Parser Explanations](parser.html)"
+subtitle: "[Interactive Parser Explanations](parser)"
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
 ---

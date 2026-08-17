@@ -229,7 +229,7 @@ But you need _something_ stable to key data over time, maintain object identity.
 
 On the other hand, using UUIDs makes diffing hard, for tests and repeatability.
 
-Just like you wouldnʼt want raw pointers to show up when you are [pickling](pickling.html) data: you want to serialize to a (more) deterministic type like integer backrefs into the structure ([e.g.]{t=} implementations of the JavaScript structured clone algorithm), when then do become rehydrated pointers in a new runtime context when deserialized.
+Just like you wouldnʼt want raw pointers to show up when you are [pickling](pickling) data: you want to serialize to a (more) deterministic type like integer backrefs into the structure ([e.g.]{t=} implementations of the JavaScript structured clone algorithm), when then do become rehydrated pointers in a new runtime context when deserialized.
 
 ### Front end, back end
 
@@ -276,8 +276,8 @@ This state should be typed, otherwise it is unknown if the old state is compatib
 But if it is typed, we can know statically at compile time whether it is unchanged.
 If it has changed,
 
-- We can make a migration codec that 
+- We can make a migration codec that
 - Writing this as a function from the old data to new data is problematic.
 
 The point is, that we can make assumptions (regarding names and types) to make hot reload happen in some cases.
-The need for rapid feedback cycles mean that 
+The need for rapid feedback cycles mean that

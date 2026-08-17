@@ -8,7 +8,7 @@ date: 2025/05/11
 ---
 
 :::centered
-_See [Quapteryx Part I: On the SKI Combinator Calculus](quapteryx1.html) and [Quapteryx Part II: Ojo: a Bitflipped Jot, and a Real Flop](quapteryx2.html) for introduction/background on this topic._
+_See [Quapteryx Part I: On the SKI Combinator Calculus](quapteryx1) and [Quapteryx Part II: Ojo: a Bitflipped Jot, and a Real Flop](quapteryx1) for introduction/background on this topic._
 :::
 
 Quaternary combinators.
@@ -443,6 +443,6 @@ Thus my tests went through various irreducible values of `m` and `n` to evaluate
 The alternate way is to evaluate `factorial(x)(SB)(SK)` to get to a canonical Church numeral `(SB)(SB)…(SB)(SK)`.
 
 :::centered
-_Read on at [Quapteryx Part IV: Efficient Quapteryx Evaluator](quapteryx4.html)._
+_Read on at [Quapteryx Part IV: Efficient Quapteryx Evaluator](quapteryx4)._
 :::
 

@@ -126,7 +126,7 @@ In fact, this blog post could solve our problem for us: the Rado graph is a univ
 Besides its construction via random relations, it can be modeled in more determinstic ways: notably via the Ackermann relation.
 Posets can be modeled as graphs, so could this be used as a poset solver?
 
-This does not turn out to be a practical solution though: my language [HatStack](hatstack.html) models Hereditarily Finite Sets (HFSes) via the Ackermann coding: set membership in HatStack is the digraph relation in the Rado digraph.
+This does not turn out to be a practical solution though: my language [HatStack](hatstack) models Hereditarily Finite Sets (HFSes) via the Ackermann coding: set membership in HatStack is the digraph relation in the Rado digraph.
 However, the natural numbers used become too large to fit in memory very quickly, so HatStack also uses ordered finite sets to model HFSes.
 
 Also it is not clear that this encoding would help us with transitivity very much.

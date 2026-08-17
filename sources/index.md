@@ -6,27 +6,27 @@ author: "[@MonoidMusician](https://github.com/MonoidMusician)"
 I believe knowledge should be free & accessible.
 When I have the energy and time, I will contribute to putting more knowledge out there and sharing topics I am passionate about.
 
-Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/blog) and my account of the [[technologies]{t=etym etym=τεχνολογῐῶν}](technology.html) that go into this blog.
+Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/blog) and my account of the [[technologies]{t=etym etym=τεχνολογῐῶν}](technology) that go into this blog.
 
 ## Posts <a class="icon iconoir" href="rss.xml"><svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a><a class="icon iconoir" href="rss-lite.xml"><svg style="scale:0.6;transform-origin:left" width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
 
-- [Waterfall Model of Types](waterfall_types.html) [2026/07/22]{.dated}
+- [Waterfall Model of Types](waterfall-types) [2026/07/22]{.dated}
 
   My waterfall model of types, cascading from user intent, through programming language semantics, and down to pointers and bytes at the end of it all.
 
-- [Sticking Functions Where They Donʼt Belong](functions_as_data.html) [2026/06/04]{.dated}
+- [Sticking Functions Where They Donʼt Belong](functions-as-data) [2026/06/04]{.dated}
 
   Extensible Defunctionalization with Typeclasses. Or, Functions in Pure Data in Haskell.
 
-- [[OOP]{t=} Without the Goop: No “Objects”, Just Closures in Records](reformed_oop.html) [2026/05/27]{.dated}
+- [[OOP]{t=} Without the Goop: No “Objects”, Just Closures in Records](reformed-oop) [2026/05/27]{.dated}
 
-- [Everything Should Be [FRP]{t=} Compatible: Functional Reactive Programming Everywhere](frp_compatible.html) [2026/04/22]{.dated}
+- [Everything Should Be [FRP]{t=} Compatible: Functional Reactive Programming Everywhere](frp-compatible) [2026/04/22]{.dated}
 
-- [Accuracy Makes Artʼs Stories Persuasive](accuracy.html) [2026/04/17]{.dated}
+- [Accuracy Makes Artʼs Stories Persuasive](accuracy) [2026/04/17]{.dated}
 
   > One of the things I believe about art is that accuracy is rarely wasted.
 
-- [Thoughts about versioning, & config, & builds,](versioning.html) [2026/01/12]{.dated}
+- [Thoughts about versioning, & config, & builds,](versioning) [2026/01/12]{.dated}
 
   > I think versioning is one of the most important problems to deal with.
   >
@@ -40,7 +40,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   > And I think fixing versioning will reveal insight and lead to fixing other things, increasing the efficiency of systems (build systems and user installations), removing edge cases from upgrades, and decreasing frustration with broken software.
 
 - Selective Applicative Functors
-  1. [The Missing Theoretical Basis for Exclusive Determined Choice](selective_applicatives_theoretical_basis.html) [2025/12/25]{.dated}
+  1. [The Missing Theoretical Basis for Exclusive Determined Choice](selective-applicatives-theoretical-basis) [2025/12/25]{.dated}
 
       I lay out the theoretical basis for selective applicative functors and how I claim they should model control flow with *exclusive determined choice* (which is something that existing formulations failed to capture).
 
@@ -65,7 +65,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
         ZeroCases :: (i -> Void) -> CaseTree f i r
       ```
 
-- [Forms of resource acquisition: a monad and case study](resource_acquisition.html) [2025/09/13, 2025/12/29]{.dated}
+- [Forms of resource acquisition: a monad and case study](resource-acquisition) [2025/09/13, 2025/12/29]{.dated}
 
   > The main takeaway from this has been that instead of thinking about individual resources and their creation conditions and destructors, itʼs been more fruitful to think about it as consisting of _scopes_ of resources, which can be destroyed when they are no longer needed.
   > Resources only exist as destructors and wait-functions to call in the scope.
@@ -73,28 +73,28 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 
   > Thinking of gestalt scopes also allows waiting for the entire scope to be ready, in asynchronous ways: forwards and backwards and in parallel as necessary.
 
-- [Simple Local Nginx Config](simple_nginx.html) [2025/08/04]{.dated}
+- [Simple Local Nginx Config](simple-nginx) [2025/08/04]{.dated}
 
   > I made this as a drop-in replacement for `python3 -m http.server 8998`{.sh}, because I needed a file server that supported range requests and [CORS]{t=}. Run it with `nginx -c "$(realpath nginx.conf)" -p "$PWD" -e stderr`{.sh} and customize it to your needs.
 
 - Quapteryx: a Quaternary Combinator Calculus in C/[WASM]{t=} [2025/05/10 – 2025/05/11]{.dated}
 
-  - [Part I: On the [SKI]{t=} Combinator Calculus](quapteryx1.html) [2025/05/10]{.dated}
-  - [Part II: Ojo: a Bitflipped Jot, and a Real Flop](quapteryx2.html) [2025/05/10]{.dated}
-  - [Part III: Quaternary Combinators](quapteryx3.html) [2025/05/11]{.dated}
-  - [Part IV: Efficient Quapteryx Evaluator](quapteryx4.html) [2025/05/11]{.dated}
-  - [Part V: Quapteryx Takes Flight!](quapteryx5.html) [2025/06/14]{.dated}
+  - [Part I: On the [SKI]{t=} Combinator Calculus](quapteryx1) [2025/05/10]{.dated}
+  - [Part II: Ojo: a Bitflipped Jot, and a Real Flop](quapteryx2) [2025/05/10]{.dated}
+  - [Part III: Quaternary Combinators](quapteryx3) [2025/05/11]{.dated}
+  - [Part IV: Efficient Quapteryx Evaluator](quapteryx4) [2025/05/11]{.dated}
+  - [Part V: Quapteryx Takes Flight!](quapteryx5) [2025/06/14]{.dated}
 
-- [Implementing [FRP]{t=} and Why](riverdragon_implementation.html) [2025/02/22]{.dated}
+- [Implementing [FRP]{t=} and Why](riverdragon-implementation) [2025/02/22]{.dated}
 
-- [Perfect Vector Graphics for a [QR]{t=} code](svgqr.html) [2025/01/29]{.dated}
+- [Perfect Vector Graphics for a [QR]{t=} code](svgqr) [2025/01/29]{.dated}
   <img class="sidenote" src="assets/images/qr_demo1.svg" style="max-height: min(100%, 100svh)">
 
   > You would think that [SVG]{t=} would be a perfect medium for rendering [QR]{t=} codes, but iOS was having trouble rendering the [SVG]{t=}s for the complex, large [QR]{t=} codes I was using (nearly max size).
   > We need to render adjacent modules as a single [SVG]{t=} path.
   > There are two core steps: finding the connected components of the matrix, and rendering each component into the [SVG]{t=} as a single path.
 
-- [[WebRTC]{t=} over [QR]{t=} Connection Protocol](webrtc_over_qr.html) [2025/01/26]{.dated}
+- [[WebRTC]{t=} over [QR]{t=} Connection Protocol](webrtc-over-qr) [2025/01/26]{.dated}
 
   > Details on the connection protocol for [[WebRTC]{t=} over [QR]{t=}](https://webrtc-over-qr.veritates.love/).
   > How is it even possible, and how could you use it too?
@@ -128,7 +128,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   > ```
   > </details>
 
-- [Code golf for computing a 32-byte [QR]{t=} code!](qrinqr.html) [2024/12/20]{.dated}
+- [Code golf for computing a 32-byte [QR]{t=} code!](qrinqr) [2024/12/20]{.dated}
 
   > This JavaScript comes in at 512 [ASCII]{t=} characters when minified!
   > Why would I do such a thing? Well, it helps me bootstrap a [WebRTC]{t=} connection over [QR]{t=} codes!
@@ -142,11 +142,11 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   > for(i=j=24;~j;j-=j%2^j>6?1:i<u|i-u>24?(j-6?u=-u:i=0,1):j-6?(i-=u,-1):i++&0)V[[i,j]]=i-8&&j-8||16<i+j&i+j<25?"101"[t(18)]??"11010"[N(t(3),t(3,21),t(21,3))]??!(i-6&&j-6&&d[k/8|0]>>7-k++%8&1)^(i+j)%2:4588023>>(i-8?24-i:j)&1
   > ```
 
-- [Design your programming languages right!](design_it_right.html) [2024/12/16]{.dated}
+- [Design your programming languages right!](design-it-right) [2024/12/16]{.dated}
 
-- [Self-names (paths): The other hardest problem in programming?](selfnames.html) [2024/12/16]{.dated}
+- [Self-names (paths): The other hardest problem in programming?](selfnames) [2024/12/16]{.dated}
 
-- [Infodumping About Selective Applicative Functors](infodump_selective_applicatives.html) [2024/04/10]{.dated}
+- [Infodumping About Selective Applicative Functors](infodump-selective-applicatives) [2024/04/10]{.dated}
 
   > selective applicative functors lie in between monads and applicatives in
   > terms of their power, and show similarities with alternatives too
@@ -166,7 +166,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   > it returns a `Left`{.purescript} or a `Right`{.purescript}
 
 
-- [Pickling Tasty Data: The essence of runtime data (itʼs a graph!)](pickling.html) [2024/01/28]{.dated}
+- [Pickling Tasty Data: The essence of runtime data (itʼs a graph!)](pickling) [2024/01/28]{.dated}
 
   > I want to talk about data today.
   > In particular, I want to talk about runtime representations of data, **real** data – data that can be mutable and referentially opaque at runtime – and demystify what they actually are in terms of more familiar notions of data.
@@ -178,27 +178,27 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   >
   > The main thing we will work up to (and go beyond) is Pythonʼs [`pickle`{.python} module](https://docs.python.org/3/library/pickle.html), including my own implementation of it for the [Nasal scripting language](https://wiki.flightgear.org/Nasal_scripting_language) (which I believe is cleaner in some respects, although obviously less industrial).
 
-- [A Semiring From Any Semilattice: A mathematical pun?](semilattice_semiring.html) [2023/10/28]{.dated}
+- [A Semiring From Any Semilattice: A mathematical pun?](semilattice-semiring) [2023/10/28]{.dated}
 
   > You can make a semiring out of a semilattice by adjoining a new zero element. Lifting the semilattice operation in the two obvious ways gives you `+`{.haskell} and `*`{.haskell}. Idempotence gives distributivity(!).
   >
   > This construction answers the question, “if you need a semiring for static analysis, how do you also keep other data around that does not care about the branching structure?” (like, say, a monoid).
 
-- [TransMorphism Type Theory MetaTheory](tmttmt.html) [2023/10/13 – …]{.dated}
+- [TransMorphism Type Theory MetaTheory](tmttmt) [2023/10/13 – …]{.dated}
 
-- [The Best Errors for Solving Dependency Versions](version_solver.html) [2023/01/02 – 2023/01/21]{.dated}
+- [The Best Errors for Solving Dependency Versions](version-solver) [2023/01/02 – 2023/01/21]{.dated}
 
   > A [novel algorithm](https://github.com/purescript/registry-dev/blob/master/lib/src/Solver.purs) for resolving dependency bounds to solved versions:
   >
-  > - Incorporates [transitive dependency bounds](version_solver.html#intuitive-foundations-quasi-transitive-dependencies) for a breadth-first search:
+  > - Incorporates [transitive dependency bounds](version-solver#intuitive-foundations-quasi-transitive-dependencies) for a breadth-first search:
   >   #. What dependencies are required no matter which package version in the range we commit to?
   >   2. Whatʼs the loosest bound for each dependency then?
   > - By taking this intuitive approach, we gain two things:
-  >   #. [Better errors](version_solver.html#errors), matching what users would expect.
+  >   #. [Better errors](version-solver#errors), matching what users would expect.
   >   2. Efficiency too, if you could believe it.
-  > - Implemented using semilattices ([monoids](version_solver.html#monoids-monoids-everywhere)).
+  > - Implemented using semilattices ([monoids](version-solver#monoids-monoids-everywhere)).
 
-- [Impossible Bézier Calligraphy: Approximating cubic nibs drawn along cubic strokes](bezier_calligraphy.html) [2022/09/18 – 2023/04/23]{.dated}
+- [Impossible Bézier Calligraphy: Approximating cubic nibs drawn along cubic strokes](bezier-calligraphy) [2022/09/18 – 2023/04/23]{.dated}
   <img class="sidenote" src="assets/images/calligraphy_demo1.svg" style="max-height: min(100%, 100svh)">
 
   > Given a pen nib of some shape, what composite shape is produced when that pen is drawn along any particular path?
@@ -209,7 +209,7 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   > However, that doesnʼt prevent us from getting pretty darn close.
   > Let me show you how it works out.
 
-- [Interactive Parser Explanations](parser.html) [2022/07/20]{.dated}
+- [Interactive Parser Explanations](parser) [2022/07/20]{.dated}
 
   > I have been building this framework for explaining, analyzing, and teaching about [LR(1)]{t=} grammars for a couple months now.
   > The interactive widgets here will allow you to build and verify your intuition by clicking through examples, because I believe that once you are armed with the basic ideas and the right intuition, you can figure out the rest of details for yourself.
@@ -224,29 +224,29 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 
 ## Series
 - Selective Applicative Functors
-  #. [The Missing Theoretical Basis for Exclusive Determined Choice](selective_applicatives_theoretical_basis.html) [2025/12/25]{.dated}
-  #. [Theory of Composition, Syntax, Analysis, [&c.]{t=}](selective_applicatives_theory.html) [WIP]{t=}
-  #. [Monoids for Static Analysis](monoids_static_analysis.html) [WIP]{t=}
-  #. [Applications and Examples](selective_applicatives_applications.html) [WIP]{t=}
+  #. [The Missing Theoretical Basis for Exclusive Determined Choice](selective-applicatives-theoretical-basis) [2025/12/25]{.dated}
+  #. [Theory of Composition, Syntax, Analysis, [&c.]{t=}](selective-applicatives-theory) [WIP]{t=}
+  #. [Monoids for Static Analysis](monoids-static-analysis) [WIP]{t=}
+  #. [Applications and Examples](selective-applicatives-applications) [WIP]{t=}
 - Riverdragon [FRP]{t=} documentation
-  #. [Implementing [FRP]{t=} and Why](riverdragon_implementation.html) [2025/02/22]{.dated}
-  #. [Everything Should Be FRP Compatible: Functional Reactive Programming Everywhere](frp_compatible.html) [2026/04/22]{.dated}
-  #. [All the subtypes of streams in Riverdragon](riverdragon_streams.html) [2026/05/05]{.dated}
-- [Live PureScript editing](live.html) (custom front-end using TryPureScriptʼs [API]{t=})
-  #. [live_parser.html](live_parser.html)
-  #. [live_frp.html](live_frp.html)
-  #. [live_synth.html](live_synth.html)
-  #. [live_playground.html](live_playground.html)
-- [Interactive Parser Explanations](parser.html) [2022/07/20]{.dated}
-  #. [TODO]{t=}: [Parsing By Example](parser_by_example.html)
-  #. [TODO]{t=}: [Terminology Reference](parser_terminology.html)
-  #. [WIP]{t=}: [Basics: What Are Grammars](parser_basics.html)
-  #. [WIP]{t=}: [Uses of Grammars](parser_applications.html)
-  #. [WIP]{t=}: [Basics of [LR(1)]{t=} Parsing](parser_lr1.html)
+  #. [Implementing [FRP]{t=} and Why](riverdragon-implementation) [2025/02/22]{.dated}
+  #. [Everything Should Be FRP Compatible: Functional Reactive Programming Everywhere](frp-compatible) [2026/04/22]{.dated}
+  #. [All the subtypes of streams in Riverdragon](riverdragon-streams) [2026/05/05]{.dated}
+- [Live PureScript editing](live) (custom front-end using TryPureScriptʼs [API]{t=})
+  #. [live_parser.html](live-parser)
+  #. [live_frp.html](live-frp)
+  #. [live_synth.html](live-synth)
+  #. [live_playground.html](live-playground)
+- [Interactive Parser Explanations](parser) [2022/07/20]{.dated}
+  #. [TODO]{t=}: [Parsing By Example](parser-by-example)
+  #. [TODO]{t=}: [Terminology Reference](parser-terminology)
+  #. [WIP]{t=}: [Basics: What Are Grammars](parser-basics)
+  #. [WIP]{t=}: [Uses of Grammars](parser-applications)
+  #. [WIP]{t=}: [Basics of [LR(1)]{t=} Parsing](parser-lr1)
 - Tools
-  #. [WIP]{t=}: [Unicode Explorer](unicode.html)
-  #. [tiny tool to reformat output produced by `show`{.haskell}](show.html)
-  #. Abandoned?: [Generative Art Scratchpad](genart.html)
+  #. [WIP]{t=}: [Unicode Explorer](unicode)
+  #. [tiny tool to reformat output produced by `show`{.haskell}](show)
+  #. Abandoned?: [Generative Art Scratchpad](genart)
   #. [TODO]{t=}: Aspect ratio calculator/database
   #.
     [TODO]{t=}: macOS version lookupper
@@ -259,11 +259,11 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
   #. [CSS]{t=} → [Sass]{t=}
 
 ### Miniseries
-- [Monoids in Public](monoids_in_public.html) – cool little monoids and uses for monoids [2023/01/02 – 2025/12/03]{.dated}
-- [Knowlish](knowlish.html) – A list of little things I have learned and need reminders about.
-- [For the Users](for_the_users.html) – My user scripts and user styles (& othersʼ!)
+- [Monoids in Public](monoids-in-public) – cool little monoids and uses for monoids [2023/01/02 – 2025/12/03]{.dated}
+- [Knowlish](knowlish) – A list of little things I have learned and need reminders about.
+- [For the Users](for-the-users) – My user scripts and user styles (& othersʼ!)
 <!--
-- [What Means](what_means.html) – Some colloquial definitions of words/concepts
+- [What Means](what-means) – Some colloquial definitions of words/concepts
 - Co-search – nothing yet, but the idea is that I will put up requests for information, and maybe passers-by can tell me what I seek
 - Donʼt make me invent it – in which I finally ask for help & references for prior art, instead of just plunging in confident that I can figure it out
 -->
@@ -277,20 +277,20 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 
 ### Type Theory
 
-  - [Types of computation](computation.html) [WIP]{t=}
-  - [Waterfall Model of Types](waterfall_types.html)
-  - [Out of the Void: Eta for Absurd Functions](out_of_the_void.html)
+  - [Types of computation](computation) [WIP]{t=}
+  - [Waterfall Model of Types](waterfall-types)
+  - [Out of the Void: Eta for Absurd Functions](out-of-the-void)
   - [FullOfPi](FullOfPi.html): The only binder is \(\lambda\), and \(\Pi\) is a bare type constructor on its own, just like the type universes \(U_n\).
-  - [What is the intersection of function types?](function_intersection.html)
+  - [What is the intersection of function types?](function-intersection)
   - Interactive type theory!
-  - [WIP]{t=}: [User Operators with Implicits & Overloads](implicit_arguments.html), in bidirectional type checkers
+  - [WIP]{t=}: [User Operators with Implicits & Overloads](implicit-arguments), in bidirectional type checkers
   - The Algebra of Type Unification (semilattices everywhere!)
-  - [TransMorphism Type Theory MetaTheory](tmttmt.html)
+  - [TransMorphism Type Theory MetaTheory](tmttmt)
   - Nontermination and inconsistency
   - [Source spans/provenance](https://gist.github.com/MonoidMusician/2e2b6bcbd60c056083a720921589ec8d) [2020/09/26 – 2020/09/30]{.dated}
   - [Type theory introduction?](https://gist.github.com/MonoidMusician/c42361964ece15c9a883c005282c9614) [2019/09/04 – 2020/07/24]{.dated}
-    - [0](tt0.html) [1](tt1.html) [2](tt2.html) [3](tt3.html) [4](tt4.html) [5](tt5.html) [6](tt6.html) [7](tt7.html) [8](tt8.html)
-  - [Trying extra reduction rules for induction (notes)](extra_induction.html) [2021/04/03 – 2021/04/10]{.dated}
+    - [0](tt0) [1](tt0) [2](tt0) [3](tt0) [4](tt0) [5](tt0) [6](tt0) [7](tt0) [8](tt0)
+  - [Trying extra reduction rules for induction (notes)](extra-induction) [2021/04/03 – 2021/04/10]{.dated}
   - Idea for a tool for versioning [Dhall]{t=} configs
     - Maintain a category whose objects are versions and whose morphisms are [Dhall]{t=} functions for upgrading between those versions
     - Might require it to be a [thin category](https://ncatlab.org/nlab/show/thin+category), or at least have canonical resolutions
@@ -302,8 +302,8 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 ### Linguistics of Programming
 
   - Iʼve been thinking a lot about [selective applicative functors](https://dl.acm.org/doi/10.1145/3341694) lately.
-    Mostly through the perspective of two contrasting applications: [selective applicative parsers](https://cohost.org/monoidmusician/post/2588944-more-more-more-seman), and functors for [typechecking with better errors](comprehensive_errors.html).
-  - [Algebra of [CSS]{t=} Selectors](css_selectors.html)
+    Mostly through the perspective of two contrasting applications: [selective applicative parsers](https://cohost.org/monoidmusician/post/2588944-more-more-more-seman), and functors for [typechecking with better errors](comprehensive-errors).
+  - [Algebra of [CSS]{t=} Selectors](css-selectors)
 
     The fun part of this work was how to interleave nested selectors.
 
@@ -322,9 +322,9 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 
 ### Paradigms
 
-  - [[OOP]{t=} Without the Goop: No “Objects”, Just Closures in Records](reformed_oop.html) [2026/05/27]{.dated}
+  - [[OOP]{t=} Without the Goop: No “Objects”, Just Closures in Records](reformed-oop) [2026/05/27]{.dated}
 
-  - [Everything Should Be FRP Compatible: Functional Reactive Programming Everywhere](frp_compatible.html) [2026/04/22]{.dated}
+  - [Everything Should Be FRP Compatible: Functional Reactive Programming Everywhere](frp-compatible) [2026/04/22]{.dated}
 
   - I should do a blog post on what “effects” mean in [FP]{t=} culture
 
@@ -347,7 +347,7 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
     the main problem is that we donʼt have a good way to talk about them without invoking a metatheory of Haskell, with unification and possibly parametricity (Iʼll need to see if that comes up)
 
     actually, maybe parametricity is “just” the answer, and we can extract a free law from the stated laws!
-  - [WIP]{t=}: [Why you should believe in [HoTT]{t=} Path Induction as a (Haskell) Programmer](programming_paths.html)
+  - [WIP]{t=}: [Why you should believe in [HoTT]{t=} Path Induction as a (Haskell) Programmer](programming-paths)
   - Passive stability:
 
     > Imperative code has no passive stability: all global state is mutable, and small perturbations (say, modifying a prototype) can cause unpredictably large effects down the line, if not carefully managed. Untyped code is especially bad. Carefully managed imperative code may be stable, but this is active stability: it is not inherent to the framework but imposed on top.
@@ -376,10 +376,10 @@ Admittedly the “finished” posts are only 80–90% complete themselves, _shhh
 _data = information^[bits & bytes] + structure^[expectations of what the bits & bytes can be and what they mean]_
 
   - The Anatomy of [ADT]{t=}s
-  - [WIP]{t=}: [Subtypes/Quotients: Lies Told in Defense of the Truth](adt_lies_for_truth.html)
+  - [WIP]{t=}: [Subtypes/Quotients: Lies Told in Defense of the Truth](adt-lies-for_truth.html)
   - Quotients: Lets us have nice cake and eat things too.
-  - [Hereditarily Finite Sets (HFSes)](hereditarily_finite_sets.html)
-    - [HatStack](hatstack.html), a stack based, concatenative language for Hereditarily Finite Sets
+  - [Hereditarily Finite Sets (HFSes)](hereditarily-finite-sets)
+    - [HatStack](hatstack), a stack based, concatenative language for Hereditarily Finite Sets
 
 ### Mathematics
 
@@ -396,4 +396,4 @@ _data = information^[bits & bytes] + structure^[expectations of what the bits & 
   - Instances as biïmplications, and the unfortunate consequences
     (It is really hard to actually come up for a use for this, outside of specific reflection/reification contexts ... harrumph maybe it actually breaks that too.)
     (Actually I think it is fine, but it needs to be opt-in for the sake of [API]{t=}s/incremental builds.)
-  - [Redesigning `Coercible`{.purescript}](coercible.html)
+  - [Redesigning `Coercible`{.purescript}](coercible)

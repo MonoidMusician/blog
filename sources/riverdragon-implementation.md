@@ -500,7 +500,7 @@ D.ol[] $ D.Appending $ dam ado
 
 <!-- (TODO: add a run button to run this directly here??) -->
 
-You can paste that expression at [Live FRP DOM Coding](live_frp.html).^[Yeah, thatʼs all the code you need to try it out! it gets templated into a full module with a header, imports, declarations, and so on]
+You can paste that expression at [Live FRP DOM Coding](live-frp).^[Yeah, thatʼs all the code you need to try it out! it gets templated into a full module with a header, imports, declarations, and so on]
 
 ### Benefits of `IsFlowing`{.ps}
 
