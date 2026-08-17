@@ -15,7 +15,7 @@ Sure thereʼs Gödel numberings of various systems, but they are pretty artifici
 _Gödel numbering: an encoding only a mathematician could love._
 :::
 
-Where Gödel numberings are ugly, the corresponding deal for finite set theory is elegant: I already made [HatStack](hatstack), a stack-based language for hereditarily finite set theory, where every piece of data is just a natural number and these natural numbers *are* sets, bitwise.
+Where Gödel numberings are ugly, the corresponding deal for finite set theory is elegant: I already made [HatStack](hatstack.html), a stack-based language for hereditarily finite set theory, where every piece of data is just a natural number and these natural numbers *are* sets, bitwise.
 
 It uses the [Ackermann coding](https://en.wikipedia.org/wiki/Hereditarily_finite_set#Ackermann_coding), whose premise is really simple: \(x \in y\) just means that the bit numbered \(x\) is set in the number \(y\): \((2^x \band y) \ne 0\).
 Every set is just the bitfield of its children, who (as numbers) are just the bitfield of *their* children – hence, *hereditarily* finite:
@@ -37,7 +37,7 @@ Instead, I realized that I could make a really efficient evaluator using SKI cal
 I wanted to target WASM for several reasons, and I tried hand writing WASM (well, the textual format WAT), before deciding that that, too, was too unwieldy.
 So I translated my WASM to C by hand, fixed a few bugs and actually got it working, and then I scrapped it for an actually efficient evaluator.
 
-[My journey into Jot](quapteryx2) is the subject of the next chapter, and [Quapteryx](quapteryx2) is documented in the other chapters.
+[My journey into Jot](quapteryx2.html) is the subject of the next chapter, and [Quapteryx](quapteryx3.html) is documented in the other chapters.
 
 However, most readers will probably benefit from the background that occupies the rest of this chapter.
 
@@ -189,5 +189,5 @@ You have to resort to inserting \(S\) and \(K\) and evaluating with those.
 … Or can you?
 
 :::centered
-_Read on at [Quapteryx Part II: Ojo: a Bitflipped Jot, and a Real Flop](quapteryx2) or jump to the good stuff at [Quapteryx Part III: Quaternary Combinators](quapteryx2) and beyond._
+_Read on at [Quapteryx Part II: Ojo: a Bitflipped Jot, and a Real Flop](quapteryx2.html) or jump to the good stuff at [Quapteryx Part III: Quaternary Combinators](quapteryx3.html) and beyond._
 :::

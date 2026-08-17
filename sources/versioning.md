@@ -229,7 +229,7 @@ But you need _something_ stable to key data over time, maintain object identity.
 
 On the other hand, using UUIDs makes diffing hard, for tests and repeatability.
 
-Just like you wouldnʼt want raw pointers to show up when you are [pickling](pickling) data: you want to serialize to a (more) deterministic type like integer backrefs into the structure ([e.g.]{t=} implementations of the JavaScript structured clone algorithm), when then do become rehydrated pointers in a new runtime context when deserialized.
+Just like you wouldnʼt want raw pointers to show up when you are [pickling](pickling.html) data: you want to serialize to a (more) deterministic type like integer backrefs into the structure ([e.g.]{t=} implementations of the JavaScript structured clone algorithm), when then do become rehydrated pointers in a new runtime context when deserialized.
 
 ### Front end, back end
 

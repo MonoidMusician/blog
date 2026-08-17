@@ -1,6 +1,6 @@
 ---
 title: "Basics of LR(1) Parsing"
-subtitle: "[Interactive Parser Explanations](parser)"
+subtitle: "[Interactive Parser Explanations](parser.html)"
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
 ---
@@ -43,7 +43,7 @@ What makes LR(1).
 
 Letʼs talk about what a state means in LR(1) concepts and how to transition between states.
 
-I will assume you know the [terminology of grammars](parser-terminology) in general, like nonterminals, terminals, production rules, etc.
+I will assume you know the [terminology of grammars](parser-terminology.html) in general, like nonterminals, terminals, production rules, etc.
 
 A state consists of a bunch of state items.
 

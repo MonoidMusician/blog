@@ -207,7 +207,7 @@ Here are the steps for basic connection establishment:
 
 First of all: to get the JavaScript-in-HTML-in-`data:` [URI]{t=} to fit into a QR code with a full [SDP]{t=}, the JavaScript template needs to be minified a bunch, but it is possible.
 
-As I mentioned above, outside of this happy path you need to return a fingerprint, and this is what the [QR in QR](qrinqr) code is intended for: with aggressive minification and code golfing, the guest can print a QR code which the host can scan.
+As I mentioned above, outside of this happy path you need to return a fingerprint, and this is what the [QR in QR](qrinqr.html) code is intended for: with aggressive minification and code golfing, the guest can print a QR code which the host can scan.
 This is an alright solution for that in a local situation.
 
 And for [WAN]{t=} connections, it needs the public [IP]{t=} address and public port from the [STUN]{t=} candidate(s).

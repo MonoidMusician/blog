@@ -7,7 +7,7 @@ date: 2025/05/11
 ---
 
 :::centered
-_Continued from [Quapteryx Part III: Quaternary Combinators](quapteryx3), where I was writing WASM by hand and then ported it to C and got it working._
+_Continued from [Quapteryx Part III: Quaternary Combinators](quapteryx3.html), where I was writing WASM by hand and then ported it to C and got it working._
 :::
 
 The next step was rewriting it from scratch for an efficient evaluator, and this is where I realized that having C structs and pointers (and malloc!) was really what I needed.

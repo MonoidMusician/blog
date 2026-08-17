@@ -1,6 +1,6 @@
 ---
 title: "Basics: What Are Grammars"
-subtitle: "[Interactive Parser Explanations](parser)"
+subtitle: "[Interactive Parser Explanations](parser.html)"
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
 ---

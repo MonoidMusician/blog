@@ -93,7 +93,7 @@ The PureScript compiler already deals with lone surrogates in weird ways:
 - `Char`{.haskell} literals, since they are UTF-16 code units, can be lone surrogates (and cannot be code points from supplementary planes).
 
 Another flaw is that `Ord String`{.haskell} has different behavior in edge cases in UTF-16 than that of UTF-8/UTF-32.
-([Source](unicode#ordering).)
+([Source](unicode.html#ordering).)
 Uhh I think it is beyond scope to fix that in `Data.String`{.haskell} (comparisons should reflect native comparisons, otherwise stuff will get weird).
 But technically this means that there could be some subtle nasty bugs with `Data.Map`{.haskell} and other ordered structures across backends if you are not careful.
 

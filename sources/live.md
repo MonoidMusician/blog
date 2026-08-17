@@ -1,7 +1,7 @@
-[live_parser.html](live-parser)
+[live_parser.html](live-parser.html)
 
-[live_frp.html](live-frp)
+[live_frp.html](live-frp.html)
 
-[live_synth.html](live-synth)
+[live_synth.html](live-synth.html)
 
-[live_playground.html](live-playground)
+[live_playground.html](live-playground.html)

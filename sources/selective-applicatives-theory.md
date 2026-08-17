@@ -5,7 +5,7 @@ author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
 ---
 
-As a quick [recap](selective-applicatives-theoretical-basis):
+As a quick [recap](selective-applicatives-theoretical-basis.html):
 
 - Selective applicative functors are meant to sit in between applicatives and monads in terms of constraints vs flexibility.
   The implementation has more freedom (there are more selective applicative structures for a carrier type than monad or applicative structures!), while the combinators offer fewer guarantees than monads.
@@ -181,7 +181,7 @@ instance (Applicative f, NicelyMixed g h) => ArrowChoice (Mixolydian f g h) wher
   (+++) = lift2 \x y -> either (x >>> fmap Left) (y >>> fmap Right)
 ```
 
-However, `g`{.haskell} and `h`{.haskell} are likely to be riddled with newtype wrappers, making this inconvenient to use.^[This is one of my main complaints about Haskell: I wish there were a way to make newtype constructors much more transparent. This is one of the things I want to address in [tmTTmt](tmttmt).]
+However, `g`{.haskell} and `h`{.haskell} are likely to be riddled with newtype wrappers, making this inconvenient to use.^[This is one of my main complaints about Haskell: I wish there were a way to make newtype constructors much more transparent. This is one of the things I want to address in [tmTTmt](tmttmt.html).]
 
 So we might as well introduce a class that is allowed to unwrap those types for you, at the expense of not having clean `(Functor g, Functor h)`{.haskell} superclasses:
 
@@ -396,7 +396,7 @@ Incidentally that parser type is already a monad, but it is a similar idea to wh
 
 ## Monoids for Static Analysis
 
-This is its own article, [Monoids for Static Analysis](monoids-static-analysis), addressing the non-functor part of the picture.
+This is its own article, [Monoids for Static Analysis](monoids-static-analysis.html), addressing the non-functor part of the picture.
 
 The monoids for static analysis are important not just for static analysis, either ahead of time or interleaved with execution.
 But their structure also reveals possibilities for the functors, patterns of code and control flow.
@@ -774,7 +774,7 @@ The compiler essentially needs to commit to an evaluation scheme for the pattern
 That syntax is … alright.
 It could work.
 
-But I prefer the much different syntax I use in [tmTTmt](tmttmt-syntax).
+But I prefer the much different syntax I use in [tmTTmt](tmttmt-syntax.html).
 It is losely inspired by horizontal bar notation.
 
 Aside from the output `output`{.tmTTmt} being declared at the top(!) of the function,

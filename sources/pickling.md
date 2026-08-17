@@ -38,7 +38,7 @@ Iʼve identified some basic aspects of data:
 #. Functions? *Are* functions data?? (Iʼm including closures and procedures and routines and all that stuff in my definition of functions, btw.)
     - One way in which closures do not behave like normal kinds of data is that the data that they implicit enclose from outer scopes can be of any type (depending on instantiation and whatever is written in the code), not related to the type of the function itself, such that nice properties (like serializability) are not necessarily preserved [wrt]{t=} closures.
 #. Quotiented data (Agda, Lean, Rocq)
-    - see [Subtypes/Quotients: Lies Told in Defense of the Truth](adt-lies-for-truth) ([WIP]{t=})
+    - see [Subtypes/Quotients: Lies Told in Defense of the Truth](adt-lies-for-truth.html) ([WIP]{t=})
 
 It will be important to think about what notions of equality are useful and adequate for these kinds of data!
 
@@ -219,7 +219,7 @@ Mutable data cares about its referential **identity**, on the other hand.
 
 The thing about pure data is that it essentially doesnʼt really care if it is a tree or a DAG.
 I mean, it matters in terms of efficiency and storage space!
-(Though this is rarely exposed at a useful level.^[Sighs in [tmTTmt](tmttmt)&nbsp;…])
+(Though this is rarely exposed at a useful level.^[Sighs in [tmTTmt](tmttmt.html)&nbsp;…])
 But the results of an algorithm wonʼt be changed just by sharing more or less internal structure among the immutable data.
 
 Mutable data pretty obviously cares about sharing.

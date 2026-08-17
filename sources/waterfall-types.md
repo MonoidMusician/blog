@@ -130,7 +130,7 @@ Laziness helps with abstraction here, it allows more flexibility in interleaving
 And sometimes we write simple code first but then want to associate additional metadata on top of the data.
 [AST]{t=} nodes that cache what variables they refer to, stuff like that.
 Now you have to modify your datatype and every consumer and producer of it to retain that information, even places that should be oblivious to it.
-This is something I want to fix in [tmTTmt](tmttmt#motivation).
+This is something I want to fix in [tmTTmt](tmttmt.html#motivation).
 
 On the flipside, sometimes language semantics are a bit too loose for user intent.
 Sometimes you want to tell Haskell that pointer identity does matter, and not to elide allocations, because you are using finalizers or [stable names](https://hackage-content.haskell.org/package/base-4.22.0.0/docs/GHC-StableName.html) on otherwise pure data without using [`IO`{.haskell}](https://hackage-content.haskell.org/package/base-4.22.0.0/docs/System-IO.html#t:IO) to sequence it.
@@ -139,7 +139,7 @@ Or sometimes the language semantics are fine, but you just want different semant
 Maybe you need to match the layout of a struct in C or GLSL.
 Maybe you want to know that your tuple of booleans fits into an atomic word more than that it is coercible with other tuples.
 
-My [WASMFP](https://github.com/MonoidMusician/blog/blob/main/Haskell/src/WASMFP.hs) experiment, making a simple functional programming language that compiles to [WASM]{t=} with [GC]{t=} types, is unique in that each type can specify how it is treated by the surface syntax (like an [ADT]{t=} or like an array or opaquely) and how it is compiled to WASM on the backend.^[This uses [existential types](functions-as-data) to be easily extensible.]
+My [WASMFP](https://github.com/MonoidMusician/blog/blob/main/Haskell/src/WASMFP.hs) experiment, making a simple functional programming language that compiles to [WASM]{t=} with [GC]{t=} types, is unique in that each type can specify how it is treated by the surface syntax (like an [ADT]{t=} or like an array or opaquely) and how it is compiled to WASM on the backend.^[This uses [existential types](functions-as-data.html) to be easily extensible.]
 This really cleanly illustrates Stage 1 nominal types versus Stage 2 structural types, and the WASM implementations handle the later stages: allocating GC types and tagging them so that `i31`{.wasm} can live on the stack with references.
 
 Even more extreme than this, I think it would be really cool if types were allowed to specify their data layout exactly with a bidirectional parser–serializer, and all of the high-level data accesses were compiled to operate on that efficiently, somehow.

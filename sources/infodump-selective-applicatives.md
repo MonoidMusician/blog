@@ -332,7 +332,7 @@ thereʼs probably some laws you want to impose between the monoid and
 semigroup
 
 in fact, having a lattice or semilattice [is particularly
-nice](semilattice-semiring)
+nice](semilattice-semiring.html)
 
 and semilattices crawl all over static analysis, you wouldnʼt believe
 it
@@ -622,7 +622,7 @@ Iʼm pretty sure itʼs possible to interpret this selective applicative parsing 
 (in fact, it may be the most well-behaved setting)
 
 I wrote a bunch about how LR(1) parsing works:
-[Interactive Parser Explanations](parser)
+[Interactive Parser Explanations](parser.html)
 (as always, thereʼs a bunch more to write)
 
 quick overview is that it builds a graph of state nodes, where each state is a partial parse of some rules and the lookahead that one would expect after parsing that rule (based on how you got to the state)

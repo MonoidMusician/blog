@@ -110,7 +110,7 @@ The source can be found at [MonoidMusician/blog](https://github.com/MonoidMusici
     It doesnʼt have a lot of characters though, just Latin, Cyrillic, and ASCII symbols (no arrows unfortunately).
 
 [Amaranth](https://fonts.google.com/specimen/Amaranth){style='font-family: Amaranth'}
-  : I spent a while trying to find a nice sans-serif font that had character to use for UI accents, like the info boxes I sprinkled into the [Eudoxus real numbers post](Eudoxus.html) and the input boxes on the [parsing posts](parser).
+  : I spent a while trying to find a nice sans-serif font that had character to use for UI accents, like the info boxes I sprinkled into the [Eudoxus real numbers post](Eudoxus.html) and the input boxes on the [parsing posts](parser.html).
     I really love Amaranth because it meets these goals: almost all characters have a little extra flair and curve to them, so it remains distinctive and legible.
     I just wish it was available as a [variable font](https://fonts.google.com/knowledge/introducing_type/introducing_variable_fonts), itʼs a bit heavy for my liking.
     Of course, it doesnʼt help that Cormorant is so feather-light&nbsp;…
@@ -217,7 +217,7 @@ Steps:
 Some weird quirks and anti-quirks Iʼve run into while implementing stuff:
 
 1. The most annoying one I do not have a workaround for:
-  I implemented floating vertical _and_ horizontal headers for one of the [parsing tables](parser#table-of-parse-actions-for-each-state).
+  I implemented floating vertical _and_ horizontal headers for one of the [parsing tables](parser.html#table-of-parse-actions-for-each-state).
   It works great in dashboard mode, but in the blogpost mode I have to set `{overflow: auto hidden}`{.css} so that it scrolls horizontally but not vertically in the body of the post.
   Unfortunately, due to how scroll containers work in CSS, this makes only the horizontal scrolling move the headers, not the vertical scrolling, which is kind of annoying 😒.
   I donʼt know what to do about it.

@@ -9,7 +9,7 @@ date: 2026/05/05–2026/05/27
 [OOP]{t=} gets a lot of things wrong.
 Objects themselves are not interesting, they are usually beside the point.
 It is their behaviors, their interfaces, that are interesting.
-[Even lifecycle/RAII can be decoupled from an “object” and a “class”.](resource-acquisition)
+[Even lifecycle/RAII can be decoupled from an “object” and a “class”.](resource-acquisition.html)
 
 Iʼve been experimenting with a different approach that simply seems cleaner.
 Less noise, fewer inconsequential details to worry about^[no worrying about function vs method calls, when to use `this`{.purescript}, whether to use getters+setters or mutate a plain member (no!) or use explicit get and set methods, …], more flexibility. More coherence.
@@ -103,7 +103,7 @@ A function instantiated at runtime has access to variables in its local namespac
 Pairing the underlying code with a chain of namespaces is known as a __closure__.
 As an optimization, only the required variables may be packed in a closure, as opposed to whole namespaces.
 
-Closures pack variables of any type into an interface accessible through the function type: this is why they can be used to [encode existential quantification](https://stackoverflow.com/a/13653533), and also why they do *not* support things like [NFData](https://github.com/haskell/deepseq/issues/16) and serialization, except [when the runtime could actually support it](https://blog.veritates.love/pickling#functions-builtins-bootstrapping).
+Closures pack variables of any type into an interface accessible through the function type: this is why they can be used to [encode existential quantification](https://stackoverflow.com/a/13653533), and also why they do *not* support things like [NFData](https://github.com/haskell/deepseq/issues/16) and serialization, except [when the runtime could actually support it](https://blog.veritates.love/pickling.html#functions-builtins-bootstrapping).
 
 For our purposes, they provide abstraction (implementing the same interface by any means necessary) and the construction of closures provides the coherence that normally is associated with an “object”: `cell.set`{.purescript} and `cell.get`{.purescript} both contain the same mutable reference in their closure.
 :::
@@ -166,7 +166,7 @@ PureScriptʼs row types make this seamless by enabling extensible records of ope
 Itʼs really important that properties of the interface are exposed as reactive streams, so downstream consumers know when they are changing.
 Conversely, it is preferable to expose setter methods still, as opposed to consuming reactive streams.
 
-[Everything Should Be FRP Compatible!](frp-compatible)
+[Everything Should Be FRP Compatible!](frp-compatible.html)
 
 :::Warning
 Unfortunately, with current [API]{t=}s, it is not always possible to know when values are changing.
@@ -312,7 +312,7 @@ This is especially frustrating in both the small scale and large:
 
 ### Scopes
 
-This style of object pairs really well with my idea of scopes from [Resource Acquisition](resource-acquisition#implementation).
+This style of object pairs really well with my idea of scopes from [Resource Acquisition](resource-acquisition.html#implementation).
 
 In this conception of scope, a scope is simply a way of accumulating destructors and telling us if a scope was destroyed already.^[This is sufficient in a garbage-collected language, at least.]
 Trust me, tracking individual `_.destroy`{.purescript} methods on objects is *not* fun.
@@ -440,7 +440,7 @@ Here it is implemented on top of JavaScript object mutability, but its interface
 Alright, there are some downsides to this approach.
 But I am not convinced that they are blockers, especially in a language like PureScript that makes it more ergonomic than the alternatives, and has the capacity to be optimizable (plus, JavaScript runtimes are impressively optimized already).
 
-#.  It still has the same downside of [OOP]{t=} that everything is object-centric, being methods *on* an object, and so on.^[Iʼve always complained that [why should things like addition and concatenation be methods on one object instead of the other?](oop), and I hope you also see why it is shortsighted that [OOP]{t=} forces that.]
+#.  It still has the same downside of [OOP]{t=} that everything is object-centric, being methods *on* an object, and so on.^[Iʼve always complained that [why should things like addition and concatenation be methods on one object instead of the other?](oop.html), and I hope you also see why it is shortsighted that [OOP]{t=} forces that.]
     But this is okay, I think that is reasonable when dealing with mutation/communication-centric things, as long as the rest of the language is not infected with object-centrism.
     And it is nice that the closures can be projected out into plain functions, without having to worry about if method access produces the right `this`{.javascript} reference.^[Although this is something that Python got right.]
 
@@ -797,7 +797,7 @@ I think what I have outlined here is a much simpler approach that cuts to the he
 
 It doesnʼt need to be done in functional languages or with monads, it works well in JavaScript with plain effectful functions!^[Even `Scope`{.purescript} works, using the usual tricks for local monads via a global variable, plus some care around closures/callbacks/asynchrony. like, stream callbacks ought to run in the scope that the stream was created in, not whatever happened to trigger the event.]
 
-Iʼve been using this to develop [Riverdragon](riverdragon-implementation), my take on [FRP]{t=}.^[Riverdragon needs surprisingly few object behaviors for its helpers: about 10.]
+Iʼve been using this to develop [Riverdragon](riverdragon-implementation.html), my take on [FRP]{t=}.^[Riverdragon needs surprisingly few object behaviors for its helpers: about 10.]
 Iʼve even been using it to port Riverdragon from PureScript to other languages: I think [everything should be compatible with FRP](https://tech.lgbt/@monoidmusician/116449166586150538) and I wanna use Riverdragon everywhere.
 
 I will keep using it, in my own work.
