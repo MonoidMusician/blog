@@ -43,7 +43,7 @@ pkgs.mkShell rec {
   APPEND_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath nativeBuildInputs}";
   shellHook = ''
     export LD_LIBRARY_PATH="$APPEND_LIBRARY_PATH:$LD_LIBRARY_PATH"
-    export PATH="$PWD/node_modules/.bin:$PATH"
+    export PATH="$PWD/python/.venv/bin:$PWD/node_modules/.bin:$PATH"
     export CLANG_WASM="${pkgs.buildPackages.clang.cc}/bin/clang" # for quaperyx WASM
     export LLD_WASM="${pkgs.buildPackages.llvmPackages.lld}/bin/wasm-ld" # for quaperyx WASM
     test -d node_modules || npm uninstall --no-save purescript

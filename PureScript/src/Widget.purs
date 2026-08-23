@@ -32,7 +32,7 @@ import Idiolect (JSON, filterFst, (>==))
 import Parser.Printer.JSON as C
 import Riverdragon.Dragon (Dragon, renderEl, snapshot)
 import Riverdragon.Dragon.Bones as Dragon
-import Riverdragon.River (Allocar, River, createRiverStore, createStore, mailbox, mailboxRiver, stillRiver, unsafeRiver)
+import Riverdragon.River (Allocar, River, burstOf, copyBurst, createRiverStore, createStore, mailbox, mailboxRiver, noBurst, stillRiver, store, unsafeRiver)
 import Riverdragon.River as River
 import Riverdragon.River.Bed (allocLazy)
 import Riverdragon.River.Beyond (dedup, withLast)
@@ -140,6 +140,26 @@ valueInterface v0 = _.result <$> start "valueInterface" do
     , active: activeByKey
     , current: Just <$> stream.current
     , destroy
+    }
+
+
+reInterface :: forall a. Ord a => Interface a -> Allocar (Interface a)
+reInterface int = _.result <$> start "reInterface" do
+  byKey <- mailbox (map { key: _, value: unit } int.loopback)
+  activeByKey <- mailboxActive int.loopback
+  pure $ int { mailbox = byKey, active = activeByKey }
+
+mixInterface :: forall a. Ord a => Interface a -> River a -> Allocar (Interface a)
+mixInterface int additions = _.result <$> start "mixInterface" do
+  destroy <- selfDestructor
+  stream <- store $ int.loopback <|> additions
+  byKey <- mailbox (map { key: _, value: unit } stream.stream)
+  activeByKey <- mailboxActive stream.stream
+  pure $ int
+    { loopback = stream.stream
+    , receive = copyBurst stream.stream additions
+    , mailbox = byKey, active = activeByKey
+    , destroy = destroy
     }
 
 

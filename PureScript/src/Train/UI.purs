@@ -3,26 +3,35 @@ module Train.UI where
 import Prelude
 
 import Control.Alt ((<|>))
+import Control.Monad.ResourceM (track)
 import Control.Monad.ResourceT (ResourceM)
+import Control.Plus (empty)
 import Data.Bifunctor (bimap)
 import Data.Either (Either(..))
 import Data.Filterable (separate)
+import Data.Foldable (fold)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
+import Data.Number.Format as Format
+import Data.Pair (Pair(..))
 import Data.Profunctor.Choice ((|||))
 import Data.Tuple (Tuple(..))
+import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Random (randomInt)
 import Idiolect ((<#?>))
 import Math.Matrix (Vec2(..))
-import Riverdragon.Dragon (Dragon)
-import Riverdragon.Dragon.Bones ((.$), (.$~~), (<:>))
+import Riverdragon.Dragon (AttrProp, Dragon(..))
+import Riverdragon.Dragon.Bones ((.$), (.$~~), (<:>), (=:=))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (deletable)
-import Riverdragon.River (Course(..), Lake, River, coursing, createRiver, makeLake, memoize, store')
+import Riverdragon.River (Course(..), Lake, River, coursing, createRiver, makeLake, memoize, noBurst, oneStream, stillRiver, store, store')
 import Riverdragon.River.Bed (freshId)
 import Riverdragon.River.Beyond (instanced, withLast)
+import Train.Dynamics (Traction)
+import Train.Dynamics as Dyn
 import Train.Types (Pos)
+import Widget (Interface, mixInterface, valueInterface)
 
 definitions :: Array (Tuple Dragon Dragon) -> Dragon
 definitions entries = D.dl.$~~ entries >>= \(Tuple term def) ->
@@ -106,3 +115,80 @@ renderPosMap renderItem items = definitions $ Map.toUnfoldable items
 renderPosMapsies :: forall v. (v -> Array Dragon) -> Map.Map Pos v -> Dragon
 renderPosMapsies renderItem items = definitionsies $ Map.toUnfoldable items
   <#> bimap renderPos renderItem
+
+
+calcRail :: River Traction -> ResourceM
+  { v0 :: Interface Number
+  , di :: Interface Number
+  , ti :: Interface Number
+  , v1 :: Interface Number
+  }
+calcRail traction = do
+  v0Input <- track $ valueInterface 0.0
+  diInput <- track $ valueInterface 0.0
+  tiInput <- track $ valueInterface 0.0
+  v1Input <- track $ valueInterface 0.0
+  let
+    mode = oneStream
+      [ diInput.receive <#> \di tract v0 ->
+          let calc = Dyn.maxAtDistance tract v0 di in
+          { di: Nothing, v1: Just calc.veloc, ti: Just calc.time }
+      , noBurst tiInput.receive <#> \ti tract v0 ->
+          let calc = Dyn.curve tract v0 ti in
+          { ti: Nothing, v1: Just calc.veloc, di: Just calc.dist }
+      , noBurst v1Input.receive <#> \v1 tract v0 ->
+          let calc = Dyn.toVelocity tract (Pair v0 v1) in
+          { v1: Nothing, di: Just calc.dist, ti: Just calc.time }
+      ]
+  let
+    v0 = v0Input { receive = empty }
+  { stream: computed } <- store $ mode <*> traction <*> v0.loopback
+  di <- track $ mixInterface diInput $ computed <#?> _.di
+  ti <- track $ mixInterface tiInput $ computed <#?> _.ti
+  v1 <- track $ mixInterface v1Input $ computed <#?> _.v1
+  pure { v0, di, ti, v1 }
+
+railCalc :: River Traction -> ResourceM { widget :: Dragon, outputs :: _ }
+railCalc traction = do
+  let
+    routeDist = 10_000.0
+    dms :: River Number -> Dragon
+    dms speed = fold
+      [ fmting speed, D.text " dm/s"
+      , D.text " = "
+      , fmting $ speed <#> \s -> s * 0.36
+      , D.text " km/h"
+      ]
+    fmt :: Number -> String
+    fmt = Format.toStringWith (Format.fixed 2)
+    fmting :: River Number -> Dragon
+    fmting = D.Text <<< stillRiver <<< map fmt
+
+  outputs@{ v0, di, ti, v1 } <- calcRail traction
+
+  pure $ { outputs, widget: _ } $ fold
+    [ mempty
+    , range 0.0 300.0 0.1 (pure 0.0) v0.send []
+    , dms v0.loopback
+    , range 0.0 routeDist 1.0 di.receive di.send []
+    , fmting di.loopback, D.text " dm"
+    , range 0.0 100.0 0.1 ti.receive ti.send []
+    , fmting ti.loopback, D.text " s"
+    , range 0.0 300.0 0.1 v1.receive v1.send []
+    , dms v1.loopback
+    ]
+
+
+range :: Number -> Number -> Number -> River Number -> (Number -> Effect Unit) -> Array (River AttrProp) -> Dragon
+range vmin vmax step value onValue attrs = D.input $
+  [ D.attr "type" =:= "range"
+  , D.prop "min" =:= vmin
+  , D.prop "max" =:= vmax
+  , D.prop "step" =:= step
+  , D.stylish =:= D.smarts
+      { "width": "100%"
+      , "display": "block"
+      }
+  , D.value <:> value
+  , D.onInputNumber =:= onValue
+  ] <|> attrs

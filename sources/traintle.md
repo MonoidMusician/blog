@@ -943,3 +943,5 @@ But letʼs solve for \(C\) such that \(v(t_c) = v_c\), so the two acceleration c
              style="font-style:normal;font-variant:normal;font-weight:900;font-stretch:normal;font-size:2px;font-family:'Noto Sans';-inkscape-font-specification:'Noto Sans Heavy';letter-spacing:0.2px;fill:#b19434;fill-opacity:1;stroke:#aa9242;stroke-width:0.15;stroke-dasharray:none;stroke-opacity:0.739927">UTLX <tspan
    style="letter-spacing:0px;fill:#b19434;fill-opacity:1;stroke:#aa9242;stroke-width:0.15;stroke-dasharray:none;stroke-opacity:0.739927"
    id="tspan490885">157842</tspan></tspan></text></g></g></g></svg>
+
+<!-- HMMHHHHH -->

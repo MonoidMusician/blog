@@ -53,7 +53,7 @@ import Train.Logic (analyzeLayout)
 import Train.Parser (parseTraintle)
 import Train.Track (planAndScheduleRoute)
 import Train.Types (Command, Direction(..), InterState, Route(..), RoutedTrain(..), TrainMode(..), routeEnd)
-import Train.UI (clone, definitions, dragonEither, manageDefs, mask)
+import Train.UI (clone, definitions, dragonEither, manageDefs, mask, railCalc, range)
 import Type.Proxy (Proxy(..))
 import Uncurried.RWSE (runRWSE)
 import Unsafe.Coerce (unsafeCoerce)
@@ -101,101 +101,13 @@ widget { interface } = do
               loopAndBack = if loopPos <= 1.0 then loopPos else 2.0 - loopPos
             in unit2bounds1 plan.time $. loopAndBack
 
-        v0 <- River.createStore 0.0
-        di <- River.createStore 0.0
-        ti <- River.createStore 0.0
-        let
-          di' = ado
-            veloc <- v0.stream
-            time <- ti.stream
-            in Dynamics.curve tract veloc time # _.dist
-          ti' =
-            (\veloc dist -> Dynamics.maxAtDistance tract veloc dist # _.time)
-            <$> v0.stream <?*> di.stream
-        v1 <- River.store $ oneOf
-          [ ado
-              veloc <- v0.stream
-              dist <- di.stream
-              in Dynamics.maxAtDistance tract veloc dist # _.veloc
-          , ado
-              veloc <- v0.stream
-              time <- ti.stream
-              in Dynamics.curve tract veloc time # _.veloc
-          ]
-        let
-          dms speed = fold
-            [ fmting speed, D.text " dm/s"
-            , D.text " = "
-            , fmting $ speed <#> \s -> s * 0.36
-            , D.text " km/h"
-            ]
-          fmt = Format.toStringWith (Format.fixed 2)
-          fmting = D.Text <<< map fmt
+        calculator <- railCalc (pure tract)
 
         pure $ fold
-          [ D.input
-            [ D.attr "type" =:= "range"
-            , D.prop "min" =:= 0.0
-            , D.prop "max" =:= 300.0
-            , D.prop "step" =:= 0.1
-            , D.stylish =:= D.smarts
-                { "width": "100%"
-                , "display": "block"
-                }
-            , D.onInputNumber =:= v0.send
-            , D.value =:= 0.0
-            ]
-          , dms v0.stream
-          , D.input
-            [ D.attr "type" =:= "range"
-            , D.prop "min" =:= 0.0
-            , D.prop "max" =:= routeDist
-            , D.stylish =:= D.smarts
-                { "width": "100%"
-                , "display": "block"
-                }
-            , D.onInputNumber =:= di.send
-            , D.value <:> di'
-            ]
-          , fmting (di.stream <|> di'), D.text " dm"
-          , D.input
-            [ D.attr "type" =:= "range"
-            , D.prop "min" =:= 0.0
-            , D.prop "max" =:= 100.0
-            , D.prop "step" =:= 0.1
-            , D.stylish =:= D.smarts
-                { "width": "100%"
-                , "display": "block"
-                }
-            , D.onInputNumber =:= ti.send
-            , D.value <:> pure 0.0 <|> River.noBurst ti'
-            ]
-          , fmting (ti' <|> ti.stream), D.text " s"
-          , D.input
-            [ D.attr "type" =:= "range"
-            , D.prop "min" =:= 0.0
-            , D.prop "max" =:= 300.0
-            , D.prop "step" =:= 0.1
-            , D.stylish =:= D.smarts
-                { "width": "100%"
-                , "display": "block"
-                }
-            , D.prop "disabled" =:= true
-            , D.value <:> v1.stream
-            ]
-          , dms v1.stream
+          [ calculator.widget
           , D.html_"hr" [] mempty
-          , D.input
-            [ D.attr "type" =:= "range"
-            , D.prop "min" =:= 0.0
-            , D.prop "max" =:= routeDist
-            , D.stylish =:= D.smarts
-                { "width": "100%"
-                , "display": "block"
-                }
-            , D.prop "disabled" =:= true
-            , D.value <:> looping.stream <#> plan.animation
-            ]
+          , range 0.0 routeDist 1.0 (plan.animation <$> looping.stream) mempty
+            [ D.prop "disabled" =:= true ]
           ]
     , Egg do
         curves <- liftEffect do
@@ -655,7 +567,7 @@ renderTraintle cmds = D.Egg do
                 Just (Pair x _) -> train.at -<> x.at
             in D.g [] $ fold
               [ mempty
-              , clone (pure "#g115")
+              , clone (pure "#g115") -- coupler
                   [ dam $ D.attr "transform" <:> spaced
                     [ trainUnit <#> \{ here: Pair back train, next } -> case back.at of
                       V2 x y -> "translate(" <> num x <> ", " <> num y <> ")"
@@ -665,33 +577,33 @@ renderTraintle cmds = D.Egg do
                     , pure "translate(64, 0) rotate(-90,-384,208)"
                     ]
                   ]
-              , clone (pure "#use115")
+              , clone (pure "#use115") -- bogie
                   [ dam $ D.attr "transform" <:> spaced
                     [ trainUnit <#> \{ here: Pair back train, next } -> case back.at of
                       V2 x y -> "translate(" <> num x <> ", " <> num y <> ")"
                     , trainUnit <#> \{ here: Pair back train, next } -> case back.to of
                       V2 dx dy -> "rotate(" <> num (Math.atan2 dy dx * r2d) <> ")"
                     , trainUnit <#> \{ here: Pair back train, next } -> jog back.curvature
-                    , pure "rotate(180) translate(64, 0) rotate(-90,-384,208)"
+                    , pure "translate(64, 0) rotate(-90,-384,208)"
                     ]
                   ]
-              , clone (pure "#g115")
+              , clone (pure "#g115") -- coupler
                   [ dam $ D.attr "transform" <:> spaced
                     [ trainUnit <#> \{ here: Pair back train, next } -> case train.at of
                       V2 x y -> "translate(" <> num x <> ", " <> num y <> ")"
                     , towards <#> case _ of
                       V2 dx dy -> "rotate(" <> num (Math.atan2 dy dx * r2d) <> ")"
-                    , trainUnit <#> \{ here: Pair back train, next } -> jog train.curvature
+                    , trainUnit <#> \{ here: Pair back train, next } -> jog $ -train.curvature
                     , pure "rotate(180) translate(64, 0) rotate(-90,-384,208)"
                     ]
                   ]
-              , clone (pure "#use115")
+              , clone (pure "#use115") -- bogie
                   [ dam $ D.attr "transform" <:> spaced
                     [ trainUnit <#> \{ here: Pair back train, next } -> case train.at of
                       V2 x y -> "translate(" <> num x <> ", " <> num y <> ")"
                     , trainUnit <#> \{ here: Pair back train, next } -> case train.to of
                       V2 dx dy -> "rotate(" <> num (Math.atan2 dy dx * r2d) <> ")"
-                    , trainUnit <#> \{ here: Pair back train, next } -> jog train.curvature
+                    , trainUnit <#> \{ here: Pair back train, next } -> jog $ -train.curvature
                     , pure "rotate(180) translate(64, 0) rotate(-90,-384,208)"
                     ]
                   ]

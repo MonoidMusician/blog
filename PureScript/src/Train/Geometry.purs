@@ -21,7 +21,7 @@ import Data.Number as Math
 import Data.Optical (setProp)
 import Data.Ord.Max (Max(..))
 import Data.Ord.Min (Min(..))
-import Data.Pair (Pair(..))
+import Data.Pair (Pair(..), pair0)
 import Data.Semigroup.Foldable (fold1)
 import Data.Traversable (mapAccumL)
 import Data.TraversableWithIndex (forWithIndex)
@@ -122,7 +122,7 @@ walkPaths (Route { segments, curves }) start distances =
           if dot (whence.at -<> p) whence.to > 0.0 then do
             let
               { segment, pathlength: Pair start _ } = seg
-              Pair { canon: Standard { samples } } _ = segment
+              Pair { radius, canon: Standard { samples } } _ = segment
               tangent = Bezier.evalB22 (deriv curve) t
               to = sgn (dot tangent whence.to) .* tangent
 
@@ -151,6 +151,7 @@ routeAtTime (Route { segments, pathlength }) alongRoute = do
     Pair { t: t0, pathlength: Pair l0 _ } { t: t1, pathlength: Pair _ l1 } -> do
       let
         curve = canonCurve segment
+        radius = (pair0 segment).radius
         t = bounds2bounds1 (coerce { min: l0, max: l1 }) (coerce { min: t0, max: t1 }) $. leftover
         at = Bezier.evalB32 curve t
         to = normalize $ Bezier.evalB22 (deriv curve) t
