@@ -236,9 +236,16 @@ data SpeedSchedule =
   SpeedSchedule
     Traction
     SpeedSegment
-    (Map ("time" @:: Number) { dist :: Bounds Number, plan :: SpeedSegment, time :: Bounds Number, dur :: Number })
-    (Map ("dist" @:: Number) { dist :: Bounds Number, plan :: SpeedSegment, time :: Bounds Number, dur :: Number })
+    (Map ("time" @:: Number) ScheduledSegment)
+    (Map ("dist" @:: Number) ScheduledSegment)
     ("time_total" @:: Number)
+type ScheduledSegment =
+  { dist :: Bounds Number
+  , plan :: SpeedSegment
+  , time :: Bounds Number
+  , dur :: Number
+  , veloc :: Pair Number
+  }
 
 -- | Overall limit for the whole plan.
 planLimit :: "veloc" @:: Number -> SpeedPlan
@@ -359,7 +366,11 @@ schedulePlan traction (SpeedPlan init segments) = SpeedSchedule traction init (M
     let
       d1 = maybe Math.infinity _.key $ Map.lookupGT d0 segments
       dur = if Math.isFinite d1 then segmentTime traction segment (d1 - d0) else 0.0
-    in { accum: t + dur, value: Tuple t { dist: mkBounds d0 d1, plan: segment, dur, time: mkBounds t (t + dur) } }
+      veloc = case segment of
+        Limit v -> Pair v v
+        Accel v -> Pair v ((maxAtDistance traction v (d1 - d0)).veloc)
+        Decel v -> Pair ((maxAtDistance traction v (d1 - d0)).veloc) v
+    in { accum: t + dur, value: Tuple t { dist: mkBounds d0 d1, plan: segment, dur, time: mkBounds t (t + dur), veloc } }
   { value: byTime, accum } = mapAccumLWithIndex fn 0.0 segments
   byDist = byTime <#> \(Tuple _ item@{ dist: { min: Min d } }) -> Tuple d item
 
