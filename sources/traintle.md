@@ -175,6 +175,7 @@ But letʼs solve for \(C\) such that \(v(t_c) = v_c\), so the two acceleration c
    version="1.1"
    viewBox="-96 -32 128 64"
    height="256"
+   style="max-width: 100%"
    xml:space="preserve"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"

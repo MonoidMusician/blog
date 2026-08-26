@@ -1,8 +1,8 @@
 module Train.Track where
 
 import Prelude
-import Train.Dynamics
-import Train.Types
+import Train.Dynamics (SpeedPlan, SpeedSchedule, SpeedSegment, Traction, planAndSchedule, planLimit, planZone)
+import Train.Types (PointOnRoute, Route(..), RoutedTrain(..))
 
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
@@ -16,7 +16,6 @@ import Data.Ord.Max (Max(..))
 import Data.Ord.Min (Min(..))
 import Data.Pair (Pair(..))
 import Data.Profunctor (dimap)
-import Debug (spyWith)
 import Idiolect (type (@::))
 import Math.Matrix (Bounds, clampBound, inv, mkBound, mkBounds)
 import Partial.Unsafe (unsafeCrashWith)
@@ -73,9 +72,7 @@ planAndScheduleRoute { route: RoutedTrain rt@{ route: Route r }, traction, speed
   -- FIXME: cascade limits
   curveSpeeds =
     map (\{ plan, dist } -> planZone plan dist) $
-      -- spyWith "simpl1" identity $
       dimap Array.toUnfoldable Array.fromFoldable simpl $
-      -- spyWith "simpl0" identity $
       do
         { pathlength: Pair d0 d1, segment: Pair { radius } _ } <- NEA.toArray r.segments
         case Map.lookupGE (abs radius) limits of
@@ -83,11 +80,9 @@ planAndScheduleRoute { route: RoutedTrain rt@{ route: Route r }, traction, speed
           _ -> []
 
   extraSpeeds =
-    spyWith "extraSpeeds" (Dynamics.segs4dbg traction) $
-      Dynamics.simplify $
-        spyWith "extraSpeeds0" (Dynamics.segs4dbg traction) $
-            Dynamics.generatePlan traction $
-              endpoints <> curveSpeeds
+    Dynamics.simplify $
+      Dynamics.generatePlan traction $
+        endpoints <> curveSpeeds
 
   fromPlan = planAndSchedule { traction, speeds: speeds <> [extraSpeeds], extent: trackBounds }
   clampTime = clampBound fromPlan.time

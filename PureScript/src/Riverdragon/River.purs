@@ -105,6 +105,7 @@ module Riverdragon.River
   , noBurst
   , bursting
   , alwaysBurst
+  , alwaysBurstM
   , copyBurst
   , coursing
   , Course(..)

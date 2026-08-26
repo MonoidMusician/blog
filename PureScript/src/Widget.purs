@@ -32,7 +32,7 @@ import Idiolect (JSON, filterFst, (>==))
 import Parser.Printer.JSON as C
 import Riverdragon.Dragon (Dragon, renderEl, snapshot)
 import Riverdragon.Dragon.Bones as Dragon
-import Riverdragon.River (Allocar, River, burstOf, copyBurst, createRiverStore, createStore, mailbox, mailboxRiver, noBurst, stillRiver, store, unsafeRiver)
+import Riverdragon.River (Allocar, River, copyBurst, createRiverStore, createStore, mailbox, mailboxRiver, stillRiver, store, unsafeRiver)
 import Riverdragon.River as River
 import Riverdragon.River.Bed (allocLazy)
 import Riverdragon.River.Beyond (dedup, withLast)

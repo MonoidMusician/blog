@@ -5,13 +5,13 @@ import Prelude
 import Control.Monad.ResourceM (inSubScope, selfDestructor)
 import Control.Monad.ResourceT (ResourceM)
 import Control.Monad.State (get)
-import Control.Plus (empty, (<|>))
+import Control.Plus (empty)
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.DateTime.Instant (unInstant)
 import Data.Either (either, fromRight)
 import Data.Filterable (compact, filter)
-import Data.Foldable (fold, foldMap, intercalate, oneOf, traverse_)
+import Data.Foldable (fold, foldMap, intercalate, traverse_)
 import Data.Functor.App (App(..))
 import Data.Int as Int
 import Data.Lazy (force)
@@ -19,43 +19,41 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (unwrap)
 import Data.Number as Math
-import Data.Number.Format as Format
 import Data.Optical ((@~))
 import Data.Ord.Max (Max(..))
 import Data.Ord.Min (Min(..))
 import Data.Pair (Pair(..), unpairy)
 import Data.String (joinWith)
 import Data.Time.Duration (Milliseconds(..))
-import Data.Traversable (sequence, traverse)
+import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested ((/\))
-import Debug (spy, spyWith, traceM)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Now (now)
 import Effect.Ref as Ref
-import Idiolect (incorporate, intercalateMap, neighbors, sgn, sqre, withIndices, (#..), (#:..), (#<>), (<>$), (>==))
+import Idiolect (incorporate, neighbors, sgn, sqre, withIndices, (#..), (#:..), (#<>), (<>$), (>==))
 import Math.Bezier as Bezier
 import Math.Matrix (Bez1(..), Bez3(..), Bounds, V2, Vec2(..), bounds2bez, bounds2bounds2, clampBounds, d2r, extent, mkBound, mkBounds, normalize, overBounds, padBounds, pairs, r2d, rotl2, unit2bounds1, ($*), ($.), (-<>), (.*), (<>+), (<>-))
 import Math.Poly (deriv)
 import Riverdragon.Dragon (Dragon(..))
-import Riverdragon.Dragon.Bones ((.$), (.$$), (<:>), (=:=), (>@))
+import Riverdragon.Dragon.Bones ((.$), (.$$), (.$~~), (:%), (:.), (<:>), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (liveArray, sourceCode)
-import Riverdragon.River (River, createRiver, createRiverStore, dam, statefulStream, store, (<?*>), (>>~))
+import Riverdragon.Dragon.Wings (liveArray, sourceCode, tabSwitcher)
+import Riverdragon.River (River, copyBurst, createRiver, createRiverStore, dam, statefulStream, store, (>>~))
 import Riverdragon.River as River
 import Riverdragon.River.Beyond (dedup, dedupOn, documentEvent, everyFrame)
 import Riverdragon.River.Streamline (clientRect)
-import Safe.Coerce (coerce)
 import Train.Dynamics as Dynamics
-import Train.Geometry (mkRoute, routeAtTime, routesToPaths, trainOnRoute, walkPaths)
+import Train.Geometry (mkRoute, routesToPaths, trainOnRoute)
+import Train.Geometry as Geo
 import Train.Impl (renderCommand)
 import Train.Library (standardCurves)
 import Train.Logic (analyzeLayout)
 import Train.Parser (parseTraintle)
 import Train.Track (planAndScheduleRoute)
-import Train.Types (Command, Direction(..), InterState, Route(..), RoutedTrain(..), TrainMode(..), routeEnd)
-import Train.UI (cfgTraction, clone, definitions, dragonEither, manageDefs, mask, railCalc, range)
+import Train.Types (Command, InterState, Route(..), Standard(..), TrainMode(..))
+import Train.UI (bounds2viewBox, cfgTraction, clone, definitions, dragonEither, manageDefs, mask, railCalc, range)
 import Train.UI as UI
 import Type.Proxy (Proxy(..))
 import Uncurried.RWSE (runRWSE)
@@ -68,18 +66,26 @@ widget :: Widget
 widget { interface } = do
   { stream: valueSet, send: setValue } <- createRiver
   let receiveValue = (autoAdaptInterface @String (interface "traintle-value")).receive
-  tractionW <- cfgTraction { wheels: 25.0, motors: 1250.0 }
+  tractionW <- cfgTraction { wheels: 25.0, motors: 500.0 }
+  limit0 <- River.createStore 250.0
+  limit7 <- River.createStore 100.0
+  limit13 <- River.createStore 180.0
   let
     inputs =
       { traction: tractionW.outputs.traction.loopback
-      , limits: pure $ Map.fromFoldable
-          [ Tuple 0 250.0
-          , Tuple 13 180.0
-          , Tuple 7 100.0
-          ]
+      , limits: ado
+          l0 <- limit0.stream
+          l7 <- limit7.stream
+          l13 <- limit13.stream
+          in Map.fromFoldable
+            [ Tuple 0 l0
+            , Tuple 13 l13
+            , Tuple 7 l7
+            ]
       }
   { stream: parsed } <- River.store $ parseTraintle <<< snd <$> valueSet
-  traintle <- renderTraintle inputs $ fromRight [] <$> parsed
+  let cmds = fromRight [] <$> parsed
+  traintle <- renderTraintle inputs cmds
   pure $ fold
     [ sourceCode "traintle"
         [ D.style =:= "flex: 0 0 50%; padding-right: 10px; box-sizing: border-box; font-size: 26px"
@@ -91,51 +97,90 @@ widget { interface } = do
           , D.style =:= "height: 20svh"
           , D.asCodeInput
           ]
-    , dragonEither (D.Text <<< dam) (const traintle.widget) parsed
+    , dragonEither (D.Text <<< dam) mempty parsed
+    , traintle.widget
     , Egg do
-        let routeDist = 10_000.0
-        plan <- pure $ spy "plan" $ Dynamics.planAndSchedule
-          { traction: { wheels: 25.0, motors: 1250.0 }
-          , speeds:
-            [ Dynamics.planZone 0.0 (mkBound 0.0)
-            , Dynamics.planZone 0.0 (mkBound routeDist)
-            , Dynamics.planLimit 300.0
-            ]
-          , extent: mkBounds 0.0 10_000.0
-          }
-        traceM $ Array.fromFoldable $ Dynamics.unfoldPlan plan.plan <#> Dynamics.seg4dbg { wheels: 25.0, motors: 1250.0 }
-
-
-        looping <- River.store do
-          everyFrame # River.mapAl \_ -> now <#> unInstant >>> \(Milliseconds t) ->
-            let
-              duration = extent plan.time * 1_000.0
-              loopPos = (t Math.% (2.0 * duration)) / duration
-              loopAndBack = if loopPos <= 1.0 then loopPos else 2.0 - loopPos
-            in unit2bounds1 plan.time $. loopAndBack
-
         calculator <- railCalc tractionW.outputs.traction.loopback
 
         pure $ fold
           [ D.div.$ tractionW.widget
+          , D.div.$~~
+            [ UI.number 0.0 500.0 5.0 (copyBurst limit0.stream empty) limit0.send []
+            , UI.number 0.0 500.0 5.0 (copyBurst limit7.stream empty) limit7.send []
+            , UI.number 0.0 500.0 5.0 (copyBurst limit13.stream empty) limit13.send []
+            ]
           , calculator.widget
-          , D.html_"hr" [] mempty
-          , range 0.0 routeDist 1.0 (plan.animation <$> looping.stream) mempty
-            [ D.prop "disabled" =:= true ]
           ]
+    , D.html_"hr" [] mempty
     , Replacing $ traintle.outputs.schedule.stream <#> foldMap \schedule ->
-        case schedule.schedule of
-          Dynamics.SpeedSchedule _ _ _byTime _byDist _ -> do
-            UI.table (D.text <$> [ "distance", "time", "velocity" ]) $
-              Array.fromFoldable _byDist <#> \r ->
-                { th: Nothing
-                , td:
-                  [ intercalateMap (D.text " ~> ") (D.text <<< UI.fmt) (bounds2bez r.dist)
-                  , intercalateMap (D.text " ~> ") (D.text <<< UI.fmt) (bounds2bez r.time)
-                  , intercalateMap (D.text " ~> ") (D.text <<< UI.fmt) r.veloc
-                  ]
+        NEA.fromArray (UI.graph 500 (overBounds (_ * 20.0) schedule.time) ((_ / 20.0) >>> schedule.status >>> _.veloc)) # foldMap \graph ->
+          D.svg
+            [ D.stylish =:= D.smarts
+              { "width": "100%"
+              , "height": "5em"
+              }
+            , D.viewBox =:= bounds2viewBox (V2 (overBounds (_ * 20.0) schedule.time) $ mkBounds zero schedule.maxSpeed)
+            , D.attr "preserveAspectRatio" =:= "none"
+            ] $ D.path
+              [ D.attr "d" =:= Geo.bezsToPath graph
+              , D.stylish =:= D.smarts
+                { "strokeWidth": "2px"
+                , "stroke": "currentColor"
+                , "fill": "none"
+                , "transform":
+                    "scaleY(-1) translateY(-" <> show schedule.maxSpeed <> "px)"
                 }
-    , Egg do
+              ]
+    , Replacing $ traintle.outputs.schedule.stream <#> foldMap \schedule ->
+        NEA.fromArray (UI.graph 500 schedule.extent (schedule.byDist >>> _.veloc)) # foldMap \graph ->
+          D.svg
+            [ D.stylish =:= D.smarts
+              { "width": "100%"
+              , "height": "5em"
+              }
+            , D.viewBox =:= bounds2viewBox (V2 schedule.extent $ mkBounds zero schedule.maxSpeed)
+            , D.attr "preserveAspectRatio" =:= "none"
+            ] $ D.path
+              [ D.attr "d" =:= Geo.bezsToPath graph
+              , D.stylish =:= D.smarts
+                { "strokeWidth": "2px"
+                , "stroke": "currentColor"
+                , "fill": "none"
+                , "transform":
+                    "scaleY(-1) translateY(-" <> show schedule.maxSpeed <> "px)"
+                }
+              ]
+    , Replacing $ traintle.outputs.schedule.stream <#> foldMap \schedule ->
+        range (unwrap (schedule.extent.min)) (unwrap (schedule.extent.max)) 0.0
+          (schedule.animation <$> traintle.outputs.looping.stream) mempty
+          [ D.prop "disabled" =:= true ]
+    , Replacing $ traintle.outputs.schedule.stream <#> foldMap \schedule ->
+        let
+          inWindow { time: { min: Min p, max: Max q } }
+            | { min: Min r, max: Max s } <- schedule.time =
+              q > r && p < s
+          withSign r = case r.plan of
+            Dynamics.Limit _ -> const ""
+            Dynamics.Accel _ -> ("+" <> _)
+            Dynamics.Decel _ -> ("-" <> _)
+        in case schedule.schedule, schedule.time of
+          Dynamics.SpeedSchedule _ _ _byTime _byDist _, { min: Min startTime } -> do
+            D.div:."h-scroll".$
+              UI.table (map D.text <$> [ 3 /\ "distance", 3 /\ "time", 3 /\ "speed" ]) $
+                Array.filter inWindow (Array.fromFoldable _byDist) <#> \r ->
+                  map (\c -> D.td:."code":%"text-align: right".$ c) $ join
+                    [ Array.fromFoldable $ map (D.text <<< UI.fmt) (bounds2bez r.dist)
+                    , [ (D.span:%"opacity: 50%".$$"Δ") <>$ D.text $ UI.fmt $ extent r.dist ]
+                    , Array.fromFoldable $ map (D.text <<< UI.fmt) (bounds2bez r.time <#> (_ - startTime))
+                    , [ (D.span:%"opacity: 50%".$$"Δ") <>$ D.text $ UI.fmt $ extent r.time ]
+                    , Array.fromFoldable $ map (D.text <<< UI.fmt) (unpairy B1 r.veloc)
+                    , [ D.text $ withSign r $ UI.fmt $ Math.abs $ unpairy (-) r.veloc ]
+                    ]
+    , dedup traintle.outputs.library >@ \library ->
+        tabSwitcher Nothing $ Map.toUnfoldable library <#> \(Tuple id (Standard standard)) ->
+          Tuple (show id) $ D.show { key: standard.key, radius: standard.radius }
+    , Replacing traintle.outputs.info
+    , mempty $ Egg do
         curves <- liftEffect do
           traverse (traverse valueInterface) $ Pair
             (B3 (V2 0.0 0.0) (V2 0.0 8.0) (V2 14.0 24.0) (V2 14.0 32.0))
@@ -208,7 +253,7 @@ widget { interface } = do
             ]
           , D.Text $ dam $ show <<< Array.length <$> intersections
           ]
-    , Egg do
+    , mempty $ Egg do
         curve <- liftEffect do
           traverse valueInterface
             (B3 (V2 0.0 0.0) (V2 0.0 8.0) (V2 14.0 24.0) (V2 14.0 32.0))
@@ -338,7 +383,7 @@ int :: Int -> String
 int x = "" <> unsafeCoerce x
 
 spaced :: Array (River String) -> River String
-spaced = sequence >== joinWith " "
+spaced = traverse River.alwaysBurstM >== joinWith " "
 
 -- wdassssssdaaxdwwwwwwwwwassaxddsssdxasssssdwaaadxwdaxaddaaxwwdxaa
 -- 16dwwwaa16saawww8dxwwwdd16sdd6wdd16sddwww8axwwwaa16saawww
@@ -394,9 +439,11 @@ spaced = sequence >== joinWith " "
 -- 2(eewwwqq4awwwewqqq5weee4weedddewwqq13w)
 {-
   @S{14w}
-  4(wwqwe @S ewq ww qaq ww qaq ww qaq)
-  4(9w @S 9w qaq ww qaq ww qaq)
-  4(wwewq @S qwe ww qaq ww qaq ww qaq)
+  @L{r1 qaq}
+  r2
+  4(wwqwe @S ewq ww @L ww @L ww @L)
+  4(9w 8w @S     9w @L ww @L ww @L)
+  4(wwewq @S qwe ww @L ww @L ww @L)
 -}
 {-
   @S{14w}
@@ -416,6 +463,7 @@ spaced = sequence >== joinWith " "
   4(9w    @S     9w qaq)
   4(wwewq @S qwe ww qaq)
 -}
+-- eeeeeeeeeeeeeeeeqqxqqqdqqqxqqqqxqqqdqqqxqq qqxqqqdddddddd
 renderTraintle :: { | _ } -> River (Array Command) -> ResourceM { widget :: Dragon, outputs :: _ }
 renderTraintle inputs cmds = do
   { defs, defL, defineL } <- manageDefs
@@ -432,15 +480,13 @@ renderTraintle inputs cmds = do
   { stream: freshRoute } <- River.store $ rawRoute <#> map \route ->
     let consist = [ 16.0 ] <>$ Array.range 0 2 #.. const [ 64.0, 32.0 ] #<> [ 64.0, 16.0 ]
     in trainOnRoute route consist
-  schedule@{ stream: freshSchedule } <- River.store ado
+  scheduleOutput@{ stream: freshSchedule } <- River.store ado
     mroute <- freshRoute
     traction <- inputs.traction
     limits <- inputs.limits
     speeds <- pure []
     in mroute <#> \route ->
-      let plan = planAndScheduleRoute { route, traction, speeds, limits }
-      in plan
-        # spyWith "segments" (\_ -> Dynamics.segs4dbg traction plan.plan)
+      planAndScheduleRoute { route, traction, speeds, limits }
   looping <- River.store $ compact freshSchedule >>~ \schedule -> do
     everyFrame # River.mapAl \_ -> now <#> unInstant >>> \(Milliseconds t) ->
       let
@@ -487,7 +533,7 @@ renderTraintle inputs cmds = do
         # filter (Int.even <<< fst)
         # map snd # neighbors
     outputs =
-      { schedule }
+      { schedule: scheduleOutput, info: _.info <$> running, looping, library: running <#> _.state.library }
   pure $ { outputs, widget: _ } $ fold
     [ D.svg
       [ D.attr "viewBox" <:> _.viewBox <$> running
@@ -697,7 +743,6 @@ renderTraintle inputs cmds = do
       --       }
       --     ] mempty
       ]
-    , D.Replacing $ _.info <$> running
     ]
 
 
@@ -712,7 +757,7 @@ runTraintle { library, hitmap } cmds =
   , info: _
   } $ definitions $
     (either (\e -> [ D.text "error" /\ D.text e ]) mempty resultSplit) <>
-    [ D.text "cmds" /\ D.show cmds
+    [ D.text "cmds" /\ D.show unit -- cmds
     , D.text "routes" /\ do
         definitions $ routes #:.. \name (Route route) ->
           [ D.show name /\ D.show
@@ -720,7 +765,7 @@ runTraintle { library, hitmap } cmds =
             , maxlength: route.maxlength
             , segments: NEA.length route.segments
             , isLoop: route.isLoop
-            , zcrossings: route.crossings
+            -- , zcrossings: route.crossings
             }
           ]
     , D.text "paths" /\ D.show (Array.length result.paths)

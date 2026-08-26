@@ -53,6 +53,7 @@ newtype Standard = Standard
   , beeline :: Number -- norm (p3 <>- p0)
   }
 derive instance Newtype Standard _
+derive instance Eq Standard
 
 
 -- | A standard segment placed at a location, recorded as a pair so the reverse

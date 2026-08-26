@@ -6,23 +6,28 @@ import Control.Alt ((<|>))
 import Control.Monad.ResourceM (track)
 import Control.Monad.ResourceT (ResourceM)
 import Control.Plus (empty)
+import Data.Array as Array
 import Data.Bifunctor (bimap)
 import Data.Either (Either(..))
 import Data.Filterable (separate)
-import Data.Foldable (fold, foldMap)
+import Data.Foldable (fold)
 import Data.Functor.Compose (Compose(..))
+import Data.Int as Int
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
 import Data.Number.Format as Format
+import Data.Ord.Max (Max(..))
+import Data.Ord.Min (Min(..))
 import Data.Pair (Pair(..))
 import Data.Profunctor.Choice ((|||))
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Random (randomInt)
-import Idiolect ((<#?>))
-import Math.Matrix (Vec2(..))
+import Idiolect (indices, (<#?>))
+import Math.Bezier as Bezier
+import Math.Matrix (B32, BBox2, Bez1(..), Bounds, Vec2(..), bounds2bez, pairsWith)
 import Riverdragon.Dragon (AttrProp, Dragon)
 import Riverdragon.Dragon.Bones ((.$), (.$~~), (<:>), (=:=))
 import Riverdragon.Dragon.Bones as D
@@ -139,7 +144,7 @@ number vmin vmax step value onValue attrs = D.input $
   , D.prop "min" =:= vmin
   , D.prop "max" =:= vmax
   , D.prop "step" =:= step
-  , D.stylish =:= D.smarts { "width": "8em" }
+  , D.stylish =:= D.smarts { "width": "5em" }
   , D.value <:> value
   , D.onInputNumber =:= onValue
   ] <|> attrs
@@ -214,8 +219,7 @@ cfgTraction :: Traction -> ResourceM { widget :: Dragon, outputs :: _ }
 cfgTraction initial = do
   wheels <- track $ valueInterface initial.wheels
   motors <- track $ valueInterface initial.motors
-  let
-    combined = { wheels: _, motors: _ } <$> wheels.loopback <*> motors.loopback
+  let combined = { wheels: _, motors: _ } <$> wheels.loopback <*> motors.loopback
   traction <- track $ reInterface $ stillInterface
     { send: \r -> wheels.send r.wheels <> motors.send r.motors
     , receive: combined
@@ -227,19 +231,28 @@ cfgTraction initial = do
     }
   let outputs = { wheels, motors, traction }
   pure $ { outputs, widget: _ } $ fold
-    [ number 0.0 50.0 1.0 (pure initial.wheels) wheels.send []
-    , number 0.0 5000.0 25.0 (pure initial.motors) wheels.send []
+    [ number 0.0 500.0 1.0 (pure initial.wheels) wheels.send []
+    , number 0.0 5000.0 25.0 (pure initial.motors) motors.send []
     ]
 
 
-table :: Array Dragon -> Array { th :: Maybe Dragon, td :: Array Dragon } -> Dragon
+table :: Array (Tuple Int Dragon) -> Array (Array Dragon) -> Dragon
 table headers rows =
   D.html_"table".$~~
-    [ D.html_"thead".$~~ D.html_"th"[] <$> headers
-    , D.html_"tbody".$~~ rows <#> \row -> D.html_"tr".$~~
-      [ foldMap (D.html_"th"[]) row.th ] <>
-      map (D.html_"td"[]) row.td
+    [ D.html_"thead".$~~ headers <#> \(Tuple s c) -> D.html_"th" [D.attr "colspan" =:= s] c
+    , D.html_"tbody".$~~ rows <#> (D.html_"tr".$~~ _)
     ]
 
 
+graph :: Int -> Bounds Number -> (Number -> Number) -> Array B32
+graph n domain f =
+  indices (Array.replicate (n+1) unit)
+  # map Int.toNumber
+  # map (\i -> Bezier.evalBSS (bounds2bez domain) (i / Int.toNumber n))
+  # map (\x -> V2 x (f x))
+  # pairsWith \p q -> Bezier.castUp $ Bezier.castUp $ B1 p q
+
+bounds2viewBox :: BBox2 Number -> Array Number
+bounds2viewBox (V2 { min: Min xmin, max: Max xmax } { min: Min ymin, max: Max ymax }) =
+  [ xmin, ymin, xmax - xmin, ymax - ymin ]
 
