@@ -29,10 +29,10 @@ import Idiolect (indices, (<#?>))
 import Math.Bezier as Bezier
 import Math.Matrix (B32, BBox2, Bez1(..), Bounds, Vec2(..), bounds2bez, pairsWith)
 import Riverdragon.Dragon (AttrProp, Dragon)
-import Riverdragon.Dragon.Bones ((.$), (.$~~), (<:>), (=:=))
+import Riverdragon.Dragon.Bones (($$), ($<), (.$), (.$$), (.$~~), (:%), (<:>), (=:=), (>$))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (deletable)
-import Riverdragon.River (Course(..), Lake, River, coursing, createRiver, makeLake, memoize, noBurst, oneStream, stillRiver, store, store')
+import Riverdragon.River (Course(..), Lake, River, Stream, coursing, createRiver, makeLake, memoize, noBurst, oneStream, stillRiver, store, store')
 import Riverdragon.River.Bed (freshId)
 import Riverdragon.River.Beyond (instanced, withLast)
 import Train.Dynamics (Traction)
@@ -144,16 +144,27 @@ railCalc traction = do
   outputs@{ v0, di, ti, v1 } <- calcRail traction
 
   pure $ { outputs, widget: _ } $ fold
-    [ mempty
-    , range 0.0 300.0 0.1 (pure 0.0) v0.send []
-    , dms v0.loopback
-    , range 0.0 routeDist 1.0 di.receive di.send []
-    , fmting di.loopback, D.text " dm"
-    , range 0.0 100.0 0.1 ti.receive ti.send []
-    , fmting ti.loopback, D.text " s"
-    , range 0.0 300.0 0.1 v1.receive v1.send []
-    , dms v1.loopback
+    [ miniHeading.$$ "Calculator"
+    , D.label.$~~
+      [ range 0.0 300.0 0.1 (pure 0.0) v0.send []
+      , D.text "initial velocity: ", dms v0.loopback
+      ]
+    , D.label.$~~
+      [ range 0.0 routeDist 1.0 di.receive di.send []
+      , D.text "distance: ", fmting di.loopback, D.text " dm"
+      ]
+    , D.label.$~~
+      [ range 0.0 100.0 0.1 ti.receive ti.send []
+      , D.text "time: ", fmting ti.loopback, D.text " s"
+      ]
+    , D.label.$~~
+      [ range 0.0 300.0 0.1 v1.receive v1.send []
+      , D.text "final velocity: ", dms v1.loopback
+      ]
     ]
+
+miniHeading :: forall flow. Array (Stream flow D.AttrProp) -> Dragon -> Dragon
+miniHeading = D.html_"h5":%"padding: 0; margin: 0; margin-top: 1em"
 
 cfgTraction :: Traction -> ResourceM { widget :: Dragon, outputs :: _ }
 cfgTraction initial = do
@@ -171,8 +182,10 @@ cfgTraction initial = do
     }
   let outputs = { wheels, motors, traction }
   pure $ { outputs, widget: _ } $ fold
-    [ number 0.0 500.0 1.0 (pure initial.wheels) wheels.send []
-    , number 0.0 5000.0 25.0 (pure initial.motors) motors.send []
+    [ miniHeading.$$ "Traction dynamics"
+    , D.label.$ "Wheels: " $< number 0.0 500.0 1.0 (pure initial.wheels) wheels.send [] >$ " dm/s²"
+    , D.nbsp, D.nbsp, D.nbsp, D.nbsp
+    , D.label.$ "Motors: " $< number 0.0 5000.0 25.0 (pure initial.motors) motors.send [] >$ " dm²/s³"
     ]
 
 

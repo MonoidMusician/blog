@@ -37,13 +37,14 @@ import Math.Bezier as Bezier
 import Math.Matrix (Bez1(..), Bez3(..), Bounds, V2, Vec2(..), bounds2bez, bounds2bounds2, clampBounds, d2r, extent, mkBound, mkBounds, normalize, overBounds, padBounds, pairs, r2d, rotl2, unit2bounds1, ($*), ($.), (-<>), (.*), (<>+), (<>-))
 import Math.Poly (deriv)
 import Riverdragon.Dragon (Dragon(..))
-import Riverdragon.Dragon.Bones ((.$), (.$$), (.$~~), (:%), (:.), (<:>), (=:=), (>@))
+import Riverdragon.Dragon.Bones (($<), (.$), (.$$), (.$~~), (:%), (:.), (<:>), (=:=), (>$), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (liveArray, sourceCode, tabSwitcher)
 import Riverdragon.River (River, copyBurst, createRiver, createRiverStore, dam, statefulStream, stillRiver, store, (>>~))
 import Riverdragon.River as River
 import Riverdragon.River.Beyond (dedup, dedupOn, documentEvent, everyFrame)
 import Riverdragon.River.Streamline (clientRect)
+import Train.Drawing (bounds2viewBox, clone, dragonEither, manageDefs, mask)
 import Train.Drawing as Drawing
 import Train.Dynamics as Dynamics
 import Train.Geometry (mkRoute, routesToPaths, trainOnRoute)
@@ -56,7 +57,6 @@ import Train.Track (planAndScheduleRoute)
 import Train.Types (Command, InterState, Route(..), Standard(..), TrainMode(..))
 import Train.UI (definitions, cfgTraction, railCalc, range)
 import Train.UI as UI
-import Train.Drawing (bounds2viewBox, clone, dragonEither, manageDefs, mask)
 import Type.Proxy (Proxy(..))
 import Uncurried.RWSE (runRWSE)
 import Unsafe.Coerce (unsafeCoerce)
@@ -107,15 +107,20 @@ widget { interface } = do
         pure $ fold
           [ D.div.$ tractionW.widget
           , D.div.$~~
-            [ UI.number 0.0 500.0 5.0 (copyBurst limit0.stream empty) limit0.send []
-            , UI.number 0.0 500.0 5.0 (copyBurst limit7.stream empty) limit7.send []
-            , UI.number 0.0 500.0 5.0 (copyBurst limit13.stream empty) limit13.send []
+            [ UI.miniHeading.$$ "Speed limits"
+            , D.label.$ "Straight: "   $< UI.number 0.0 500.0 5.0 (copyBurst limit0.stream empty) limit0.send []
+            , D.nbsp, D.nbsp, D.nbsp, D.nbsp
+            , D.label.$ "Radius 7: "  $< UI.number 0.0 500.0 5.0 (copyBurst limit7.stream empty) limit7.send []
+            , D.nbsp, D.nbsp, D.nbsp, D.nbsp
+            , D.label.$ "Radius 13: " $< UI.number 0.0 500.0 5.0 (copyBurst limit13.stream empty) limit13.send []
+            , D.text " dm/s"
             ]
           , calculator.widget
           ]
     , D.html_"hr" [] mempty
     , Replacing $ traintle.outputs.schedule.stream <#> foldMap \schedule ->
         NEA.fromArray (UI.graph 500 (overBounds (_ * 20.0) schedule.time) ((_ / 20.0) >>> schedule.status >>> _.veloc)) # foldMap \graph ->
+          (_ >$ "Speed vs Time") $
           D.svg
             [ D.stylish =:= D.smarts
               { "width": "100%"
@@ -123,6 +128,7 @@ widget { interface } = do
               }
             , D.viewBox =:= bounds2viewBox (V2 (overBounds (_ * 20.0) schedule.time) $ mkBounds zero schedule.maxSpeed)
             , D.attr "preserveAspectRatio" =:= "none"
+            , D.title =:= "Speed vs Time"
             ] $ D.path
               [ D.attr "d" =:= Geo.bezsToPath graph
               , D.stylish =:= D.smarts
@@ -135,6 +141,7 @@ widget { interface } = do
               ]
     , Replacing $ traintle.outputs.schedule.stream <#> foldMap \schedule ->
         NEA.fromArray (UI.graph 500 schedule.extent (schedule.byDist >>> _.veloc)) # foldMap \graph ->
+          (_ >$ "Speed vs Distance") $
           D.svg
             [ D.stylish =:= D.smarts
               { "width": "100%"
@@ -142,6 +149,7 @@ widget { interface } = do
               }
             , D.viewBox =:= bounds2viewBox (V2 schedule.extent $ mkBounds zero schedule.maxSpeed)
             , D.attr "preserveAspectRatio" =:= "none"
+            , D.title =:= "Speed vs Distance"
             ] $ D.path
               [ D.attr "d" =:= Geo.bezsToPath graph
               , D.stylish =:= D.smarts
@@ -167,8 +175,9 @@ widget { interface } = do
             Dynamics.Decel _ -> ("-" <> _)
         in case schedule.schedule, schedule.time of
           Dynamics.SpeedSchedule _ _ _byTime _byDist _, { min: Min startTime } -> do
-            D.div:."h-scroll".$
-              UI.table (map D.text <$> [ 3 /\ "distance", 3 /\ "time", 3 /\ "speed" ]) $
+            D.div:."h-scroll".$~~
+              [ UI.miniHeading.$$ "Timetable"
+              , UI.table (map D.text <$> [ 3 /\ "distance", 3 /\ "time", 3 /\ "speed" ]) $
                 Array.filter inWindow (Array.fromFoldable _byDist) <#> \r ->
                   map (\c -> D.td:."code":%"text-align: right".$ c) $ join
                     [ Array.fromFoldable $ map (D.text <<< UI.fmt) (bounds2bez r.dist)
@@ -178,6 +187,7 @@ widget { interface } = do
                     , Array.fromFoldable $ map (D.text <<< UI.fmt) (unpairy B1 r.veloc)
                     , [ D.text $ withSign r $ UI.fmt $ Math.abs $ unpairy (-) r.veloc ]
                     ]
+              ]
     , dedup traintle.outputs.library >@ \library ->
         tabSwitcher Nothing $ Map.toUnfoldable library <#> \(Tuple id (Standard standard)) ->
           Tuple (show id) $ D.show { key: standard.key, radius: standard.radius }
