@@ -40,10 +40,11 @@ import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones ((.$), (.$$), (.$~~), (:%), (:.), (<:>), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
 import Riverdragon.Dragon.Wings (liveArray, sourceCode, tabSwitcher)
-import Riverdragon.River (River, copyBurst, createRiver, createRiverStore, dam, statefulStream, store, (>>~))
+import Riverdragon.River (River, copyBurst, createRiver, createRiverStore, dam, statefulStream, stillRiver, store, (>>~))
 import Riverdragon.River as River
 import Riverdragon.River.Beyond (dedup, dedupOn, documentEvent, everyFrame)
 import Riverdragon.River.Streamline (clientRect)
+import Train.Drawing as Drawing
 import Train.Dynamics as Dynamics
 import Train.Geometry (mkRoute, routesToPaths, trainOnRoute)
 import Train.Geometry as Geo
@@ -53,8 +54,9 @@ import Train.Logic (analyzeLayout)
 import Train.Parser (parseTraintle)
 import Train.Track (planAndScheduleRoute)
 import Train.Types (Command, InterState, Route(..), Standard(..), TrainMode(..))
-import Train.UI (bounds2viewBox, cfgTraction, clone, definitions, dragonEither, manageDefs, mask, railCalc, range)
+import Train.UI (definitions, cfgTraction, railCalc, range)
 import Train.UI as UI
+import Train.Drawing (bounds2viewBox, clone, dragonEither, manageDefs, mask)
 import Type.Proxy (Proxy(..))
 import Uncurried.RWSE (runRWSE)
 import Unsafe.Coerce (unsafeCoerce)
@@ -179,7 +181,7 @@ widget { interface } = do
     , dedup traintle.outputs.library >@ \library ->
         tabSwitcher Nothing $ Map.toUnfoldable library <#> \(Tuple id (Standard standard)) ->
           Tuple (show id) $ D.show { key: standard.key, radius: standard.radius }
-    , Replacing traintle.outputs.info
+    , Replacing $ stillRiver traintle.outputs.info
     , mempty $ Egg do
         curves <- liftEffect do
           traverse (traverse valueInterface) $ Pair
@@ -534,6 +536,10 @@ renderTraintle inputs cmds = do
         # map snd # neighbors
     outputs =
       { schedule: scheduleOutput, info: _.info <$> running, looping, library: running <#> _.state.library }
+    defaultStyle :: Array Drawing.RailStyle
+    defaultStyle =
+      [
+      ]
   pure $ { outputs, widget: _ } $ fold
     [ D.svg
       [ D.attr "viewBox" <:> _.viewBox <$> running
@@ -572,7 +578,7 @@ renderTraintle inputs cmds = do
               }
             , newmask thisOne (pure path.bbox) 12 16
             ]
-      , D.g [ maskOf (running <#> _.bounds) $ D.g [] $ fold
+      , D.g [ maskOf (running <#> _.bounds) $ D.g.$~~
           [ clone curve
               [ D.stylish =:= D.smarts
                 { "stroke": "white"
@@ -606,26 +612,7 @@ renderTraintle inputs cmds = do
             }
           , railmask (running <#> _.bounds) 13 15
           ]
-      , D.g [ D.stylish =:= D.smarts { "opacity": 0.7 } ] $ fold
-        [ D.svg_"circle"
-            [ D.attr "r" =:= "4px"
-            , running <#> \{ pos: { at: V2 x y } } -> D.MultiAttr
-                [ D.attr "cx" $ 16*x
-                , D.attr "cy" $ 16*y
-                ]
-            , D.stylish =:= D.smarts
-              { "fill": "red"
-              }
-            ] mempty
-        , D.svg_"path"
-            [ D.attr "d" <:> running <#> \{ pos: { at: V2 x y, to: V2 dx dy } } ->
-                "M" <> int (16*x) <> "," <> int (16*y) <> "l" <> int (16*dx) <> "," <> int (16*dy)
-            , D.stylish =:= D.smarts
-              { "stroke": "red"
-              , "stroke-width": "2px"
-              }
-            ] mempty
-        ]
+      , Drawing.posIndicator (running <#> _.pos) (pure "red")
       , D.g [ D.stylish =:= D.smarts { "opacity": 1.0 } ] $
           withTrainUnits \_idx trainUnit ->
             let
@@ -637,7 +624,7 @@ renderTraintle inputs cmds = do
               towards = trainUnit <#> \{ here: Pair back train, next } -> case next of
                 Nothing -> back.at -<> train.at
                 Just (Pair x _) -> train.at -<> x.at
-            in D.g [] $ fold
+            in D.g.$~~
               [ mempty
               , clone (pure "#g115") -- coupler
                   [ dam $ D.attr "transform" <:> spaced
