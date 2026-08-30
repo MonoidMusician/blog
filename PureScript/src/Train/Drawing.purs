@@ -20,13 +20,13 @@ import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Effect.Class (liftEffect)
 import Effect.Random (randomInt)
-import Idiolect (type (@::), (<#?>), (>==))
+import Idiolect (type (@::), intercalateMap, (<#?>), (>==))
 import Math.Matrix (BBox2, Bez1(..), V2, Vec2(..), bounds2bez, normBounds, padBounds)
 import Riverdragon.Dragon (Dragon)
 import Riverdragon.Dragon.Bones (($~~), (.$~~), (<:>), (=:=), (>@))
 import Riverdragon.Dragon.Bones as D
-import Riverdragon.Dragon.Wings (deletable, liveArray)
-import Riverdragon.River (Course(..), Lake, River, coursing, createRiver, makeLake, mapLatest, memoize, stillRiver, store', (>>~))
+import Riverdragon.Dragon.Wings (deadArray, deletable, liveArray)
+import Riverdragon.River (Course(..), Lake, River, Stream, coursing, createRiver, makeLake, mapLatest, memoize, stillRiver, store', (>>~))
 import Riverdragon.River as River
 import Riverdragon.River.Bed (freshId)
 import Riverdragon.River.Beyond (dedup, instanced, withLast)
@@ -185,11 +185,13 @@ type Target =
   , pathlength :: Number
   }
 
-renderRails ::
-  River (Map ("target" @:: String) (Array Target)) ->
-  River (Array RailStyle) ->
+renderRails :: forall flow1 flow2.
+  Stream flow1 (Map ("target" @:: String) (Array Target)) ->
+  Stream flow2 (Array RailStyle) ->
   ResourceM { defs :: Dragon, rails :: Dragon }
-renderRails targetMap styles = do
+renderRails targetMap0 styles0 = do
+  { stream: targetMap } <- River.store targetMap0
+  { stream: styles } <- River.store styles0
   { defs, defL } <- manageDefs
   let
     newmask curve bbox inner outer =
@@ -221,18 +223,19 @@ renderRails targetMap styles = do
         ] contents
     applyExclusion ::
       _ ->
+      _ ->
       { targets :: Array String
       , outer :: Number
       , inner :: Number
       } ->
       Dragon -> Dragon
-    applyExclusion parent { targets, inner, outer } wrapped =
+    applyExclusion parent shape { targets, inner, outer } wrapped =
       let
         targeted = targetMap <#> \pool ->
           foldMap @Array (\t -> fromMaybe [] $ Map.lookup t pool) targets
 
-        bbox :: River (BBox2 Number)
-        bbox = targeted
+        bboxFull :: River (BBox2 Number)
+        bboxFull = targeted
           <#> collect (_.bbox >== Just)
           >== (fold >>> fromMaybe normBounds)
 
@@ -240,26 +243,34 @@ renderRails targetMap styles = do
           [ clone (pure parent.id)
               [ D.stylish =:= D.smarts
                 { "stroke": "white"
-                , "stroke-width": num outer <> "px"
+                , "stroke-width": num shape.width.outer <> "px"
                 }
               ]
           , targeted >@ foldMap \{ id: thisOne, bbox } ->
               clone (pure thisOne)
                 [ D.stylish =:= D.smarts
                   { "stroke": "black"
-                  , "stroke-width": "13px"
+                  , "stroke-width": num outer <> "px"
                   }
-                , newmask (pure thisOne) (pure bbox) 11.0 13.0
+                , newmask (pure thisOne) (pure bbox) inner outer
                 ]
           ]
-      in D.g [ maskOf (map (padBounds 16.0) <$> bbox) maskContents ] wrapped
-    renderShape target { shape } =
+      in D.g [ maskOf (map (padBounds 16.0) <$> bboxFull) maskContents ] wrapped
+    renderShape target { shape } = do
+      let
+        dash = case shape.dash of
+          Nothing -> { dasharray: Nothing, offset: Nothing }
+          Just fn ->
+            let r = fn target.pathlength in
+            { dasharray: Just r.dasharray, offset: Just r.offset }
       maskOf (map (padBounds (shape.width.outer + 12.0)) <$> pure target.bbox) $
-        maybe identity (applyExclusion target) shape.exclusion $ fold
+        maybe identity (applyExclusion target shape) shape.exclusion $ fold
           [ clone (pure target.id)
             [ D.stylish =:= D.smarts
               { "stroke": "white"
               , "stroke-width": num shape.width.outer <> "px"
+              , "stroke-dasharray": intercalateMap "," num <$> dash.dasharray
+              , "stroke-dashoffset": dash.offset
               }
             ]
           , guard (shape.width.inner > 0.0) $ clone (pure target.id)
@@ -271,7 +282,7 @@ renderRails targetMap styles = do
           ]
 
   pure $ { defs, rails: _ } $
-    liveArray styles \_ styleR -> do
+    liveArray styles \i styleR -> do
       let
         thisTarget = dedup ado
           ts <- stillRiver targetMap
@@ -289,3 +300,50 @@ renderRails targetMap styles = do
           ]
 
 
+
+defaultStyle :: Array RailStyle
+defaultStyle =
+  [ base 28.0 (color "#918b85")
+  , ties 0.0 24.0 (const { dasharray: [2.76,5.28], offset: 5.28 }) (color "#361f13")
+  , rails 12.0 16.0 (color "#5a2814")
+  , rails 13.0 15.0 (color "#cbd4d8")
+    # exclude 11.0 13.0
+  ]
+  where
+  base :: Number -> RailFill -> RailStyle
+  base width =
+    { target: "total"
+    , shape: shape { inner: zero, outer: width }
+    , fill: _
+    , effects: noeffects
+    -- , ends :: Maybe
+    , globalOffset: mempty
+    }
+  rails :: Number -> Number -> RailFill -> RailStyle
+  rails inner outer =
+    { target: "disjoint"
+    , shape: shape { inner, outer }
+    , fill: _
+    , effects: noeffects
+    , globalOffset: mempty
+    }
+  ties :: Number -> Number -> _ -> RailFill -> RailStyle
+  ties inner outer dash =
+    { target: "total"
+    , shape: (shape { inner, outer })
+      { dash = Just dash }
+    , fill: _
+    , effects: noeffects
+    , globalOffset: mempty
+    }
+  exclude inner outer style =
+    style { shape = style.shape { exclusion = Just { inner, outer, targets: ["total"] } } }
+
+  color = RailColor <<< pure
+  shape =
+    { width: _
+    , exclusion: Nothing
+    , dash: Nothing
+    , ends: Nothing
+    }
+  noeffects = { ids: [], padding: zero }

@@ -9,6 +9,7 @@ import Control.Plus (empty)
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.DateTime.Instant (unInstant)
+import Data.Distributive (collect)
 import Data.Either (either, fromRight)
 import Data.Filterable (compact, filter)
 import Data.Foldable (fold, foldMap, intercalate, traverse_)
@@ -16,7 +17,7 @@ import Data.Functor.App (App(..))
 import Data.Int as Int
 import Data.Lazy (force)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (unwrap)
 import Data.Number as Math
 import Data.Optical ((@~))
@@ -25,16 +26,17 @@ import Data.Ord.Min (Min(..))
 import Data.Pair (Pair(..), unpairy)
 import Data.String (joinWith)
 import Data.Time.Duration (Milliseconds(..))
-import Data.Traversable (traverse)
+import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested ((/\))
+import Debug (spy)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Now (now)
 import Effect.Ref as Ref
 import Idiolect (incorporate, neighbors, sgn, sqre, withIndices, (#..), (#:..), (#<>), (<>$), (>==))
 import Math.Bezier as Bezier
-import Math.Matrix (Bez1(..), Bez3(..), Bounds, V2, Vec2(..), bounds2bez, bounds2bounds2, clampBounds, d2r, extent, mkBound, mkBounds, normalize, overBounds, padBounds, pairs, r2d, rotl2, unit2bounds1, ($*), ($.), (-<>), (.*), (<>+), (<>-))
+import Math.Matrix (Bez1(..), Bez3(..), Bounds, V2, Vec2(..), bounds2bez, bounds2bounds2, clampBounds, d2r, extent, mkBound, mkBounds, normBounds, normalize, overBounds, padBounds, pairs, r2d, rotl2, unit2bounds1, ($*), ($.), (-<>), (.*), (<>+), (<>-))
 import Math.Poly (deriv)
 import Riverdragon.Dragon (Dragon(..))
 import Riverdragon.Dragon.Bones (($<), (.$), (.$$), (.$~~), (:%), (:.), (<:>), (=:=), (>$), (>@))
@@ -483,6 +485,10 @@ renderTraintle inputs cmds = do
     statefulStream { library: force standardCurves, hitmap: Map.empty } (dedup cmds)
       \s c -> let r = runTraintle s c in { emit: Just r, state: r.state }
   curve <- defineL \id -> D.path [ D.id =:= id, D.attr "d" <:> _.curve <$> running ]
+  let
+    curveSet = running >>~ \r -> for r.paths \p -> do
+      defL (\id -> D.path [ D.id =:= id, D.attr "d" =:= p.d ])
+        <#> \id -> { id, bbox: p.bbox, pathlength: p.pathlength }
 
   let routeCmp (Route { pathlength, curves }) = Tuple pathlength curves
   rawRoute <- pure $ dedupOn (map routeCmp) $ running <#> \{ routes } ->
@@ -546,10 +552,18 @@ renderTraintle inputs cmds = do
         # map snd # neighbors
     outputs =
       { schedule: scheduleOutput, info: _.info <$> running, looping, library: running <#> _.state.library }
-    defaultStyle :: Array Drawing.RailStyle
-    defaultStyle =
-      [
-      ]
+    targets = ado
+      c <- curve
+      cs <- curveSet
+      let
+        bbox = collect (_.bbox >== Just)
+          >== (fold >>> fromMaybe normBounds)
+      in Map.fromFoldable
+        [ "total" /\ [{ id: c, pathlength: 0.0, bbox: bbox cs }]
+        , "disjoint" /\ cs
+        ]
+  rendering <- Drawing.renderRails targets (pure Drawing.defaultStyle)
+
   pure $ { outputs, widget: _ } $ fold
     [ D.svg
       [ D.attr "viewBox" <:> _.viewBox <$> running
@@ -564,64 +578,8 @@ renderTraintle inputs cmds = do
         , "fill": "none"
         }
       ] $ fold
-      [ D.svg_"defs" [] defs
-      , clone curve
-          [ D.stylish =:= D.smarts
-            { "stroke": "#918b85"
-            , "stroke-width": "28px"
-            }
-          ]
-      , clone curve
-          [ D.stylish =:= D.smarts
-            { "stroke": "#361f13"
-            , "stroke-dasharray": "2.76,5.28"
-            , "stroke-dashoffset": "5.28"
-            , "stroke-width": "24px"
-            }
-          ]
-      , running >@ \{ paths } -> paths #.. \path -> Egg do
-          thisOne <- defineL \id -> D.path [ D.id =:= id, D.attr "d" =:= path.d ]
-          pure $ clone thisOne
-            [ D.stylish =:= D.smarts
-              { "stroke": "#5a2814"
-              , "stroke-width": "16px"
-              }
-            , newmask thisOne (pure path.bbox) 12 16
-            ]
-      , D.g [ maskOf (running <#> _.bounds) $ D.g.$~~
-          [ clone curve
-              [ D.stylish =:= D.smarts
-                { "stroke": "white"
-                , "stroke-width": "16px"
-                }
-              ]
-          , running >@ \{ paths } -> paths #.. \path -> Egg do
-            thisOne <- defineL \id -> D.path [ D.id =:= id, D.attr "d" =:= path.d ]
-            pure $ clone thisOne
-              [ D.stylish =:= D.smarts
-                { "stroke": "black"
-                , "stroke-width": "13px"
-                }
-              , newmask thisOne (pure path.bbox) 11 13
-              ]
-          ]
-        ] $
-          running >@ \{ paths } -> paths #.. \path -> Egg do
-            thisOne <- defineL \id -> D.path [ D.id =:= id, D.attr "d" =:= path.d ]
-            pure $ clone thisOne
-              [ D.stylish =:= D.smarts
-                { "stroke": "#cbd4d8"
-                , "stroke-width": "15px"
-                }
-              , newmask thisOne (pure path.bbox) 13 15
-              ]
-      , clone curve
-          [ D.stylish =:= D.smarts
-            { "stroke": "#cbd4d8"
-            , "stroke-width": "15px"
-            }
-          , railmask (running <#> _.bounds) 13 15
-          ]
+      [ D.svg_"defs" [] $ defs <> rendering.defs
+      , rendering.rails
       , Drawing.posIndicator (running <#> _.pos) (pure "red")
       , D.g [ D.stylish =:= D.smarts { "opacity": 1.0 } ] $
           withTrainUnits \_idx trainUnit ->

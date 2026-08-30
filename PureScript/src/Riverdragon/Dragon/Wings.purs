@@ -10,14 +10,17 @@ import Data.Array as Array
 import Data.Compactable (compact)
 import Data.Filterable (filter)
 import Data.Foldable (for_)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe(..), isNothing, maybe)
 import Data.String as String
 import Data.Time.Duration (Milliseconds)
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\), (/\))
+import Debug (spy)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Idiolect (filterFst, nonEmpty, withIndices, (>==))
+import Parser.Comb.Comber (Fragment)
 import Riverdragon.Dragon (AttrProp, Dragon(..), renderElSt)
 import Riverdragon.Dragon.Bones (($$), ($~~), (.$), (.$$), (.$$~), (.<>), (:.), (:~), (<:>), (=!=), (=:=), (=?=))
 import Riverdragon.Dragon.Bones as D
@@ -70,17 +73,13 @@ liveArray :: forall flow r. Stream flow (Array r) -> (Int -> River r -> Dragon) 
 liveArray itemsStream render = Egg do
   -- Create a `River` here since we will listen to it multiple times
   -- and want to see the same events
-  { burst, stream } <- River.store itemsStream
+  { stream } <- River.store itemsStream
   let
-    -- | Include the burst only here, to kick off `addingItems`.
-    startItems :: River (Array r)
-    startItems = maybe empty pure (Array.last burst) <|> stream
-
     -- | The event stream of new items, with a dedicated listener.
     addingItems :: Lake (Tuple Int (River (Maybe r)))
-    addingItems = withLast startItems # River.mapArray do
-      newItems >== extend \(Tuple i added) ->
-        pure (Just added) <|> (stream <#> (_ Array.!! i))
+    addingItems = withLast stream # River.mapArray do
+      newItems >== extend \(Tuple i _added) ->
+        stream <#> (_ Array.!! i)
 
     -- | Look for new items at the end of the array.
     newItems :: { last :: Maybe (Array r), next :: Array r } -> Array (Tuple Int r)
@@ -97,6 +96,13 @@ liveArray itemsStream render = Egg do
   -- The combination of `Appending` with inner `Replacing` produces a list
   -- we can append and delete items from.
   pure $ Appending $ renderUntilNothing <$> addingItems
+
+deadArray :: forall flow r. Stream flow (Array r) -> (Int -> River r -> Dragon) -> Dragon
+deadArray itemsStream render =
+  Replacing $ Fragment <$> do
+    River.dam itemsStream <#> mapWithIndex \i v ->
+      render i (pure v)
+
 
 inputValidated ::
   String ->

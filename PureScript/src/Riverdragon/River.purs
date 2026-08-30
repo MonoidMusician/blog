@@ -755,14 +755,18 @@ mayMemoize (Stream Flowing upstream) = unsafeAllocate do
       sz <- size
       cs <- cachedStream.get
       case sz, cs of
-        0, Just { unsubscribe } -> unsubscribe <* cachedStream.set Nothing
+        0, Just { unsubscribe } -> cachedStream.set Nothing <* unsubscribe
         _, _ -> pure unit
   pure $ Stream Flowing \cbs ->
-    -- fixme destroyed burst?
-    iteM (not <$> running) (mempty <$ cbs.destroyed) do
-      unsub <- push cbs
-      { sources, burst } <- up
-      pure { burst, sources, unsubscribe: unsub <> down }
+    iteM (not <$> running)
+      do
+        cbs.destroyed
+        burst <- burstOf (Stream Flowing upstream)
+        pure { burst, sources: mempty, unsubscribe: mempty }
+      do
+        unsub <- push cbs
+        { sources, burst } <- up
+        pure { burst, sources, unsubscribe: unsub <> down }
 mayMemoize stream = stream
 
 -- | This function is only pure for rivers. It returns any flow type simply for
@@ -786,7 +790,7 @@ emitState state = { state, emit: Just state }
 
 -- | A stateful stream that can update its own state and emit values.
 statefulStream :: forall flow a b s. s -> Stream flow a -> (s -> a -> { state :: s, emit :: Maybe b }) -> Lake b
-statefulStream b0 (Stream t stream) folder = Stream t \cbs -> do
+statefulStream b0 (Stream _ stream) folder = Stream NotFlowing \cbs -> do
   current <- mintCell b0
   upstream <- stream $ cbs { receive = _ } \a -> do
     { state: b, emit: c } <- folder <$> current.get <@> a

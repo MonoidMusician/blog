@@ -210,12 +210,13 @@ separateRoutes =
 
 -- | Generate SVG paths from an array of segments. Returns the path string
 -- | and its bounding box.
-routesToPaths :: forall m r. MonadState { hitmap :: HitMap | r } m => Array Canonized -> m (Array { d :: String, bbox :: BBox2 Number })
+routesToPaths :: forall m r. MonadState { hitmap :: HitMap | r } m => Array Canonized -> m (Array { d :: String, bbox :: BBox2 Number, pathlength :: Number })
 routesToPaths originalSegments = do
   separated <- separateRoutes originalSegments
   pure $ separated <#?> NEA.fromArray <#> \cs ->
     { d: bezsToPath (canonCurve <$> cs)
     , bbox: fold1 <$> collect canonStrokeBox cs
+    , pathlength: sum $ cs <#> \(Pair { canon: Standard { pathlength } } _) -> pathlength
     }
 
 -- | Render a Bezier array as a path string.
