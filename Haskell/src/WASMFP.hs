@@ -79,7 +79,7 @@ import Control.Monad.Reader.Class (MonadReader(ask, local))
 import Witherable (Filterable(mapMaybe, filter))
 import Control.Monad (when, unless, void, join, zipWithM_, (<=<))
 import qualified Data.Typeable as Typeable
-import Control.Monad.RWS.CPS (RWST, MonadState (state), MonadWriter (tell, listen, pass), modify', censor, gets, runRWST, MonadTrans (lift), MonadIO (liftIO), runRWS)
+import Control.Monad.RWS.CPS (RWST, MonadState (state, put), MonadWriter (tell, listen, pass), modify', censor, gets, runRWST, MonadTrans (lift), MonadIO (liftIO), runRWS)
 import Data.Functor ((<&>))
 import qualified Data.Text.Internal.StrictBuilder as Builder
 import Data.Foldable (traverse_, for_, Foldable (toList), foldrM, fold, foldMap, asum)
@@ -113,7 +113,7 @@ import System.Exit (ExitCode(ExitSuccess))
 import qualified Debug.Trace as Dbg
 import qualified Data.ByteString as ByteString
 import qualified Data.ByteString.UTF8 as ByteString.UTF8
-import Data.Either (fromRight)
+import Data.Either (fromRight, isLeft)
 import Data.Functor.Identity (Identity (runIdentity))
 import Control.Monad.State.Strict (evalState)
 import qualified Data.List.NonEmpty as NEL
@@ -188,12 +188,8 @@ main = do
     dropExpr e = genExpr e <* tell "drop"
     example name = genFunc (Just name) ([], []) []
     exampleT name oTs = genFunc (Just name) ([], wtyp <$> oTs) []
-    stdprint = ESem (ForeignCall (SFun [STxt] SU32) mempty "print")
-    stdprintln = EFun (SFun [STxt] SU32) [Bind "input"] $
-      ELet
-        [ (EApp stdprint [EVar STxt "input"], Bind "len")
-        , (EApp stdprint [ETxt "\n"], Discard)
-        ] $ EVar SU32 "len"
+    stdprint = ESem StdPrint
+    stdprintln = ESem StdPrintLn
 
     showBool = EFun (SFun [S TBool] STxt) [Bind "cond"] $
       ECase (S TBool) (EVar (S TBool) "cond") STxt
@@ -824,6 +820,16 @@ pattern SIOText = S TIOText
 -- The WASMM monad for generating a WASM file
 --------------------------------------------------------------------------------
 
+data ImportDesc = ImportDesc
+  { imModule :: Text
+  , imName :: Text
+  }
+  deriving (Eq, Ord, Generic, NFData, Show)
+
+type FuncMeta = (Maybe Name, WASMC, Either ImportDesc WASMC)
+type FuncDefn = (([WTyp], [WTyp]), Either ImportDesc SomeWASM)
+type FuncIdx = GenIdx FuncMeta FuncDefn
+
 
 -- WASM reader context
 data WASMR = WASMR
@@ -836,7 +842,7 @@ data WASMR = WASMR
   }
 -- WASM state context
 data WASMS = WASMS
-  { funcs :: GenIdx (Maybe Name, WASMC, WASMC) (([WTyp], [WTyp]), SomeWASM)
+  { funcs :: FuncIdx
   -- ^ function bodies generated so far
   , types :: GenIdx (Maybe Name, Map Name SubTyp) WASMC
   -- ^ composite types generated so far (struct, array, func)
@@ -1143,7 +1149,7 @@ genFunc' name (inputs, outputs) lexical definition = do
   case definition of
     Right keyful ->
       let
-        genKey = ((inputs, outputs), keyful)
+        genKey = ((inputs, outputs), Right keyful)
       in case isGenned gennedFunctions genKey of
         Just (idx, (name', _, _)) -> pure (makeReference idx name')
         Nothing -> do
@@ -1151,11 +1157,11 @@ genFunc' name (inputs, outputs) lexical definition = do
           modify' \modul -> modul { funcs = genning }
           (genT, body, _) <- doIt
           makeReference idx name <$ modify' \modul ->
-            modul { funcs = funcs modul & fulfill (name, genT, body) }
+            modul { funcs = funcs modul & fulfill (name, genT, Right body) }
     Left _ -> do
       (genT, body, wasDefined) <- doIt
       state \modul ->
-        let (g, idx, (name', _, _)) = gen (funcs modul) ((inputs, outputs), wasDefined) (name, genT, body)
+        let (g, idx, (name', _, _)) = gen (funcs modul) ((inputs, outputs), Right wasDefined) (name, genT, Right body)
         in (makeReference idx name', modul { funcs = g })
 
 genFuncInner :: ([WTyp], [WTyp]) -> [Bind] -> Either WASM SomeWASM -> WASMM (WASMC, WASMC, SomeWASM)
@@ -1194,6 +1200,17 @@ genFuncInner (inputs, outputs) lexical definition = do
   -- Restore the quasi-reader state
   restore
   pure (genT, body, wasDefined)
+
+genImport :: Maybe Name -> ImportDesc -> ([WTyp], [WTyp]) -> WASMMC
+genImport name importDesc (inputs, outputs) = do
+  let
+    makeReference idx name' = maybe (wasmIdx idx) wasmID name'
+  genT <- CONCAT <$>
+    (fmap (QUAL "param")  <$> traverse genWTyp inputs) <>
+    (fmap (QUAL "result") <$> traverse genWTyp outputs)
+  state \modul ->
+    let (g, idx, (name', _, _)) = gen (funcs modul) ((inputs, outputs), Left importDesc) (name, genT, Left importDesc)
+    in (makeReference idx name', modul { funcs = g })
 
 genType :: SynthType styp => HasCallStack => Maybe Name -> styp -> WASMMC
 genType name = getWTyp name . wtyp
@@ -1474,11 +1491,15 @@ genCTypWith genWTyp = \case
   genMut (Mut ty) = QUAL "mut" <$> genWTyp ty
   genMut (Imm ty) = genWTyp ty
 
--- Generate a whole WASM module
-genModule :: WASM -> WASMM WASMC
-genModule codeForMain = do
-  _ <- genFunc (Just "fd_write") ([], []) [] mempty
-  _ <- genFunc (Just "print") ([wtyp TTxt], [WI32]) ["text"] do
+fn_fd_write :: WASMMC
+fn_fd_write = genImport (Just "fd_write") (ImportDesc "wasi_snapshot_preview1" "fd_write")
+  ([WI32, WI32, WI32, WI32], [WI32])
+
+data StdPrint = StdPrint deriving (Eq, Ord, Generic, NFData, Show)
+data StdPrintLn = StdPrintLn deriving (Eq, Ord, Generic, NFData, Show)
+
+instance ToFuncDef StdPrint where
+  toFuncDef StdPrint = FuncDef (Just "print") [wtyp TTxt] [WI32] ["text"] do
     withLexVar (Just "idx") SU32 \(eidx, vidx) -> do
       let
         getIdx = sexp "local.get" [ vidx ]
@@ -1501,9 +1522,27 @@ genModule codeForMain = do
         sexp "br" [ continue ]
       sexp "i32.store" [ genConst @Word32 65500, genConst @Word32 0 ]
       sexp "i32.store" [ genConst @Word32 65504, SEXP "local.get" [ vidx ] ]
-      sexp "call" [ wasmID "fd_write", CONCAT $ genConst @Word32 <$> [ 1, 65500, 1, 65508 ] ]
+      sexp "call" =<< sequence
+        [ fn_fd_write, pure $ CONCAT $ genConst @Word32 <$> [ 1, 65500, 1, 65508 ] ]
       tell "drop"
       sexp "local.get" [ vidx ]
+instance Semantics StdPrint where
+  semTyp StdPrint = SFun [STxt] SU32
+  semCode StdPrint = funcCall StdPrint
+  semEffects StdPrint = mempty { efForeign = Important }
+
+instance Semantics StdPrintLn where
+  semTyp StdPrintLn = SFun [STxt] SU32
+  semCode StdPrintLn = genExpr $ EFun (SFun [STxt] SU32) [Bind "input"] $
+    ELet
+      [ (EApp (ESem StdPrint) [EVar STxt "input"], Bind "len")
+      , (EApp (ESem StdPrint) [ETxt "\n"], Discard)
+      ] $ EVar SU32 "len"
+  semEffects StdPrintLn = mempty { efForeign = Important }
+
+-- Generate a whole WASM module
+genModule :: WASM -> WASMM WASMC
+genModule codeForMain = do
   _ <- genFunc (Just "main") ([], []) [] codeForMain
   hasStart <- gets $ not . contentless . initCode
   when hasStart do
@@ -1511,11 +1550,14 @@ genModule codeForMain = do
   gets \(WASMS { funcs, types, locals = _, globals, initCode = _, rwdata, rodata }) ->
     SEXP "module" $ join
       [ [ SEXP "start" [ wasmID "_start" ] | hasStart ]
-      , [ SEXP "import"
-          [ wasmStr "wasi_snapshot_preview1", wasmStr "fd_write"
-          , SEXP "func" [ wasmID "fd_write", SEXP "param" [ "i32", "i32", "i32", "i32" ], SEXP "result" [ "i32" ] ]
-          ]
-        , SEXP "memory" [ wasmLen 1 ]
+      , genned funcs <&> \(_, (name, ty, defn)) ->
+          case defn of
+            Left importDesc -> SEXP "import"
+              [ wasmStr (imModule importDesc), wasmStr (imName importDesc)
+              , SEXP "func" [ foldMap wasmID name, ty ]
+              ]
+            Right _defined -> mempty
+      , [ SEXP "memory" [ wasmLen 1 ]
         , SEXP "export" [ wasmStr "memory", SEXP "memory" [ wasmIdx 0 ] ]
         ]
       , Map.toList globals <&> \(name, ((_, ty), code)) ->
@@ -1526,9 +1568,11 @@ genModule codeForMain = do
         in NEL.groupWith (snd.snd) (genned types) <&> maybeRec
           \(code, (name, _)) ->
             SEXP "type" [ foldMap wasmID name, code ]
-      , genned funcs <&> \(_, (name, ty, code)) ->
-          if name == Just "fd_write" then mempty else
-          SEXP "func" [ foldMap wasmID name, CONCAT [ SEXP "export" [ wasmStr "main" ] | name == Just "main" ], ty, code ]
+      , genned funcs <&> \(_, (name, ty, defn)) ->
+          case defn of
+            Left _imported -> mempty
+            Right code -> SEXP "func"
+              [ foldMap wasmID name, CONCAT [ SEXP "export" [ wasmStr "main" ] | name == Just "main" ], ty, code ]
       , [ genData ".data" rwdata ]
       , [ genData ".rodata" rodata ]
       ]
@@ -1558,10 +1602,12 @@ genWAT codeForMain = evaluate $
 
 -- Run the WASM monad
 runWASM :: WASMM a -> (a, WASMS, WASMW)
-runWASM (WASM runIt) = runRWS runIt
+runWASM act | WASM runIt <- guessAndCheck 0 act =
+  runRWS runIt
   WASMR
   { scope = Map.empty
   , lexical = Map.empty
+  , analysisDepth = 0
   }
   WASMS
   { funcs = newGenIdx
@@ -1586,6 +1632,32 @@ captureWASM = do
       runRWS runIt r s
         & \(a, _, _) -> a
   pure runner
+
+guessAndCheck :: Int -> WASMM a -> WASMM a
+guessAndCheck n act | n < 3 = do
+  s0 <- gets id
+  (r0, w0) <- censor mempty $ listen act
+  s1 <- gets id
+  case recheckState s0 s1 of
+    Nothing -> r0 <$ tell w0
+    Just s2 -> do
+      put s2
+      guessAndCheck (n+1) act
+guessAndCheck _ act = act
+
+recheckState :: WASMS -> WASMS -> Maybe WASMS
+recheckState s0 s1
+  | importsFirst (funcs s1) = Nothing
+  | otherwise = Just $ s0 { funcs = skimImports (funcs s1) }
+  where
+  isImport :: FuncDefn -> Bool
+  isImport (_, x) = isLeft x
+  importsFirst :: FuncIdx -> Bool
+  importsFirst (GenIdx _ fns) = all (isImport . fst) $ List.dropWhile (not . isImport . fst) fns
+
+  skimImports :: FuncIdx -> FuncIdx
+  skimImports (GenIdx _ fns) = foldr skimImport newGenIdx $ List.filter (isImport . fst) fns
+  skimImport (defn, meta) soFar = let (g, _, _) = gen soFar defn meta in g
 
 
 -- | Get a variable that is valid for the duration of the continuation.
