@@ -114,7 +114,7 @@ import qualified Debug.Trace as Dbg
 import qualified Data.ByteString as ByteString
 import qualified Data.ByteString.UTF8 as ByteString.UTF8
 import Data.Either (fromRight, isLeft)
-import Data.Functor.Identity (Identity (runIdentity))
+import Data.Functor.Identity (Identity (runIdentity, Identity))
 import Control.Monad.State.Strict (evalState)
 import qualified Data.List.NonEmpty as NEL
 import GHC.Stack (HasCallStack)
@@ -288,9 +288,15 @@ main = do
       _ <- genWTyp $ wtyp $ TClo
         (Just (HCTyp (WS [Mut WI64])))
         (Just (HCTyp (WF [WI64] [WI64])))
+      _ <- funcDef $ CallClo (Left (HCls HAny)) (Left (HCls HAny))
+      _ <- funcDef $ CallClo { ccInput = (Left (HCls HAny)), ccOutput = (Right [WI32, WI64]) }
+      _ <- funcDef $ CallClo { ccInput = (Right [WI32, WI64]), ccOutput = (Left (HCls HAny)) }
+      _ <- funcDef $ CallClo { ccInput = (Right [WI32, WI64]), ccOutput = (Right [WI32, WI64]) }
       pure ()
-  T.putStrLn =<< genWAT recTest
-  -- T.putStrLn =<< execWASM =<< genWAT recTest
+  awa <- genWAT recTest
+  T.putStrLn awa
+  T.writeFile "/tmp/closure.wat" awa
+  T.putStrLn =<< execWASM awa
   pure ()
 
 -- Translate from the expression type to WASM code (written into the writer
@@ -827,8 +833,8 @@ data ImportDesc = ImportDesc
   deriving (Eq, Ord, Generic, NFData, Show)
 
 type FuncMeta = (Maybe Name, WASMC, Either ImportDesc WASMC)
-type FuncDefn = (([WTyp], [WTyp]), Either ImportDesc SomeWASM)
-type FuncIdx = GenIdx FuncMeta FuncDefn
+type FuncData = (([WTyp], [WTyp]), Either ImportDesc SomeWASM)
+type FuncIdx = GenIdx FuncMeta FuncData
 
 
 -- WASM reader context
@@ -1563,11 +1569,13 @@ genModule codeForMain = do
       , Map.toList globals <&> \(name, ((_, ty), code)) ->
           SEXP "global" [ wasmID name, ty, code ]
       , let
-          maybeRec f xs@(x :| _) | Map.null (snd (snd x)) = foldMap f xs
+          maybeRec f xs@(x :| _) | Map.null (snd (snd (snd x))) = foldMap f xs
           maybeRec f xs =  SEXP "rec" $ f <$> toList xs
-        in NEL.groupWith (snd.snd) (genned types) <&> maybeRec
-          \(code, (name, _)) ->
-            SEXP "type" [ foldMap wasmID name, code ]
+        in NEL.groupWith (snd.snd.snd) (zip [0..] $ genned types) <&> maybeRec
+          \(i, (code, (name, _))) -> CONCAT
+            [ COMMENT $ _nums !! i
+            , SEXP "type" [ foldMap wasmID name, code ]
+            ]
       , genned funcs <&> \(_, (name, ty, defn)) ->
           case defn of
             Left _imported -> mempty
@@ -1650,7 +1658,7 @@ recheckState s0 s1
   | importsFirst (funcs s1) = Nothing
   | otherwise = Just $ s0 { funcs = skimImports (funcs s1) }
   where
-  isImport :: FuncDefn -> Bool
+  isImport :: FuncData -> Bool
   isImport (_, x) = isLeft x
   importsFirst :: FuncIdx -> Bool
   importsFirst (GenIdx _ fns) = all (isImport . fst) $ List.dropWhile (not . isImport . fst) fns
@@ -1801,7 +1809,7 @@ brCasts inputsOutputs cases fallback = do
   blockType <- mkBlockType inputsOutputs
   break <- incrementBlock
   wrapBlock "block" [ break, blockType ] do
-    brSequenceInner (inputsOutputs <> ([], [List.last (fst inputsOutputs)]))
+    brSequenceInner (fst inputsOutputs, [List.last (fst inputsOutputs)])
       ( cases <&> \item (continue, _) ->
           retroactively do
             (ty, r) <- item
@@ -2089,8 +2097,12 @@ instance SynthType TFun where
 baseClosureC :: CTyp
 baseClosureC = WS
   -- boxed partial application
-  [ Imm $ WR Non $ HCTyp $ WF [WR Nul (HCls HAny)] [WR Nul (HCls HAny)]
-  -- unboxed partial application
+  [ Imm $ WR Non $ HCTyp $ WF
+    -- closure data and next argument, boxed
+    [WR Nul (HCls HAny), WR Nul (HCls HAny)]
+    -- boxed result
+    [WR Nul (HCls HAny)]
+  -- unboxed partial application, if available
   , Imm $ WR Nul (HCls HFunc)
   -- closure data
   , Imm $ WR Nul (HCls HAny)
@@ -2101,14 +2113,143 @@ baseClosureH :: RTyp
 baseClosureH = RTyp "closure" $ Map.singleton "closure" $
   SubTyp False Nothing baseClosureC
 
+baseClosureW :: WTyp
+baseClosureW = WR Non $ HRTyp baseClosureH
+
 instance SynthType TClo where
-  wtyp (TClo Nothing Nothing) = WR Non $ HRTyp baseClosureH
+  wtyp (TClo Nothing Nothing) = baseClosureW
   wtyp (TClo clo fun) = WR Non $ HRTyp $ RTyp "_someclosure" $ Map.singleton "_someclosure" $
     SubTyp False (Just baseClosureH) $ WS
-      [ Imm $ WR Non $ HCTyp $ WF [WR Nul (HCls HAny)] [WR Nul (HCls HAny)]
+      [ Imm $ WR Non $ HCTyp $ WF
+          -- closure data and next argument, boxed
+          [WR Nul (HCls HAny), WR Nul (HCls HAny)]
+          -- boxed result
+          [WR Nul (HCls HAny)]
       , Imm $ WR Nul $ fromMaybe (HCls HFunc) fun
       , Imm $ WR Nul $ fromMaybe (HCls HAny) clo
       ]
+
+data CallClo = CallClo
+  { ccInput :: Either HTyp [WTyp]
+  , ccOutput :: Either HTyp [WTyp]
+  } deriving (Eq, Ord, Generic, NFData, Show)
+
+instance ToFuncDef CallClo where
+  toFuncDef (CallClo (Left (HCls HAny)) (Left (HCls HAny))) = FuncDef
+    { fdName = Just "call_boxed"
+    , fdInputs = [baseClosureW, WR Nul (HCls HAny)]
+    , fdOutputs = [WR Nul (HCls HAny)]
+    , fdLexical = []
+    , fdDefinition = do
+        let
+          genericTyp = HCTyp $ WF
+            -- closure data and next argument, boxed
+            [WR Nul (HCls HAny), WR Nul (HCls HAny)]
+            -- boxed result
+            [WR Nul (HCls HAny)]
+        baseClosureT <- genType Nothing $ TClo Nothing Nothing
+
+        -- Grab the closure data
+        sexp "local.get" [ wasmIdx 0 ]
+        sexp "struct.get" [ baseClosureT, wasmIdx 2 ]
+
+        -- Grab the input
+        sexp "local.get" [ wasmIdx 1 ]
+
+        -- Get the boxed function and tail call it
+        sexp "local.get" [ wasmIdx 0 ]
+        sexp "struct.get" [ baseClosureT, wasmIdx 0 ]
+        sexp "return_call_ref" =<< sequence [ genHTyp Nothing genericTyp ]
+    }
+  toFuncDef (CallClo inputs outputs) = FuncDef
+    { fdName = Nothing
+    , fdInputs  = [baseClosureW] <> either (pure . WR Nul) id inputs
+    , fdOutputs = either (pure . WR Nul) id outputs
+    , fdLexical = []
+    , fdDefinition = do
+        let
+          genericTyp = HCTyp $ WF
+            -- closure data and next argument, boxed
+            [WR Nul (HCls HAny), WR Nul (HCls HAny)]
+            -- boxed result
+            [WR Nul (HCls HAny)]
+          inputBundle = either (pure . WR Nul) id inputs
+          outputBundle = either (pure . WR Nul) id outputs
+          specializedTyp = HCTyp $ WF
+            do [WR Nul $ HCls HAny] <> inputBundle
+            do outputBundle
+          grabInputs :: WASM
+          grabInputs = case inputs of
+            Left _ -> sexp "local.get" [ wasmIdx 1 ]
+            Right fields -> for_ (zip [0..] fields) \(i, _) ->
+              sexp "local.get" [ wasmIdx (i+1) ]
+        baseClosureT <- genType Nothing $ TClo Nothing Nothing
+        withVar (Just "specialized") (SPrm Uns $ WR Nul specializedTyp) \specialized -> do
+          sexp "local.get" [ wasmIdx 0 ]
+          sexp "struct.get" [ baseClosureT, wasmIdx 1 ]
+          _ <- (brCasts ([SPrm Uns $ WR Nul (HCls HFunc)], SPrm Uns <$> outputBundle) . Identity)
+            do
+              -- Stash it
+              sexp "local.set" [ specialized ]
+
+              -- Grab the closure data
+              sexp "local.get" [ wasmIdx 0 ]
+              sexp "struct.get" [ baseClosureT, wasmIdx 2 ]
+
+              grabInputs
+
+              -- Tail call it, it has the correct return type
+              sexp "local.get" [ specialized ]
+              sexp "return_call_ref" =<< sequence [ genHTyp Nothing specializedTyp ]
+
+              pure (WR Non specializedTyp, ())
+            do
+              -- Drop the unchanged ref
+              sexp "drop" []
+
+              -- Grab the closure data
+              sexp "local.get" [ wasmIdx 0 ]
+              sexp "struct.get" [ baseClosureT, wasmIdx 2 ]
+
+              -- Box the inputs
+              grabInputs
+              case inputs of
+                Left _ -> pure () -- already boxed
+                Right fields -> do
+                  boxedInputT <- genHTyp Nothing $ HCTyp $ WS $ Mut <$> fields
+                  sexp "struct.new" [ boxedInputT ]
+
+              -- Get the boxed function and call it
+              sexp "local.get" [ wasmIdx 0 ]
+              sexp "struct.get" [ baseClosureT, wasmIdx 0 ]
+              case outputs of
+                Left _ -> do
+                  -- The return type is correct, so tail call
+                  sexp "return_call_ref" =<< sequence [ genHTyp Nothing genericTyp ]
+                Right fields -> do
+                  -- Call it, then typecheck and unbox the result
+                  sexp "call_ref" =<< sequence [ genHTyp Nothing genericTyp ]
+
+                  let outputTyp = HCTyp $ WS $ Mut <$> fields
+                  boxedOutputT <- genHTyp Nothing outputTyp
+                  withVar (Just "result") (SPrm Uns $ WR Nul outputTyp) \result -> do
+                    -- Cast the output ref type, no need to branch, just fail
+                    sexp "ref.cast" =<< sequence [ genWTyp $ WR Non outputTyp ]
+                    -- Stash it
+                    sexp "local.set" [ result ]
+
+                    -- Extract each field
+                    for_ (zip [0..] fields) \(i, _) -> do
+                      sexp "local.get" [ result ]
+                      sexp "struct.get" [ boxedOutputT, wasmIdx i ]
+
+                    -- Return what is now on the stack
+                    sexp "return" []
+              pure ()
+          pure ()
+    }
+
+
 instance SynthType TArr where
   wtyp (TArr t) = WR Non $ HCTyp $ WA (Mut (wtyp t))
   isArrayType = Just
