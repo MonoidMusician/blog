@@ -121,6 +121,8 @@ import GHC.Stack (HasCallStack)
 import Control.Applicative.Backwards (Backwards(Backwards, forwards))
 import Data.Monoid.Generic (GenericMonoid(..), GenericSemigroup(..))
 import Data.IntMap.Monoidal (MonoidalIntMap)
+import Control.Monad.Trans.Cont (ContT(ContT))
+import Control.Monad.Cont (ContT(runContT))
 
 -- Invoke wasmtime (from $PATH) with the given WASM source, with a main()
 -- function. Prints the source on error.
@@ -130,6 +132,7 @@ execWASM fullModule = do
     [ "run", "-W", "all-proposals", "--invoke", "main", "-" ]
   when (status /= ExitSuccess) do
     T.putStrLn fullModule
+    T.writeFile "/tmp/failed.wat" fullModule
     error "Running WASM module failed"
   pure $ T.pack result
 
@@ -258,8 +261,8 @@ main = do
       genExpr $ eIf (eSnd $ eTuple ETrue EFalse) (eTuple ETrue (EU32 1)) (eTuple EFalse (EU32 0))
     _ <- example "test" do
       dropExpr $ ETxt "¡test!"
-    dropExpr $ EArrayFill (SArr SU32) (EU32 4) $ EFun (SFun [SU32] SU32) [Bind "idx"] $
-      EApp stdprint [EIndex mempty (EArray texts $ ETxt . (<> "\n") <$> T.words "test me hellow wowlrd") (EVar SU32 "idx")]
+    -- dropExpr $ EArrayFill (SArr SU32) (EU32 4) $ EFun (SFun [SU32] SU32) [Bind "idx"] $
+    --   EApp stdprint [EIndex mempty (EArray texts $ ETxt . (<> "\n") <$> T.words "test me hellow wowlrd") (EVar SU32 "idx")]
     dropExpr $ EApp stdprint [ETxt "test me hellow wowlrd\n"]
     censor mempty $ funcDef IOByteLength
     censor mempty $ funcDef IOFlatten
@@ -268,13 +271,14 @@ main = do
   T.writeFile "/tmp/test.wat" fullModule
   T.putStrLn =<< execWASM fullModule
   T.putStrLn =<< execWASM =<< genWAT do
-    genExpr ETrue
-    genExpr showBool
-    genExpr stdprintln
+    genExpr (EApp stdprintln [EApp showBool [ETrue]])
     tell "drop"
-    genExpr EFalse
-    genExpr showBool
-    genExpr stdprintln
+    genExpr (EApp stdprintln [EApp showBool [EFalse]])
+    tell "drop"
+  T.writeFile "/tmp/silly.wat" =<< genWAT do
+    genExpr (EApp stdprintln [EApp showBool [ETrue]])
+    tell "drop"
+    genExpr (EApp stdprintln [EApp showBool [EFalse]])
     tell "drop"
   let
     recTest = do
@@ -292,6 +296,9 @@ main = do
       _ <- funcDef $ CallClo { ccInput = (Left (HCls HAny)), ccOutput = (Right [WI32, WI64]) }
       _ <- funcDef $ CallClo { ccInput = (Right [WI32, WI64]), ccOutput = (Left (HCls HAny)) }
       _ <- funcDef $ CallClo { ccInput = (Right [WI32, WI64]), ccOutput = (Right [WI32, WI64]) }
+      _ <- funcDef $ CallClo (Left (HCls HStruct)) (Left (HCls HStruct))
+      _ <- funcDef $ CallClo { ccInput = (Left (HCls HStruct)), ccOutput = (Right [WI32, WI64]) }
+      _ <- funcDef $ CallClo { ccInput = (Right [WI32, WI64]), ccOutput = (Left (HCls HStruct)) }
       pure ()
   awa <- genWAT recTest
   T.putStrLn awa
@@ -332,15 +339,71 @@ genExpr = \case
     lexScope <- ask <&> lexical
     sexp "local.get" [ lexScope ! name ## coerce name ]
 
-  EFun t binds body -> do
-    (inputs, output) <- case t of
-      SFun inputs output -> pure (inputs, output)
-      _ -> error "Not a function type"
-    fn <- genFunc Nothing (wtyp <$> inputs, [wtyp output]) binds (genExpr body)
-    tell $ QUAL "call" fn
-  EApp fun args -> do
+  -- fn@(EFun t binds body) -> do
+  --   let captures = freeVars fn
+  --   (inputs, output) <- case t of
+  --     SFun inputs output -> pure (inputs, output)
+  --     _ -> error "Not a function type"
+  --   fn <- genFunc Nothing (wtyp <$> inputs, [wtyp output]) binds (genExpr body)
+  --   tell $ QUAL "call" fn
+  -- EApp fun args -> do
+  --   traverse_ genExpr args
+  --   genExpr fun
+
+  EApp fun@(EForeign _) args -> do
     traverse_ genExpr args
     genExpr fun
+  EFun _ [] body -> genExpr body
+  EApp fun [] -> genExpr fun
+  fn@(EFun t (bind : binds) body) -> do
+    let
+      captures = freeVars fn
+      (inputs', output') = case t of
+        SFun inputs' output' -> (inputs', output')
+        _ -> error "Not a function type"
+      inputs = List.tail inputs'
+      input = List.head inputs'
+      output = case inputs of
+        [] -> output'
+        _ -> SFun inputs output'
+    unboxedFn <- genFunc Nothing ([WR Nul (HCls HAny), wtyp input], [wtyp output]) [Discard, bind] do
+      withVar Nothing (SPrm Uns $ WR Non $ HCTyp $ closureType captures) \clo -> do
+        sexp "local.get" [ wasmIdx 0 ]
+        sexp "ref.cast" =<< sequence [ genWTyp $ WR Non $ HCTyp $ closureType captures ]
+        sexp "local.set" [ clo ]
+        hydrateClosure captures (sexp "local.get" [ clo ]) do
+          genExpr $ EFun output binds body
+    let
+      (inputBoxed, (_, inputUnbox)) = chooseBoxingS input
+      (outputBoxed, (outputBox, _)) = chooseBoxingS output
+    boxedFn <- genFunc' Nothing Nothing ([WR Nul (HCls HAny), WR Nul $ HCls HAny], [WR Nul $ HCls HAny]) [Discard, bind] $ Left do
+      sexp "local.get" [ wasmIdx 0 ]
+      sexp "local.get" [ wasmIdx 1 ]
+      inputUnbox
+      sexp "call" [ unboxedFn ]
+      outputBox
+    sexp "ref.func" [ boxedFn ]
+    sexp "ref.func" [ unboxedFn ]
+    modify' \s -> s { funcRefs = funcRefs s <> Set.fromList [ boxedFn, unboxedFn ] }
+    captureClosure captures
+    sexp "struct.new" =<< sequence [ genType Nothing $ TClo Nothing Nothing ]
+  EApp fun args' -> do
+    let
+      args = List.init args'
+      arg = List.last args'
+      inner = EApp fun args
+      t = infer inner
+      (inputs', output') = case t of
+        SFun inputs' output' -> (inputs', output')
+        _ -> error "Not a function type"
+      inputs = List.tail inputs'
+      input = List.head inputs'
+      output = case inputs of
+        [] -> output'
+        _ -> SFun inputs output'
+    genExpr arg
+    genExpr inner
+    sexp "call" =<< sequence [ funcDef (CallClo (detectBoxingS input) (detectBoxingS output)) ]
 
   ECons t name fields -> do
     (mkconstr t ! name) ((,) <*> genExpr <$> Map.fromList fields)
@@ -378,6 +441,49 @@ genExpr = \case
           inner
     foldr bindField (genExpr body) (Map.toList requested)
 
+-- Sort by WTyp to minimize the number of closure types that are generated
+organizeClosure :: Map Name STyp -> [(Name, STyp, WTyp, WASM)]
+organizeClosure selected =
+  let
+    getter :: Name -> WASM
+    getter n = do
+      scope <- ask <&> lexical
+      case Map.lookup n scope of
+        Nothing -> error $ "Missing name: " <> show n
+        Just g -> tell g
+    sorted =
+      Map.toList selected
+      & fmap (\(n, s) -> (n, s, wtyp s, getter n))
+      & List.sortOn (\(_, _, w, _) -> w)
+  in sorted
+
+-- Form the struct type
+closureType :: Map Name STyp -> CTyp
+closureType selected = WS $ organizeClosure selected
+  <&> \(_, _, w, _) -> Imm w
+
+-- Save a closure
+captureClosure :: Map Name STyp -> WASM
+captureClosure selected = do
+  let sorted = organizeClosure selected
+  ty <- genHTyp Nothing $ HCTyp $ closureType selected
+  for_ sorted \(n, _, _, getter) -> do
+    comment (coerce n)
+    getter
+  sexp "struct.new" [ ty ]
+
+-- Unpack a closure into local variables
+hydrateClosure :: Map Name STyp -> WASM -> WASMM r -> WASMM r
+hydrateClosure selected access inner = do
+  let sorted = organizeClosure selected
+  ty <- genHTyp Nothing $ HCTyp $ closureType selected
+  const inner & runContT do
+    for_ (zip [0..] sorted) \(i, (n, s, _, _)) -> do
+      (_, v) <- ContT $ withLexVar (Just n) s
+      lift do
+        access
+        sexp "struct.get" [ ty, wasmIdx i ]
+        sexp "local.set" [ v ]
 
 --------------------------------------------------------------------------------
 -- Miscellaneous helpers/background
@@ -850,6 +956,8 @@ data WASMR = WASMR
 data WASMS = WASMS
   { funcs :: FuncIdx
   -- ^ function bodies generated so far
+  , funcRefs :: Set WASMC
+  -- ^ functions used for refs (elem declare func)
   , types :: GenIdx (Maybe Name, Map Name SubTyp) WASMC
   -- ^ composite types generated so far (struct, array, func)
   , typeGroups :: GenIdx (Map Name WASMC) (Map Name SubTyp)
@@ -1136,21 +1244,21 @@ newtype FuncCall def = FuncCall def
 funcDef :: (ToFuncDef def, Existentiable def) => def -> WASMMC
 funcDef def = case toFuncDef def of
   FuncDef name inputs outputs lexical _definition ->
-    genFunc' name (inputs, outputs) lexical (Right (SomeWASM (FuncBody def)))
+    genFunc' name Nothing (inputs, outputs) lexical (Right (SomeWASM (FuncBody def)))
 
 funcCall :: (ToFuncDef def, Existentiable def) => def -> WASM
 funcCall def = sexp "call" =<< sequence [ funcDef def ]
 
 genFunc :: Maybe Name -> ([WTyp], [WTyp]) -> [Bind] -> WASM -> WASMMC
 genFunc name tys lexical =
-  genFunc' name tys lexical . Left
+  genFunc' name Nothing tys lexical . Left
 
 -- Generate a WASM function definition. Returns code to invoke it
-genFunc' :: Maybe Name -> ([WTyp], [WTyp]) -> [Bind] -> Either WASM SomeWASM -> WASMMC
-genFunc' name (inputs, outputs) lexical definition = do
+genFunc' :: Maybe Name -> Maybe RTyp -> ([WTyp], [WTyp]) -> [Bind] -> Either WASM SomeWASM -> WASMMC
+genFunc' name ascription (inputs, outputs) lexical definition = do
   gennedFunctions <- gets funcs
   let
-    doIt = genFuncInner (inputs, outputs) lexical definition
+    doIt = genFuncInner ascription (inputs, outputs) lexical definition
     makeReference idx name' = maybe (wasmIdx idx) wasmID name'
   case definition of
     Right keyful ->
@@ -1170,9 +1278,10 @@ genFunc' name (inputs, outputs) lexical definition = do
         let (g, idx, (name', _, _)) = gen (funcs modul) ((inputs, outputs), Right wasDefined) (name, genT, Right body)
         in (makeReference idx name', modul { funcs = g })
 
-genFuncInner :: ([WTyp], [WTyp]) -> [Bind] -> Either WASM SomeWASM -> WASMM (WASMC, WASMC, SomeWASM)
-genFuncInner (inputs, outputs) lexical definition = do
+genFuncInner :: Maybe RTyp -> ([WTyp], [WTyp]) -> [Bind] -> Either WASM SomeWASM -> WASMM (WASMC, WASMC, SomeWASM)
+genFuncInner ascription (inputs, outputs) lexical definition = do
   genT <- CONCAT <$>
+    sequence [maybe mempty (fmap (QUAL "type") . genHTyp Nothing . HRTyp) ascription] <>
     (fmap (QUAL "param")  <$> traverse genWTyp inputs) <>
     (fmap (QUAL "result") <$> traverse genWTyp outputs)
   let
@@ -1535,16 +1644,18 @@ instance ToFuncDef StdPrint where
 instance Semantics StdPrint where
   semTyp StdPrint = SFun [STxt] SU32
   semCode StdPrint = funcCall StdPrint
-  semEffects StdPrint = mempty { efForeign = Important }
+  semEffects StdPrint = mempty { efForeign = Important, efOrdering = Important }
 
 instance Semantics StdPrintLn where
   semTyp StdPrintLn = SFun [STxt] SU32
-  semCode StdPrintLn = genExpr $ EFun (SFun [STxt] SU32) [Bind "input"] $
-    ELet
-      [ (EApp (ESem StdPrint) [EVar STxt "input"], Bind "len")
-      , (EApp (ESem StdPrint) [ETxt "\n"], Discard)
-      ] $ EVar SU32 "len"
-  semEffects StdPrintLn = mempty { efForeign = Important }
+  semCode StdPrintLn = do
+    genExpr $ EFun (SFun [STxt] SU32) [Bind "input"] $
+      ELet
+        [ (EApp (ESem StdPrint) [EVar STxt "input"], Bind "len")
+        , (EApp (ESem StdPrint) [ETxt "\n"], Discard)
+        ] $ EVar SU32 "len"
+    sexp "call" =<< sequence [ funcDef (CallClo (detectBoxingS STxt) (detectBoxingS SU32)) ]
+  semEffects StdPrintLn = mempty { efForeign = Important, efOrdering = Important }
 
 -- Generate a whole WASM module
 genModule :: WASM -> WASMM WASMC
@@ -1553,7 +1664,7 @@ genModule codeForMain = do
   hasStart <- gets $ not . contentless . initCode
   when hasStart do
     void $ genFunc (Just "_start") ([], []) [] . tell =<< gets initCode
-  gets \(WASMS { funcs, types, locals = _, globals, initCode = _, rwdata, rodata }) ->
+  gets \(WASMS { funcs, funcRefs, types, locals = _, globals, initCode = _, rwdata, rodata }) ->
     SEXP "module" $ join
       [ [ SEXP "start" [ wasmID "_start" ] | hasStart ]
       , genned funcs <&> \(_, (name, ty, defn)) ->
@@ -1573,14 +1684,25 @@ genModule codeForMain = do
           maybeRec f xs =  SEXP "rec" $ f <$> toList xs
         in NEL.groupWith (snd.snd.snd) (zip [0..] $ genned types) <&> maybeRec
           \(i, (code, (name, _))) -> CONCAT
-            [ COMMENT $ _nums !! i
+            [ COMMENT $ "type " <> _nums !! i
             , SEXP "type" [ foldMap wasmID name, code ]
             ]
-      , genned funcs <&> \(_, (name, ty, defn)) ->
+      , zip [0..] (genned funcs) <&> \(i, (_, (name, ty, defn))) ->
           case defn of
             Left _imported -> mempty
-            Right code -> SEXP "func"
-              [ foldMap wasmID name, CONCAT [ SEXP "export" [ wasmStr "main" ] | name == Just "main" ], ty, code ]
+            Right code -> CONCAT
+              [ COMMENT $ "func " <> _nums !! i
+              , SEXP "func"
+                [ foldMap wasmID name, CONCAT [ SEXP "export" [ wasmStr "main" ] | name == Just "main" ], ty, code ]
+              ]
+      , zip [0..] (genned funcs) <&> \(i, (_, (name, _, defn))) ->
+          case defn of
+            Right _code | Set.member (wasmIdx i) funcRefs || maybe False (flip Set.member funcRefs . wasmID) name -> CONCAT
+              [ COMMENT $ "func " <> _nums !! i
+              , SEXP "elem"
+                [ "declare", "func", maybe (wasmIdx i) wasmID name ]
+              ]
+            _ -> mempty
       , [ genData ".data" rwdata ]
       , [ genData ".rodata" rodata ]
       ]
@@ -1619,6 +1741,7 @@ runWASM act | WASM runIt <- guessAndCheck 0 act =
   }
   WASMS
   { funcs = newGenIdx
+  , funcRefs = mempty
   , types = newGenIdx
   , typeGroups = newGenIdx
   , locals = newGenIdx
@@ -2134,10 +2257,32 @@ data CallClo = CallClo
   , ccOutput :: Either HTyp [WTyp]
   } deriving (Eq, Ord, Generic, NFData, Show)
 
+detectBoxingS :: STyp -> Either HTyp [WTyp]
+detectBoxingS = detectBoxingW . wtyp
+
+detectBoxingW :: WTyp -> Either HTyp [WTyp]
+detectBoxingW (WR _ h) = Left h
+detectBoxingW w = Right [w]
+
+chooseBoxingS :: STyp -> (HTyp, (WASM, WASM))
+chooseBoxingS = chooseBoxingW . wtyp
+
+chooseBoxingW :: WTyp -> (HTyp, (WASM, WASM))
+chooseBoxingW w0 = case detectBoxingW w0 of
+  Left h ->
+    (h, (mempty, sexp "ref.cast" =<< sequence [ genWTyp $ WR Non h ]))
+  Right [_] ->
+    let
+      h = HCTyp $ WS $ Mut <$> [w0]
+      wrapper   = sexp "struct.new" =<< sequence [ genHTyp Nothing h ]
+      unwrapper = sexp "struct.get" =<< sequence [ genHTyp Nothing h, pure (wasmIdx 0) ]
+    in (h, (wrapper, unwrapper))
+  Right _ -> error "Multi-field struct boxing"
+
 instance ToFuncDef CallClo where
   toFuncDef (CallClo (Left (HCls HAny)) (Left (HCls HAny))) = FuncDef
     { fdName = Just "call_boxed"
-    , fdInputs = [baseClosureW, WR Nul (HCls HAny)]
+    , fdInputs = [WR Nul (HCls HAny), baseClosureW]
     , fdOutputs = [WR Nul (HCls HAny)]
     , fdLexical = []
     , fdDefinition = do
@@ -2150,20 +2295,20 @@ instance ToFuncDef CallClo where
         baseClosureT <- genType Nothing $ TClo Nothing Nothing
 
         -- Grab the closure data
-        sexp "local.get" [ wasmIdx 0 ]
+        sexp "local.get" [ wasmIdx 1 ]
         sexp "struct.get" [ baseClosureT, wasmIdx 2 ]
 
         -- Grab the input
-        sexp "local.get" [ wasmIdx 1 ]
+        sexp "local.get" [ wasmIdx 0 ]
 
         -- Get the boxed function and tail call it
-        sexp "local.get" [ wasmIdx 0 ]
+        sexp "local.get" [ wasmIdx 1 ]
         sexp "struct.get" [ baseClosureT, wasmIdx 0 ]
         sexp "return_call_ref" =<< sequence [ genHTyp Nothing genericTyp ]
     }
   toFuncDef (CallClo inputs outputs) = FuncDef
     { fdName = Nothing
-    , fdInputs  = [baseClosureW] <> either (pure . WR Nul) id inputs
+    , fdInputs  = either (pure . WR Nul) id inputs <> [baseClosureW]
     , fdOutputs = either (pure . WR Nul) id outputs
     , fdLexical = []
     , fdDefinition = do
@@ -2180,12 +2325,15 @@ instance ToFuncDef CallClo where
             do outputBundle
           grabInputs :: WASM
           grabInputs = case inputs of
-            Left _ -> sexp "local.get" [ wasmIdx 1 ]
+            Left _ -> sexp "local.get" [ wasmIdx 0 ]
             Right fields -> for_ (zip [0..] fields) \(i, _) ->
-              sexp "local.get" [ wasmIdx (i+1) ]
+              sexp "local.get" [ wasmIdx i ]
+          grabClosure = case inputs of
+            Left _ -> wasmIdx 1
+            Right fields -> wasmIdx (List.length fields)
         baseClosureT <- genType Nothing $ TClo Nothing Nothing
         withVar (Just "specialized") (SPrm Uns $ WR Nul specializedTyp) \specialized -> do
-          sexp "local.get" [ wasmIdx 0 ]
+          sexp "local.get" [ grabClosure ]
           sexp "struct.get" [ baseClosureT, wasmIdx 1 ]
           _ <- (brCasts ([SPrm Uns $ WR Nul (HCls HFunc)], SPrm Uns <$> outputBundle) . Identity)
             do
@@ -2193,7 +2341,7 @@ instance ToFuncDef CallClo where
               sexp "local.set" [ specialized ]
 
               -- Grab the closure data
-              sexp "local.get" [ wasmIdx 0 ]
+              sexp "local.get" [ grabClosure ]
               sexp "struct.get" [ baseClosureT, wasmIdx 2 ]
 
               grabInputs
@@ -2208,7 +2356,7 @@ instance ToFuncDef CallClo where
               sexp "drop" []
 
               -- Grab the closure data
-              sexp "local.get" [ wasmIdx 0 ]
+              sexp "local.get" [ grabClosure ]
               sexp "struct.get" [ baseClosureT, wasmIdx 2 ]
 
               -- Box the inputs
@@ -2220,12 +2368,17 @@ instance ToFuncDef CallClo where
                   sexp "struct.new" [ boxedInputT ]
 
               -- Get the boxed function and call it
-              sexp "local.get" [ wasmIdx 0 ]
+              sexp "local.get" [ grabClosure ]
               sexp "struct.get" [ baseClosureT, wasmIdx 0 ]
               case outputs of
-                Left _ -> do
+                Left (HCls HAny) -> do
                   -- The return type is correct, so tail call
                   sexp "return_call_ref" =<< sequence [ genHTyp Nothing genericTyp ]
+                Left outputTyp -> do
+                  -- Call and cast
+                  sexp "call_ref" =<< sequence [ genHTyp Nothing genericTyp ]
+                  sexp "ref.cast" =<< sequence [ genWTyp (WR Nul outputTyp) ]
+                  sexp "return" []
                 Right fields -> do
                   -- Call it, then typecheck and unbox the result
                   sexp "call_ref" =<< sequence [ genHTyp Nothing genericTyp ]
@@ -2916,6 +3069,18 @@ anyForeign p = coerce . visit' \case
     | not (p sem) -> ShortCircuit (Any True)
   _ -> Append mempty
 
+freeVars :: Expr -> Map Name STyp
+freeVars = visit' \case
+  EFun _ binds _ -> Continue \children ->
+    children Map.\\ gatherBinds binds
+  ELet binds _ -> Continue \children ->
+    children Map.\\ gatherBinds (snd <$> binds)
+  EVar ty name -> ShortCircuit $ Map.singleton name ty
+  _ -> Append mempty
+  where
+  gatherBinds = foldMap \case
+    Bind name -> Map.singleton name ()
+    Discard -> mempty
 
 
 -- Inject a single sample into a monoid, useful for seeing through layers,

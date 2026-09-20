@@ -1018,7 +1018,7 @@ impl System {
       Shared(ptr) =>
         Ok(see_as(look(ptr).unwrap(),|v| match v {
           Heap { crumbstring, .. } => crumbstring,
-          Synth { .. } => panic!("Should not by synth"),
+          Synth { .. } => panic!("Should not be synth"),
         })),
     };
     let mut tmp = CrumbString::from(I);
@@ -1366,15 +1366,25 @@ fn main() {
   let mut tests: u64 = 0;
   let mut test = |input, fuel| {
     let (used, output) = sys.eval_string(input, fuel);
-    // println!("{} -> {} in {} <= {}", input, output, used, fuel);
+    println!("{} -> {} in {} <= {}", input, output, used, fuel);
   };
-  // test("2", 10);
-  // test("3", 10);
-  // test("021", 10);
-  // test("03021", 10);
-  // test("03011", 10);
-  // test("03031", 10);
-  // test("0001301", 10);
+  test("2", 10);
+  test("3", 10);
+  test("021", 10);
+  test("03021", 10);
+
+  test("03011", 10);
+  test("03011", 0);
+  test("03011", 1);
+  test("0103011", 0);
+  test("0103011", 1);
+  test("0103011", 2);
+
+  test("03031", 10);
+  test("0001301", 10);
+  test("00013012", 10);
+  test("03030212", 10);
+  test("00302312", 10);
 
   let repeat = |amt, s: &str| -> String {
     vec![s.chars(); amt].iter().flat_map(|x| x.clone()).collect()
