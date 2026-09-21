@@ -3,6 +3,7 @@
     -t 'MonoidMusicianʼs blog' \
     -d 'MonoidMusicianʼs blog' \
     -l https://blog.veritates.love \
+    -f '%s' \
     -c 'GPLv3' \
     -n en-US \
     -s > /tmp/rss.xml \

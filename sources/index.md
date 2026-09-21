@@ -10,6 +10,10 @@ Get the behind-the-scenes peek at the [code](https://github.com/MonoidMusician/b
 
 ## Posts <a class="icon iconoir" href="rss.xml"><svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a><a class="icon iconoir" href="rss-lite.xml"><svg style="scale:0.6;transform-origin:left" width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 19C12 14.8 9.2 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M19 19C19 10.6 13.4 5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 19.01L5.01 18.9989" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
 
+- [Declarative WASM GC Types](decl-wasm-types.html) [2026/09/20]{.dated}
+
+  > What does declarative mean? Well, it means that we want to be able to write coherent values in the Haskell source that refer to the types we intend, without having to worry about whether they were generated already or what index they landed at.
+
 - [Waterfall Model of Types](waterfall-types.html) [2026/07/22]{.dated}
 
   My waterfall model of types, cascading from user intent, through programming language semantics, and down to pointers and bytes at the end of it all.

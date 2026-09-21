@@ -2,6 +2,7 @@
 title: Declarative WASM GC Types
 author:
 - "[@MonoidMusician](https://blog.veritates.love/)"
+date: 2026/09/20
 ---
 
 <!-- {.wasm} {.haskell} ʼ -->

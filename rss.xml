@@ -10,6 +10,393 @@
 <docs>https://www.rssboard.org/rss-specification</docs>
 <generator>pandoc-rss</generator>
 <item>
+<title>Declarative WASM GC Types</title>
+<pubDate>Sun, 20 Sep 2026 00:00:00 +0000</pubDate>
+<guid>https://blog.veritates.love/decl-wasm-types</guid>
+<description><![CDATA[<p><span data-t="" data-widget="">WASM</span> modules are meant to be parsed and validated very linearly: they list complex types up front, and then refer to them by index inside functions and other key places in the module. Throw in nested structured types with the WASM <span data-t="" data-widget="">GC</span> extension, and managing them declaratively becomes a little tough. Recursive type groups are the most difficult to model declaratively!</p>
+<p>I wonʼt say that the <a href="https://webassembly.github.io/spec/core/">WASM spec</a> is bad, but it has a barebones style and lacks a lot of connective tissue that would turn it into really helpful documentation. Having things organized by validation/execution/<span data-t="" data-widget="">etc.</span> makes getting a sense of individual instructions difficult. And that version of the spec also does weird things with formatting/fonts, making it impossible to <kbd>Ctrl</kbd>+<kbd>F</kbd> for useful things like instruction names in Firefox, although somehow the <a href="https://www.w3.org/TR/wasm-core-2/">W3C spec</a> is better in that regard.</p>
+<p>So part of the goal of a declarative interface to WASM <span data-t="" data-widget="">GC</span> types is just to get a better sense of what they are and how they work.</p>
+<p>For example, one interesting nuance is that every heap value knows its specific type, which is visible at runtime through casts to subtypes, and this subtype relationship can be refined within existing subtyping rules to simulate nominal types. But what exactly gets assigned an index in the type table? It seems like it should be a composite type, but spoiler: it is actually a recursive type (a particular subtype in a recursive group).</p>
+<p>Here goes!</p>
+<p>(If you want to skip to the good part, look at <a href="#recursive-types-rtyp">Recursive Types: <code class="haskell">RTyp</code></a> and its Key Idea, but I can almost guarantee you that some of the details along the way will be surprising unless youʼve written a WASM implementation or a backend that targets WASM GC and faced these same problems before.)</p>
+<h2 id="preamble-generating-wasm-modules">Preamble: Generating WASM Modules</h2>
+<p>The WASM file format features several tables of information (“sections”): a table of types, a table of imports, a table of functions, and so on.<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a></p>
+<p>The main idea is to deduplicate the things we are referring to: plop them in a table once, use their index to refer to them, and look them up the next time they come ʼround.</p>
+<p>I made a <code class="haskell">GenIdx</code> helper for <em>gen</em>erating these <em>indexes</em>.</p>
+<pre class="haskell"><code>-- A helper for generating types, functions, et cetera, into a linear index
+-- in a way so they are deduplicated. The idea is that they are deduplicated
+-- by value, with its position in the index and metadata from the first
+-- usage.
+data GenIdx meta val = GenIdx
+  !(Map val (Int, meta))
+  ![(val, meta)] -- reverse order
+
+-- Put a new item into the index
+gen :: forall meta val. Ord val =&gt; GenIdx meta val -&gt; val -&gt; meta -&gt; (GenIdx meta val, Int, meta)
+gen g@(GenIdx validx stack) val newMeta =
+  case Map.lookup val validx of
+    Just (idx, oldMeta) -&gt; (g, idx, oldMeta)
+    Nothing -&gt;
+      let
+        idx = Map.size validx
+        g' = GenIdx (Map.insert val (idx, newMeta) validx) ((val, newMeta) : stack)
+      in (g', idx, newMeta)
+
+-- Reserve multiple items for sure, without checking whether those values
+-- exist already in the index. For dealing with mutual recursion, basically.
+reserveNForSure ::
+  forall t each collected ret meta val.
+    Ord val =&gt;
+    Traversable t =&gt;
+  GenIdx meta val -&gt;
+  t each -&gt;
+  (t (each, Int) -&gt; collected) -&gt;
+  (each -&gt; Int -&gt; collected -&gt; (val, meta, (meta -&gt; GenIdx meta val -&gt; GenIdx meta val) -&gt; ret)) -&gt;
+  (GenIdx meta val, t ((val, (Int, meta)), ret), collected)</code></pre>
+<p>Generating each of those indexes have their own unique challenges, however.</p>
+<p>For instance, imports and functions share the same index, but imports must come first: this means that I actually need to generate the WASM module twice: once to gather all the imports that were used, and a second time with those imports pre-seeded in the front, so all the references line up to their correct locations. (This was much easier than making sure the output format was structured enough to traverse correctly.)</p>
+<p>Generating non-imported functions is also a little tricky: you can use their code to syntactically deduplicate them, but this does not work for recursive functions. Instead, I use the trick of <a href="https://blog.veritates.love/functions-as-data.html">Sticking Functions Where They Donʼt Belong</a> to allow separating a key (what the function means) from how to generate the function. So a function like <code>show_t :: t -&gt; IOData</code> is represented as a unique type <code class="haskell">newtype CShow = CShow STyp</code>, which uses a typeclass in Haskell to generate whatever code it wants and reference itself or other functions, and because the <code class="haskell">CShow</code> key exists before its code, it can be deduplicated safely without infinite recursion.</p>
+<p>Finally, there is the problem of generating types declaratively.</p>
+<div class="Key_Idea">
+<p>What does declarative mean? Well, it means that we want to be able to write coherent values in the Haskell source that refer to the types we intend, without having to worry about whether they were generated already or what index they landed at.</p>
+<p>For instance, we want to be able to write <code class="wasm">(struct (field (mut i64) (mut i32) (mut i32)))</code> as <code class="haskell">WS [Mut WI64, Mut WI32, Mut WI32]</code>, then wrap it in a ref <code class="haskell">WR Nul $ HCTyp $ WS [...]</code> that shows up in the source as something like <code class="wasm">(ref null $mystruct)</code> or <code class="wasm">(ref null 6)</code> once types are allocated to their places. The key thing is that we are not going to rely on the global uniqueness of an identifier like <code class="wasm">$mystruct</code>.</p>
+<p>One of the key features is that comparing types for equality will be as simple as using the default <code class="haskell">Eq</code> instance, nothing special required. (This does mean that all metadata is omitted, particularly field names for structs.)</p>
+<p>We want to be able to incorporate recursive type groups into this same framework. It is surprisingly subtle!</p>
+</div>
+<h2 id="stack-types-wtyp">Stack Types: <code class="haskell">WTyp</code></h2>
+<p>With the GC extension, WASM is divided into two kinds of types: stack types and heap types. Stack types are of course the default, and everything that is processed has to go through the stack, so itʼs worth talking about first.</p>
+<p>The stack is meant to be shuffle through machine registers, so it includes 32 and 64 bit types: integers and floats, <code class="wasm">i32</code>, <code class="wasm">i64</code>, <code class="wasm">f32</code>, and <code class="wasm">f64</code>. It also includes a 128 bit type <code class="wasm">v128</code> for vector registers (undiscriminated between integers and floats). Finally, with the GC extension, there is a <code class="wasm">ref</code> type constructor to reference heap types from the stack.</p>
+<p>Stack types are always monomorphic, but the <code class="wasm">ref</code> itself can point to a richer type lattice. For example, the top of this lattice, <code class="wasm">anyref</code> <span data-t="" data-widget="">a.k.a.</span> <code class="wasm">(ref null any)</code>, allows passing any reference whatsoever, and then it can be casted to a useful type later (where WASM is responsible for safely checking the valueʼs runtime type, which it has to know for garbage collection anyways).</p>
+<div class="Note">
+<p>There is a special <code class="wasm">i31</code> (yes, 31 bit) “heap” type that is meant to live on the stack, with a tag bit reserved to distinguish <code class="wasm">(ref i31)</code> from actual references. This does not need to be treated specially from the surface or semantics level: it is just an available optimization for implementations. (Though it does show up in a funny place: in <code class="haskell">HTyp</code> directly.)</p>
+</div>
+<p>I named the <span data-t="" data-widget="">ADT</span> for stack types <code class="haskell">WTyp</code>, for “WASM type”.</p>
+<pre class="haskell"><code>-- Basic WASM types that live on the stack, plus packed types that are unpacked
+-- into i32 on the stack.
+data WTyp
+  = WF64 | WF32   -- Floats f64/f32
+  | WI64 | WI32   -- Integers i64/i32
+  | WI16 | WI8    -- Packed integers for structs/arrays
+  | WV128         -- Vector register v128
+  | WR !Nul !HTyp -- Reference to a garbage-collected heap type
+
+data Nul = Nul {- nullable -} | Non {- nonnullable -}</code></pre>
+<div class="Warning">
+<p>You read that right, the lying has started already! The only types that live on the stack are 32, 64, or 128 bits wide.</p>
+<p>The <strong>packed types</strong> <code class="wasm">i16</code> and <code class="wasm">i8</code> technically do not live on the stack, they can only appear in other contexts (<code class="wasm">struct</code> fields and <code class="wasm">array</code> data), but it is convenient to include them here. They are canonically mapped to <code class="wasm">i32</code> on the stack with the appropriate instructions (sign extending or not).</p>
+</div>
+<p>Aside from that, it is straightforward translation: floats, integers, vectors, and references, which may be nullable.</p>
+<h2 id="function-types">Function Types</h2>
+<p>Function types are not too complicated: conceptually they are just a list of stack types for input and for output, <code class="haskell">([WTyp], [WTyp])</code>. The usual variance rules apply to them: contravariant in the input, covariant in the output.</p>
+<p>They are important because functions exist on their own in the module. In terms of the heap, though, we will see that they slot into “composite types”. See the <code class="haskell">WF</code> constructor <a href="#composite-types-ctyp">below</a>.</p>
+<h2 id="heap-types-designations-htyp">Heap Types Designations: <code class="haskell">HTyp</code></h2>
+<p>Heap type designation means “what a <code class="wasm">ref</code> can refer to”, so it includes both concrete heap types (structs, arrays, functions) as well as heap type classifiers. The quasi-stack type <code class="wasm">i31</code> also slots in here: it is clearly not a generic type classifier, nor is it a composite type (<code class="wasm">struct</code>/<code class="wasm">array</code>).</p>
+<pre class="haskell"><code>-- Heap types, the target of references. This includes composite types
+-- (structs, arrays, and functions) and their recursive and subtyped forms, plus
+-- the means to classify them (any struct, any array, any function, etc.), and
+-- the i31 type which is left for implementations to use as an immediate, not
+-- actually heap allocated.
+data HTyp -- Heap types
+  = HCls !HCls -- Abstract classified reference types
+  | HRTyp !RTyp -- Recursive and composite types
+  | HI31 -- Special i31
+
+-- Constructor for non-recursive composite types
+pattern HCTyp :: CTyp -&gt; HTyp
+pattern HCTyp t = HRTyp (CTyp t)</code></pre>
+<p>The heap type directly references recursive types <code class="haskell">RTyp</code>, but through that, non-recursive composite types <code class="haskell">CTyp</code> also bubble up, so we include a special pattern synonym to recognize that.</p>
+<p>Note that <code class="haskell">HCls</code> and <code class="haskell">HI31</code> have syntax to reference them, but recursive and composite types need to be generated and assigned an index to be used.</p>
+<h3 id="heap-type-classifiers-hcls">Heap Type Classifiers: <code class="haskell">HCls</code></h3>
+<p>The heap type classifiers round out the type lattice with some interesting points: <code class="wasm">any</code> and <code class="wasm">none</code> for the top and bottom types, respectively.</p>
+<p>Specific types of values have their own sub-lattices, with top types named by themselves: any <code class="wasm">struct</code>, any <code class="wasm">array</code>, any <code class="wasm">func</code>, and any <code class="wasm">extern</code>. Some lattices have bottom types too: <code class="wasm">nofunc</code> and <code class="wasm">noextern</code>. That is, <code class="wasm">nofunc</code> does not mean “the negation of <code class="wasm">func</code> within the whole type lattice” but rather “the function type that is below every other function types, but with no inhabitants of its own”.</p>
+<p>The algebra of types says that one can take joins (least upper bound/supremum) and meets (greatest lower bound/infimum) of types in this lattice, but most of the answers are uninteresting: <span data-t="" data-widget="">e.g.</span> the join of <code class="wasm">struct</code> and <code class="wasm">array</code> is <code class="wasm">any</code>, there is no more specific label for their union.</p>
+<p>Regardless of the semantic picture, it is easy enough to paste it into an <span data-t="" data-widget="">ADT</span>:</p>
+<pre class="haskell"><code>-- Heap type classifiers
+data HCls = HAny | HEq | HStruct | HArray | HNone | HFunc | HNoFunc | HExtern | HNoExtern</code></pre>
+<div class="Details" data-box-name="Aside">
+<p>WASM has a whole bunch of shorthand reference types for the type classifiers in <code class="wasm">ref</code>s.</p>
+<div class="centered" style="margin: auto; width: fit-content; text-align: left">
+<table>
+<colgroup>
+<col style="width: 46%">
+<col style="width: 53%">
+</colgroup>
+<tbody>
+<tr>
+<td><code class="wasm nowrap">anyref</code></td>
+<td><code class="wasm nowrap">(ref null any)</code></td>
+</tr>
+<tr>
+<td><code class="wasm nowrap">eqref</code></td>
+<td><code class="wasm nowrap">(ref null eq)</code></td>
+</tr>
+<tr>
+<td><code class="wasm nowrap">i31ref</code></td>
+<td><code class="wasm nowrap">(ref null i31)</code></td>
+</tr>
+<tr>
+<td><code class="wasm nowrap">structref</code></td>
+<td><code class="wasm nowrap">(ref null struct)</code></td>
+</tr>
+<tr>
+<td><code class="wasm nowrap">arrayref</code></td>
+<td><code class="wasm nowrap">(ref null array)</code></td>
+</tr>
+<tr>
+<td><code class="wasm nowrap">nullref</code></td>
+<td><code class="wasm nowrap">(ref null none)</code></td>
+</tr>
+<tr>
+<td><code class="wasm nowrap">funcref</code></td>
+<td><code class="wasm nowrap">(ref null func)</code></td>
+</tr>
+<tr>
+<td><code class="wasm nowrap">nullfuncref</code></td>
+<td><code class="wasm nowrap">(ref null nofunc)</code></td>
+</tr>
+<tr>
+<td><code class="wasm nowrap">exnref</code></td>
+<td><code class="wasm nowrap">(ref null exn)</code></td>
+</tr>
+<tr>
+<td><code class="wasm nowrap">nullexnref</code></td>
+<td><code class="wasm nowrap">(ref null noexn)</code></td>
+</tr>
+<tr>
+<td><code class="wasm nowrap">externref</code></td>
+<td><code class="wasm nowrap">(ref null extern)</code></td>
+</tr>
+<tr>
+<td><code class="wasm nowrap">nullexternref</code></td>
+<td><code class="wasm nowrap">(ref null noextern)</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>WASM sure loves its nullable references. I am not exactly sure why they included that, given that every instruction accepts nullable references and panics if they are null. But I suppose it makes translating imports and exports with other languages, particularly Rust, much more palatable. It might make optimization easier as well.</p>
+</div>
+<h3 id="composite-types-ctyp">Composite Types: <code class="haskell">CTyp</code></h3>
+<p>Beyond the abstract types, we get to the real interesting types: these are specific struct, array, and function types.</p>
+<div class="Warning">
+<p>This is where the distinction between the <strong>packed types</strong> <code class="wasm">i8</code> and <code class="wasm">i16</code> ought to appear: structs and arrays take <strong>packed types</strong>, while functions need to stick to <strong>stack types</strong>.</p>
+<p>But for my purposes it was just not worth it to distinguish them and require another layer of wrapping in the Haskell representation. <a href="https://blog.veritates.love/tmttmt.html#types">tmTTmt would fix this,,</a></p>
+</div>
+<pre class="haskell"><code>-- Composite types (for type declarations)
+data CTyp
+  = WS ![Mut WTyp] -- Struct, with individual field types
+  | WA !(Mut WTyp) -- Array, with its item type
+  | WF ![WTyp] ![WTyp] -- Function, with input and output types
+
+data Mut t = Mut !t {- mutable -} | Imm !t {- immutable -}</code></pre>
+<div class="Warning">
+<p>Note the key difference: a struct includes a <em>list</em> of fields, each with their own type and mutability, while an array only includes <em>one element type</em>, and is variable length at runtime, of course. (Yeah, no named struct fields, sorry.)</p>
+</div>
+<div class="Error">
+<p>Although arrays can be marked immutable, they fundamentally are <em>not very useful</em> without mutation.</p>
+<p>Thus far, WASM has not included a way to <a href="https://github.com/WebAssembly/design/issues/1561">initialize variable-length arrays without mutation</a> or to <a href="https://github.com/WebAssembly/gc/blob/main/proposals/gc/Post-MVP.md#readonly-fields">freeze arrays once they have been created or reference them readonly</a>. Importantly, <a href="https://webassembly.github.io/spec/core/exec/instructions.html#xref-syntax-instructions-syntax-instr-array-mathsf-array-copy-x-1-x-2"><code class="wasm">array.copy</code></a> is <strong>not</strong> it: that copies a slice from a source into a mutable destination slice.</p>
+<p>Statically-sized immutable arrays can be initialized from <a href="https://webassembly.github.io/spec/core/valid/instructions.html#xref-syntax-instructions-syntax-instr-array-mathsf-array-new-x">a default value with <code class="wasm">array.new</code>/<code class="wasm">array.new_default</code></a>, from <a href="https://webassembly.github.io/spec/core/valid/instructions.html#xref-syntax-instructions-syntax-instr-array-mathsf-array-new-fixed-x-n">items on the stack with <code class="wasm">array.new_fixed</code></a>, from <a href="https://webassembly.github.io/spec/core/valid/instructions.html#xref-syntax-instructions-syntax-instr-array-mathsf-array-new-data-x-y">data segments with <code class="wasm">array.new_data</code></a> (for byte types), or from <a href="https://webassembly.github.io/spec/core/valid/instructions.html#xref-syntax-instructions-syntax-instr-array-mathsf-array-new-elem-x-y">element segments with <code class="wasm">array.new_elem</code></a> (for reference types).</p>
+<p>Tangentially, arrays also have awkward shortcomings for web/host interop (<a href="https://dthompson.us/posts/wasm-gc-isnt-ready-for-realtime-graphics.html">“Wasm GC isn’t ready for realtime graphics”</a>). It looks like <a href="https://github.com/WebAssembly/multibyte-array-access/blob/main/proposals/multibyte-array-access/Overview.md">multibyte array accesses</a> may be trundling forward, but not fast/convenient array access from the host.<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a></p>
+</div>
+<div class="Example" data-box-name="Examples">
+<p>Now you can make rich types.</p>
+<p>You can make your own kind-of linear memory with <code class="haskell">WA (Mut WI64)</code> for words or <code class="haskell">WA (Mut WI8)</code> for bytes.</p>
+<p>Maybe you decide that these need a bitstring counterpart, so you slap a length on it to make <code class="haskell">WS [Mut WI32, Mut (WR Nul (HCTyp (WA (Mut WI64))))]</code>, which shows nicely how they nest declaratively.</p>
+<p>That declarativeness is not allowed in WASM: you cannot write <code class="wasm">(struct (field (mut i32)) (field (mut (ref null (array (mut i64))))))</code> in WASM, you have to generate the inner type first, <code class="wasm">(type $wordstring (array (mut i64)))</code>, before you can use it in <code>(ref null $wordstring)</code>.</p>
+<p>As a more complex example, here is how I am modeling closures in my toy <span data-t="" data-widget="">FP</span> language:</p>
+<pre class="haskell"><code>baseClosureC :: CTyp
+baseClosureC = WS
+  -- boxed partial application
+  [ Imm $ WR Non $ HCTyp $ WF
+    -- closure data and next argument, boxed
+    [WR Nul (HCls HAny), WR Nul (HCls HAny)]
+    -- boxed result
+    [WR Nul (HCls HAny)]
+  -- unboxed partial application, if available
+  , Imm $ WR Nul (HCls HFunc)
+  -- closure data
+  , Imm $ WR Nul (HCls HAny)
+  ]
+
+baseClosureR :: RTyp
+baseClosureR = RTyp "closure" $ Map.singleton "closure" $
+  SubTyp False Nothing baseClosureC</code></pre>
+<p>At the end it contains closure data, which is any arbitrary type (or even just <code class="wasm">null</code>). Before that it contains two functions: one has the generic boxed shape, <code class="wasm">(func (param anyref) (param anyref) (result anyref))</code>, and another is <code class="wasm">anyfunc</code> standing for an unboxed function, if it can be used directly.</p>
+<p>This is then wrapped in a <code class="haskell">RTyp</code>, not because it is recursive, but so it can be marked as a non-<code class="wasm">final</code> subtype, open to extension. Specific closure types can use <code class="haskell">SubTyp False (Just baseClosureR)</code> to extend it, though this is only useful for avoiding some casts, I guess.</p>
+</div>
+<p>When you think of a generated type referenced through a <code class="wasm">ref</code>, a composite type is probably what you are thinking of. Strictly speaking, though, composite types are <em>not</em> what are generated in the source file: <em>subtypes in recursive groups</em> are. And those are the tricky bit.</p>
+<h3 id="recursive-types-rtyp">Recursive Types: <code class="haskell">RTyp</code></h3>
+<p>Everything has been straightforward so far. Tree-shaped, nicely declarative. You just need to deduplicate the same type appearing in different branches of the tree.</p>
+<p>How do you model recursive types though? <em>owo</em></p>
+<p>I opted for the minor evil of requiring <em>local</em> names for the types. It is still quite declarative!</p>
+<p>In WASM, a recursive type group consists of a bunch of subtypes. Subtypes are composite types with a little extra fanfare, more on that later.</p>
+<p>A type group acts flat in the file: each subtype just receives the next type index. The types can reference any type in the group, preceding or following, or itself. Their subtype relations can only point to preceding types, though (this ensures that the subtype relationships are acyclic).</p>
+<p>A recursive type group is compared <a href="https://stackoverflow.com/questions/77472803/how-to-understand-the-recursive-types-in-wasm#77476157">in order, as a unit</a>.</p>
+<div class="Key_Idea">
+<p>How can we use local names to model recursive types? How do you do it in the middle of all the other stuff happening?</p>
+<p>Well, a recursive type <strong>group</strong> can be modeled by <code class="haskell">Map Name SubTyp</code>: a group of subtypes with names for each.<a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a> And a recursive <strong>type</strong> is modeled by <code class="haskell">(Name, Map Name SubTyp)</code>: it keeps the group together, just as it is, and picks out a valid name from it saying, “this one here, refer to <em>that</em> type from the lot”.</p>
+<p>So the first constructor of <code class="haskell">data RTyp</code> is <code class="haskell">RTyp !Name !(Map Name SubTyp)</code>.</p>
+<p>But below this <code class="haskell">Map Name SubTyp</code>, that <code class="haskell">RTyp</code> constructor is outlawed: you cannot refer to another group, and you cannot directly refer to your own group. Instead you <em>must</em> use another constructor <code class="haskell">RRef !Name</code>.</p>
+<p>When you pull a subtype out of the <code class="haskell">Map</code>, you promote all of the <code class="haskell">RRef</code>s to <code class="haskell">RTyp</code>s by adding the group. This keeps everything declarative!</p>
+<p>Finally, we include a constructor <code class="haskell">CTyp !CTyp</code> for plain composite groups: there is no sense of going through the ceremony of a <code class="haskell">RTyp</code> with an empty/default name and final subtype for them.</p>
+</div>
+<p>Putting this into a datatype we get:</p>
+<pre class="haskell"><code>-- A potentially-recursive type can be an ordinary composite type (technically
+-- redundant but really nice to have), or a particular case chosen out of a
+-- recursive group `Map Name SubTyp`, always kept together. Within the subtypes
+-- comprising this recursive group, `RRef` is valid to refer to that particular
+-- group: no nesting is possible, and it should not be necessary. If mutual
+-- recursion is needed, it should be aggregated into a larger group.
+--
+-- This enables a simple representation of recursive type groups without
+-- imposing any kind of global coherence requirements, just local coherence
+-- of names within a single group.
+data RTyp
+  = RTyp !Name !(Map Name SubTyp) -- Recursive types and subtypes
+  | RRef !Name -- Recursive references, only valid within a recursive group
+  | CTyp !CTyp -- Plain composite groups</code></pre>
+<p>Technically speaking, this <code class="haskell">RTyp</code> is what gets assigned an index in the table: it can be a plain <code class="haskell">CTyp</code> or it can be a subtype from a recursive group, where <code class="haskell">RRef</code> has to refer to the right thing as items are still being added.<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a></p>
+<div class="Warning">
+<p>What about mutual recursion?</p>
+<p>There are no mutually recursive type groups in WASM or in this model: you are responsible for aggregating them into a single type group yourself, assigning names to make it work.</p>
+<details class="Details">
+<summary>
+Details
+</summary>
+<pre class="haskell"><code>-- ADTs as a synthetic data type: many constructors with many fields each.
+-- Each field can either be directly recursive (not mutually recursive), or an
+-- external type. Substitute the recursion with `unrollTDat`.
+newtype TDat = TDat (Map Name [(Name, Recursive () STyp)])
+  deriving stock (Eq, Ord, Generic, Show)
+  deriving anyclass (NFData)
+pattern SDat :: Map Name [(Name, Recursive () STyp)] -&gt; STyp
+pattern SDat constructors = S (TDat constructors)
+-- Mutually recursive types
+data TMutDat = TMutDat Name (Map Name (Map Name [(Name, Recursive Name STyp)]))
+  deriving stock (Eq, Ord, Generic, Show)
+  deriving anyclass (NFData)
+pattern SMutDat :: Name -&gt; Map Name (Map Name [(Name, Recursive Name STyp)]) -&gt; STyp
+pattern SMutDat which group = S (TMutDat which group)
+
+-- Unroll TDat, giving `STyp` instead of `Recursive () STyp`
+unrollTDat :: TDat -&gt; Map Name [(Name, STyp)]
+unrollTDat t@(TDat constructors) =
+  constructors &lt;&amp;&gt; fmap (fmap (recurses (const (S t))))
+
+-- Unroll TMutDat, giving `STyp` instead of `Recursive Name STyp`
+unrollTMutDat :: TMutDat -&gt; Map Name [(Name, STyp)]
+unrollTMutDat (TMutDat which group) =
+  group ! which &lt;&amp;&gt; fmap (fmap (recurses (\name -&gt; SMutDat name group)))
+
+instance SynthType TDat where
+  -- Codegenned as a recursive group with a _supertype struct which the
+  -- individual constructors subtype
+  wtyp (unrollTDat -&gt; constructors) = WR Non $ HRTyp $ RTyp "_supertype" $
+    Map.insert "_supertype" (plainTyp $ WS []) $
+      constructors &lt;&amp;&gt; plainTyp . WS . fmap (Mut . wtyp . snd)
+  isDataType = Just . unrollTDat
+instance SynthType TMutDat where
+  -- Codegenned as a recursive group where each type gets its own section for
+  -- its supertype and constructors, ty._self and ty.con1, ty.con2, etc.
+  wtyp (TMutDat which group) = WR Non $ HRTyp $ RTyp (suffix which "_supertype") $
+    group &amp; Map.foldMapWithKey \ty constructors -&gt;
+      Map.insert (suffix ty "_supertype") (plainTyp $ WS []) $
+        Map.fromList $ Map.toList constructors &lt;&amp;&gt;
+          \(k, fields) -&gt; (suffix ty k,) $ plainTyp $ WS $
+            fields &lt;&amp;&gt; Mut . wtyp . recurses (\other -&gt; SMutDat other group) . snd
+    where
+    suffix (Name name) (Name suffix) = Name (name &lt;&gt; "." &lt;&gt; suffix)
+  isDataType = Just . unrollTMutDa</code></pre>
+</details>
+</div>
+<h3 id="subtypes-subtyp">Subtypes: <code class="haskell">SubTyp</code></h3>
+<p>A subtype is a composite type (struct, array, or function) with some extra information:</p>
+<ul>
+<li>Is this a subtype of another type? (which must have lower index: must occur earlier in the file, same recursive group or not)</li>
+<li>Is this subtype <code class="wasm">final</code>, or are other types allowed to extend it?</li>
+</ul>
+<div class="Warning">
+<p>Note that the syntax for this is a bit weird:</p>
+<p>The declaration is <code class="wasm">(rec (sub final? (...)))</code>, where <code class="wasm">rec</code> and <code class="wasm">sub</code> are both optional. Leaving <code class="wasm">rec</code> out doesnʼt do much, it just means that the subtype belongs to its own group. Leaving <code class="wasm">sub</code> out is weird because without <code class="wasm">sub</code>, <code class="wasm">final</code> is implied.</p>
+<p>Finally, the less relevant oddity is that the spec is open to allowing multiple supertypes for future compatibility, but it is not allowed past the syntax, to keep implementations simple. Frankly, I donʼt see this changing ever: it seems like the tree-shaped custom subtyping is so much simpler, considering that it has to be viable to check at runtime, especially between modules.<a href="#fn5" class="footnote-ref" id="fnref5" role="doc-noteref"><sup>5</sup></a> And not enough people care or even know how it works to justify changing it; I have to infer that the usage of complex GC types is pretty low, from the lack of information about them online. While it is <em>nice</em> that limited custom subtyping behavior is available, projects should not make it load-bearing, not to the extent where you would need a full lattice instead of a tree. Just add a tag field yourself!!</p>
+</div>
+<pre class="haskell"><code>-- Subtypes can be declared final and declared to extend another nominal type
+-- (that must be structurally compatible with the type definition).
+data SubTyp = SubTyp
+  { stFinal :: !Bool
+  , stExtends :: !(Maybe RTyp)
+  , stIs :: !CTyp
+  }</code></pre>
+<p>This allows rather interesting flexibility over the subtyping lattice, where each subtype can slot itself in beneath another type, if allowed and acyclic.</p>
+<p>Of course this subtyping is not arbitrary, it must follow the primary subtyping rules. You cannot just fiat declare an array type a subtype of a function type, for example. But those rules should be intuitive.</p>
+<p>This matters for runtime type casts, visible through <code class="wasm">ref.cast</code> (which aborts/traps on mismatch) and the branching instructions <code class="wasm">br_on_cast_fail</code>, <code class="wasm">br_on_cast</code>, <code class="wasm">br_on_null</code>, and <code class="wasm">br_on_nonnull</code>.</p>
+<div class="Bonus">
+<p>Thatʼs right! Thatʼs the sound of <em>generating declarative WASM types</em> requiring a <a href="https://en.wikipedia.org/wiki/Topological_sorting">toposort</a>!</p>
+<p>Hereʼs my cutest toposort implementation in 5 lines of code:</p>
+<pre class="haskell"><code>-- Toposort in 5 lines of code
+toposort :: forall k. Ord k =&gt; NFData k =&gt; Map k (Set k) -&gt; [k]
+toposort = join . reverse . go [] where
+  go :: [[k]] -&gt; Map k (Set k) -&gt; [[k]]
+  go acc entries =
+    let (sel, remaining) = Map.partition Set.null entries
+    in if Map.null sel then acc else
+      go (Map.keys sel : acc) (remaining &lt;&amp;&gt; (Set.\\ Map.keysSet sel))</code></pre>
+</div>
+<h2 id="generating-types">Generating Types</h2>
+<p>So the good thing about this declarative model of WASM types is that the data says what it means and means what it says. When maintaining the <code class="haskell">GenIdx</code> of types generated so far, we can rely on plain equality to see if the type already exists.</p>
+<p>The bad news is that it is not trivial to generate, especially if you are sticking to good functional programming practice.</p>
+<p>What gets generated? Strictly speaking, an <code class="haskell">RTyp</code> is what gets deduplicated, turned into syntax, and assigned an index in the types section. The recursive type itself drags along the recursive type group it belongs to: this needs to be handled altogether, then the recursive type (the particular subtype) plucked back out of the result. Subtypes are extra metadata on top of composite types, so composite types are special cases of recursive types.</p>
+<p>It actually requires two indexes: <code>typeGroups</code>, simply for deduplicating the group, and <code>types</code>, for generating individual types (bypassing the normal duplication check for recursive subtypes, in fact, by using <code class="haskell">reserveNForSure</code>).</p>
+<pre class="haskell"><code>-- WASM state context
+data WASMS = WASMS
+  { ...
+  , types :: GenIdx (Maybe Name, Map Name SubTyp) WASMC
+  -- ^ composite types generated so far (struct, array, func)
+  , typeGroups :: GenIdx (Map Name WASMC) (Map Name SubTyp)
+  -- ^ recursive type groups generated so far, with their internal naming
+  ... }</code></pre>
+<p>That is the state needed, and here is how the syntax shakes down:</p>
+<table>
+<colgroup>
+<col style="width: 11%">
+<col style="width: 88%">
+</colgroup>
+<tbody>
+<tr>
+<td><code class="haskell nowrap">RTyp</code></td>
+<td>Generates as a whole recursive type group, gets assigned an index and is solely referenced by index or name.</td>
+</tr>
+<tr>
+<td><code class="haskell nowrap">SubTyp</code></td>
+<td>Individual member of a recursive type group, like <code class="haskell">RTyp</code> but viewed from the inside.</td>
+</tr>
+<tr>
+<td><code class="haskell nowrap">CTyp</code></td>
+<td>Composite type, the main part of a <code class="haskell">SubTyp</code>: a particular <code class="wasm">struct</code>, <code class="wasm">array</code>, or <code class="wasm">func</code> type.</td>
+</tr>
+<tr>
+<td><code class="haskell nowrap">HTyp</code></td>
+<td>Heap type designation, which is either a <code class="haskell">RTyp</code> (including <code class="haskell">CTyp</code>) which is generated as above, or a classifier or <code class="wasm">i31</code> which are keywords already and not generated in the index.</td>
+</tr>
+<tr>
+<td><code class="haskell nowrap">WTyp</code></td>
+<td>Stack type, either concrete (<code class="wasm">f32</code>, <code class="wasm">i8</code>, which is used directly), or a reference to a heap type designation <code class="haskell">HTyp</code>, where composite types are always referenced by index or name in the <code class="wasm">ref</code> syntax</td>
+</tr>
+</tbody>
+</table>
+<p>Turning a recursive type group <code class="haskell">Map Name SubTyp</code> into syntax is not as easy as it sounds, though.</p>
+<p>First you need to generate every child type referenced, both the composite types for each case <em>and</em> the supertypes they might declare. Next you need to toposort the group by supertype relationship. This allows you to reserve those indices from the table, and then you can use this to generate the syntax without touching the table in the meantime. Then the table indices are filled in and returned, as a group or the individual type of interest. Following functional design principles means that the generation functions need to operate both on the <code class="haskell">WASMS</code> state live, generating new types as they go, or on the frozen state, with everything pre-generated or reserved.</p>
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn1"><p>Okay, “table” has a specific meaning for WASM, meaning an indexed place to store references – like linear memory is for bytes and words. But saying table here in its lay sense conveys the structure of the information represented.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn2"><p>In theory I think web engines can JIT both JavaScript and WASM together? But I am not sure.<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn3"><p>See note on their (lack of) ordering below: it requires a toposort.<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn4"><p>This is what <code class="haskell">reserveNForSure</code> is for.<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn5"><p>I am not actually familiar with how the runtime type checking is implemented. Obviously they are not walking type trees.<a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>]]></description>
+</item>
+<item>
 <title>Waterfall Model of Types</title>
 <pubDate>Wed, 22 Jul 2026 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/waterfall-types</guid>
@@ -52,7 +439,7 @@
 <p><strong>Stage 0.5</strong> is awkward in every implementation thus far. Being able to describe what you want types to be and do without having to spell out all of the details is complicated, even in high-level languages with typeclasses and other type-directed codegen options.<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a> To date, there seems to be no good balance of ease-of-use, rigor, and efficiency for most metaprogramming options.</p>
 <p>Staged compilation with dependent types <em>may</em> be one solution here, so I am trying to implement it in <a href="https://blog.veritates.love/github.com/MonoidMusician/Pudding">Pudding</a> based on the outline in <a href="https://andraskovacs.github.io/pdfs/2ltt.pdf">Staged Compilation with Two-Level Type Theory</a>.</p>
 <p>Similarly, <strong>Stage 1</strong> is overly restrictive: Haskell specifies exact datatypes and pattern matching here, but we often want more flexibility. For example, ideally the compiler would be able to freely optimize programs to use list and text builders locally, or even ropes. (It can do so with fusion rewrite rules, but that is too local.) Laziness helps with abstraction here, it allows more flexibility in interleaving and skipping computations, but when you pattern match a datatype in Haskell, Haskell says you are bound to be matching on <em>that</em> datatype.</p>
-<p>And sometimes we write simple code first but then want to associate additional metadata on top of the data. <span data-t="" data-widget="">AST</span> nodes that cache what variables they refer to, stuff like that. Now you have to modify your datatype and every consumer and producer of it to retain that information, even places that should be oblivious to it. This is something I want to fix in <a href="https://blog.veritates.love/tmttmt#motivation">tmTTmt</a>.</p>
+<p>And sometimes we write simple code first but then want to associate additional metadata on top of the data. <span data-t="" data-widget="">AST</span> nodes that cache what variables they refer to, stuff like that. Now you have to modify your datatype and every consumer and producer of it to retain that information, even places that should be oblivious to it. This is something I want to fix in <a href="https://blog.veritates.love/tmttmt.html#motivation">tmTTmt</a>.</p>
 <p>On the flipside, sometimes language semantics are a bit too loose for user intent. Sometimes you want to tell Haskell that pointer identity does matter, and not to elide allocations, because you are using finalizers or <a href="https://hackage-content.haskell.org/package/base-4.22.0.0/docs/GHC-StableName.html">stable names</a> on otherwise pure data without using <a href="https://hackage-content.haskell.org/package/base-4.22.0.0/docs/System-IO.html#t:IO"><code class="haskell">IO</code></a> to sequence it.</p>
 <p>Or sometimes the language semantics are fine, but you just want different semantics at/beyond Stage 2. Maybe you need to match the layout of a struct in C or GLSL. Maybe you want to know that your tuple of booleans fits into an atomic word more than that it is coercible with other tuples.</p>
 <p>My <a href="https://github.com/MonoidMusician/blog/blob/main/Haskell/src/WASMFP.hs">WASMFP</a> experiment, making a simple functional programming language that compiles to <span data-t="" data-widget="">WASM</span> with <span data-t="" data-widget="">GC</span> types, is unique in that each type can specify how it is treated by the surface syntax (like an <span data-t="" data-widget="">ADT</span> or like an array or opaquely) and how it is compiled to WASM on the backend.<a href="#fn5" class="footnote-ref" id="fnref5" role="doc-noteref"><sup>5</sup></a> This really cleanly illustrates Stage 1 nominal types versus Stage 2 structural types, and the WASM implementations handle the later stages: allocating GC types and tagging them so that <code class="wasm">i31</code> can live on the stack with references.</p>
@@ -64,14 +451,14 @@
 <li id="fn2"><p>So it can be compiled down to jumps in assembly.<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn3"><p>This depends on lawfulness of <code class="haskell">Ord</code> and correctness of <code class="haskell">insert</code> and <code class="haskell">lookup</code>.<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn4"><p>One particular annoyance in Haskell is that there is no option to “derive all the appropriate typeclasses”, you must still list them out. Mostly I wish for this with very lightweight newtype wrappers and for new monad transformers or classes.<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
-<li id="fn5"><p>This uses <a href="https://blog.veritates.love/functions-as_data">existential types</a> to be easily extensible.<a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn5"><p>This uses <a href="https://blog.veritates.love/functions-as-data.html">existential types</a> to be easily extensible.<a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
 </section>]]></description>
 </item>
 <item>
 <title>Sticking Functions Where They Donʼt Belong</title>
 <pubDate>Thu, 04 Jun 2026 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/functions-as_data</guid>
+<guid>https://blog.veritates.love/functions-as-data</guid>
 <description><![CDATA[<p>What does pure data mean? and how the heck do we stick functions in there?</p>
 <p>For me, <em>pure data</em> means a type that does or can implement:</p>
 <ul>
@@ -209,7 +596,7 @@ instance Semantics ForeignCall where
 <section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
 <hr>
 <ol>
-<li id="fn1"><p>Okay, some runtimes can <a href="https://blog.veritates.love/pickling#functions-builtins-bootstrapping">serialize functions as bytecode or syntax</a>, but that is not an option in Haskell, and is probably best to avoid.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn1"><p>Okay, some runtimes can <a href="https://blog.veritates.love/pickling.html#functions-builtins-bootstrapping">serialize functions as bytecode or syntax</a>, but that is not an option in Haskell, and is probably best to avoid.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn2"><p><code class="wasm">i31</code> shaves off a bit from <code class="wasm">i32</code> so it is colocatable with GC pointers<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
 </section>]]></description>
@@ -218,7 +605,7 @@ instance Semantics ForeignCall where
 <title>OOP Without the Goop</title>
 <pubDate>Wed, 27 May 2026 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/reformed-oop</guid>
-<description><![CDATA[<p><span data-t="" data-widget="">OOP</span> gets a lot of things wrong. Objects themselves are not interesting, they are usually beside the point. It is their behaviors, their interfaces, that are interesting. <a href="https://blog.veritates.love/resource-acquisition">Even lifecycle/RAII can be decoupled from an “object” and a “class”.</a></p>
+<description><![CDATA[<p><span data-t="" data-widget="">OOP</span> gets a lot of things wrong. Objects themselves are not interesting, they are usually beside the point. It is their behaviors, their interfaces, that are interesting. <a href="https://blog.veritates.love/resource-acquisition.html">Even lifecycle/RAII can be decoupled from an “object” and a “class”.</a></p>
 <p>Iʼve been experimenting with a different approach that simply seems cleaner. Less noise, fewer inconsequential details to worry about<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>, more flexibility. More coherence.</p>
 <p><span data-t="" data-widget="">OOP</span> sort of developed from the perspective of C turning into C++: it started with passing mutable struct pointers to individual global functions, and then C++ organized these “members” and “methods” into a class. The class also provided constructors and a destructor to manage the lifecycle of its data.<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a></p>
 <p>Things were a bit different with Python and especially JavaScript, for example, but they still sort of ended up in the same place.</p>
@@ -279,7 +666,7 @@ example = do
 <p>And no module import to remember: methods are always available on the record with simple dot syntax, and you donʼt have to remember whether the object comes first or last in the arguments.</p>
 <div class="Details" data-box-name="Closures">
 <p>A function instantiated at runtime has access to variables in its local namespace (created for its current call) plus the namespace where it was created, all the way on up to the/a global namespace usually. Pairing the underlying code with a chain of namespaces is known as a <strong>closure</strong>. As an optimization, only the required variables may be packed in a closure, as opposed to whole namespaces.</p>
-<p>Closures pack variables of any type into an interface accessible through the function type: this is why they can be used to <a href="https://stackoverflow.com/a/13653533">encode existential quantification</a>, and also why they do <em>not</em> support things like <a href="https://github.com/haskell/deepseq/issues/16">NFData</a> and serialization, except <a href="https://blog.veritates.love/pickling#functions-builtins-bootstrapping">when the runtime could actually support it</a>.</p>
+<p>Closures pack variables of any type into an interface accessible through the function type: this is why they can be used to <a href="https://stackoverflow.com/a/13653533">encode existential quantification</a>, and also why they do <em>not</em> support things like <a href="https://github.com/haskell/deepseq/issues/16">NFData</a> and serialization, except <a href="https://blog.veritates.love/pickling.html#functions-builtins-bootstrapping">when the runtime could actually support it</a>.</p>
 <p>For our purposes, they provide abstraction (implementing the same interface by any means necessary) and the construction of closures provides the coherence that normally is associated with an “object”: <code class="purescript">cell.set</code> and <code class="purescript">cell.get</code> both contain the same mutable reference in their closure.</p>
 </div>
 <h3 id="extra-methods">Extra methods</h3>
@@ -318,7 +705,7 @@ infix 1 swapifyCell as &lt;&amp;~ -- (v -&gt; v) -&gt; m v</code></pre>
 <p>PureScriptʼs row types make this seamless by enabling extensible records of operations <code class="purescript">{ | ops }</code>.</p>
 <h3 id="reactivity">Reactivity</h3>
 <p>Itʼs really important that properties of the interface are exposed as reactive streams, so downstream consumers know when they are changing. Conversely, it is preferable to expose setter methods still, as opposed to consuming reactive streams.</p>
-<p><a href="https://blog.veritates.love/frp-compatible">Everything Should Be FRP Compatible!</a></p>
+<p><a href="https://blog.veritates.love/frp-compatible.html">Everything Should Be FRP Compatible!</a></p>
 <div class="Warning">
 <p>Unfortunately, with current <span data-t="" data-widget="">API</span>s, it is not always possible to know when values are changing. Not enough events are exposed.</p>
 <p>An interface should still do its best to catch updates when possible (especially updates from the interface), and maybe provide a way to re-poll. This is the one time I think it is okay to break the rule that subscribers should not influence each other: if a new subscriber joins and the interface queries the property and realizes it has a stale value, it is okay to notify the other subscribers so they see the current value too.</p>
@@ -411,7 +798,7 @@ mintSomething = do
 <li>compilers miss out on opportunities for optimization</li>
 </ul>
 <h3 id="scopes">Scopes</h3>
-<p>This style of object pairs really well with my idea of scopes from <a href="https://blog.veritates.love/resource-acquisition#implementation">Resource Acquisition</a>.</p>
+<p>This style of object pairs really well with my idea of scopes from <a href="https://blog.veritates.love/resource-acquisition.html#implementation">Resource Acquisition</a>.</p>
 <p>In this conception of scope, a scope is simply a way of accumulating destructors and telling us if a scope was destroyed already.<a href="#fn5" class="footnote-ref" id="fnref5" role="doc-noteref"><sup>5</sup></a> Trust me, tracking individual <code class="purescript">_.destroy</code> methods on objects is <em>not</em> fun.</p>
 <pre class="purescript"><code>newtype Scope = Scope
   { putDestructor :: Effect Unit -&gt; Effect Unit
@@ -720,7 +1107,7 @@ export type MIDINoteMap = {
 <h2 id="future">Future</h2>
 <p>I think what I have outlined here is a much simpler approach that cuts to the heart of what we need from interfaces to objects and mutability.</p>
 <p>It doesnʼt need to be done in functional languages or with monads, it works well in JavaScript with plain effectful functions!<a href="#fn12" class="footnote-ref" id="fnref12" role="doc-noteref"><sup>12</sup></a></p>
-<p>Iʼve been using this to develop <a href="https://blog.veritates.love/riverdragon-implementation">Riverdragon</a>, my take on <span data-t="" data-widget="">FRP</span>.<a href="#fn13" class="footnote-ref" id="fnref13" role="doc-noteref"><sup>13</sup></a> Iʼve even been using it to port Riverdragon from PureScript to other languages: I think <a href="https://tech.lgbt/@monoidmusician/116449166586150538">everything should be compatible with FRP</a> and I wanna use Riverdragon everywhere.</p>
+<p>Iʼve been using this to develop <a href="https://blog.veritates.love/riverdragon-implementation.html">Riverdragon</a>, my take on <span data-t="" data-widget="">FRP</span>.<a href="#fn13" class="footnote-ref" id="fnref13" role="doc-noteref"><sup>13</sup></a> Iʼve even been using it to port Riverdragon from PureScript to other languages: I think <a href="https://tech.lgbt/@monoidmusician/116449166586150538">everything should be compatible with FRP</a> and I wanna use Riverdragon everywhere.</p>
 <p>I will keep using it, in my own work. Perhaps it can make its way to a published library. It would be even nicer to reimagine a whole ecosystem around it.</p>
 <ul>
 <li><a href="https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Riverdragon/River.purs" class="uri">https://github.com/MonoidMusician/blog/blob/main/PureScript/src/Riverdragon/River.purs</a></li>
@@ -738,7 +1125,7 @@ export type MIDINoteMap = {
 <li id="fn4"><p>not distinguished from event streams at the type level<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn5"><p>This is sufficient in a garbage-collected language, at least.<a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn6"><p>This encapsulation even allows for machines that switch their internal state type, by handing off to a new machine: <code class="purescript">Either (Machine m i o) s</code>.<a href="#fnref6" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
-<li id="fn7"><p>Iʼve always complained that <a href="https://blog.veritates.love/oop">why should things like addition and concatenation be methods on one object instead of the other?</a>, and I hope you also see why it is shortsighted that <span data-t="" data-widget="">OOP</span> forces that.<a href="#fnref7" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn7"><p>Iʼve always complained that <a href="https://blog.veritates.love/oop.html">why should things like addition and concatenation be methods on one object instead of the other?</a>, and I hope you also see why it is shortsighted that <span data-t="" data-widget="">OOP</span> forces that.<a href="#fnref7" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn8"><p>Although this is something that Python got right.<a href="#fnref8" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn9"><p>I think my best examples are yet to be written … I am still in the fundamentals and velocity-building stage of exploration here<a href="#fnref9" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn10"><p>Of course, this is possible to avoid with <a href="https://pursuit.purescript.org/packages/purescript-textcursor/2.0.0/docs/Web.Util.TextCursor">the correct web APIs</a>, but few people put in that effort, sigh…<a href="#fnref10" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
@@ -759,7 +1146,7 @@ export type MIDINoteMap = {
 <p>every time one adds state (like deduplication, debouncing, or even just a counter) to a stream, it now can be observed from different perspectives: different instances of the same stream-description can behave differently</p>
 <p>this instantiation either happens implicitly at the consumer, or explicitly with a effect that instantiates one subscriber that broadcasts to all subscribers of a new stream</p>
 <p>this is the distinction I make between <code class="purescript">River</code> (an already-instantiated <code class="purescript">Stream Flowing</code> that broadcasts to all of its subscribers) versus <code class="purescript">Lake</code> (a <code class="purescript">Stream NotFlowing</code> that may have different events per subscriber, as it is instantiated for each)</p>
-<p><a href="https://blog.veritates.love/riverdragon-implementation">Riverdragon</a></p>
+<p><a href="https://blog.veritates.love/riverdragon-implementation.html">Riverdragon</a></p>
 <hr>
 <p>I recently had a bug in some <span data-t="" data-widget="">UI</span> code I wrote where I was explicitly instantiating a stream before rendering, to share some work across nodes in the <span data-t="" data-widget="">DOM</span></p>
 <p>(specifically: I was instantiating an <span data-t="" data-widget="">SVG</span> node into <code>&lt;defs&gt;</code> so it could be <code>&lt;use&gt;</code>ʼd multiple times later)</p>
@@ -913,7 +1300,7 @@ clean-thingy-impl :
 <p>One thing that pure config formats do not handle (well) is object identity. You usually need to insert (U)UIDs. Database primary keys. So on.</p>
 <p>I guess a tool could rewrite the config file to add UIDs when they are instantiated (think how harddrive partitions are sometimes referenced by UUIDs instead of names or partition numbers), or maintain a lockfile to map names to UIDs (which is messy in its own way). But you need <em>something</em> stable to key data over time, maintain object identity.</p>
 <p>On the other hand, using UUIDs makes diffing hard, for tests and repeatability.</p>
-<p>Just like you wouldnʼt want raw pointers to show up when you are <a href="https://blog.veritates.love/pickling">pickling</a> data: you want to serialize to a (more) deterministic type like integer backrefs into the structure (<span data-t="" data-widget="">e.g.</span> implementations of the JavaScript structured clone algorithm), when then do become rehydrated pointers in a new runtime context when deserialized.</p>
+<p>Just like you wouldnʼt want raw pointers to show up when you are <a href="https://blog.veritates.love/pickling.html">pickling</a> data: you want to serialize to a (more) deterministic type like integer backrefs into the structure (<span data-t="" data-widget="">e.g.</span> implementations of the JavaScript structured clone algorithm), when then do become rehydrated pointers in a new runtime context when deserialized.</p>
 <h3 id="front-end-back-end">Front end, back end</h3>
 <p>One of the problems of front end back end is that the client may be running a different version than the server.</p>
 <p>Dhall-style category theoretic versioning may help out a little bit, but it doesnʼt come for free. Either the client needs to be preloaded with a mechanism (and awareness) to download version migrations from a specific place, or the server needs to rewrite requests and responses from the client to mitigate versions. Additionally, since data flows both ways, the migrations are much more complicated then – round tripping may even require looking at the original data on the other side of the request/response flow. (<span data-t="" data-widget="">E.g.</span> if you change IDs from a number to a string, you could generate numbers for the strings, but need to look at how to map them back. Or other additional data along for the ride like that.)</p>
@@ -953,7 +1340,7 @@ clean-thingy-impl :
 </item>
 <item>
 <title>Selective Applicative Functors</title>
-<guid>https://blog.veritates.love/selective-applicatives_theoretical_basis</guid>
+<guid>https://blog.veritates.love/selective-applicatives-theoretical-basis</guid>
 <description><![CDATA[<p>I havenʼt seen a good accounting of the essence of selective applicative functors.</p>
 <p>Theyʼve been longing for a better description, to help explain what should be allowed and what should be disallowed, beyond “hey, here is a function <code class="haskell">select</code> that seems to do useful things and enable us to write interesting code”.</p>
 <p>Selective applicative functors were originally proposed in 2019 in the paper <a href="https://dl.acm.org/doi/pdf/10.1145/3341694">Selective Applicative Functors</a>, by Andrey Mokhov, Georgy Lukyanov, Simon Marlow, and Jeremie Dimino, with this typeclass definition:</p>
@@ -2107,7 +2494,7 @@ for (const [symbol, sk] of Object.entries(combinatorTable)) {
 <pubDate>Sun, 11 May 2025 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/quapteryx4</guid>
 <description><![CDATA[<div class="centered">
-<p><em>Continued from <a href="https://blog.veritates.love/quapteryx3">Quapteryx Part III: Quaternary Combinators</a>, where I was writing WASM by hand and then ported it to C and got it working.</em></p>
+<p><em>Continued from <a href="https://blog.veritates.love/quapteryx3.html">Quapteryx Part III: Quaternary Combinators</a>, where I was writing WASM by hand and then ported it to C and got it working.</em></p>
 </div>
 <p>The next step was rewriting it from scratch for an efficient evaluator, and this is where I realized that having C structs and pointers (and malloc!) was really what I needed. I used <a href="https://wingolog.org/archives/2020/10/13/malloc-as-a-service">walloc.c</a> for the malloc implementation, also to keep it lightweight and WASMy.</p>
 <p>Thus the stack is clang + LLVM + walloc.c + WASM builtins + a JS wrapper to run it.</p>
@@ -2616,7 +3003,7 @@ bool step(void) {
 <pubDate>Sun, 11 May 2025 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/quapteryx3</guid>
 <description><![CDATA[<div class="centered">
-<p><em>See <a href="https://blog.veritates.love/quapteryx1">Quapteryx Part I: On the SKI Combinator Calculus</a> and <a href="https://blog.veritates.love/quapteryx2">Quapteryx Part II: Ojo: a Bitflipped Jot, and a Real Flop</a> for introduction/background on this topic.</em></p>
+<p><em>See <a href="https://blog.veritates.love/quapteryx1.html">Quapteryx Part I: On the SKI Combinator Calculus</a> and <a href="https://blog.veritates.love/quapteryx2.html">Quapteryx Part II: Ojo: a Bitflipped Jot, and a Real Flop</a> for introduction/background on this topic.</em></p>
 </div>
 <p>Quaternary combinators.</p>
 <p>If binary is base 2, then quaternary is base 4. Just as binary has bits (digits) and bitstrings (sequences of digits), quaternary has <a href="https://en.wikipedia.org/wiki/Quaternary_numeral_system#Relation_to_binary_and_hexadecimal">crumbs</a> and crumbstrings:</p>
@@ -2933,7 +3320,7 @@ word bitlength(const word* crumbstring, word known_words) {
 <p>Thus my tests went through various irreducible values of <code>m</code> and <code>n</code> to evaluate <code>factorial(3)(m)(n)</code> and ensure that it evaluated to <code>0m0m0m0m0m0mn</code> each time, and so on.</p>
 <p>The alternate way is to evaluate <code>factorial(x)(SB)(SK)</code> to get to a canonical Church numeral <code>(SB)(SB)…(SB)(SK)</code>.</p>
 <div class="centered">
-<p><em>Read on at <a href="https://blog.veritates.love/quapteryx4">Quapteryx Part IV: Efficient Quapteryx Evaluator</a>.</em></p>
+<p><em>Read on at <a href="https://blog.veritates.love/quapteryx4.html">Quapteryx Part IV: Efficient Quapteryx Evaluator</a>.</em></p>
 </div>
 <section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
 <hr>
@@ -2949,7 +3336,7 @@ word bitlength(const word* crumbstring, word known_words) {
 <pubDate>Sat, 10 May 2025 00:00:00 +0000</pubDate>
 <guid>https://blog.veritates.love/quapteryx2</guid>
 <description><![CDATA[<div class="centered">
-<p><em>See <a href="https://blog.veritates.love/quapteryx1">Quapteryx Part I: On the SKI Combinator Calculus</a> for an introduction.</em></p>
+<p><em>See <a href="https://blog.veritates.love/quapteryx1.html">Quapteryx Part I: On the SKI Combinator Calculus</a> for an introduction.</em></p>
 </div>
 <h2 id="iota-jot-unlambda">Iota, Jot, Unlambda</h2>
 <p>We ended with the iota combinator last time. The language Iota is just the language of the iota combinator and function application, expressed in a prefix manner:</p>
@@ -3127,7 +3514,7 @@ snd ('0' '0' &lt;fa:P2&gt; &lt;bz:P2&gt;) = snd &lt;bz:P2&gt;</code></pre>
 <p><em>However</em>, the core ideas are sound – even attractive: every natural number is a program, use <code class="st">0</code> as prefix application, and reductions are possible by searching through the string with a grammar.</p>
 <p>Quapteryx builds on these ideas for a really efficient implementation, hopefully.</p>
 <div class="centered">
-<p><em>Read on at <a href="https://blog.veritates.love/quapteryx2">Quapteryx Part III: Quaternary Combinators</a>.</em></p>
+<p><em>Read on at <a href="https://blog.veritates.love/quapteryx2.html">Quapteryx Part III: Quaternary Combinators</a>.</em></p>
 </div>
 <section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
 <hr>
@@ -3145,7 +3532,7 @@ snd ('0' '0' &lt;fa:P2&gt; &lt;bz:P2&gt;) = snd &lt;bz:P2&gt;</code></pre>
 <div class="centered">
 <p><em>Gödel numbering: an encoding only a mathematician could love.</em></p>
 </div>
-<p>Where Gödel numberings are ugly, the corresponding deal for finite set theory is elegant: I already made <a href="https://blog.veritates.love/hatstack">HatStack</a>, a stack-based language for hereditarily finite set theory, where every piece of data is just a natural number and these natural numbers <em>are</em> sets, bitwise.</p>
+<p>Where Gödel numberings are ugly, the corresponding deal for finite set theory is elegant: I already made <a href="https://blog.veritates.love/hatstack.html">HatStack</a>, a stack-based language for hereditarily finite set theory, where every piece of data is just a natural number and these natural numbers <em>are</em> sets, bitwise.</p>
 <p>It uses the <a href="https://en.wikipedia.org/wiki/Hereditarily_finite_set#Ackermann_coding">Ackermann coding</a>, whose premise is really simple: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>∈</mo><mi>y</mi></mrow><annotation encoding="application/x-tex">x \in y</annotation></semantics></math></span> just means that the bit numbered <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span> is set in the number <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi></mrow><annotation encoding="application/x-tex">y</annotation></semantics></math></span>: <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><msup><mn>2</mn><mi>x</mi></msup><mo><mi mathvariant="normal">&amp;</mi></mo><mi>y</mi><mo stretchy="false">)</mo><mo mathvariant="normal">≠</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">(2^x \band y) \ne 0</annotation></semantics></math></span>. Every set is just the bitfield of its children, who (as numbers) are just the bitfield of <em>their</em> children – hence, <em>hereditarily</em> finite:</p>
 <p><span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>y</mi><mo>=</mo><munder><mo>⋃</mo><mrow><mi>x</mi><mo>∈</mo><mi>y</mi></mrow></munder><mo stretchy="false">{</mo><mi>x</mi><mo stretchy="false">}</mo><mo>=</mo><munder><mo>∑</mo><mrow><mi>x</mi><mo>∈</mo><mi>y</mi></mrow></munder><msup><mn>2</mn><mi>x</mi></msup><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">y = \bigcup\limits_{x \in y} \{ x \} = \sum_{x \in y} 2^x.</annotation></semantics></math></span></p>
 <p>But whatʼs the answer for programs? Say, for a nice lambda calculus? Is there a similar encoding that is surjective and has nice properties?</p>
@@ -3153,7 +3540,7 @@ snd ('0' '0' &lt;fa:P2&gt; &lt;bz:P2&gt;) = snd &lt;bz:P2&gt;</code></pre>
 <p>Every few months I would open the wiki page on <a href="https://en.wikipedia.org/wiki/Iota_and_Jot#Jot">Jot</a>, reference it in some conversation of nerdery. A kind of restless fascination lingered in the background… But I never seriously engaged with it, until I nerdsniped myself one day.</p>
 <p>I did a deep dive into Jot for several months, figuring out exactly what made it tick, before determining that it was way too unwieldy for my purposes.</p>
 <p>Instead, I realized that I could make a really efficient evaluator using SKI calculus a little more directly, using a <em>qauternary</em> encoding (base 4) and calling in Quapteryx. I wanted to target WASM for several reasons, and I tried hand writing WASM (well, the textual format WAT), before deciding that that, too, was too unwieldy. So I translated my WASM to C by hand, fixed a few bugs and actually got it working, and then I scrapped it for an actually efficient evaluator.</p>
-<p><a href="https://blog.veritates.love/quapteryx2">My journey into Jot</a> is the subject of the next chapter, and <a href="https://blog.veritates.love/quapteryx3">Quapteryx</a> is documented in the other chapters.</p>
+<p><a href="https://blog.veritates.love/quapteryx2.html">My journey into Jot</a> is the subject of the next chapter, and <a href="https://blog.veritates.love/quapteryx3.html">Quapteryx</a> is documented in the other chapters.</p>
 <p>However, most readers will probably benefit from the background that occupies the rest of this chapter.</p>
 <h2 id="ski-combinators">SKI Combinators</h2>
 <p>SKI combinators are a distillation of the essence of untyped lambda calculus.</p>
@@ -3255,7 +3642,7 @@ Wxy  &amp;=_\beta xyy \\
 <p>Being an improper combinator is kind of a dealbreaker: you canʼt compute reductions of a language with just <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ι</mi></mrow><annotation encoding="application/x-tex">\iota</annotation></semantics></math></span>. You have to resort to inserting <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi></mrow><annotation encoding="application/x-tex">S</annotation></semantics></math></span> and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span> and evaluating with those.</p>
 <p>… Or can you?</p>
 <div class="centered">
-<p><em>Read on at <a href="https://blog.veritates.love/quapteryx2">Quapteryx Part II: Ojo: a Bitflipped Jot, and a Real Flop</a> or jump to the good stuff at <a href="https://blog.veritates.love/quapteryx3">Quapteryx Part III: Quaternary Combinators</a> and beyond.</em></p>
+<p><em>Read on at <a href="https://blog.veritates.love/quapteryx2.html">Quapteryx Part II: Ojo: a Bitflipped Jot, and a Real Flop</a> or jump to the good stuff at <a href="https://blog.veritates.love/quapteryx3.html">Quapteryx Part III: Quaternary Combinators</a> and beyond.</em></p>
 </div>]]></description>
 </item>
 <item>
@@ -3607,7 +3994,7 @@ devicePixelRatio = River.mayMemoize $ River.unsafeRiver $ makeLake \cb -&gt; do
   l &lt;- devicePixelRatio
   r &lt;- devicePixelRatio
   in D.li[] $ D.show l &lt;&gt; D.text " = " &lt;&gt; D.show r</code></pre>
-<p>You can paste that expression at <a href="https://blog.veritates.love/live-frp">Live FRP DOM Coding</a>.<a href="#fn9" class="footnote-ref" id="fnref9" role="doc-noteref"><sup>9</sup></a></p>
+<p>You can paste that expression at <a href="https://blog.veritates.love/live-frp.html">Live FRP DOM Coding</a>.<a href="#fn9" class="footnote-ref" id="fnref9" role="doc-noteref"><sup>9</sup></a></p>
 <h3 id="benefits-of-isflowing">Benefits of <code class="ps">IsFlowing</code></h3>
 <p>The main benefit of <code class="ps">IsFlowing</code> is that multiple subscribers know they are seeing the same values at, well, similar points in time (not exactly the same, but synchronously close together). (And again, the instantiation of a <code class="ps">Lake</code> to a <code class="ps">River</code> produces a burst which it is valuable to capture explicitly.)</p>
 <p>One of the things that this elucidated for me was the signature of <code class="ps">fix</code>, which has always been mystifying.</p>
@@ -4095,7 +4482,7 @@ function MoreQR(data, ...params) {
 <item>
 <title>WebRTC over QR Connection Protocol</title>
 <pubDate>Sun, 26 Jan 2025 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/webrtc-over_qr</guid>
+<guid>https://blog.veritates.love/webrtc-over-qr</guid>
 <description><![CDATA[<p>Details on the connection protocol for <a href="https://webrtc-over-qr.veritates.love/">WebRTC over QR</a>. How is it even possible, and how could you use it too?</p>
 <div class="Warning">
 <p>See there for caveats and compatibility and so on.</p>
@@ -4242,7 +4629,7 @@ Note that the host and guest have somewhat/extremely different <span data-t="" d
 </ol>
 <h2 id="tweaks-and-so-on">Tweaks and so on</h2>
 <p>First of all: to get the JavaScript-in-HTML-in-<code>data:</code> <span data-t="" data-widget="">URI</span> to fit into a QR code with a full <span data-t="" data-widget="">SDP</span>, the JavaScript template needs to be minified a bunch, but it is possible.</p>
-<p>As I mentioned above, outside of this happy path you need to return a fingerprint, and this is what the <a href="https://blog.veritates.love/qrinqr">QR in QR</a> code is intended for: with aggressive minification and code golfing, the guest can print a QR code which the host can scan. This is an alright solution for that in a local situation.</p>
+<p>As I mentioned above, outside of this happy path you need to return a fingerprint, and this is what the <a href="https://blog.veritates.love/qrinqr.html">QR in QR</a> code is intended for: with aggressive minification and code golfing, the guest can print a QR code which the host can scan. This is an alright solution for that in a local situation.</p>
 <p>And for <span data-t="" data-widget="">WAN</span> connections, it needs the public <span data-t="" data-widget="">IP</span> address and public port from the <span data-t="" data-widget="">STUN</span> candidate(s). I donʼt really have a great way to return this information yet: itʼs just a bit ugly to write the guest code, it really should be a dedicated mode with a separate template. (<span data-t="" data-widget="">TURN</span> servers<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a> are basically out of scope for this, though it would be possible to add support&nbsp;… but at that point you should almost always set up your own signaling server and use standard solutions, especially since <span data-t="" data-widget="">TURN</span> servers require passwords and are not publicly available because of the bandwidth considerations.)</p>
 <p>Smaller details include:</p>
 <ul>
@@ -4558,7 +4945,7 @@ document.body.innerHTML=o</code></pre>
 <item>
 <title>Design your programming languages right!</title>
 <pubDate>Mon, 16 Dec 2024 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/design-it_right</guid>
+<guid>https://blog.veritates.love/design-it-right</guid>
 <description><![CDATA[<p>I just think we should have some ground rules for new programming languages and their configuration. Yʼknow?</p>
 <p>Just some rambly thoughts on features I think you should include, or at least think about and not block yourself <em>out of</em> including. And other topics I am thinking about with no real answers yet.</p>
 <h2 id="solved-problems-non-issues">Solved problems / non-issues</h2>
@@ -4630,7 +5017,7 @@ document.body.innerHTML=o</code></pre>
 <item>
 <title>Monoids in Public</title>
 <pubDate>Wed, 03 Dec 2025 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/monoids-in_public</guid>
+<guid>https://blog.veritates.love/monoids-in-public</guid>
 <description><![CDATA[<div class="Note">
 <p>It is a weird historical quirk that Haskell/PureScript call the symmetric operation <code class="purescript">(&lt;&gt;) :: m -&gt; m -&gt; m</code> by the name of “append”. Most of the world reserves append and prepend for the asymmetric operations shaped like <code class="purescript">List t -&gt; t -&gt; List t</code> and <code class="purescript">t -&gt; List t -&gt; t</code>, respectively, and call <code class="purescript">(&lt;&gt;)</code> by the name of “concatenation” (literally meaning “<a href="https://en.wiktionary.org/wiki/concatenate">chaining together</a>”). That is pretty clearly a better convention, but I will still use the Haskell convention in this article.</p>
 </div>
@@ -5190,6 +5577,57 @@ instance Semigroup t =&gt; Monoid (CustomOverlap t) where
 <p>In terms of <code class="haskell">Overlapping m</code>, the explanation is that <code class="haskell">Overtail l</code> marks the tail that has no backtracking applied, and <code class="haskell">Overlap l ls</code> is the constructor that introduces backtracking from <code class="haskell">l</code> onwards to <code class="haskell">ls</code>.</p>
 </div>
 <p>Interestingly, a similar idea of staging as the applicative paper shows up in the parser too: the parser <em>monad</em> is staged using <code class="haskell">Compose</code> (that is, with a fixed order, instead of the commutative order of <code class="haskell">Day</code>), since the result of parsing a token is of type <code class="haskell">ParseMachine ix tok (ParseMachine ix tok r)</code>, to allow for committing to a parse locally. Controlling backtracking like this helps constrain memory usage during parsing.</p>
+<h2 id="semirings-for-regular-expressions">Semirings for Regular Expressions</h2>
+<p>This is based on the Functional Pearl: <a href="https://sebfisch.github.io/haskell-regexp/regexp-play.pdf">“A Play on Regular Expressions”</a> by Sebastian Fischer, Frank Huch, and Thomas Wilke.</p>
+<p>There are three semirings introduced, in addition to Booleans.</p>
+<p>These semirings feature idempotent addition. Normally one needs to adjoin the naturals, keeping track of <code>1 + 1 = 2</code>, to keep satisfying distributivity: <code>a + a = 1*a + 1*a = (1+1)*a = 2*a</code>. But since addition is idempotent here, <code>1 + 1 = 1</code> is sufficient for these semirings.</p>
+<p>Important to note: zero and one are the identities for regular expressions. Zero refers to having no match, and one refers to an empty match.</p>
+<p>So all of the instances follow this template to handle the identities:</p>
+<pre class="haskell"><code>instance Semiring _ where
+  zero = Zero; one = One
+
+  Zero  .+.  y     =  y
+  x     .+.  Zero  =  x
+  One   .+.  y     =  y
+  x     .+.  One   =  x
+  _     .+.  _     =  _
+
+  Zero  .*.  _     =  Zero
+  _     .*.  Zero  =  Zero
+  One   .*.  y     =  y
+  x     .*.  One   =  x
+  _     .*.  _     =  _</code></pre>
+<blockquote>
+<p>Semiring used for leftmost matching.</p>
+</blockquote>
+<pre class="haskell"><code>data Leftmost = Zero | One | Leftmost !Int
+
+instance Semiring Leftmost where
+  Leftmost a  .+.  Leftmost b  =  Leftmost (min a b)
+
+  Leftmost a  .*.  Leftmost b  =  Leftmost (min a b)</code></pre>
+<blockquote>
+<p>Semiring used for longest matching.</p>
+</blockquote>
+<pre class="haskell"><code>data Longest = Zero | One | Longest !Int
+
+instance Semiring Longest where
+
+  Longest a  .+.  Longest b  =  Longest (max a b)
+
+  Longest a  .*.  Longest b  =  Longest (a+b)</code></pre>
+<blockquote>
+<p>Semiring used for leftmost longest matching.</p>
+<p>The <code class="haskell">LeftLong</code> type satisfies the distributive laws only with a precondition on all involved multiplications: multiplied matches must be adjacent and the start position must be smaller than the end position. This precondition is satisfied for all multiplications during regular expression matching.</p>
+</blockquote>
+<pre class="haskell"><code>data LeftLong = Zero | One | LeftLong !Int !Int
+
+instance Semiring LeftLong where
+  LeftLong a b  .+.  LeftLong c d
+    | a&lt;c || a==c &amp;&amp; b&gt;=d          =  LeftLong a b
+    | otherwise                    =  LeftLong c d
+
+  LeftLong a _  .*.  LeftLong _ b  =  LeftLong a b</code></pre>
 <h2 id="your-requests-here">Your Requests Here</h2>
 <p>thatʼs all I have for now! know any other cute liʼl monoids I should include?</p>
 <section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
@@ -5202,7 +5640,7 @@ instance Semigroup t =&gt; Monoid (CustomOverlap t) where
 <item>
 <title>Infodumping About Selective Applicative Functors</title>
 <pubDate>Wed, 10 Apr 2024 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/infodump-selective_applicatives</guid>
+<guid>https://blog.veritates.love/infodump-selective-applicatives</guid>
 <description><![CDATA[<div class="centered">
 <p><em>Originally posted at <a href="https://tech.lgbt/@monoidmusician/112250458187094582" class="uri">https://tech.lgbt/@monoidmusician/112250458187094582</a></em></p>
 </div>
@@ -5307,7 +5745,7 @@ branch :: m (Either x y) -&gt; m (x -&gt; z) -&gt; m (y -&gt; z) -&gt; m z</code
 <p>with <code class="purescript">caseTreeOn</code>, we donʼt just have a monoid anymore: we still combine effects sequentially with a monoid, but we combine the alternatives with a (potentially differently behaved) semigroup</p>
 <p>(we can ignore empty case trees: 0-ary branch just evaluates its first argument)</p>
 <p>thereʼs probably some laws you want to impose between the monoid and semigroup</p>
-<p>in fact, having a lattice or semilattice <a href="https://blog.veritates.love/semilattice-semiring">is particularly nice</a></p>
+<p>in fact, having a lattice or semilattice <a href="https://blog.veritates.love/semilattice-semiring.html">is particularly nice</a></p>
 <p>and semilattices crawl all over static analysis, you wouldnʼt believe it</p>
 <p>(well, maybe you would ^^)</p>
 <hr>
@@ -5475,7 +5913,7 @@ alt l r = select (note unit &lt;$&gt; try l) (const &lt;$&gt; r)</code></pre>
 <p><span class="dated">2023/08/09</span></p>
 <p>Iʼm pretty sure itʼs possible to interpret this selective applicative parsing within the style of LR parsing</p>
 <p>(in fact, it may be the most well-behaved setting)</p>
-<p>I wrote a bunch about how LR(1) parsing works: <a href="https://blog.veritates.love/parser">Interactive Parser Explanations</a> (as always, thereʼs a bunch more to write)</p>
+<p>I wrote a bunch about how LR(1) parsing works: <a href="https://blog.veritates.love/parser.html">Interactive Parser Explanations</a> (as always, thereʼs a bunch more to write)</p>
 <p>quick overview is that it builds a graph of state nodes, where each state is a partial parse of some rules and the lookahead that one would expect after parsing that rule (based on how you got to the state)</p>
 <p>each step looks at the current token in the stream, and decides to <em>shift</em> the token onto the stack and continue parsing the rules, or <em>reduce</em> a finished rule (if you see its lookahead) and get its arguments off of the stack</p>
 <p>conflicts occur when there are multiple actions that one could take from a state on a token: shift/reduce conflicts or reduce/reduce conflicts</p>
@@ -5770,7 +6208,7 @@ $increment : lvalue -&gt; statement</code></pre>
 </ul></li>
 <li>Quotiented data (Agda, Lean, Rocq)
 <ul>
-<li>see <a href="https://blog.veritates.love/adt-lies_for_truth">Subtypes/Quotients: Lies Told in Defense of the Truth</a> (<span data-t="" data-widget="">WIP</span>)</li>
+<li>see <a href="https://blog.veritates.love/adt-lies-for-truth.html">Subtypes/Quotients: Lies Told in Defense of the Truth</a> (<span data-t="" data-widget="">WIP</span>)</li>
 </ul></li>
 </ol>
 <p>It will be important to think about what notions of equality are useful and adequate for these kinds of data!</p>
@@ -6279,7 +6717,7 @@ intoObject path = first $ \key -&gt; ObjectIdx key : path</code></pre>
 <li id="fn3"><p>besides performance – we always disregard performance here<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn4"><p>Citation needed.<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn5"><p><a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
-<li id="fn6"><p>Sighs in <a href="https://blog.veritates.love/tmttmt">tmTTmt</a>&nbsp;…<a href="#fnref6" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn6"><p>Sighs in <a href="https://blog.veritates.love/tmttmt.html">tmTTmt</a>&nbsp;…<a href="#fnref6" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn7"><p>Even in non-Turing-complete languages!<a href="#fnref7" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn8"><p>This is slightly unfair, considering that Dhall now uses <span data-t="" data-widget="">NbE</span>, but it amounts to the same thing.<a href="#fnref8" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn9"><p>BEAM uses mutation to construct data locally, but this is only an implementation detail that cannot be observed from Erlang.<a href="#fnref9" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
@@ -6450,7 +6888,7 @@ normalize (Roll layer) = Roll (map normalize layer)</code></pre>
 <p>My goal is to have a syntax that is straightforward for humans to write and easy for computers to interpret.</p>
 <p>But I donʼt want this process to be magic! I just want it to look convenient for writing powerful systems of type theory.</p>
 <h2 id="abstract">Abstract</h2>
-<p><a href="https://blog.veritates.love/blog.veritates.love/tmttmt">tmTTmt</a> (transmorphism Type Theory metatheory) is an experiment in the UX and aesthetics of a pure, typed functional programming language, with the goal of being an interlingua (it must be easy to parse, reducible to an implementation with few required primitives, and human readable along the way, including methods for understanding what the source code is and does) and with an eye towards being suitable for being an exceptional metalanguage for type theory and compilers and also a welcoming place to write down algorithms of general interest (e.g.&nbsp;computing a cubic Bézier from a quadratic Bézier, or computing an LR(1) parse table from a grammar, or describing high-level cryptography operations that can be compiled to appropriate code in languages such as JavaScript, Python, or Erlang)</p>
+<p><a href="https://blog.veritates.love/blog.veritates.love/tmttmt.html">tmTTmt</a> (transmorphism Type Theory metatheory) is an experiment in the UX and aesthetics of a pure, typed functional programming language, with the goal of being an interlingua (it must be easy to parse, reducible to an implementation with few required primitives, and human readable along the way, including methods for understanding what the source code is and does) and with an eye towards being suitable for being an exceptional metalanguage for type theory and compilers and also a welcoming place to write down algorithms of general interest (e.g.&nbsp;computing a cubic Bézier from a quadratic Bézier, or computing an LR(1) parse table from a grammar, or describing high-level cryptography operations that can be compiled to appropriate code in languages such as JavaScript, Python, or Erlang)</p>
 <h2 id="demos">Demos</h2>
 <p>AAaaahhhh</p>
 <p>Implementation in progress!</p>
@@ -7780,21 +8218,21 @@ instance Semigroup (ShiftReduce s r) where
 <p>EDIT: this project kind of stalled, sorry. Iʼm still thinking about parsers a lot, but not in this introductory way. You can bug or help me write more ^^</p>
 <h3 id="topics">Topics</h3>
 <ul>
-<li><span data-t="" data-widget="">TODO</span>: <a href="https://blog.veritates.love/parser-by_example">Using this tool by example</a></li>
-<li><span data-t="" data-widget="">TODO</span>: <a href="https://blog.veritates.love/parser-terminology">Terminology reference</a></li>
-<li><span data-t="" data-widget="">WIP</span>: <a href="https://blog.veritates.love/parser-basics">Basics: What are grammars</a> (BNF, RegExp)
+<li><span data-t="" data-widget="">TODO</span>: <a href="https://blog.veritates.love/parser-by-example.html">Using this tool by example</a></li>
+<li><span data-t="" data-widget="">TODO</span>: <a href="https://blog.veritates.love/parser-terminology.html">Terminology reference</a></li>
+<li><span data-t="" data-widget="">WIP</span>: <a href="https://blog.veritates.love/parser-basics.html">Basics: What are grammars</a> (BNF, RegExp)
 <ol>
 <li>Nonterminals and terminals</li>
 <li>Sequencing and alternation (regexes)</li>
 </ol></li>
-<li><span data-t="" data-widget="">WIP</span>: <a href="https://blog.veritates.love/parser-applications">Uses of grammars</a>:
+<li><span data-t="" data-widget="">WIP</span>: <a href="https://blog.veritates.love/parser-applications.html">Uses of grammars</a>:
 <ol>
 <li>Generators: nondeterministically generate strings in the grammar by following the rules as state transitions</li>
 <li>Recognition: recognize which strings belong to the grammar and which do not</li>
 <li>Syntax highlighting: cursed.</li>
 <li>Parsing: find an unambiguous parse tree for inputs that belong to the grammar</li>
 </ol></li>
-<li><span data-t="" data-widget="">WIP</span>: <a href="https://blog.veritates.love/parser-lr1">Basics of LR(1) Parsing</a>
+<li><span data-t="" data-widget="">WIP</span>: <a href="https://blog.veritates.love/parser-lr1.html">Basics of LR(1) Parsing</a>
 <ol>
 <li>States</li>
 <li>State transitions</li>
@@ -7920,7 +8358,7 @@ instance Semigroup (ShiftReduce s r) where
 <item>
 <title>Eudoxus Real Numbers as Slopes of Pixelated Graphs</title>
 <pubDate>Wed, 20 Jul 2022 00:00:00 +0000</pubDate>
-<guid>https://blog.veritates.love/Eudoxus.html</guid>
+<guid>https://blog.veritates.love/Eudoxus</guid>
 <description><![CDATA[<p>If you have a little background in classical constructions of the real numbers, you might have noticed that all of the usual constructions start with the rational numbers as a base, and then build up to real numbers. For example, Cauchy real numbers are constructed as sequences <em>of rational numbers</em> satisfying the Cauchy condition on the usual rational metric. Dedekind real numbers are constructed as sets <em>of rational numbers</em> satisfying the conditions to make them Dedekind cuts with the usual ordering.</p>
 <p>This is a post on constructing real numbers <em>without</em> constructing rational numbers. Along the way the rationals will sort of be constructed, or at least heavily implied, but they donʼt directly figure into the definition! Instead all we need is functions from integers to integers. </p>
 <p>The construction weʼll be talking about is my favorite esoteric construction of real numbers: the <em><a href="https://ncatlab.org/nlab/show/Eudoxus+real+number">Eudoxus real numbers</a></em>.</p>
