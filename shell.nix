@@ -7,7 +7,7 @@ pkgs.mkShell rec {
     # TODO: minimal and maximal shells?
     nodejs_26 purescript pandoc lilypond
     (haskell.packages.ghc984.ghcWithPackages (pkgs: with pkgs; [ cabal-install haskell-language-server ]))
-    wasmtime wabt
+    wasmtime wasm-tools wabt
     clang # for native quapteryx binary
 
     woff2
@@ -44,6 +44,7 @@ pkgs.mkShell rec {
   shellHook = ''
     export LD_LIBRARY_PATH="$APPEND_LIBRARY_PATH:$LD_LIBRARY_PATH"
     export PATH="$PWD/python/.venv/bin:$PWD/node_modules/.bin:$PATH"
+    export PYTHONPATH="$PWD/python:$PYTHONPATH"
     export CLANG_WASM="${pkgs.buildPackages.clang.cc}/bin/clang" # for quaperyx WASM
     export LLD_WASM="${pkgs.buildPackages.llvmPackages.lld}/bin/wasm-ld" # for quaperyx WASM
     test -d node_modules || npm uninstall --no-save purescript

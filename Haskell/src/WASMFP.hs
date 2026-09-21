@@ -215,8 +215,8 @@ main = do
             T.putStrLn $ T.show $ eval expr Map.empty
         T.putStrLn $ T.show $ parse t
         go
-  -- T.putStrLn "Ready!"
-  -- go
+  T.putStrLn "Ready!"
+  go
   fullModule <- genWAT do
     testFn1 <- genFunc (Just "retest") ([], [wtyp SU32]) [] do
       genExpr $ ELet [(EU64 157842, Bind "here")] (EU32 1312)
@@ -1537,7 +1537,6 @@ regTypeGroup :: HasCallStack => Map Name SubTyp -> WASMM (Map Name WASMC)
 regTypeGroup group = fastSlow
   do gets $ fmap snd . flip isGenned group . typeGroups
   do
-    let promote = runIdentity . overCTyp (promoteFromGroup group)
     added <- group & foldMap
       (foldMap (foldMap (preloadInGroup group) .) [ stExtends, Just . CTyp . stIs ])
     let mixed = admix group (fromMaybe Set.empty added)
@@ -2086,6 +2085,7 @@ data HTyp -- Heap types
   | HI31 -- Special i31
   deriving stock (Eq, Ord, Show, Data, Generic)
   deriving anyclass (NFData)
+-- Constructor for non-recursive composite types
 pattern HCTyp :: CTyp -> HTyp
 pattern HCTyp t = HRTyp (CTyp t)
 -- Heap type classifiers
@@ -2231,18 +2231,18 @@ baseClosureC = WS
   , Imm $ WR Nul (HCls HAny)
   ]
 
-{-# NOINLINE baseClosureH #-}
-baseClosureH :: RTyp
-baseClosureH = RTyp "closure" $ Map.singleton "closure" $
+{-# NOINLINE baseClosureR #-}
+baseClosureR :: RTyp
+baseClosureR = RTyp "closure" $ Map.singleton "closure" $
   SubTyp False Nothing baseClosureC
 
 baseClosureW :: WTyp
-baseClosureW = WR Non $ HRTyp baseClosureH
+baseClosureW = WR Non $ HRTyp baseClosureR
 
 instance SynthType TClo where
   wtyp (TClo Nothing Nothing) = baseClosureW
   wtyp (TClo clo fun) = WR Non $ HRTyp $ RTyp "_someclosure" $ Map.singleton "_someclosure" $
-    SubTyp False (Just baseClosureH) $ WS
+    SubTyp False (Just baseClosureR) $ WS
       [ Imm $ WR Non $ HCTyp $ WF
           -- closure data and next argument, boxed
           [WR Nul (HCls HAny), WR Nul (HCls HAny)]
@@ -3519,7 +3519,7 @@ parseAtom = (asum . fmap P.try)
         SU32 -> EU32 $ read $ T.unpack num
         SS64 -> ES64 $ read $ T.unpack num
         SS32 -> ES32 $ read $ T.unpack num
-        S TBool -> if num == "0" then EFalse else ETrue
+        S TBool -> if read @Double (T.unpack num) == 0.0 then EFalse else ETrue
         _ -> error "Wrong type for a number"
   , tSTRING <&> \str _ ->
       Insensitive $ ETxt str
