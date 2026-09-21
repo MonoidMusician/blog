@@ -52,6 +52,13 @@ import Widget (Interface, KeyedInterface, disconnected, stillInterface, storeInt
 import Widget as Widget
 import Riverdragon.Roar.Live as Riverdragon.Roar.Live
 
+import Math.Matrix
+import Math.Matrix as ReExports
+import Math.Poly
+import Math.Poly as ReExports
+import Math.Bezier
+import Math.Bezier as ReExports
+
 import Control.Monad.ResourceT (ResourceM)
 import Parser.Comb.Comber
 import Parser.Comb.Comber as ReExports

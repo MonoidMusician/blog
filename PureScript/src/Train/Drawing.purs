@@ -195,7 +195,7 @@ renderRails targetMap0 styles0 = do
   { defs, defL } <- manageDefs
   let
     newmask curve bbox inner outer =
-      maskOf (map (padBounds (outer + 12.0)) <$> bbox) $ fold
+      maskOf (map (padBounds (outer)) <$> bbox) $ fold
         [ clone curve
           [ D.stylish =:= D.smarts
             { "stroke": "white"
@@ -255,7 +255,7 @@ renderRails targetMap0 styles0 = do
                 , newmask (pure thisOne) (pure bbox) inner outer
                 ]
           ]
-      in D.g [ maskOf (map (padBounds 16.0) <$> bboxFull) maskContents ] wrapped
+      in D.g [ maskOf (map (padBounds outer) <$> bboxFull) maskContents ] wrapped
     renderShape target { shape } = do
       let
         dash = case shape.dash of
@@ -263,7 +263,7 @@ renderRails targetMap0 styles0 = do
           Just fn ->
             let r = fn target.pathlength in
             { dasharray: Just r.dasharray, offset: Just r.offset }
-      maskOf (map (padBounds (shape.width.outer + 12.0)) <$> pure target.bbox) $
+      maskOf (map (padBounds (shape.width.outer)) <$> pure target.bbox) $
         maybe identity (applyExclusion target shape) shape.exclusion $ fold
           [ clone (pure target.id)
             [ D.stylish =:= D.smarts
@@ -337,7 +337,7 @@ defaultStyle =
     , globalOffset: mempty
     }
   exclude inner outer style =
-    style { shape = style.shape { exclusion = Just { inner, outer, targets: ["total"] } } }
+    style { shape = style.shape { exclusion = Just { inner, outer, targets: ["disjoint"] } } }
 
   color = RailColor <<< pure
   shape =

@@ -63,3 +63,20 @@ data types:
 
 <!-- https://nickav.co/posts/0003_wasm_from_scratch -->
 <!-- https://wingolog.org/archives/2023/03/20/a-world-to-win-webassembly-for-the-rest-of-us -->
+
+
+------
+
+letʼs try this again
+
+a basic memory model of pointers, words, and synchronization, and a basic code model of functions and side effects
+
+STM is the only composable synchronization, but maybe it still needs to be implemented with lower level primitives?
+
+goals:
+
+- do it right, make it flexible, make good things easy.
+- interactive distributed environment. assume connections are relatively low-latency and reliable while available.
+- access to the underlying dynamic-/pauci-typed runtime, but also designed for strict typing and potential optimizations.
+- not concerned about throughput or raw performance for interactive aspects: not building a hyperscaling database.
+- able to track resources across runtimes

@@ -202,9 +202,9 @@ widget _ = pure $
             }
           let
             -- Scale a number over the range of the instrument
-            ranging from to = S.linmap
-              (S.Interval 20.0 83.0)
-              (S.Interval from to)
+            ranging from to = bounds2bounds1
+              (mkBounds 20.0 83.0)
+              (mkBounds from to) $.
               (Int.toNumber semitones)
             -- Build up a sound as a collection of pure sine tones
             waves =

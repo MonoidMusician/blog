@@ -1,0 +1,49 @@
+diff --git a/node_modules/three/examples/jsm/loaders/OBJLoader.js b/home/monoidmusician/Downloads/OBJLoader.js
+index 6f33fb4..e1383f7 100644
+--- a/node_modules/three/examples/jsm/loaders/OBJLoader.js
++++ b/home/monoidmusician/Downloads/OBJLoader.js
+@@ -4,7 +4,6 @@ import {
+ 	Float32BufferAttribute,
+ 	Group,
+ 	LineBasicMaterial,
+-	LineSegments,
+ 	Loader,
+ 	Material,
+ 	Mesh,
+@@ -15,6 +14,15 @@ import {
+ 	Color,
+ 	SRGBColorSpace
+ } from 'three';
++import {
++	LineSegments2,
++} from '../lines/LineSegments2.js';
++import {
++	LineSegmentsGeometry,
++} from '../lines/LineSegmentsGeometry.js';
++export {
++	LineMaterial,
++} from '../lines/LineMaterial.js';
+ 
+ // o object_name | g group_name
+ const _object_pattern = /^[og]\s*(.+)?/;
+@@ -884,7 +892,7 @@ class OBJLoader extends Loader {
+ 
+ 					if ( isLine ) {
+ 
+-						mesh = new LineSegments( buffergeometry, createdMaterials );
++						mesh = new LineSegments2( buffergeometry, createdMaterials );
+ 
+ 					} else if ( isPoints ) {
+ 
+@@ -900,7 +908,10 @@ class OBJLoader extends Loader {
+ 
+ 					if ( isLine ) {
+ 
+-						mesh = new LineSegments( buffergeometry, createdMaterials[ 0 ] );
++						const buffergeometry2 = new LineSegmentsGeometry();
++						buffergeometry2.setPositions(buffergeometry.attributes.position.array);
++						mesh = new LineSegments2( buffergeometry2, createdMaterials[ 0 ] );
++						console.log(buffergeometry2, createdMaterials[ 0 ], mesh);
+ 
+ 					} else if ( isPoints ) {
+ 

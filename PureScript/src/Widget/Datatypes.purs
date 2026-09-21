@@ -223,6 +223,7 @@ abbreviations = Map.fromFoldable
   , "et al." /\ Foreign "la" "et aliae, et alii\x0304"
       (Just "https://en.wiktionary.org/wiki/et_al.#Etymology_1")
       ["and others"]
+  , "a.k.a." /\ Acronym "also known as"
   , "QED" /\ Foreign "la" "quod erat de\x0304mo\x0304nstrandum"
       (Just "https://en.wiktionary.org/wiki/Q.E.D.#English")
       ["which was to be proved"]

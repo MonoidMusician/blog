@@ -120,8 +120,8 @@ parseCommandsWith finish continue s
 -- capital, or quotes: load named place
 -- =NAME: set named place
 -- =: teleport to origin, of function or whole program
--- /NAME: append to named variable's stack (repeat if desired)
--- \NAME: pop from named variable's stack (teleport to location)
+-- +NAME: append to named variable's stack (repeat if desired)
+-- -NAME: pop from named variable's stack (teleport to location)
 parseCommandsWith finish continue s
   | Tuple name more <- parseNAME s
   , name /= "" = (GetVariable Nothing name : _) <$> parseCommandsWith finish continue more
@@ -129,16 +129,16 @@ parseCommandsWith finish continue ("=" : s0)
   | Tuple name more <- parseNAME $ skipWS s0
   =
     ((if name == "" then Origin else (SetVariable Nothing name)) : _) <$> parseCommandsWith finish continue more
-parseCommandsWith finish continue ("/" : s0)
-  | taken <- List.length $ List.takeWhile (_ == "/") s0
+parseCommandsWith finish continue ("+" : s0)
+  | taken <- List.length $ List.takeWhile (_ == "+") s0
   , s1 <- List.drop taken s0
   , Tuple name more <- parseNAME $ skipWS s1
   , name /= ""
   =
     (SetVariable (Just (taken + 1)) name : _) <$>
       parseCommandsWith finish continue more
-parseCommandsWith finish continue ("\\" : s0)
-  | taken <- List.length $ List.takeWhile (_ == "\\") s0
+parseCommandsWith finish continue ("-" : s0)
+  | taken <- List.length $ List.takeWhile (_ == "-") s0
   , s1 <- List.drop taken s0
   , Tuple name more <- parseNAME $ skipWS s1
   , name /= ""

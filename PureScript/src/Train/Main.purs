@@ -51,6 +51,7 @@ import Train.Drawing as Drawing
 import Train.Dynamics as Dynamics
 import Train.Geometry (mkRoute, routesToPaths, trainOnRoute)
 import Train.Geometry as Geo
+import Train.Geometry as Geometry
 import Train.Impl (renderCommand)
 import Train.Library (standardCurves)
 import Train.Logic (analyzeLayout)
@@ -190,9 +191,7 @@ widget { interface } = do
                     , [ D.text $ withSign r $ UI.fmt $ Math.abs $ unpairy (-) r.veloc ]
                     ]
               ]
-    , dedup traintle.outputs.library >@ \library ->
-        tabSwitcher Nothing $ Map.toUnfoldable library <#> \(Tuple id (Standard standard)) ->
-          Tuple (show id) $ D.show { key: standard.key, radius: standard.radius }
+    , renderLibrary traintle.outputs.library
     , Replacing $ stillRiver traintle.outputs.info
     , mempty $ Egg do
         curves <- liftEffect do
@@ -478,6 +477,21 @@ spaced = traverse River.alwaysBurstM >== joinWith " "
   4(wwewq @S qwe ww qaq)
 -}
 -- eeeeeeeeeeeeeeeeqqxqqqdqqqxqqqqxqqqdqqqxqq qqxqqqdddddddd
+{-
+  r2
+  @S{26w}
+  @TR{q @S eww =}
+  @TL{e @S qww =}
+  e 6(2w @TR) e6de
+    6(2w @TR) e6de
+    12w q @S e ww ed r1 dd r2 d @S 15w
+  e 12w q @S e ww ed r1 dd r2 d @S 15w
+  @I{15w =P eq P 20w}
+  e 10w q @S x @S 35w =X x@I X @S 4w q 6a q 37w =Xx5we4wX @S 5axwwaqq
+  = x17w x eedww
+  = 5w @S e 4w
+  = 37w @S e6de 4w @S @I @S
+-}
 renderTraintle :: { | _ } -> River (Array Command) -> ResourceM { widget :: Dragon, outputs :: _ }
 renderTraintle inputs cmds = do
   { defs, defL, defineL } <- manageDefs
@@ -796,3 +810,33 @@ runTraintle { library, hitmap } cmds =
     V2 { min: Min mx, max: Max mX } { min: Min my, max: Max mY } ->
       intercalate " " $ show <<< (16 * _) <$>
         [ mx - 4, my - 4, mX - mx + 8, mY - my + 8 ]
+
+renderLibrary :: River (Map.Map Int Standard) -> Dragon
+renderLibrary libraryS = dedup libraryS >@ \library ->
+  tabSwitcher Nothing $ Map.toUnfoldable library <#> \(Tuple id standard) ->
+    Tuple (show id) $ renderCurve standard
+
+renderCurve :: Standard -> Dragon
+renderCurve (Standard standard) = Egg do
+  { defs, defL, defM, defineL } <- manageDefs
+  curve <- defM \id -> D.path [ D.id =:= id, D.attr "d" <:> pure (Geometry.bezsToPath (NEA.singleton standard.curve) :: String) ]
+  let
+    target = { id: curve, pathlength: standard.pathlength, bbox: standard.bbox.stroke }
+    targets = pure $ Map.fromFoldable
+      [ "total" /\ [target]
+      , "disjoint" /\ [target]
+      ]
+  rendering <- Drawing.renderRails targets (pure Drawing.defaultStyle)
+  pure $ D.svg
+    [ D.viewBox =:= bounds2viewBox standard.bbox.stroke
+    , D.attr "preserveAspectRatio" =:= "xMidYMid meet"
+    , D.stylish =:= D.smarts
+      { "max-height": "80vh"
+      , "background": "light-dark(white,black)"
+      , "color-scheme": "light dark"
+      , "fill": "none"
+      }
+    ] $ fold
+    [ D.svg_"defs" [] $ defs <> rendering.defs
+    , rendering.rails
+    ]
