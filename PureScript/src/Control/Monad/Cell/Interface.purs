@@ -9,7 +9,7 @@ type Interface :: (Type -> Type) -> Type -> Type -> Type
 type Interface m i o = i -> m o
 
 
--- | A keyed interface, where input and output.
+-- | A keyed interface, where input and output depend on the same kind `k`.
 newtype KInterface :: forall k. (Type -> Type) -> (k -> Type) -> (k -> Type) -> Type
 newtype KInterface m i o = KInterface (forall @k. i k -> m (o k))
 

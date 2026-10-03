@@ -18,6 +18,7 @@ import Effect.Class.Console as Console
 import Riverdragon.Dragon (Dragon)
 import Riverdragon.Dragon.Bones ((=:=))
 import Riverdragon.Dragon.Bones as D
+import Riverdragon.Dragon.Wings as Wings
 import Riverdragon.River (Lake, River, Stream, createRiver, createRiverStore, mailboxRiver, stillRiver, store, whileJust, (/?*\))
 import Riverdragon.River as River
 import Riverdragon.River.Beyond (KeyPhase(..), fallingLeaves, keyEvents)
@@ -26,6 +27,7 @@ import Riverdragon.Roar.Types (Roar)
 import Unsafe.Coerce (unsafeCoerce)
 import Web.Audio.Context (LatencyHint(..))
 import Web.Audio.MIDI as MIDI
+import Widget (valueInterface)
 
 notesToNoises ::
   forall envStreams envValues key r flow1 flow2 flow3 roar.
@@ -120,11 +122,11 @@ installSynth :: forall m. MonadResource m =>
     , noteStream :: River { key :: Int, pressed :: Boolean, velocity :: Maybe Int, aftertouch :: River Int }
     }
 installSynth synthVoices = do
-  { send: setPlaying, stream: isPlaying } <- createRiverStore (Just true)
+  playing <- liftEffect do valueInterface true
   { send: sendNote, stream: noteStream } <- createRiver
 
   -- (Re-)run `startSynth` when `true`, otherwise destroy the last one
-  River.reenableM1 isPlaying do
+  River.reenableM1 playing.loopback do
     void $ performM { latencyHint: Interactive, sampleRate: 48000 } do
       synthVoices noteStream
 
@@ -132,13 +134,9 @@ installSynth synthVoices = do
   inputs <- synthInputs sendNote
 
   pure
-    { playPause: D.Fragment
-      [ D.button
-        [ D.onClick =:= \_ -> setPlaying true
-        ] $ D.text "Play"
-      , D.button
-        [ D.onClick =:= \_ -> setPlaying false
-        ] $ D.text "Pause"
+    { playPause: Wings.pushButtonRadio playing
+      [ true /\ D.text "Play"
+      , false /\ D.text "Pause"
       ]
     , midi: D.button
       [ D.onClick =:= \_ -> inputs.grabMIDI

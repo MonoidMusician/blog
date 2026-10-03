@@ -6,10 +6,10 @@ import Control.Monad.Reader (ask)
 import Control.Monad.ResourceM (destr, trackA)
 import Effect.Class (liftEffect)
 import Riverdragon.Roar.Knob (class ToKnob)
-import Riverdragon.Roar.Score (ScoreM, roarAsync, scoreKnobs)
-import Riverdragon.Roar.Types (class ToRoars, Roar, connecting, toRoars)
+import Riverdragon.Roar.Score (ScoreM, roarAsync, roaring, scoreKnobs, scoreStream, waveshape)
+import Riverdragon.Roar.Types (class ToLake, class ToRoars, Roar, connecting, toLake, toRoars)
 import Web.Audio.Node (intoNode, outOfNode)
-import Web.Audio.Types (ARate)
+import Web.Audio.Types (ARate, KRate, Float, getSampleRate)
 import Web.Audio.Worklet (AudioWorkletNode, mkAudioWorkletteNode)
 
 pinkNoise :: ScoreM Roar
@@ -103,3 +103,48 @@ pow knob input = roarAsync do
   destr $ send unit
   pure $ outOfNode node 0
 
+wavetime :: forall freq. ToKnob freq => freq -> ScoreM Roar
+wavetime freqKnob = roarAsync do
+  { ctx } <- ask
+  { defaults, apply: applyKnobs } <- scoreKnobs { freq: freqKnob }
+  { node, send } <- trackA "wavetime" $ mkAudioWorkletteNode
+    { name: "WaveTimeGenerator"
+    , function:
+      """
+        function WaveTimeGenerator(options, port) {
+          var sampleRate = options.processorOptions.sampleRate;
+          var phase = 0.0;
+          var stop = false; port.onmessage = (e) => { stop = true; };
+          return (_inputs, outputs, parameters) => {
+            const freq = parameters.freq[0];
+            const output = outputs[0][0];
+            for (var sample = 0; sample < output.length; sample++) {
+              output[sample] = -1 + 2 * ((phase + (sample * freq) / sampleRate) % 1);
+            }
+            phase = (phase + (output.length * freq) / sampleRate) % 1;
+            return !stop;
+          };
+        }
+      """
+    , parameters:
+      { freq:
+        { defaultValue: 220.0
+        }
+      }
+    } ctx >>= \mkNode -> liftEffect $ mkNode
+      { numberOfInputs: 0
+      , numberOfOutputs: 1
+      , outputChannelCount: [1]
+      , parameterData: defaults
+      , processorOptions: { sampleRate: getSampleRate ctx }
+      }
+  applyKnobs (node :: AudioWorkletNode ( freq :: KRate ))
+  destr $ send unit
+  pure $ outOfNode node 0
+
+wavetable :: forall freq wave. ToKnob freq => ToLake wave (Array Float) => freq -> wave -> ScoreM Roar
+wavetable freqKnob currentWaveShape = do
+  driver <- wavetime freqKnob
+  waving <- scoreStream $ toLake currentWaveShape <#> \waveShape ->
+    waveshape waveShape driver
+  roaring waving

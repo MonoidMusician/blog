@@ -62,6 +62,15 @@ basicCell { get, set } =
       pure { prev, next, info }
   }
 
+modifierCell :: forall m v r. Monad m => { modify :: Modify m v | r } -> Cell m v
+modifierCell { modify: Modify modify } =
+  { get: _.prev <$> modify \v -> Tuple v unit
+  , set: void <<< \v -> modify \_ -> Tuple v unit
+  , swap: map _.prev <<< \v -> modify \_ -> Tuple v unit
+  , update: \f -> (\r -> Pair r.prev r.next) <$> modify \v -> Tuple (f v) unit
+  , modify: Modify modify
+  }
+
 mapCell :: forall m v v'. Functor m => (v' -> v) -> (v -> v') -> Cell m v -> Cell m v'
 mapCell v'v vv' cell =
   { get: vv' <$> cell.get
@@ -136,7 +145,7 @@ runCellfie cell (Cellfie (ReaderT f)) = f cell
 
 
 -- | Really basic async capabilities.
-class Monad m <= BasicAsync m where
+class Cellular m <= BasicAsync m where
   -- | Schedule an event to run _soon_ (fork). Returns synchronously.
   schedule :: m Unit -> m Unit
   -- | Wait on a callback to provide a result, one time only.
@@ -156,7 +165,7 @@ instance BasicAsync Aff where
 -- | Only one of the continuations `m (y -> r)` or `m (x -> r)` is run,
 -- | they are not raced even if both `x` and `y` complete before the
 -- | continuation does.
-sideBySide :: forall m x y r. Cellular m => BasicAsync m =>
+sideBySide :: forall m x y r. BasicAsync m =>
   m (Tuple x (m (y -> r))) ->
   m (Tuple y (m (x -> r))) ->
   m r

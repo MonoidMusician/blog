@@ -709,6 +709,16 @@ line2line2 (B1 p0 p1) (B1 q0 q1) =
     ratio = norm (q1 <>- q0) / norm (p1 <>- p0)
   in unP .> rot .> scale ratio .> toQ
 
+x2y :: B12 -> Afn1 Number
+x2y (B1 (V2 x0 y0) (V2 x1 y1)) =
+  let s = (y1 - y0)/(x1 - x0) in
+  Afn1 s (y0 - s * x0)
+
+y2x :: B12 -> Afn1 Number
+y2x (B1 (V2 x0 y0) (V2 x1 y1)) =
+  let s = (x1 - x0)/(y1 - y0) in
+  Afn1 s (x0 - s * y0)
+
 bounds2bounds1 :: Bounds Number -> Bounds Number -> Afn1 Number
 bounds2bounds1 { min: Min fmin, max: Max fmax } { min: Min tmin, max: Max tmax } =
   let s = (tmax - tmin)/(fmax - fmin) in

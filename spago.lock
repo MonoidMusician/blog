@@ -95,6 +95,7 @@
             "web-events",
             "web-html",
             "web-storage",
+            "web-touchevents",
             "web-uievents"
           ]
         },
@@ -8022,6 +8023,14 @@
         "prelude",
         "tuples",
         "web-promise"
+      ]
+    },
+    "web-touchevents": {
+      "type": "git",
+      "url": "https://github.com/purescript-web/purescript-web-touchevents.git",
+      "rev": "53feadd58661b6a8bce673f4a1da4a6436cbbb24",
+      "dependencies": [
+        "web-uievents"
       ]
     },
     "web-uievents": {

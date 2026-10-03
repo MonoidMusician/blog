@@ -41,11 +41,17 @@
 -- - Optimized data types for the desired operations
 --   - string/list builders
 --   - transparently memoizing information like list size
+--   - defunctionalize typeclass dictionaries/higher order parameters, for
+--     recursive calls (although you still may need to reify them at some point...)
 -- - Reduce, reuse, recycle
 --   - Arguments that are destructed and reconstructed can be saved and reused,
 --     assuming that there is no effect preventing this (e.g. the type being
 --     tagged with referential identity important)
 --   - Traversals that end up not changing the data return the original object
+--   - Escape analysis, mutate owned data in place
+--   - Parameterize functions by their behavior if possible, e.g. strictness,
+--     although WASM types probably make this weird/impossible often
+--     - Avoid redundant checks in recursive calls
 -- - Imperative-like code:
 --   - Using mutable variables instead of distantly threaded state
 --   - Using control flow instead of repeated case analysis
@@ -138,20 +144,6 @@ execWASM fullModule = do
 
 -- Generate a function to show a type.
 -- Falls back to displaying the typename.
-showT :: STyp -> Expr
-showT t = mkShowFun case t of
-  S TBool -> byCases
-    [ ("True", (Map.empty, ETxt "True"))
-    , ("False", (Map.empty, ETxt "False"))
-    ]
-  S TTxt -> vvalue
-  _ -> fallback
-  where
-  mkShowFun = EFun (SFun [t] STxt) [Bind "value"]
-  vvalue = EVar t "value"
-  byCases = ECase t vvalue STxt . (, fallback) . Map.fromList
-  fallback = ETxt $ "<" <> T.show t <> ">"
-
 newtype CShow = CShow STyp
   deriving stock (Eq, Ord, Generic, Show)
   deriving anyclass (NFData)
@@ -167,11 +159,25 @@ instance ToExpr CShow where
       , ("False", (Map.empty, ETxt "False"))
       ]
     S TTxt -> vvalue
+    S TIOList -> vvalue
+    S TIOData -> vvalue
+    S TIOText -> vvalue
+    S (TStruct _ []) -> ETxt "{}"
+    S (TStruct recName fields) ->
+      let
+        shown = EArray SIOData $ join
+          [ pure $ ETxt "{ "
+          -- , List.intercalate [ETxt ", "] $ fields <&>
+          --     \(n, t) -> pure $ EArray SIOData
+          --       [ ETxt $ coerce n, ETxt " := ", EApp (ESem (SemShow t)) [EVar t n] ]
+          , pure $ ETxt " }"
+          ]
+      in byCases [(recName, (Map.fromList ((\(n,_) -> (n, Bind n)) <$> fields), shown))]
     _ -> fallback
     where
-    mkShowFun = EFun (SFun [t] STxt) [Bind "value"]
+    mkShowFun = EFun (SFun [t] (S TIOData)) [Bind "value"]
     vvalue = EVar t "value"
-    byCases = ECase t vvalue STxt . (, fallback) . Map.fromList
+    byCases = ECase t vvalue (S TIOData) . (, fallback) . Map.fromList
     fallback = ETxt $ "<" <> T.show t <> ">"
 instance ToFuncDef CShow where
   toFuncDef (CShow t) = FuncDef Nothing [wtyp t] [wtyp TIOData] []
@@ -215,8 +221,8 @@ main = do
             T.putStrLn $ T.show $ eval expr Map.empty
         T.putStrLn $ T.show $ parse t
         go
-  T.putStrLn "Ready!"
-  go
+  -- T.putStrLn "Ready!"
+  -- go
   fullModule <- genWAT do
     testFn1 <- genFunc (Just "retest") ([], [wtyp SU32]) [] do
       genExpr $ ELet [(EU64 157842, Bind "here")] (EU32 1312)
@@ -275,10 +281,8 @@ main = do
     tell "drop"
     genExpr (EApp stdprintln [EApp showBool [EFalse]])
     tell "drop"
-  T.writeFile "/tmp/silly.wat" =<< genWAT do
-    genExpr (EApp stdprintln [EApp showBool [ETrue]])
-    tell "drop"
-    genExpr (EApp stdprintln [EApp showBool [EFalse]])
+    let t = S $ TTuple (S TBool) (S TBool)
+    genExpr (EApp stdprintln [IOFlatten :$$: [CShow t :$$: [eTuple EFalse ETrue]]])
     tell "drop"
   let
     recTest = do
@@ -350,9 +354,9 @@ genExpr = \case
   --   traverse_ genExpr args
   --   genExpr fun
 
-  EApp fun@(EForeign _) args -> do
+  EApp (EForeign fun) args -> do
     traverse_ genExpr args
-    genExpr fun
+    semCode fun
   EFun _ [] body -> genExpr body
   EApp fun [] -> genExpr fun
   fn@(EFun t (bind : binds) body) -> do
@@ -449,7 +453,7 @@ organizeClosure selected =
     getter n = do
       scope <- ask <&> lexical
       case Map.lookup n scope of
-        Nothing -> error $ "Missing name: " <> show n
+        Nothing -> error $ "Missing name: " <> show n <> " out of " <> show (Map.keys scope)
         Just g -> tell g
     sorted =
       Map.toList selected
@@ -1650,8 +1654,8 @@ instance Semantics StdPrintLn where
   semCode StdPrintLn = do
     genExpr $ EFun (SFun [STxt] SU32) [Bind "input"] $
       ELet
-        [ (EApp (ESem StdPrint) [EVar STxt "input"], Bind "len")
-        , (EApp (ESem StdPrint) [ETxt "\n"], Discard)
+        [ (StdPrint :$$: [EVar STxt "input"], Bind "len")
+        , (StdPrint :$$: [ETxt "\n"], Discard)
         ] $ EVar SU32 "len"
     sexp "call" =<< sequence [ funcDef (CallClo (detectBoxingS STxt) (detectBoxingS SU32)) ]
   semEffects StdPrintLn = mempty { efForeign = Important, efOrdering = Important }
@@ -2710,9 +2714,9 @@ instance SynthType TIOL where
   isArrayType TIOText = isArrayType TTxt
   isArrayType TIOData = Nothing
 
-  arraylit t items = do
-    ty <- genType Nothing t
-    comment "create array literal:"
+  arraylit _ items = do
+    ty <- genType Nothing TIOList
+    comment "create iolist literal:"
     traverse_ snd items
     sexp "array.new_fixed" [ ty, wasmLen $ length items ]
   arraylength _ (_, expr) = do
@@ -3302,6 +3306,9 @@ instance Num n => Semigroup (Sequence (Proportion n)) where
     s2 = sL2 * sR2
     sR = sR1 + sR2
     sL = sL1 + sL2
+instance Num n => Sample Bool (Proportion n) where
+  sample True = Proportion { pWith = 1, pWithout = 0 }
+  sample False = Proportion { pWith = 0, pWithout = 1 }
 
 -- Overall usage of something, including the bounds on the number of times
 -- it will be used and the proportion of cases where it is used.
@@ -3468,6 +3475,9 @@ parseType = parseTypeAtom & functioning
     , S . TEnum <$> do named "enum" *> many tNAME
     , S . TArr <$> do named "array" *> parseTypeAtom
     , S <$> P.try do TStruct <$> (optional (named "struct") *> tNAME) <*> structFields
+    , SIOList <$ named "iolist"
+    , SIOData <$ named "iodata"
+    , SIOText <$ named "iotext"
     , t"(" *> parseType <* t")"
     ]
   functioning atom = mkFun <$> do

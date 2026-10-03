@@ -92,6 +92,7 @@ package:
     - web-html
     - web-storage
     - web-uievents
+    - web-touchevents
 
   build:
     censorProjectWarnings:

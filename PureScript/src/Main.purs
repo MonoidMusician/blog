@@ -16,6 +16,7 @@ import Parser.Main.TMTTMT as TMTTMT
 import Riverdragon.Main.Live as Riverdragon.Main.Live
 import Riverdragon.Roar.LaunchkeyMK4 as LaunchkeyMK4
 import Riverdragon.Roar.Live as Riverdragon.Roar.Live
+import Riverdragon.Roar.Pixel as Riverdragon.Roar.Pixel
 import Riverdragon.Test as Riverdragon.Test
 import Train.Main as Train.Main
 import Widget (Widgets)
@@ -45,6 +46,7 @@ widgets = foldl Object.union Object.empty
     , "Parser.Main.Live" /\ Parser.Main.Live.widget
     , "Riverdragon.Main.Live" /\ Riverdragon.Main.Live.widget
     , "Riverdragon.Roar.Live" /\ Riverdragon.Roar.Live.widget
+    , "Riverdragon.Roar.Pixel" /\ Riverdragon.Roar.Pixel.widget
     , "Riverdragon.Test" /\ Riverdragon.Test.widget
     , "Airplane" /\ Airplane.Main.widget
     , "Traintle" /\ Train.Main.widget

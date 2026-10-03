@@ -49,6 +49,9 @@ foreign import data AudioContext :: Type
 currentTime :: AudioContext -> Effect Time
 currentTime ctx = _unsafeGetProperty ctx "currentTime"
 
+getSampleRate :: AudioContext -> Frequency
+getSampleRate ctx = unsafePerformEffect do _unsafeGetProperty ctx "sampleRate"
+
 foreign import data AudioNode :: Symbol -> Boolean -> Row Type -> Row Type -> Row Rate -> Type
 instance Eq (AudioNode name source read write params) where eq = unsafeRefEq
 

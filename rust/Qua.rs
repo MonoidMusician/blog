@@ -662,6 +662,7 @@ impl From<SKI> for StackFrame {
 #[derive(Debug)]
 struct System {
   input_at: idxbit,
+  input_pending: Option<(u32, Operand)>,
   input_words: CrumbString<false>,
   output_words: CrumbString<true>,
   work: u64,
@@ -794,6 +795,7 @@ impl Operand {
     }
     return false;
   }
+  // TODO: optimize immediates
   fn wrap0302(self) -> Operand {
     Operand::new(Synth {
       fun: S.into(),
@@ -934,6 +936,7 @@ impl System {
   fn new() -> System {
     System {
       input_at: idxbit(0,0),
+      input_pending: None,
       input_words: CrumbString::default(),
       output_words: CrumbString::default(),
       work: 0,
@@ -949,6 +952,7 @@ impl System {
     self.stack.push(frame);
   }
   fn scan1input(&mut self) -> Option<Operand> {
+    // TODO: skip identity combinators
     let (input_at, op) = scan1op(&self.input_words.0.words[..], self.input_at, self.input_words.0.at)?;
     // println!("{op:?} from {input_at:?}: {}", &self.input_words.unparse()[(input_at - idxbit(0,0))/2..]);
     self.input_at = input_at;
@@ -965,12 +969,18 @@ impl System {
     debug_assert!(self.stack_endstop == 0);
     match self.scan1input() {
       None => {
-        self.input_at += 2;
-        let frame = self.refill()?;
-        return Some(StackFrame {
-          to_eval: frame.to_eval.wrap0302(),
-          was_evaling: frame.was_evaling
-        });
+        let mut skipped = 0;
+        // TODO: avoid the loop, or at least make it a binary search?
+        while self.input_at < self.input_words.0.at {
+          self.input_at += 2;
+          skipped += 1;
+          if let Some(op) = self.scan1input() {
+            self.input_pending = Some((skipped, op));
+            return None;
+          }
+        }
+        // Was all zeroes
+        return None;
       },
       Some(op) => {
         goodop(&op);
@@ -1224,10 +1234,20 @@ impl System {
     let op = self.unpack_crumbstring_onto_stack(op);
     self.save_whnf_on_stack(op);
 
-    return self.reduction_rule(op);
+    let ret = self.reduction_rule(op);
+    if let Some((mut arity, opR)) = self.input_pending.take() {
+      let mut opL = self.read_whnf_from_stack();
+      while arity > 0 {
+        opL = opL.wrap0302();
+        arity -= 1;
+      }
+      self.stack_push(StackFrame::from(synthetic_apply(opL, opR)));
+    }
+    return ret;
   }
   fn read_whnf_from_stack(&mut self) -> Operand {
     assert!(self.at() > self.stack_endstop);
+    // FIXME: was_evaling?
     let Some(StackFrame { to_eval: mut op, .. }) = self.stack.pop() else {
       panic!("No operand on stack");
     };
@@ -1385,6 +1405,13 @@ fn main() {
   test("00013012", 10);
   test("03030212", 10);
   test("00302312", 10);
+
+  test("01003", 10);
+  test("0100312", 10);
+  test("0030210312", 10);
+  test("0030203021312", 10);
+  // 00302ABC = 0A0BC
+  // 0A00BCD = 0(0302A)0BCD = 0003020302ABCD
 
   let repeat = |amt, s: &str| -> String {
     vec![s.chars(); amt].iter().flat_map(|x| x.clone()).collect()
