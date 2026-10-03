@@ -1,5 +1,6 @@
 ---
 title: Traintle? Turtular Train? Trundular Turtle?
+subtitle: "Turtular Train Trundles Through Twisty Tracks"
 widgets: true
 ---
 
@@ -63,7 +64,7 @@ The curve radii are 3.5, 6.5, 10.5, 13.5, 20.5 (3.5, 13.5, 20.5 make the nicest 
 `<====={====}{====}=====>`
 : Stadler KISS
 
-`<=====[====|====|====]`
+`<====={====|====|====}`
 : Locomotive with articulated well car.
 
 </details>
