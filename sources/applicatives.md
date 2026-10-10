@@ -413,7 +413,7 @@ class Monoid m where
 ```
 so the operation is inferred from the carrier type, and newtypes are used to give other instances ([e.g.]{t=} [`Additive`{.purescript}](https://pursuit.purescript.org/packages/purescript-prelude/docs/Data.Monoid.Additive#t:Additive) and [`Multiplicative`{.purescript}](https://pursuit.purescript.org/packages/purescript-prelude/docs/Data.Monoid.Multiplicative)).
 In dependent type theories, the laws can be provided as fields like the operations:
-```agda
+```agda{data-lang=""}
 record MonoidOn (M : Type) : Type where
   (<>) : M -> M -> M
   mempty : M
