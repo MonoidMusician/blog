@@ -40,7 +40,7 @@ Function application is left-associative as usual (\(f\cdot x\cdot y = (f\cdot x
 :::Bonus
 If you want to be extra formal, you could formalize de Bruijn indices instead of variable matching.
 But then you need to handle contexts and shifting like Dhall does.
-The benefit is that now you do not need metavariables (variables that stand for variables) in the metatheory, just ordinary variables to stand for the natural numbers \(0, 0^\prime, 0^{\prime\prime}, \dots\).
+The benefit is that now you do not need metavariables (variables that stand for variables) in the metatheory, just ordinary variables to stand for the natural numbers \(0, 0^\prime, 0^{\prime\prime}, \ldots\).
 
 \[
 \begin{gather*}
@@ -624,7 +624,7 @@ which of course reduces to \(U_{n \lor m}\).
 \begin{gather*}
 \Gamma \vdash I : U_n \qquad \Gamma, x : I \vdash O : Y \qquad Y \equiv U_m
 \\\hline
-\Gamma \vdash \Pi(x : I).\ O : \_ \equiv U_{n \lor m} 
+\Gamma \vdash \Pi(x : I).\ O : \_ \equiv U_{n \lor m}
 \end{gather*}
 \]
 

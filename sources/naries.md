@@ -1,0 +1,18 @@
+- conj, disj, any, all
+  - conj_tve, disj_tve
+- each, some
+- forall, exists, ¿forany?
+- negative, negation, reverse, inverse, reciprocal, opposite, flip, swap, converse
+- add, sub, mul, div
+  - add_tve, mul_tve
+- head, tail, init, last
+- prefix, midfix, suffix
+  - prefix, interfix, postfix
+- inj, prj (srj?)
+  - injection, surjection/projection; monomorphism, epimorphism
+- source, target; src, tgt/dst
+  - idx |- src, tgt/dst
+- upper, lower; hi, lo
+- max, min; sup, inf
+- gcd, lcm
+- row, col

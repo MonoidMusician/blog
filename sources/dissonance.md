@@ -121,7 +121,7 @@ Now hold your breath for a magic trick.
 
 Our sines and cosines can form an *orthonormal basis* for continuous periodic functions.
 
-\[\left\{ \frac{1}{\sqrt{2}},\; \sin\left(2\pi\, \frac{x}{p}\right)\!,\; \cos\left(2\pi\, \frac{x}{p}\right)\!,\; \sin\left(4\pi n\, \frac{x}{p}\right)\!,\; \cos\left(4\pi n\, \frac{x}{p}\right)\!,\; \dots,\; \sin\left(2\pi n\, \frac{x}{p}\right)\!,\; \cos\left(2\pi n\, \frac{x}{p}\right)\!,\; \dots \right\}\]
+\[\left\{ \frac{1}{\sqrt{2}},\; \sin\left(2\pi\, \frac{x}{p}\right)\!,\; \cos\left(2\pi\, \frac{x}{p}\right)\!,\; \sin\left(4\pi n\, \frac{x}{p}\right)\!,\; \cos\left(4\pi n\, \frac{x}{p}\right)\!,\; \ldots,\; \sin\left(2\pi n\, \frac{x}{p}\right)\!,\; \cos\left(2\pi n\, \frac{x}{p}\right)\!,\; \ldots \right\}\]
 
 (\(\sin(0x)\) is not included, since it is the zero function and never part of any basis, but \(\frac{1}{\sqrt{2}}\cos(0x) = \frac{1}{\sqrt{2}}\) is included to model [DC offset](https://en.wikipedia.org/wiki/DC_bias).)
 

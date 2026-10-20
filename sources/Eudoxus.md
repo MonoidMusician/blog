@@ -320,7 +320,7 @@ The key is that it \(f(x_1) + f(x_2) - f(x_1 + x_2)\) is not just linearly-perio
 The \(d\) cancels out from the two terms that changed.
 
 The upshot is that we donʼt need to worry about _all_ values of \(x_2\), just one period worth of it, from \(1\) to \(p\).
-Explicitly, the wiggle of the function is bounded by the quantity \[ \max(|f(1)|, |f(2)|, \dots, |f(p)|). \]
+Explicitly, the wiggle of the function is bounded by the quantity \[ \max(|f(1)|, |f(2)|, \ldots, |f(p)|). \]
 
 ##### Irrational approximations
 

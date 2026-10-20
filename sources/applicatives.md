@@ -115,6 +115,18 @@ data FnDay f g r = forall i. FnDay (f (i -> r)) (g i)
 data DayFn f g r = forall i. DayFn (f i) (g (i -> r))
 ```
 
+As [GADT]{t=}s (the more reasonable syntax for existential datatypes, where `forall`{.haskell} isnʼt used to represent existentials in a misleading-but-technically-maybe-correct-way):
+
+```haskell
+data Day f g r where
+  Day :: f u -> g v -> (u -> v -> r) -> Day f g r
+
+data FnDay f g r where
+  FnDay :: f (i -> r) -> g i -> FnDay f g r
+data DayFn f g r where
+  DayFn :: f i -> g (i -> r) -> DayFn f g r
+```
+
 :::Bonus
 How are these related?
 By the Yoneda lemma!
@@ -147,7 +159,7 @@ https://hackage.haskell.org/package/profunctors-5.6.2/docs/Data-Profunctor-Compo
 Please note that there is a little dishonesty here: this constructs the free category that is also a profunctor.
 This means that we can lift arbitrary functions into our arrows.
 
-The alternative would be to define a GADT that requires its arguments are the same type, to define identity arrows specifically.
+The alternative would be to define a [GADT]{t=} that requires its arguments are the same type, to define identity arrows specifically.
 
 ```haskell
 data JustIdentity x z where
