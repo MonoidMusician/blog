@@ -282,6 +282,15 @@ If you do not commit to having a culture of providing pure functions when possib
 
 https://blog.veritates.love/resource-acquisition
 
+Racket implements Custodians, which can guard execution and resources, like OS processes, but within a single Racket process.
+Files, sockets, threads – even active allocations, for OOM killing.
+(That is integrated with the GC.)
+
+https://docs.racket-lang.org/reference/eval-model.html#(part._custodian-model)
+
+https://www-old.cs.utah.edu/plt/publications/ismm04-wf.pdf
+
+
 
 ### Continuation monad
 

@@ -28,7 +28,15 @@ Only once they are applied to a parameter \(X : \mathcal C\), they yield an obje
 So a natural transformation has components, which explains how to apply the transformation to actual objects in \(\mathcal D\) to get an actual morphism in \(\mathcal D\).
 And those components need to satisfy a property (the “naturality square”) that says how they work together.
 
-How it is conventionally taught is that a natural transformation has components indexed by objects \[m_X : F(X) \to G(X),\] and satisfies a naturality square for any \(f : X \to Y\) in the source category \(\mathcal C\) \[m_X \then G(f) = F(f) \then m_Y : F(X) \to G(Y)\] saying you can apply the natural transformation \(m_X : F(X) \to G(X)\) first and then map \(G(f) : G(X) \to G(Y)\), or you can map first with \(F(f) : F(X) \to F(Y)\) and then use the transformation (at object \(Y\) this time) \(m_Y : F(Y) \to G(Y)\).
+How it is conventionally taught is that a natural transformation has components indexed by objects \[m_X : F(X) \to G(X),\] and satisfies a naturality square for any \(f : X \to Y\) in the source category \(\mathcal C\)
+\[\begin{CD}
+{\footnotesize F(X)} @> {\displaystyle m_X} >> {\footnotesize G(X)}\\
+@V {\displaystyle F(f)} VV
+  @VV {\displaystyle G(f)} V\\
+{\footnotesize F(Y)} @> {\displaystyle m_Y} >> {\footnotesize G(Y)}
+\end{CD}\]
+which represents the equation in \(F(X) \to G(Y)\)
+\[m_X \then G(f) = F(f) \then m_Y\] saying you can apply the natural transformation \(m_X : F(X) \to G(X)\) first and then map \(G(f) : G(X) \to G(Y)\), or you can map first with \(F(f) : F(X) \to F(Y)\) and then use the transformation (at object \(Y\) this time) \(m_Y : F(Y) \to G(Y)\).
 
 Formally, Iʼve always found this a weird thing to ask for: why ask for morphisms indexed by objects?
 Every other construction in category theory maps objects to objects, morphisms to morphisms, categories to categories, functors to functors … why are natural transformations the odd one out?
@@ -38,6 +46,8 @@ Still, I think an alternate exposition clarifies this and has some nice points i
 
 :::Key_Idea
 Letʼs index the components of the natural transformation by *morphisms* instead of objects: \[m_f : F(X) \to G(Y)\text{, for\ } f : X \to Y.\]
+
+Notice how this cuts the commutative diagram in half, going directly from the upper left \(F(X)\) to \(G(Y)\).
 :::
 
 This component incorporates the mapping \(f : X \to Y\) into its mapping of the functors \(F \to G\), producing the composite \(m_f : F(X) \to G(Y)\).
@@ -54,12 +64,50 @@ And speaking in terms of programming, while `forall x. f x -> g x`{.haskell} is 
 ## Extranatural Transformations
 
 The next step of generality.
-(There are also (strong) dinatural transformations.)
+(There are also (strong) dinatural transformations, where dinatural transformations are so general that they lose composition, and strong dinatural transformations impose a condition to regain composition.)
 
 Extranaturality can apply when a category and its opposite appear in the same functor, either on the input or on the output functor, but not both.
 
-So to take an example demonstrating naturality along with extranaturality on both the input and output sides: let \(F : A \x B \x B^{op} \to D\) and \(G : A \x C \x C^{op} \to D\).^[Note: with extranaturality, the functors do not need to have the same number of parameters.]
+So to take an example demonstrating naturality along with extranaturality on both the input and output sides: let \(F : \mathcal A \x (\mathcal B \x \mathcal B^{op}) \to \mathcal D\) and \(G : \mathcal A \x (\mathcal C \x \mathcal C^{op}) \to \mathcal D\).^[Note: with extranaturality, the functors do not need to have the same number of parameters.]
 
+An extranatural transformation \(m : F \to G\) then comes with three naturality squares, for mapping in \(\mathcal A\), \(\mathcal B\), and \(\mathcal C\).
+
+---
+
+\[\begin{CD}
+{\footnotesize F(a_1;\, b_1, b_1)} @> {\displaystyle m_{a_1, b_1, c_1}} >> {\footnotesize G(a_1;\, c_1, c_1)}\\
+@V {\displaystyle F(u;\, {b_1}, {b_1})} VV
+  @VV {\displaystyle G(u;\, {c_1}, {c_1})} V\\
+{\footnotesize F(a_2;\, b_1, b_1)} @> {\displaystyle m_{a_2, b_1, c_1}} >> {\footnotesize G(a_2;\, c_1, c_1)}
+\end{CD}\]
+
+\[m_{a_1, b_1, c_1} \then G(u;\, {c_1}, {c_1}) = F(u;\, {b_1}, {b_1}) \then m_{a_2, b_1, c_1}\]
+
+---
+
+\[\begin{CD}
+{\footnotesize F(a_1;\, b_1, b_2)} @> {\displaystyle F({a_1};\, {b_1}, v)} >> {\footnotesize F(a_1;\, b_1, b_1)}\\
+@V {\displaystyle F({a_1};\, v, {b_1})} VV
+  @VV {\displaystyle m_{a_1, b_1, c_1}} V\\
+{\footnotesize F(a_1;\, b_2, b_2)} @>> {\displaystyle m_{a_1, b_2, c_1}} > {\footnotesize G(a_1;\, c_1, c_1)}
+\end{CD}\]
+
+\[F({a_1};\, {b_1}, v) \then m_{a_1, b_1, c_1} = F({a_1};\, v, {b_1}) \then m_{a_1, b_2, c_1}\]
+
+---
+
+\[\begin{CD}
+{\footnotesize F(a_1;\, b_1, b_1)} @> {\displaystyle m_{a_1, b_1, c_1}} >> {\footnotesize G(a_1;\, c_1, c_1)}\\
+@V {\displaystyle m_{a_1, b_1, c_2}} VV
+  @VV {\displaystyle G({a_1};\, v, {c_1})} V\\
+{\footnotesize G(a_1;\, c_2, c_2)} @>> {\displaystyle G({a_1};\, {c_2}, v)} > {\footnotesize G(a_1;\, c_2, c_1)}
+\end{CD}\]
+
+\[m_{a_1, b_1, c_1} \then G({a_1};\, v, {c_1}) = m_{a_1, b_1, c_2} \then G({a_1};\, {c_2}, v)\]
+
+---
+
+Again, we can cut through the diagonals to forge our own morphism: handle all three squares at once!
 The transformation on arrows falls out like this.
 
 \[
@@ -70,13 +118,13 @@ The transformation on arrows falls out like this.
 \end{alignat*}\\
 \begin{alignat*}{1}
   \hline
-  & n_{u,v,w} : F(a_1, b_1, b_2) \to G(a_2, c_2, c_1)
+  & n_{u,v,w} : F(a_1;\, b_1, b_2) \to G(a_2;\, c_2, c_1)
 \end{alignat*}
 \]
 
 You can see how it takes an arrow for each category.
 
-I think I will just state the same naturality condition for this setup; it is not so complicated.
+I think I will just state the same naturality condition for this setup; it is not so complicated conceptually, not notationally.
 
 Take three composable triples: \(u\) in \(\mathcal A\), \(v\) in \(\mathcal B\), and \(w\) in \(\mathcal C\).
 
@@ -92,9 +140,24 @@ Then mapping over \(F\) and \(G\) can be incorporated into the extranatural tran
 
 \[
 \begin{align*}
-  F(u_0, v_0, v_2) \then n_{u_1,v_1,w_1} \then G(u_2, w_0, w_2) = n_{(u_0 \then u_1 \then u_2),(v_0 \then v_1 \then v_2),(w_0 \then w_1 \then w_2)} : F(a_0, b_0, b_3) \to G(a_3, c_3, c_0)
+  F(u_0;\, v_0, v_2) \then n_{u_1,v_1,w_1} \then G(u_2;\, w_0, w_2) = n_{(u_0 \then u_1 \then u_2),(v_0 \then v_1 \then v_2),(w_0 \then w_1 \then w_2)} : F(a_0;\, b_0, b_3) \to G(a_3;\, c_3, c_0)
 \end{align*}
 \]
+
+Note how the covariant–contravariant pairs in \(F\) and \(G\) wrap around the arrows provided to \(n\).
+
+<!-- Consider this diagram.
+
+\[\begin{CD}
+  a_1 @> u
+        >> a_2 \\
+   @.       @. \\
+  b_1  @.  c_2 \\
+@V v VV  @A w AA \\
+  b_2  @.  c_1 \\
+\end{CD}\]
+-->
+
 
 
 ## Relational Parametricity
@@ -104,9 +167,9 @@ It is generally thought in the context of a type theory: proving things about ho
 
 Naturality is a less-general version that is phrased in terms of category theory, where everything is a morphism and relations besides equality of morphisms are not available.
 
-Both concepts capture the idea that a mapping operates uniformly over some index, such as the objects \(X\) in the components of the natural transformation \(\forall X. F(X) \to G(X)\).
+Both concepts capture the idea that a mapping operates uniformly over some index, such as the objects \(X\) in the components of the natural transformation \(\forall X.\ F(X) \to G(X)\).
 
-In fact, relational parametricity is powerful enough to imply parametricity: this is why every safe function `forall x. f x -> g x`{.haskell} in Haskell (or another parametrically polymorphic language) _is_ a natural transformation, with no other conditions needed.^[Assuming that the functors in question are also parametrically polymorphic.]
+In fact, relational parametricity is powerful enough to imply naturality: this is why every safe function `forall x. f x -> g x`{.haskell} in Haskell (or another parametrically polymorphic language) _is_ a natural transformation, with no other conditions needed.^[Assuming that the functors in question are also parametrically polymorphic.]
 
 Relational parametricity was indeed originally studied in the context of System F (the basis of Haskellʼs type system).
 Unfortunately, relational parametricity has been slower to be systematically applied to dependent type theories, despite the fact that they love to be relationally parametric too.^[Certain axioms, like the Law of Excluded Middle, will break parametricity and computation; but generally the base theory, like [MLTT]{t=}, is parametrically polymorphic.]
@@ -115,7 +178,7 @@ Anyways, enough waffling about it.
 Letʼs get into the details.
 
 The core idea of relational parametricity is to intepret types as relations.
-Quantification over a type becomes quantification over a relation, which allows the user to prove something about how that type is used within that quantification – if, indeeed, it is used parametrically.
+Quantification over a type becomes quantification over a relation, which allows the user to prove something about how that type is used within that quantification – if, indeed, it is used parametrically.
 
 Relational parametricity can show that every term of type \(\forall X.\ X \to X\) is equivalent to the identity function.
 But the first nontrivial example would be the term of type \(\forall X.\ X \to X \to X\), a polymorphic function with two arguments.
@@ -139,11 +202,14 @@ Thus the application of relational parametricity to \(\forall X.\ X \to X \to X\
 \[
 \begin{align*}
   & \forall (X^L, X^R : \mathrm{Type}).\ \forall (\mathbb X : X^L \x X^R \to \mathrm{Prop}).\ \\
-  & \forall (x_0 : X^L \x X^R).\ \mathbb x_0^L \mathrel{\large \mathbb X} x_0^R \implies \\
-  & \forall (x_1 : X^L \x X^R).\ \mathbb x_1^L \mathrel{\large \mathbb X} x_1^R \implies \\
+  & \forall (x_0 : X^L \x X^R).\ x_0^L \mathrel{\large \mathbb X} x_0^R \implies \\
+  & \forall (x_1 : X^L \x X^R).\ x_1^L \mathrel{\large \mathbb X} x_1^R \implies \\
   &\quad f^L_{X^L}(x_0^L)(x_1^L) \mathrel{\large \mathbb X} f^R_{X^R}(x_0^R)(x_1^R)
 \end{align*}
 \]
+
+Letʼs call this relation \(\mathcal{PR}[\forall X.\ X \to X \to X]\) for “parametricity relation for [that type]”.
+Dissecting it, it asserts:
 
 #.  For any types \(X^L\) and \(X^R\) and any relation \(\mathbb X\) between them,
 #.  For any pair of inputs \(x_0 : X^L \x X^R\), if they are related by \(\mathbb X\),
@@ -164,7 +230,111 @@ Using sets instead of relations, it would look much simpler:
 \]
 
 This is sufficient for proving that the output must come from one of the inputs, but does not relate the function behavior across instantiations.
-That is the power reserved for relational approaches.
+That is the capability reserved for relational approaches.
+
+## Infinite Parametricity
+
+\[
+\begin{align*}
+p1^{-} :\
+  & \Pi (X^{L}, X^{R} : \mathrm{Type}).\ \Pi (\mathbb{X} : X^{L} \x X^{R} \to \mathrm{Type}).\ \\
+  & \Pi (x_0 : X^{L} \x X^{R}).\ x_0^{L} \mathrel{\large \mathbb{X}} x_0^{R} \implies \\
+  & \Pi (x_1 : X^{L} \x X^{R}).\ x_1^{L} \mathrel{\large \mathbb{X}} x_1^{R} \implies \\
+  &\quad f^{L}_{X^{L}}(x_0^{L})(x_1^{L}) \mathrel{\large \mathbb{X}} f^{R}_{X^{R}}(x_0^{R})(x_1^{R})
+\end{align*}
+\]
+
+\[
+\begin{align*}
+  & \Pi (X^{LL}, X^{LR} : \mathrm{Type}).\ \Pi (\mathbb{X}^{L} : X^{LL} \x X^{LR} \to \mathrm{Type}).\ \\
+  & \Pi (X^{RL}, X^{RR} : \mathrm{Type}).\ \Pi (\mathbb{X}^{R} : X^{RL} \x X^{RR} \to \mathrm{Type}).\ \\
+  & \Pi (\mathbb{XX} : \Pi (x : (X^{LL} \x X^{LR}) \x (X^{RL} \x X^{RR})).\ \\
+        &\quad x^{LL} \mathbb{X}^L x^{LR} \x x^{RL} \mathbb{X}^R x^{RR} \to \\
+        &\quad \mathrm{Type}
+        %% &\quad \Sigma (T^{L}, T^{R}).\ \mathbb{T} : T^{L} \x T^{R} \to \mathrm{Type}
+        ).\ \\
+  & \Pi (x_0 : (X^{LL} \x X^{LR}) \x (X^{RL} \x X^{RR})).\ \\
+  & \Pi (q_0 : x_0^{LL} \mathrel{\large \mathbb{X}^{L}} x_0^{LR} \x
+    x_0^{RL} \mathrel{\large \mathbb{X}^{R}} x_0^{RR}).\ \\
+  & \mathbb{XX} x_0 q_0 \implies \\
+  & \Pi (x_1 : (X^{LL} \x X^{LR}) \x (X^{RL} \x X^{RR})).\ \\
+  & \Pi (q_1 : x_1^{LL} \mathrel{\large \mathbb{X}^{L}} x_1^{LR} \x
+    x_1^{RL} \mathrel{\large \mathbb{X}^{R}} x_1^{RR}).\ \\
+  & \mathbb{XX} x_1 q_1 \implies \\
+  &\quad p1^{L}_{X^{LL},X^{LR}}(x_0^{L})(x_1^{L}) \mathrel{\large \mathbb{XX}} p1^{R}_{X^{RL},X^{RR}}(x_0^{R})(x_1^{R})
+\end{align*}
+\]
+
+---
+
+
+\[
+\begin{align*}
+f = {}^0p^{-} :\
+  & \Pi (X : \mathrm{Type}).\ \\
+  & X \to \\
+  & X \to \\
+  & X
+\\%%
+{}^1p^{-} :\
+  & \Pi (X : \Sigma (T : (L : \mathrm{Type}) \x (R : \mathrm{Type})).\ (H : T^{L} \x T^{R} \to \mathrm{Type})).\ \\
+  & \Pi (x_0 : \Sigma (t : X^{L} \x X^{R}).\ X^H t).\ \\
+  & \Pi (x_1 : \Sigma (t : X^{L} \x X^{R}).\ X^H t).\ \\
+  &\quad X^H\left({}^0p^{L}(X^{L}, x_0^{L}, x_1^{L}),\; {}^0p^{R}(X^{R}, x_0^{R}, x_1^{R})\right)
+\\%%
+{}^2p^{-} :\
+  & \Pi (X^{LL}, X^{LR} : \mathrm{Type}).\ \Pi (\mathbb{X}^{L} : X^{LL} \x X^{LR} \to \mathrm{Type}).\ \\
+  & \Pi (X^{RL}, X^{RR} : \mathrm{Type}).\ \Pi (\mathbb{X}^{R} : X^{RL} \x X^{RR} \to \mathrm{Type}).\ \\
+  & \Pi (\mathbb{XX} : \Pi (x : (X^{LL} \x X^{LR}) \x (X^{RL} \x X^{RR})).\ \\
+        &\quad x^{LL} \mathbb{X}^L x^{LR} \x x^{RL} \mathbb{X}^R x^{RR} \to \\
+        &\quad \mathrm{Type}
+        %% &\quad \Sigma (T^{L}, T^{R}).\ \mathbb{T} : T^{L} \x T^{R} \to \mathrm{Type}
+        ).\ \\
+  & \Pi (x_0 : (X^{LL} \x X^{LR}) \x (X^{RL} \x X^{RR})).\ \\
+  & \Pi (q_0 : x_0^{LL} \mathrel{\large \mathbb{X}^{L}} x_0^{LR} \x
+    x_0^{RL} \mathrel{\large \mathbb{X}^{R}} x_0^{RR}).\ \\
+  & \mathbb{XX} x_0 q_0 \implies \\
+  & \Pi (x_1 : (X^{LL} \x X^{LR}) \x (X^{RL} \x X^{RR})).\ \\
+  & \Pi (q_1 : x_1^{LL} \mathrel{\large \mathbb{X}^{L}} x_1^{LR} \x
+    x_1^{RL} \mathrel{\large \mathbb{X}^{R}} x_1^{RR}).\ \\
+  & \mathbb{XX} x_1 q_1 \implies \\
+  &\quad p1^{L}_{X^{LL},X^{LR}}(x_0^{L})(x_1^{L}) \mathrel{\large \mathbb{XX}} p1^{R}_{X^{RL},X^{RR}}(x_0^{R})(x_1^{R})
+\end{align*}
+\]
+
+---
+
+
+\[
+\begin{align*}
+{}^0\mathrm{Type} &= \mathrm{Type} \\
+\underline{T} &= T\\
+{}^1\mathrm{Type} &= \Sigma (T : (L : {}^0\mathrm{Type}) \x (R : {}^0\mathrm{Type})).\ (H : \underline{T^{L}} \x \underline{T^{R}} \to \mathrm{Type}) \\
+\underline{T} &= \Sigma (t : (L : \underline{T^{L}}) \x (R : \underline{T^{R}})).\ (h : H(t^{L}, t^{R}))\\
+{}^2\mathrm{Type} &= \Sigma (T : (L : {}^1\mathrm{Type}) \x (R : {}^1\mathrm{Type})).\ (H : \underline{T^{L}} \x \underline{T^{R}} \to \mathrm{Type}) \\
+\end{align*}
+\]
+
+
+\[
+\begin{align*}
+{}^nf :\
+  & \Pi (X : {}^n\mathrm{Type}).\ \\
+  & \underline{X} \to \\
+  & \underline{X} \to \\
+  & \underline{X}
+\\%%
+{}^np :\
+  & \Pi (X : {}^{n+1}\mathrm{Type}).\ \\
+  & \Pi (x_0 : \underline{X}).\ \\
+  & \Pi (x_1 : \underline{X}).\ \\
+  & {}^{n+1}p(X, x_0, x_1)^L = {}^np(X^{L}, x_0^{L}, x_1^{L})
+  \land {}^{n+1}p(X, x_0, x_1)^R = {}^np(X^{R}, x_0^{R}, x_1^{R})
+\end{align*}
+\]
+
+
+
 
 <!-- ʼ -->
 

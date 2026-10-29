@@ -6,6 +6,7 @@
 - add, sub, mul, div
   - add_tve, mul_tve
 - head, tail, init, last
+  - hd, tl
 - prefix, midfix, suffix
   - prefix, interfix, postfix
 - inj, prj (srj?)
@@ -16,3 +17,5 @@
 - max, min; sup, inf
 - gcd, lcm
 - row, col
+- LT, LE, GT, GE, EQ, NE
+  - UNC, LTE, GTE, EQU, NEQ, LTN, GTN, NLT, NGT, NLE, NGE

@@ -651,3 +651,6 @@ I went through some of the steps of some of the isomorphisms above.
 But just notice that all of the definitions come with some form of left and right identities and some form of associativity.
 
 The data is all the same, the shapes are all the same, it is just a matter of checking some details and proving it.
+
+
+<!-- https://paul-grillenberger.de/2023/09/17/What-are-Haskells-applicative-functors-to-mathematicians/ -->

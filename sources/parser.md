@@ -121,6 +121,8 @@ You can bug or help me write more ^^
 
 softwareengineering.stackexchange.com/questions/338665/when-to-use-a-parser-combinator-when-to-use-a-parser-generator#answer-338888 [softwareengineering.stackexchange.com]
 
+https://cs.stackexchange.com/questions/152099/lr1-grammar-that-can-not-be-transformed-an-ll1-grammar
+
 https://blog.reverberate.org/2013/07/ll-and-lr-parsing-demystified.html
 https://blog.reverberate.org/2013/09/ll-and-lr-in-context-why-parsing-tools.html
 
@@ -140,6 +142,9 @@ https://malloy.people.clemson.edu/publications/papers/sac08/paper.pdf
 
 https://www.sciencedirect.com/science/article/pii/S0167642309001191
 > The IELR(1) algorithm for generating minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution
+
+https://branchtaken.com/reports/aplr1/aplr1
+> The APLR(1) Algorithm for Generating Compact LR(1) Parsers is Simpler and More Capable than IELR(1)
 
 https://cs.stackexchange.com/questions/3461/what-is-an-ielr1-parser
 https://github.com/PMCFG/PMCFG
